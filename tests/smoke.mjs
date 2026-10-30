@@ -5,11 +5,13 @@ import { execSync } from "node:child_process";
 
 function tokenFromSecretManager() {
   try {
+    // stderr stays hidden unless gcloud fails: on Windows, gcloud.cmd's Python probe prints noise even on success.
     return execSync("gcloud secrets versions access latest --secret=SMOKE_TOKEN --project=frankirocks", {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "inherit"],
+      stdio: ["ignore", "pipe", "pipe"],
     }).trim();
-  } catch {
+  } catch (error) {
+    console.error(String(error.stderr || error.message));
     return "";
   }
 }
