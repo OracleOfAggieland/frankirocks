@@ -1,0 +1,17 @@
+{
+  "name": "@franki/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@franki/core": "*",
+    "firebase-admin": "14.5.0",
+    "openai": "7.45.1"
+  }
+}

@@ -1,0 +1,31 @@
+# Firebase App Hosting settings for the franki-web backend.
+# https://firebase.google.com/docs/app-hosting/configure
+runConfig:
+  cpu: 1
+  memoryMiB: 1024
+  concurrency: 80
+  minInstances: 0 # raise to 1 while judges are active (Dec 14 to Jan 29)
+  maxInstances: 4
+
+env:
+  # Model IDs are config, not code, so a week-1 eval can swap them without a rebuild.
+  - variable: FRANKI_VOICE_MODEL
+    value: gpt-realtime-2.1
+  - variable: FRANKI_BRAIN_MODEL
+    value: gpt-6.1-terra
+  - variable: FRANKI_ESCALATE_MODEL
+    value: gpt-6.1-sol
+  - variable: FRANKI_BG_MODEL
+    value: gpt-6-luna
+  - variable: FRANKI_EMBED_MODEL
+    value: text-embedding-3-small
+
+  # Secrets come from Secret Manager and exist only at runtime, never in the build.
+  - variable: OPENAI_API_KEY
+    secret: OPENAI_API_KEY
+    availability:
+      - RUNTIME
+  - variable: SMOKE_TOKEN
+    secret: SMOKE_TOKEN
+    availability:
+      - RUNTIME
