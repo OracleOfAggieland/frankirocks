@@ -10,7 +10,8 @@ import OpenAI from "openai";
 setGlobalOptions({
   region: "us-central1",
   // Only this service account may use the limb-token key, so the web backend can never decrypt tokens.
-  serviceAccount: "franki-functions@",
+  // Spelled out in full: the CLI's secret-access step rejects the "name@" shorthand.
+  serviceAccount: "franki-functions@frankirocks.iam.gserviceaccount.com",
   maxInstances: 2,
 });
 
