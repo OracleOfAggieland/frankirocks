@@ -40,12 +40,21 @@ npm run lint && npm run typecheck && npm run build
 
 ## Deploy
 
+Two secrets live in Secret Manager, and `apps/web/apphosting.yaml` already lists both. Set each one once, and say yes when the CLI offers to grant the `franki-web` backend access:
+
 ```bash
-npm run deploy                  # Firestore rules, Functions and App Hosting
-SMOKE_TOKEN=... npm run smoke   # checks the live backend without spending audio minutes
+npx -y firebase-tools@15.34.2 apphosting:secrets:set OPENAI_API_KEY
+npx -y firebase-tools@15.34.2 apphosting:secrets:set SMOKE_TOKEN    # any long random string
 ```
 
-`POST /api/health` (with the smoke token) checks Firestore, the OpenAI key, Realtime client-secret minting, and the `heartbeat` function's last run.
+Then:
+
+```bash
+npm run deploy   # Firestore rules, Functions and App Hosting
+npm run smoke    # checks the live backend without spending audio minutes
+```
+
+`npm run smoke` reads `SMOKE_TOKEN` from Secret Manager with your gcloud login unless the variable is set. It calls `POST /api/health`, which checks Firestore, the OpenAI key, Realtime client-secret minting, and the `heartbeat` function's last run.
 
 ## License
 
