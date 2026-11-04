@@ -1,0 +1,180 @@
+{
+  "name": "franki-builder",
+  "description": "Builds Franki's spec tasks. Can edit the repo, run tests and commit locally. Cannot read secrets, push, deploy or change cloud settings.",
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "read",
+    "write",
+    "grep",
+    "glob",
+    "list",
+    "ls",
+    "search",
+    "str_replace",
+    "strReplace",
+    "replace",
+    "replace_in_file",
+    "edit",
+    "edit_file",
+    "fs_edit",
+    "fs_replace",
+    "shell",
+    "execute_bash",
+    "execute_cmd",
+    "run_command"
+  ],
+  "toolsSettings": {
+    "shell": {
+      "deniedCommands": [
+        ".*git push.*",
+        ".*git remote.*",
+        ".*git config.*",
+        ".*git reset --hard.*",
+        ".*git clean.*",
+        ".*git merge.*",
+        ".*git rebase.*",
+        ".*gh pr .*",
+        ".*gh api.*",
+        ".*gh repo.*",
+        ".*gh secret.*",
+        ".*firebase deploy.*",
+        ".*firebase apphosting.*",
+        ".*firebase auth.*",
+        ".*firebase firestore.*",
+        ".*firebase functions.*",
+        ".*firebase login.*",
+        ".*firebase use.*",
+        ".*gcloud .*",
+        ".*curl .*",
+        ".*wget .*",
+        ".*Invoke-WebRequest.*",
+        ".*Invoke-RestMethod.*",
+        ".*iwr .*",
+        ".*irm .*",
+        ".*\\.env\\.local.*",
+        ".*printenv.*",
+        ".*env:OPENAI.*",
+        ".*env:FRANKI_ID.*",
+        ".*-ChildItem env:.*",
+        ".*gci env:.*",
+        ".*dir env:.*",
+        ".*ls env:.*",
+        ".*setx .*",
+        ".*winget .*",
+        ".*choco .*",
+        ".*npm i -g.*",
+        ".*npm install -g.*",
+        ".*npm publish.*",
+        ".*Remove-Item.*-Recurse.*",
+        ".*rm -rf.*"
+      ]
+    },
+    "fs_read": {
+      "deniedPaths": [
+        "**/.env*"
+      ]
+    },
+    "read": {
+      "deniedPaths": [
+        "**/.env*"
+      ]
+    },
+    "fs_write": {
+      "deniedPaths": [
+        "**/.env.local"
+      ]
+    },
+    "write": {
+      "deniedPaths": [
+        "**/.env.local"
+      ]
+    }
+  },
+  "permissions": {
+    "rules": [
+      {
+        "capability": "shell",
+        "match": [
+          "*git push*",
+          "*git remote*",
+          "*git config*",
+          "*git reset --hard*",
+          "*git clean*",
+          "*git merge*",
+          "*git rebase*",
+          "*gh pr *",
+          "*gh api*",
+          "*gh repo*",
+          "*gh secret*",
+          "*firebase deploy*",
+          "*firebase apphosting*",
+          "*firebase auth*",
+          "*firebase firestore*",
+          "*firebase functions*",
+          "*firebase login*",
+          "*firebase use*",
+          "*gcloud *",
+          "*curl *",
+          "*wget *",
+          "*Invoke-WebRequest*",
+          "*Invoke-RestMethod*",
+          "*iwr *",
+          "*irm *",
+          "*.env.local*",
+          "*printenv*",
+          "*env:OPENAI*",
+          "*env:FRANKI_ID*",
+          "*-ChildItem env:*",
+          "*gci env:*",
+          "*dir env:*",
+          "*ls env:*",
+          "*setx *",
+          "*winget *",
+          "*choco *",
+          "*npm i -g*",
+          "*npm install -g*",
+          "*npm publish*",
+          "*Remove-Item*-Recurse*",
+          "*rm -rf*"
+        ],
+        "effect": "deny"
+      },
+      {
+        "capability": "fs_read",
+        "match": [
+          "**/.env*",
+          "**/.env*/**"
+        ],
+        "effect": "deny"
+      },
+      {
+        "capability": "fs_write",
+        "match": [
+          "**/.env.local"
+        ],
+        "effect": "deny"
+      },
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_write",
+        "effect": "allow"
+      },
+      {
+        "capability": "shell",
+        "effect": "allow"
+      }
+    ]
+  },
+  "kiroUpgrade": {
+    "revision": 2,
+    "fingerprint": "sha256:91e1f0f3866bfddcba9ca4336961cdb557d79923ffc94bfa89f798ec1e74e8d2",
+    "source": "sha256:6a2ed2cba762c0d2caabf8e3b07e532f018ed8d6b19890affa6df6198e5bece0"
+  }
+}
