@@ -53,6 +53,17 @@ describe("resolveLineage", () => {
     expect(kinds(r)).toEqual(["spanQuoteMismatch", "spanQuoteMismatch", "missingEvidence"]);
   });
 
+  it("an empty Span [n, n) with quote '' is a Span quote mismatch", () => {
+    const r = resolveLineage({ memory, evidence: map, hasher, spans: [{ eid: EID, fieldPath: "text", start: 3, end: 3, quote: "" }] });
+    expect(kinds(r)).toEqual(["spanQuoteMismatch"]);
+  });
+
+  it("an empty root Slice [n, n) is a Slice hash mismatch, even with the hash of ''", () => {
+    const empty = { ...slice, start: 3, end: 3, contentHash: hasher.sha256(new TextEncoder().encode("")) };
+    const m = { ...memory, rootSlices: [empty], rootKeys: [rootKey(empty, hasher)] };
+    expect(kinds(resolveLineage({ memory: m, evidence: map, hasher }))).toEqual(["sliceHashMismatch"]);
+  });
+
   it("root key mismatch", () => {
     expect(kinds(resolveLineage({ memory: { ...memory, rootKeys: [testId("x")] }, evidence: map, hasher }))).toEqual(["rootKeyMismatch"]);
     expect(kinds(resolveLineage({ memory: { ...memory, rootKeys: [] }, evidence: map, hasher }))).toEqual(["rootKeyMismatch"]);

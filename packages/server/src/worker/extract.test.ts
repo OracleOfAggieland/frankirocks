@@ -111,6 +111,7 @@ describe("ExtractV1 extractor", () => {
       ["a quote that differs from the text", (t: CommittedTurn) => span(t, 0, 6, "My cat")],
       ["an end past the text", (t: CommittedTurn) => span(t, 10, 99, t.text.slice(10))],
       ["start after end", (t: CommittedTurn) => ({ ...span(t, 6, 3), quote: "" })],
+      ["an empty range [n, n) quoting ''", (t: CommittedTurn) => span(t, 3, 3, "")],
       ["an eid not in the packet", (t: CommittedTurn) => ({ ...span(t, 0, 6), eid: testId("ghost") })],
       ["a field not in the packet", (t: CommittedTurn) => ({ ...span(t, 0, 6), fieldPath: "subject" as const })],
     ])("rejects an Item with %s and still commits the other Items", async (_label, bad) => {

@@ -305,6 +305,8 @@ const WRITE_ACTS = new Set(["statement", "intention", "promise_mine", "soft_pref
 
 /** Checks one Span against the packet (R22.5, R24.7). Returns the verified text, or null. */
 export function verifySpan(span: Infer<typeof Span>, ctx: PlanContext): string | null {
+  // An empty range [n, n) quotes no Evidence text, so it cannot carry lineage (KC03).
+  if (span.start === span.end) return null;
   const supplied = ctx.packet.get(span.eid);
   if (supplied === undefined || !supplied.fields.includes(span.fieldPath)) return null;
   const text = evidenceFieldText(supplied.evidence, span.fieldPath);

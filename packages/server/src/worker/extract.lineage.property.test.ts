@@ -39,7 +39,9 @@ type SpanSpec =
   | { kind: "badEid"; a: number; b: number }
   | { kind: "otherJobEid"; a: number; b: number }
   | { kind: "surrogateSplit" }
-  | { kind: "wrongField"; a: number; b: number };
+  | { kind: "wrongField"; a: number; b: number }
+  /** An exact but empty range [n, n) with quote "": it quotes no Evidence text. */
+  | { kind: "emptySpan"; a: number };
 
 const frac = fc.double({ min: 0, max: 1, noNaN: true });
 const spanSpecArb: fc.Arbitrary<SpanSpec> = fc.oneof(
@@ -50,6 +52,7 @@ const spanSpecArb: fc.Arbitrary<SpanSpec> = fc.oneof(
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("otherJobEid" as const), a: frac, b: frac }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("surrogateSplit" as const) }) },
   { weight: 1, arbitrary: fc.record({ kind: fc.constant("wrongField" as const), a: frac, b: frac }) },
+  { weight: 1, arbitrary: fc.record({ kind: fc.constant("emptySpan" as const), a: frac }) },
 );
 
 const itemSpecArb = fc.record({
@@ -89,12 +92,19 @@ const opsArb = fc.array(opArb, { minLength: 1, maxLength: 50 });
 // ---------------------------------------------------------------------------------------------
 // Turning specs into concrete Spans against the job's Evidence text
 
+/** A non-empty range inside `text` (text is never empty) that splits no surrogate pair. Empty ranges are `emptySpan`. */
 function range(text: string, a: number, b: number): [number, number] {
-  let start = Math.min(text.length, Math.floor(a * text.length));
-  let end = start + Math.floor(b * (text.length - start));
+  let start = Math.min(text.length - 1, Math.floor(a * text.length));
+  let end = start + 1 + Math.floor(b * (text.length - start - 1));
   if (splitsSurrogate(text, start)) start -= 1;
   if (splitsSurrogate(text, end)) end += 1;
   return [start, Math.min(end, text.length)];
+}
+
+/** An empty range [n, n) at a position that splits no surrogate pair. */
+function emptyAt(text: string, a: number): number {
+  const n = Math.min(text.length, Math.floor(a * text.length));
+  return splitsSurrogate(text, n) ? n - 1 : n;
 }
 
 function concreteSpan(spec: SpanSpec, turn: CommittedTurn, other: CommittedTurn | undefined): SpanDraft {
@@ -130,6 +140,10 @@ function concreteSpan(spec: SpanSpec, turn: CommittedTurn, other: CommittedTurn 
     case "wrongField": {
       const [s, e] = range(t, spec.a, spec.b);
       return { eid: turn.eid, fieldPath: "subject", start: s, end: e, quote: t.slice(s, e) };
+    }
+    case "emptySpan": {
+      const s = emptyAt(t, spec.a);
+      return { eid: turn.eid, fieldPath: "text", start: s, end: s, quote: "" };
     }
   }
 }

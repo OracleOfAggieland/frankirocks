@@ -4,11 +4,14 @@
  *
  * Checks, each labeled:
  *   missingEvidence    a root Slice or Span names Evidence that is absent or belongs to another Owner
- *   sliceHashMismatch  a root Slice's contentHash is not the hash of the Evidence text at its field and range
- *   spanQuoteMismatch  a Span's quote is not the LF-normalized Evidence text at its field and range
+ *   sliceHashMismatch  a root Slice's contentHash is not the hash of the Evidence text at its field and range,
+ *                      or the root Slice's range is empty (start === end)
+ *   spanQuoteMismatch  a Span's quote is not the LF-normalized Evidence text at its field and range, or the
+ *                      Span's range is empty (start === end, so it quotes no Evidence text)
  *   rootKeyMismatch    rootKeys[i] is not H(rootSlices[i]), or the two arrays differ in length
  *   missingDependsOn   a root Slice's eid has no `e:<eid>` entry in dependsOn
- * An empty `rootSlices` or `dependsOn` is reported as a failure too (a Memory must have lineage).
+ * An empty `rootSlices` or `dependsOn` is reported as a failure too (a Memory must have lineage). An empty range is
+ * a failure because a Memory must resolve to Evidence text, and `[n, n)` resolves to none (KC03, never stubbed).
  */
 import { evidenceFieldText } from "./evidence";
 import { type Hasher, rootKey } from "./ids";
@@ -80,7 +83,7 @@ export function resolveLineage(input: ResolveInput): LineageResult {
     }
     const fieldText = evidenceFieldText(evidence, slice.fieldPath);
     const text = fieldText !== null && slice.start !== null && slice.end !== null ? textAt(fieldText, slice.start, slice.end) : null;
-    if (fieldText === null || text === null || !sliceHashMatches(slice, fieldText, hasher)) {
+    if (fieldText === null || text === null || slice.start === slice.end || !sliceHashMatches(slice, fieldText, hasher)) {
       failures.push({ kind: "sliceHashMismatch", index, eid: slice.eid, on: "slice" });
       return;
     }
@@ -95,7 +98,7 @@ export function resolveLineage(input: ResolveInput): LineageResult {
     }
     const fieldText = evidenceFieldText(evidence, span.fieldPath);
     const text = fieldText === null ? null : textAt(fieldText, span.start, span.end);
-    if (text === null || text !== span.quote) {
+    if (text === null || span.start === span.end || text !== span.quote) {
       failures.push({ kind: "spanQuoteMismatch", index, eid: span.eid, on: "span" });
       return;
     }
