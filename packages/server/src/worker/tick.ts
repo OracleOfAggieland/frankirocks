@@ -17,6 +17,7 @@ import { paths } from "../store/paths";
 import type { StorePort } from "../store/port";
 import { drainExtractJobs } from "./drain";
 import { hangupAll, runHangupJob } from "./hangup";
+import { dueJobs } from "./jobs";
 
 const MINUTE_MS = 60_000;
 export const EXPIRY_BATCH = 100;
@@ -93,24 +94,6 @@ export async function requeueExpiredLeases(ctx: RouteContext): Promise<number> {
     });
   }
   return n;
-}
-
-/** Q17: due `queued` and `retry` jobs of a kind, oldest first. */
-export async function dueJobs(store: StorePort, uid: string, opsNow: number, kind: Job["kind"]): Promise<ID[]> {
-  const ids: ID[] = [];
-  for (const status of ["queued", "retry"] as const) {
-    const rows = await store.query<Job>(uid, {
-      collection: paths.collection(uid, "jobs"),
-      where: [
-        { field: "status", op: "==", value: status },
-        { field: "nextAttemptAt", op: "<=", value: tsFromMs(opsNow) },
-      ],
-      orderBy: { field: "nextAttemptAt", dir: "asc" },
-      limit: 100,
-    });
-    ids.push(...rows.filter((r) => r.data.kind === kind).map((r) => r.id));
-  }
-  return ids;
 }
 
 /** Q17 for hangup Jobs, then the extract drain. */

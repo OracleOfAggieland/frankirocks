@@ -17,3 +17,5 @@ export * from "./eligible";
 export * from "./spoken";
 export * from "./head";
 export * from "./admission";
+export * from "./schema/json-schema";
+export * from "./extract";

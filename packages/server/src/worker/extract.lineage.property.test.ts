@@ -153,6 +153,9 @@ async function listMemories(store: MemoryStore): Promise<StoredDoc<Memory>[]> {
   }
 }
 
+/** Memories checked across all runs of one property execution. */
+let storedTotal = 0;
+
 async function runOps(ops: Op[]): Promise<void> {
   const hasher = createHasher(FAKE_KEY);
   const store = new MemoryStore(hasher);
@@ -208,7 +211,9 @@ async function runOps(ops: Op[]): Promise<void> {
     }
   }
 
-  for (const doc of await listMemories(store)) {
+  const stored = await listMemories(store);
+  storedTotal += stored.length;
+  for (const doc of stored) {
     const memory = doc.data;
     const spans = producedBy.get(doc.id);
     expect(spans, `memory ${doc.id} has no known producing Item`).toBeDefined();
@@ -223,12 +228,15 @@ async function runOps(ops: Op[]): Promise<void> {
 }
 
 describe("lineage property", () => {
-  // RED against the task 11 stub, by design (R31.3). `it.fails` asserts that the property fails, so `npm test`
-  // stays green while the stub exists and turns red if the stub ever passes. Task 22 changes this to `it`.
-  it.fails(
+  // Was `it.fails` against the task 11 stub (red record in tasks.md task 11). Green against the task 22 extractor.
+  it(
     "every stored memory resolves to evidence spans",
     async () => {
+      storedTotal = 0;
       await fc.assert(fc.asyncProperty(opsArb, runOps), { numRuns: 1000 });
+      // Not vacuous: across the runs the extractor really stored Memories that were then checked.
+      // About 150 per 1,000 runs; most generated Items carry a bad span or a non-writing act or target.
+      expect(storedTotal).toBeGreaterThan(50);
     },
     120_000,
   );

@@ -84,3 +84,21 @@ export async function claimJob(store: StorePort, uid: string, jobId: ID, opsNow:
     return { jobId, token, generation, job: leased };
   });
 }
+
+/** Q17: due `queued` and `retry` jobs of a kind, oldest first. */
+export async function dueJobs(store: StorePort, uid: string, opsNow: number, kind: Job["kind"]): Promise<ID[]> {
+  const ids: ID[] = [];
+  for (const status of ["queued", "retry"] as const) {
+    const rows = await store.query<Job>(uid, {
+      collection: paths.collection(uid, "jobs"),
+      where: [
+        { field: "status", op: "==", value: status },
+        { field: "nextAttemptAt", op: "<=", value: tsFromMs(opsNow) },
+      ],
+      orderBy: { field: "nextAttemptAt", dir: "asc" },
+      limit: 100,
+    });
+    ids.push(...rows.filter((r) => r.data.kind === kind).map((r) => r.id));
+  }
+  return ids;
+}

@@ -70,8 +70,20 @@ export interface FakeTimers extends Timers {
 export function fakeTimers(clock: FakeClock): FakeTimers {
   const sleepers: { due: number; resolve: () => void }[] = [];
   return {
-    sleep(ms) {
-      return new Promise<void>((resolve) => sleepers.push({ due: clock.read().opsClock.now + Math.max(0, ms), resolve }));
+    sleep(ms, signal) {
+      return new Promise<void>((resolve) => {
+        if (signal?.aborted) return;
+        const sleeper = { due: clock.read().opsClock.now + Math.max(0, ms), resolve };
+        sleepers.push(sleeper);
+        signal?.addEventListener(
+          "abort",
+          () => {
+            const i = sleepers.indexOf(sleeper);
+            if (i >= 0) sleepers.splice(i, 1);
+          },
+          { once: true },
+        );
+      });
     },
     get pending() {
       return sleepers.length;

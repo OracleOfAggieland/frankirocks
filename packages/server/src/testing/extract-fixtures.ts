@@ -17,6 +17,7 @@ import {
   turnTextSlice,
 } from "@franki/core";
 import { commonFields, sampleEvidence, sampleJob, sampleMemory, sampleTurn } from "@franki/core/testing";
+import { ensureCoreDocs } from "../core-docs";
 import { evidenceId } from "../store/evidence";
 import { paths } from "../store/paths";
 import type { StorePort } from "../store/port";
@@ -35,6 +36,8 @@ export async function commitUserTurnForTest(
   clock: ClockPort,
   hasher: Hasher,
 ): Promise<CommittedTurn> {
+  // Like /api/turn: the Owner's core documents exist before any Turn commits (the extractor checks core/epoch).
+  await ensureCoreDocs(uid, { store, clock });
   const text = normalizeLF(rawText);
   const pair = clock.read();
   const ops = tsFromMs(pair.opsClock.now);

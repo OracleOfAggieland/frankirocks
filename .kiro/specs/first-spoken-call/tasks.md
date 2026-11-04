@@ -203,12 +203,14 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Witness: `packages/server/src/routes/turn.typed-reply.test.ts` › "reply arrives as one W note", "Fake_OpenAI request uses FRANKI_BRAIN_MODEL", "Extract_Job starts only after the response (scheduled)"
   - Commit: `feat(server): typed reply without a call`
 
-- [ ] 22. **[property]** Extractor (lineage property goes green)
+- [x] 22. **[property]** Extractor (lineage property goes green)
   - Requirements: R22.2–R22.11, R23.1–R23.12, R24.1, R24.2, R24.7 (KS01, KS06, KC03, KC04, KC05; Q03)
   - Depends on: 11, 19
-  - Estimate: 6 h · Actual: —
+  - Estimate: 6 h · Actual: 1.0 h
   - Witness: `worker/extract.test.ts` › request parameters, one repair then `retry`, `failed` after 3, span rejections, holds write ledger decisions, single-valued supersede, KS06 mismatch; `extract.authority.property.test.ts` › "T and M never write active or scheduled"; `extract.lineage.property.test.ts` now passes
-  - **Green record:** run the lineage property and write the result here. Runs: — · Passed: —
+  - **Green record:** run on 2026-11-03 against the real extractor, with the test changed from `it.fails` to `it`. Runs: 1,000 · Passed: yes, in about 1.3 to 2.7 s, three runs in a row. The first green run was vacuous: 0 Memories were stored, because `commitUserTurnForTest` wrote no core documents and the extractor's KS06 check then failed every job. The fixture now calls `ensureCoreDocs` first, as `/api/turn` does, and the property asserts that more than 50 Memories were stored and checked across the 1,000 runs (about 150 in practice). Mutation check: with the extractor's quote comparison removed, the property fails after 6 tests with `spanQuoteMismatch`. `npm run test:fast` took 7.1 s wall-clock (5.5 s in Vitest, 212 tests) against the 30 s limit (R3.5).
+  - Done: `core/extract.ts` (PREFIX and ExtractV1 literals, draft schemas, `ARGS_DRAFTS`, strict output JSON Schema from the validators via `core/schema/json-schema.ts`, packet build, envelope parse, pure `planItem`), `worker/extract.ts` (claim, call + one repair, KS06 check, Memories, Q03 supersede, hold and rejection decisions, usage entry), `worker/drain.ts` (Q17 extract jobs in sequence, 100 ms poll on leased jobs, expired leases requeued). Timers accept an AbortSignal, so finished deadlines leave no pending timer. The authority property (500 runs) also asserts that both U and T/M Memories were planned.
+  - Choices: Items are validated one by one inside the envelope, so one bad Item never discards the rest; an Item that fails the closed Item schema (for example a predicate outside the taxonomy) is a rejection with reason `invalidInput`. Holds use reason `unsupported`, `state:"blocked"`; rejections `state:"failed"`. Acts `promise_theirs` and `outcome` write nothing. An empty span `[n, n)` with quote `""` is accepted, since it is exact. The roster is empty and `lastTurns` is `[]`. A subject or entity argument other than `self` resolves to a code-derived ID `H("mention", type, normalized name)`, because no entity rows exist in this slice (see contract question 30). A lost lease commits nothing and leaves the job to its new holder, rather than requeueing it, so it cannot undo another worker's claim.
   - Commit: `feat(worker): ExtractV1 extractor`
 
 - [ ] 23. Drain, open race and route deadlines

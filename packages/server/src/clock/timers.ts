@@ -4,16 +4,18 @@
  * the test moves the fake clock past it.
  */
 export interface Timers {
-  /** Resolves after `ms` of opsClock time. */
-  sleep(ms: number): Promise<void>;
+  /** Resolves after `ms` of opsClock time. An aborted sleep never resolves and holds no timer. */
+  sleep(ms: number, signal?: AbortSignal): Promise<void>;
 }
 
 /** Live timers. `setTimeout` schedules a callback; it does not read the wall clock. */
 export const liveTimers: Timers = {
-  sleep: (ms) =>
+  sleep: (ms, signal) =>
     new Promise((resolve) => {
+      if (signal?.aborted) return;
       const t = setTimeout(resolve, Math.max(0, ms));
       (t as { unref?: () => void }).unref?.();
+      signal?.addEventListener("abort", () => clearTimeout(t), { once: true });
     }),
 };
 
@@ -25,15 +27,25 @@ export class DeadlineError extends Error {
 }
 
 /** Resolves with `work`, or rejects with DeadlineError once `ms` passes. The work itself is not cancelled. */
-export function withDeadline<T>(work: Promise<T>, ms: number, timers: Timers): Promise<T> {
-  return Promise.race([work, timers.sleep(ms).then(() => Promise.reject(new DeadlineError(ms)))]);
+export async function withDeadline<T>(work: Promise<T>, ms: number, timers: Timers): Promise<T> {
+  const stop = new AbortController();
+  try {
+    return await Promise.race([work, timers.sleep(ms, stop.signal).then(() => Promise.reject(new DeadlineError(ms)))]);
+  } finally {
+    stop.abort();
+  }
 }
 
 /** True when `work` settles within `ms`; false when the limit wins. The work keeps running either way. */
 export async function raceLimit(work: Promise<unknown>, ms: number, timers: Timers): Promise<boolean> {
+  const stop = new AbortController();
   const done = work.then(
     () => true,
     () => true,
   );
-  return Promise.race([done, timers.sleep(ms).then(() => false)]);
+  try {
+    return await Promise.race([done, timers.sleep(ms, stop.signal).then(() => false)]);
+  } finally {
+    stop.abort();
+  }
 }
