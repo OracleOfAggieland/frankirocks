@@ -16,10 +16,10 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
 
 ## Phase A: Kiro setup and guards (F0)
 
-- [ ] 1. Steering files
+- [x] 1. Steering files
   - Requirements: R1.1–R1.10
   - Depends on: none
-  - Estimate: 1.5 h · Actual: —
+  - Estimate: 1.5 h · Actual: 0.3 h
   - Witness: manual check. Steps: confirm `.kiro/steering/` holds exactly `product.md`, `tech.md`, `structure.md`, `memory-rules.md`, each with `inclusion: always`; compare every version string with `architecture-decision.md` and `.nvmrc`; confirm KC03 and KV12 are cited; confirm no secret values.
   - Create the branch `build/first-spoken-call` first.
   - Commit: `chore(kiro): add steering files`
