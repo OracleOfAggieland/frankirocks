@@ -1,5 +1,5 @@
 /**
- * The live OpenAIPort. Server-only; never constructed in tests (test/setup.ts blocks the network anyway).
+ * The live OpenAIPort. Server-only; never constructed in tests (tests/setup/setup.ts blocks the network anyway).
  * `responses.create` takes Responses API params and returns the normalized ResponsesResult.
  * `realtime.calls.hangup` posts to `/v1/realtime/calls/{id}/hangup`; call creation is added with the SDP proxy
  * (task 30).

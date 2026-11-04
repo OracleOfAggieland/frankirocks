@@ -62,7 +62,7 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Requirements: R5.1–R5.3, R5.6–R5.8, R31.1, R31.2
   - Depends on: 2
   - Estimate: 1.5 h · Actual: 0.5 h
-  - Witness: `scripts/import-boundaries.test.ts` › one case per forbidden specifier; `test/setup.test.ts` › "fetch throws", "net.connect throws"
+  - Witness: `scripts/import-boundaries.test.ts` › one case per forbidden specifier; `tests/setup/setup.test.ts` (moved from `test/` on the owner's request) › "fetch throws", "net.connect throws"
   - Add the Vitest setup file that blocks network access, and the Fake_OpenAI skeleton (`openai/fake.ts`) that records requests and returns scripted results.
   - Commit: `test: import boundaries and no-network harness`
 
