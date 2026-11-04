@@ -68,10 +68,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
 
 ## Phase B: contracts and store (F0)
 
-- [ ] 7. Primitive and record schemas
+- [x] 7. Primitive and record schemas
   - Requirements: R4.1, R4.3–R4.5, R4.8, R4.11 (KC01)
   - Depends on: 6
-  - Estimate: 4 h · Actual: —
+  - Estimate: 4 h · Actual: 0.3 h
+  - Done: validator kit `schema/v.ts`, `schema/primitives.ts`, `schema/predicates.ts` (Args<P>, value kinds, kind map), `schema/records.ts`, sample builders in `testing/samples.ts`. `TS` is the fixed-width RFC3339 UTC string (contract question 28). Ledger `request.response` accepts any object until task 8 installs the closed WireResult union.
   - Witness: `packages/core/src/schema/records.test.ts` › unknown key, each bound, `T?` null vs absent, valid record returns unchanged
   - Closed validators for `sN`, `i`, `Signed`, `ID`, `Hash`, `TS`, `Zone`, Slice, Span, Ref, C fields, Evidence, Memory, Session, Turn, the five core docs, Job and Ledger (C§1). Unit tests only; the round-trip property waits for task 12 (R31.3).
   - Commit: `feat(core): closed record schemas`

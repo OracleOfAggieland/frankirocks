@@ -490,6 +490,7 @@ The save hook runs `npm run test:fast`, which covers lineage, closed schemas and
 25. **Job "pending" (new):** R22.4 and C§5 say "pending", but the job status union has no `pending`. This design maps it to `retry` with `error` set, then `failed` after 3 attempts. "Done" maps to `complete`.
 26. **Deck re-issue (new):** C§6 Deck lasts 60 s and refreshes every 45 s, and the contract route returns `deck` as optional. Every state response now re-issues the Deck from the stored Head and current revisions, ignoring `core/bundle.expiresAt` (R13.3 as amended).
 27. **Generation (new):** the C§6 note "Speech/control increments generation" belongs to F2. Here `generation` stays 1 per Session, and reconnects open a new Session.
+28. **TS representation (new, task 7):** C§1 allows "Firestore Timestamp/RFC3339UTC". Both stores keep `TS` as the fixed-width RFC3339 UTC string `YYYY-MM-DDTHH:mm:ss.sssZ`, so a record reads back byte-identical from either store and string order equals time order for range queries (Q13, Q17, Q18, Q03). The Clock_Port's integer milliseconds convert through `tsFromMs`. Proposal for v3: name one stored form.
 
 ## Owner actions
 
