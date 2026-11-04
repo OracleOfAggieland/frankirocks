@@ -1,0 +1,8 @@
+{
+  "description": "Clock_Port implementation files: the only source files allowed to read wall-clock time (R2.1). Shared by the Guard_Hook and the static check.",
+  "files": [
+    "packages/server/src/clock/live-clock.ts",
+    "apps/web/src/client/clock.ts",
+    "functions/src/clock.ts"
+  ]
+}

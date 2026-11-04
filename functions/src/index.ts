@@ -6,6 +6,7 @@ import { logger, setGlobalOptions } from "firebase-functions";
 import { defineSecret, defineString } from "firebase-functions/params";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import OpenAI from "openai";
+import { opsNowMs } from "./clock";
 
 setGlobalOptions({
   region: "us-central1",
@@ -47,7 +48,7 @@ async function checkOpenAI(): Promise<boolean> {
 async function checkKms(): Promise<boolean> {
   try {
     const kms = new KeyManagementServiceClient();
-    const plaintext = Buffer.from(`heartbeat:${Date.now()}`);
+    const plaintext = Buffer.from(`heartbeat:${opsNowMs()}`);
     const [encrypted] = await kms.encrypt({ name: LIMB_TOKENS_KEY.value(), plaintext });
     const [decrypted] = await kms.decrypt({ name: LIMB_TOKENS_KEY.value(), ciphertext: encrypted.ciphertext });
     return Buffer.from(decrypted.plaintext ?? []).equals(plaintext);

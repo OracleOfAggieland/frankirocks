@@ -2,6 +2,7 @@ import { SMOKE } from "@franki/core";
 import { getApps, initializeApp } from "firebase-admin/app";
 import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import OpenAI from "openai";
+import { liveClock } from "./clock/live-clock";
 import type { HealthDeps } from "./health";
 
 /** Health dependencies backed by the real Firestore and OpenAI. Server-only. */
@@ -13,7 +14,7 @@ export function createLiveHealthDeps(apiKey: string | undefined = process.env.OP
   const smoke = db.collection(SMOKE.collection);
 
   return {
-    now: () => Date.now(),
+    now: () => liveClock().opsClock.now,
 
     async firestoreRoundTrip() {
       const ref = smoke.doc(SMOKE.webDoc);

@@ -24,10 +24,10 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Create the branch `build/first-spoken-call` first.
   - Commit: `chore(kiro): add steering files`
 
-- [ ] 2. Clock port, clock allow-list and static clock check
+- [x] 2. Clock port, clock allow-list and static clock check
   - Requirements: R2.1, R2.7–R2.9, R6.1, R6.2, R6.5
   - Depends on: 1
-  - Estimate: 2 h · Actual: —
+  - Estimate: 2 h · Actual: 0.5 h
   - Witness: `scripts/clock-guard.test.ts` › "flags Date.now outside the allow-list", "passes new Date(x)", "repo has zero violations"; `packages/server/src/clock/live-clock.test.ts`; fake clock tests in `packages/core/src/clock.test.ts`
   - Add `ClockPair` type (core), `clock/live-clock.ts` (server), `functions/src/clock.ts`, the fake Clock_Port, and `scripts/clock-allowlist.json` with those files plus `apps/web/src/client/clock.ts` (created in task 25; listed now).
   - Route `packages/server/src/live.ts:16` through `live-clock.ts` and `functions/src/index.ts:50` through `functions/src/clock.ts`. `health.ts:73` stays as is.
