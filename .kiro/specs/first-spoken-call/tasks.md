@@ -213,10 +213,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Choices: Items are validated one by one inside the envelope, so one bad Item never discards the rest; an Item that fails the closed Item schema (for example a predicate outside the taxonomy) is a rejection with reason `invalidInput`. Holds use reason `unsupported`, `state:"blocked"`; rejections `state:"failed"`. Acts `promise_theirs` and `outcome` write nothing. An empty span `[n, n)` with quote `""` is accepted, since it is exact. The roster is empty and `lastTurns` is `[]`. A subject or entity argument other than `self` resolves to a code-derived ID `H("mention", type, normalized name)`, because no entity rows exist in this slice (see contract question 30). A lost lease commits nothing and leaves the job to its new holder, rather than requeueing it, so it cannot undo another worker's claim.
   - Commit: `feat(worker): ExtractV1 extractor`
 
-- [ ] 23. Drain, open race and route deadlines
+- [x] 23. Drain, open race and route deadlines
   - Requirements: R14.5, R22.12, R11.2, R13.6
   - Depends on: 18, 22
-  - Estimate: 2.5 h · Actual: —
+  - Estimate: 2.5 h · Actual: 0.2 h
+  - Done: the mechanism landed with tasks 18 and 22 (open races `drainExtractJobs` against 3,000 ms of opsClock and hands the loser to `schedule`; close's `afterClosed` ensures jobs and schedules a drain; `/api/turn` and `/api/session/state` only schedule). This task adds the witnesses. `deadlines.test.ts`: with a queued Extract_Job and Fake_OpenAI never answering, state returns in under 1.5 s with its tick still pending, and open returns at 3,000 ms (≥ the drain limit, < 5 s) with the job still `leased`; the background drain later leaves it `retry`/`DEPENDENCY` after both 10 s deadlines. `memory-e2e.test.ts` covers R22.12 twice: once with the scheduled extraction run, and once with no scheduled work ever run, where session open's own drain gets the Memory into the next Head.
   - Witness: `packages/server/src/routes/deadlines.test.ts` › "state returns within 1.5 s and open within 5 s when Fake_OpenAI never answers"; `routes/memory-e2e.test.ts` › "commit, extract, close, open: Memory is in the Head" (R22.12)
   - Commit: `feat(worker): job drain and bounded open wait`
 
