@@ -15,3 +15,4 @@ export * from "./lineage";
 export * from "./time";
 export * from "./eligible";
 export * from "./spoken";
+export * from "./head";

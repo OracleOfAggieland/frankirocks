@@ -160,10 +160,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Witness: `packages/core/src/eligible.test.ts` › one test per implemented deny reason plus `ok`; `spoken.test.ts`
   - Commit: `feat(core): eligible and spokenGrade`
 
-- [ ] 17. **[property]** Head compiler
+- [x] 17. **[property]** Head compiler
   - Requirements: R26.1–R26.9, R26.12, R26.13, R28.3
   - Depends on: 16
-  - Estimate: 3 h · Actual: —
+  - Estimate: 3 h · Actual: 0.4 h
+  - Done: `core/head.ts`. Input is `{memories, ec, snapshot, rules, clock, tokenCap?}`: the EC and Snapshot are what `eligible` and Spoken_Grade need, so they count as the "core state" input of R26.1. Returns the Head plus its `lines` (section, text, ref), which the lineage property checks. Memory lines render as `- predicate: value`. Empty sections have no heading and 0 tokens; `rules` shows "No hard rules recorded.". The 128-ref cap uses the same drop order as the token cap. `tokenCap` (contracts §7 `compileHead(..., tokenCap:3500)`, never above 3,500) lets the unit tests exercise the drop order and R26.6, because real enum-valued people and apply lines cannot reach 3,500 tokens. Properties: 200 runs each.
   - Witness: `packages/core/src/head.test.ts` › drop order, ten sections, absolute date; `head.property.test.ts` › "determinism", "every know line traces to an eligible S0/S1 ref"
   - Commit: `feat(core): compileHead with properties`
 
