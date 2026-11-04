@@ -58,10 +58,10 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Add `scripts/sync-local-env.mjs` with pure `parsePlainEnv`, add `predev` to `apps/web/package.json`, add the `yaml` dev dependency in the repo. Add a `.gitignore` pattern only if `check-ignore` says the file is not ignored.
   - Commit: `feat(dev): sync plain apphosting values for next dev`
 
-- [ ] 6. Import-boundary check and test harness
+- [x] 6. Import-boundary check and test harness
   - Requirements: R5.1–R5.3, R5.6–R5.8, R31.1, R31.2
   - Depends on: 2
-  - Estimate: 1.5 h · Actual: —
+  - Estimate: 1.5 h · Actual: 0.5 h
   - Witness: `scripts/import-boundaries.test.ts` › one case per forbidden specifier; `test/setup.test.ts` › "fetch throws", "net.connect throws"
   - Add the Vitest setup file that blocks network access, and the Fake_OpenAI skeleton (`openai/fake.ts`) that records requests and returns scripted results.
   - Commit: `test: import boundaries and no-network harness`
