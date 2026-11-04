@@ -48,6 +48,12 @@ export class FakeOpenAI implements OpenAIPort {
     return this;
   }
 
+  /** Discards any queued results for an endpoint that were not used. */
+  drain(endpoint: OpenAIEndpoint): this {
+    this.queues.delete(endpoint);
+    return this;
+  }
+
   /** Requests sent to one endpoint, in order. */
   requestsTo(endpoint: OpenAIEndpoint): RecordedRequest[] {
     return this.requests.filter((r) => r.endpoint === endpoint);

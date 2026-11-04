@@ -11,3 +11,4 @@ export * from "./ids";
 export * from "./lexicon";
 export * from "./slices";
 export * from "./evidence";
+export * from "./lineage";

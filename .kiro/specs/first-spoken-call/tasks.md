@@ -103,13 +103,15 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Witness: `packages/server/src/store/conformance.ts` run by `memory-store.test.ts` › CAS abort writes nothing, rev+1, oversize, tenant mismatch, Evidence immutable, Memory value immutable, lineage write rejections, Q14/Q28 cursor order
   - Commit: `feat(store): store port, memory store, conformance suite`
 
-- [ ] 11. **[property]** Lineage property, written first and run red
+- [x] 11. **[property]** Lineage property, written first and run red
   - Requirements: R24.4–R24.6, R31.3 (KC03, W-LINEAGE)
   - Depends on: 6, 9, 10
-  - Estimate: 2.5 h · Actual: —
+  - Estimate: 2.5 h · Actual: 0.4 h
   - Witness: `packages/server/src/worker/extract.lineage.property.test.ts` › "every stored memory resolves to evidence spans" (1,000 runs)
   - Write `core/lineage.ts` (pure resolver, unit-tested) and the property over 1–50 ops (commits, job runs, retries, Fake_OpenAI results with bad quotes, ranges and eids). `runExtractJob` exists only as a stub that writes Memories without verification, so the property fails.
-  - **Red record:** run it, and write the failing seed and counterexample here before committing. Seed: — · Counterexample: —
+  - **Red record:** run on 2026-11-03 against the stub in `worker/extract.ts`. Result: "Property failed after 32 tests", shrunk 15 times; replaying the seed and path reproduces it. Seed: `-1410336256`, path `31:1:0:1:1:1:2:4:3:3:3:3:3:3:3:3` · Counterexample: `[{"kind":"commit","text":"a"},{"kind":"retry","outputs":[{"kind":"items","items":[{"act":"statement","target":"new","spans":[{"kind":"badQuote","a":0,"b":0}]}]},{"kind":"refusal"}]},{"kind":"retry","outputs":[{"kind":"items","items":[]},{"kind":"items","items":[]}]}]`. The stub stored a Memory from an Item whose Span `[0,0)` quoted `"!"`; the root Slice hash is correct for the empty range, so the store's W-LINEAGE check passed, and `resolveLineage` reported `spanQuoteMismatch` on span 0. An earlier run of the first draft (before `retry` was changed to mean "run the last job again") failed the same way: seed `-538046718`.
+  - The test is committed as `it.fails`, so `npm test` passes while the stub exists and would fail if the stub ever satisfied the property. Task 22 must change it to `it` and record the green run.
+  - Done: the property checks each stored Memory against the Spans of the Item that produced it, found through the design's Memory ID `H("mem", jobId, itemIndex)`. A Memory with any other ID fails as having no known producer. Fixtures in `server/testing/extract-fixtures.ts`; normalized Responses result type in `openai/responses.ts`; `FakeOpenAI.drain`.
   - Commit: `test(lineage): lineage property (red)`
 
 - [ ] 12. **[property]** Schema round-trip and slice-hash properties

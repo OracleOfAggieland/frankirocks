@@ -393,6 +393,7 @@ export const LINEAGE_FAILURES = [
   "missingDependsOn",
 ] as const;
 export const LineageFailureKind = oneOf(LINEAGE_FAILURES);
+export type LineageFailureKind = Infer<typeof LineageFailureKind>;
 
 export const DebugLineage = obj({
   ok: bool,
