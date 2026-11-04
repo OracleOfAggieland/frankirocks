@@ -1,12 +1,13 @@
 /**
  * The live OpenAIPort. Server-only; never constructed in tests (tests/setup/setup.ts blocks the network anyway).
  * `responses.create` takes Responses API params and returns the normalized ResponsesResult.
- * `realtime.calls.hangup` posts to `/v1/realtime/calls/{id}/hangup`; call creation is added with the SDP proxy
- * (task 30).
+ * `realtime.calls.create` posts the SDP offer to `/v1/realtime/calls` and returns the answer and `Location`;
+ * `realtime.calls.hangup` posts to `/v1/realtime/calls/{id}/hangup`.
  */
 import OpenAI from "openai";
 import { type Env, openaiApiKey } from "../config/env";
 import type { OpenAIEndpoint, OpenAIPort } from "./fake";
+import type { CreateCallBody, CreateCallResult } from "./realtime-calls";
 import type { ResponsesResult } from "./responses";
 
 interface SdkResponse {
@@ -46,8 +47,13 @@ export function liveOpenAI(env: Env = process.env): OpenAIPort {
           await sdk().post(`/realtime/calls/${encodeURIComponent(callId)}/hangup`);
           return null;
         }
-        default:
-          throw new Error(`${endpoint} is not available until the SDP proxy is built`);
+        case "realtime.calls.create": {
+          // Multipart `sdp` + `session` (the SDK encodes it); the answer is the SDP body, the call ID is in Location.
+          const { offerSdp, session } = body as CreateCallBody;
+          const res = await sdk().realtime.calls.create({ sdp: offerSdp, session: session as never });
+          const result: CreateCallResult = { answerSdp: await res.text(), location: res.headers.get("location") };
+          return result;
+        }
       }
     },
   };
