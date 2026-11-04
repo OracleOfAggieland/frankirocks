@@ -118,6 +118,11 @@ describe("each bound", () => {
     expect(validate(Memory, { ...sampleMemory(), gravity: 3 }).ok).toBe(true);
   });
   it("number[0,1]: uncertainSpeaker above 1", () => expectFail(Turn, { ...sampleTurn(), uncertainSpeaker: 1.01 }, "$.uncertainSpeaker"));
+  it("negative zero has no JSON form and is rejected (found by the round-trip property)", () => {
+    expectFail(Turn, { ...sampleTurn(), uncertainSpeaker: -0 }, "$.uncertainSpeaker");
+    expectFail(Turn, { ...sampleTurn(), seq: -0 }, "$.seq");
+    expect(validate(Turn, { ...sampleTurn(), uncertainSpeaker: 0 }).ok).toBe(true);
+  });
   it("enum value not in the contract", () => expectFail(Memory, { ...sampleMemory(), status: "pending" }, "$.status"));
   it("union tag not in the contract", () => expectFail(Memory, { ...sampleMemory(), when: { kind: "later" } }, "$.when.kind"));
   it("wrong type", () => {

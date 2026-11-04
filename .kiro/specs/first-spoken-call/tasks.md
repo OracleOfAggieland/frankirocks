@@ -114,10 +114,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Done: the property checks each stored Memory against the Spans of the Item that produced it, found through the design's Memory ID `H("mem", jobId, itemIndex)`. A Memory with any other ID fails as having no known producer. Fixtures in `server/testing/extract-fixtures.ts`; normalized Responses result type in `openai/responses.ts`; `FakeOpenAI.drain`.
   - Commit: `test(lineage): lineage property (red)`
 
-- [ ] 12. **[property]** Schema round-trip and slice-hash properties
+- [x] 12. **[property]** Schema round-trip and slice-hash properties
   - Requirements: R31.4 (round trip), R20.7, R31.5
   - Depends on: 11
-  - Estimate: 1.5 h · Actual: —
+  - Estimate: 1.5 h · Actual: 0.4 h
+  - Done: round trip over 29 types (the 11 record types and 18 wire types), 100 runs each, using arbitraries derived from the schemas (`core/testing/arbitrary.ts`; schemas now carry a `meta` description). The property found that `-0` passes validation but becomes `0` after JSON. Fix: number and integer validators reject `-0`, with a unit test. Slice hash: four properties (hash equals an independent SHA-256 of the LF-normalized range; CR variants hash the same; surrogate splits are rejected; a changed character no longer matches). The CR-variant property first failed on its own model (a lone CR break followed by an LF break is one CRLF), so its generated lines are non-empty and break-free; the normalizer was right.
   - Witness: `packages/core/src/schema/roundtrip.property.test.ts`; `packages/core/src/slices.property.test.ts`
   - Commit: `test(core): round-trip and slice-hash properties`
 

@@ -5,6 +5,10 @@
  * - Every key is required. `nullable(s)` is the contract's `T?`: the key must be present and may hold null.
  * - Validators never throw on bad input and never modify it. Success returns the input object itself.
  * - Errors carry the path of the first offending field, e.g. `$.fieldSlices[0].end`.
+ *
+ * Each schema also carries a `meta` description of its shape. Production code never reads it; the test-only
+ * generator in `../testing/arbitrary.ts` derives fast-check arbitraries from it, so generators and validators
+ * share one definition.
  */
 
 export interface Issue {
@@ -16,16 +20,34 @@ export type Validation<T> =
   | { ok: true; value: T }
   | { ok: false; error: "invalidInput"; path: string; message: string };
 
+export type Meta =
+  | { t: "str"; max: number; min: number; pattern: RegExp | undefined }
+  | { t: "literal"; value: string | number | boolean }
+  | { t: "oneOf"; values: readonly string[] }
+  | { t: "bool" }
+  | { t: "num"; min: number; max: number }
+  | { t: "int"; min: number; max: number }
+  | { t: "nullable"; inner: Schema<unknown> }
+  | { t: "arr"; item: Schema<unknown>; min: number; max: number }
+  | { t: "obj"; shape: Record<string, Schema<unknown>> }
+  | { t: "union"; variants: readonly Schema<unknown>[] }
+  | { t: "tagged"; key: string; variants: Record<string, Schema<unknown>> }
+  | { t: "refine"; base: Schema<unknown> }
+  | { t: "plainObject" }
+  | { t: "lazy"; get: () => Schema<unknown> }
+  | { t: "custom" };
+
 export interface Schema<T> {
   /** Phantom field for type inference only; never set. */
   readonly __type?: T;
+  readonly meta: Meta;
   check(value: unknown, path: string): Issue | null;
 }
 
 export type Infer<S> = S extends Schema<infer T> ? T : never;
 
-function schema<T>(check: (value: unknown, path: string) => Issue | null): Schema<T> {
-  return { check };
+function schema<T>(meta: Meta, check: (value: unknown, path: string) => Issue | null): Schema<T> {
+  return { meta, check };
 }
 
 const issue = (path: string, message: string): Issue => ({ path, message });
@@ -51,6 +73,11 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
 
 const hasOwn = (o: object, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
 
+/** A schema with a hand-written check (no generator metadata). */
+export function custom<T>(check: (value: unknown, path: string) => Issue | null): Schema<T> {
+  return schema({ t: "custom" }, check);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Scalars
 
@@ -64,7 +91,7 @@ export interface StrOptions {
 /** `sN`: a string of at most `max` UTF-16 code units. */
 export function str(max: number, opts: StrOptions = {}): Schema<string> {
   const min = opts.min ?? 0;
-  return schema((v, path) => {
+  return schema({ t: "str", max, min, pattern: opts.pattern }, (v, path) => {
     if (typeof v !== "string") return issue(path, "expected a string");
     if (v.length > max) return issue(path, `string longer than ${max} UTF-16 code units`);
     if (v.length < min) return issue(path, `string shorter than ${min} UTF-16 code units`);
@@ -74,23 +101,32 @@ export function str(max: number, opts: StrOptions = {}): Schema<string> {
 }
 
 export function literal<const L extends string | number | boolean>(expected: L): Schema<L> {
-  return schema((v, path) => (v === expected ? null : issue(path, `expected ${JSON.stringify(expected)}`)));
+  return schema({ t: "literal", value: expected }, (v, path) =>
+    v === expected ? null : issue(path, `expected ${JSON.stringify(expected)}`),
+  );
 }
 
 /** A closed string enum. */
 export function oneOf<const L extends readonly string[]>(values: L): Schema<L[number]> {
   const set = new Set<string>(values);
-  return schema((v, path) =>
+  return schema({ t: "oneOf", values }, (v, path) =>
     typeof v === "string" && set.has(v) ? null : issue(path, `expected one of ${values.join("|")}`),
   );
 }
 
-export const bool: Schema<boolean> = schema((v, path) => (typeof v === "boolean" ? null : issue(path, "expected a boolean")));
+export const bool: Schema<boolean> = schema({ t: "bool" }, (v, path) => (typeof v === "boolean" ? null : issue(path, "expected a boolean")));
 
-/** Any finite number (contract `number`; "finite only"). */
+/**
+ * Negative zero has no JSON form (`JSON.stringify(-0)` is `"0"`), so a record holding it could not round-trip
+ * (R31.4). Numbers reject it; writers store 0 instead.
+ */
+const isNegativeZero = (v: number) => Object.is(v, -0);
+
+/** Any finite number (contract `number`; "finite only"), excluding -0. */
 export function num(min = -Infinity, max = Infinity): Schema<number> {
-  return schema((v, path) => {
+  return schema({ t: "num", min, max }, (v, path) => {
     if (typeof v !== "number" || !Number.isFinite(v)) return issue(path, "expected a finite number");
+    if (isNegativeZero(v)) return issue(path, "negative zero is not allowed (no JSON form); use 0");
     if (v < min || v > max) return issue(path, `number outside [${min}, ${max}]`);
     return null;
   });
@@ -98,8 +134,9 @@ export function num(min = -Infinity, max = Infinity): Schema<number> {
 
 /** `int[a,b]`: a safe integer from a to b inclusive. */
 export function int(min: number, max: number): Schema<number> {
-  return schema((v, path) => {
+  return schema({ t: "int", min, max }, (v, path) => {
     if (typeof v !== "number" || !Number.isSafeInteger(v)) return issue(path, "expected a safe integer");
+    if (isNegativeZero(v)) return issue(path, "negative zero is not allowed (no JSON form); use 0");
     if (v < min || v > max) return issue(path, `integer outside [${min}, ${max}]`);
     return null;
   });
@@ -116,12 +153,12 @@ export const signed: Schema<number> = int(-Number.MAX_SAFE_INTEGER, Number.MAX_S
 
 /** `T?`: the key is required and holds T or null. */
 export function nullable<T>(inner: Schema<T>): Schema<T | null> {
-  return schema((v, path) => (v === null ? null : inner.check(v, path)));
+  return schema({ t: "nullable", inner }, (v, path) => (v === null ? null : inner.check(v, path)));
 }
 
 /** `A<T,n>` / `T[min..max]`. */
 export function arr<T>(item: Schema<T>, max: number, min = 0): Schema<T[]> {
-  return schema((v, path) => {
+  return schema({ t: "arr", item, min, max }, (v, path) => {
     if (!Array.isArray(v)) return issue(path, "expected an array");
     if (v.length > max) return issue(path, `array longer than ${max}`);
     if (v.length < min) return issue(path, `array shorter than ${min}`);
@@ -146,6 +183,7 @@ export function obj<S extends Shape>(shape: S): ObjSchema<S> {
   const keys = Object.keys(shape);
   return {
     shape,
+    meta: { t: "obj", shape },
     check(v, path) {
       if (!isPlainObject(v)) return issue(path, "expected an object");
       for (const k of Object.keys(v)) {
@@ -163,7 +201,7 @@ export function obj<S extends Shape>(shape: S): ObjSchema<S> {
 
 /** Untagged union. On failure, reports the issue that got deepest into the value. */
 export function union<const S extends readonly Schema<unknown>[]>(...variants: S): Schema<Infer<S[number]>> {
-  return schema((v, path) => {
+  return schema({ t: "union", variants }, (v, path) => {
     let best: Issue | null = null;
     for (const variant of variants) {
       const found = variant.check(v, path);
@@ -186,7 +224,7 @@ export function tagged<const K extends string, const M extends Record<string, Sc
   key: K,
   variants: M,
 ): Schema<Infer<M[keyof M]>> {
-  return schema((v, path) => {
+  return schema({ t: "tagged", key, variants }, (v, path) => {
     if (!isPlainObject(v)) return issue(path, "expected an object");
     const tag = v[key];
     if (typeof tag !== "string" || !hasOwn(variants, tag)) {
@@ -198,21 +236,22 @@ export function tagged<const K extends string, const M extends Record<string, Sc
 
 /** Adds a cross-field rule that runs after the base schema passes. */
 export function refine<T>(base: Schema<T>, rule: (value: T, path: string) => Issue | null): Schema<T> {
-  return schema((v, path) => base.check(v, path) ?? rule(v as T, path));
+  return schema({ t: "refine", base }, (v, path) => base.check(v, path) ?? rule(v as T, path));
 }
 
 /**
  * Any plain object. Only for a field whose closed shape depends on a sibling (Memory `args` on `predicate`,
  * Ledger `payload` on `kind`); the parent schema's `refine` then checks it closed.
  */
-export const plainObject: Schema<Record<string, unknown>> = schema((v, path) =>
+export const plainObject: Schema<Record<string, unknown>> = schema({ t: "plainObject" }, (v, path) =>
   isPlainObject(v) ? null : issue(path, "expected an object"),
 );
 
 /** Defers construction, for recursive or late-bound schemas. */
 export function lazy<T>(build: () => Schema<T>): Schema<T> {
   let built: Schema<T> | undefined;
-  return schema((v, path) => (built ??= build()).check(v, path));
+  const get = () => (built ??= build());
+  return schema({ t: "lazy", get }, (v, path) => get().check(v, path));
 }
 
 export { issue };
