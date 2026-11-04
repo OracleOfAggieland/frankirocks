@@ -5,8 +5,10 @@ import { createApiClient } from "../client/api";
 import { type AuthClient, type AuthState, createAuthClient } from "../client/auth";
 import { createBrowserClock } from "../client/clock";
 import { publicEnv, readFirebaseConfig } from "../client/firebase-config";
+import { DEBUG_POLL_MS, DebugPanelModel } from "../client/debug-panel";
 import { TypedTurns } from "../client/typed-turns";
 import { AuthPanel } from "./AuthPanel";
+import { DebugPanel } from "./DebugPanel";
 import { ConversationView, TypedInput } from "./TypedInput";
 
 /**
@@ -32,11 +34,12 @@ export function App() {
     });
   }, [config]);
 
-  // One controller per signed-in user; a new sign-in starts with no Session and clientSeq 0.
-  const typed = useMemo(() => {
+  // One set of controllers per signed-in user; a new sign-in starts with no Session and clientSeq 0.
+  const signedIn = useMemo(() => {
     if (tokens === null) return null;
     const api = createApiClient({ getToken: () => tokens.idToken(), fetch: (input, init) => fetch(input, init) });
-    return new TypedTurns({ api, clock: createBrowserClock() });
+    const clock = createBrowserClock();
+    return { typed: new TypedTurns({ api, clock }), debug: new DebugPanelModel({ api, clock }) };
   }, [tokens]);
 
   const signIn = async () => {
@@ -65,8 +68,35 @@ export function App() {
         onSignIn={() => void signIn()}
         onSignOut={() => void signOut()}
       />
-      {typed === null ? <SignedOutTyped /> : <TypedArea typed={typed} />}
+      {/* Signed out, the typed input shows disabled and the Debug_Panel is hidden (R9.4). */}
+      {signedIn === null ? <SignedOutTyped /> : <SignedInArea typed={signedIn.typed} debug={signedIn.debug} />}
     </main>
+  );
+}
+
+function SignedInArea({ typed, debug }: { typed: TypedTurns; debug: DebugPanelModel }) {
+  const t = useSyncExternalStore(typed.subscribe, typed.getSnapshot, typed.getSnapshot);
+  const d = useSyncExternalStore(debug.subscribe, debug.getSnapshot, debug.getSnapshot);
+  const [selected, setSelected] = useState<string | null>(null);
+  // Polls at most every 5 s while a Session is open (R29.7), which in this slice is the typed Session.
+  const live = t.sessionId !== null;
+  const turnsAcked = t.entries.length;
+
+  useEffect(() => {
+    void debug.refresh();
+  }, [debug, turnsAcked]);
+
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => void debug.refresh(), DEBUG_POLL_MS);
+    return () => clearInterval(timer);
+  }, [debug, live]);
+
+  return (
+    <>
+      <TypedArea typed={typed} />
+      <DebugPanel state={d} selectedMemoryId={selected} onSelectMemory={setSelected} onRefresh={() => void debug.refresh()} />
+    </>
   );
 }
 

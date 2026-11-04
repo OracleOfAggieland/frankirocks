@@ -254,11 +254,13 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Manual check (optional, not in the witness): in `npm run dev`, a typed line shows in the conversation view. It calls the brain model only when the server has `OPENAI_API_KEY`, so it is a paid call and belongs with task 35.
   - Commit: `feat(web): typed input`
 
-- [ ] 27. Debug_Panel
+- [x] 27. Debug_Panel
   - Requirements: R21.9, R29.3–R29.8, R29.10
   - Depends on: 24, 25
-  - Estimate: 3 h · Actual: —
+  - Estimate: 3 h · Actual: 0.6 h
   - Witness: `apps/web/src/components/DebugPanel.test.tsx` › turns in seq order with "none" marker, span highlight and mismatch marker, stale indicator after a failed fetch, stored HTML rendered as text, "no Head compiled" state
+  - Done: `client/debug-panel.ts` (`DebugPanelModel` loads all six sections, following `nextCursor` up to 10 pages each and flagging a section with more; every page is checked against the closed `DebugPage` schema; a failed or over-3 s fetch keeps the last good data with `stale` and its opsClock load time; a refresh during a load queues exactly one more load; pure `sortTurns` (R19.6 order), `highlight`, `ledgerTurnId`, `jobSource`), `components/DebugPanel.tsx`, wired into `App` while signed in and hidden while signed out. Sections: Turns (seq, role, clientSeq for user Turns, state, Evidence ID or "none"), Evidence, Memories (list with a lineage-mismatch marker; the selected Memory shows each field with where it came from, `dependsOn`, supporting Refs, and each root Slice highlighted in its Evidence text with a per-link mismatch marker), Extract jobs (ID, Turn through its Evidence, status, attempts, error), decisions (at, purpose, turnId, Permit kind, issuer, reason codes) and the Head (text, ten section token counts, total against 3,500, `headHash`, `selectedRefs`, or "No Head compiled yet."). Extra witnesses: a link whose highlighted text differs from the resolved text is marked; jobs and decision rows; Head details; refresh queueing.
+  - Choices: a stored Memory keeps no Spans, only one root Slice per verified Span over the same range, so the panel highlights the root Slices and marks a link as mismatched when the route reports a failure at that index, the resolved text is missing, or the highlighted text differs from it. The panel refreshes on sign-in, right after each acknowledged typed turn (R29.7's 1 s), and every 5 s while a Session is open; in this slice that is the typed Session, until task 32 adds calls. Each refresh makes at least six reads of `/api/debug/memory`.
   - Commit: `feat(web): debug panel`
 
 - [ ] 28. Checkpoint: typed memory path end to end, no paid calls
