@@ -31,6 +31,7 @@ import { drainExtractJobs } from "../worker/drain";
 import { extractJobId, extractJobRecord } from "../worker/extract-jobs";
 import { barrierError, parseError, scopeError, staleError } from "./errors";
 import { Unrecorded, mutation } from "./mutation";
+import { typedReplyNote } from "./typed-reply";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 
 type TurnReq = Infer<typeof TurnRequest>;
@@ -54,7 +55,7 @@ export function checkTurnRequest(req: TurnReq): TurnReq {
 }
 
 /** Up to 4 SafeTurns from the Session's earlier Turns that pass the sensitivity rule (design "Reply input"). */
-async function earlierSafeTurns(tx: Tx, uid: string, sessionId: string, beforeSeq: number, ctx: RouteContext): Promise<SafeTurn[]> {
+async function earlierSafeTurns(tx: Pick<Tx, "get" | "query">, uid: string, sessionId: string, beforeSeq: number, ctx: RouteContext): Promise<SafeTurn[]> {
   if (beforeSeq <= 1) return [];
   const rows = await tx.query<Turn>({
     collection: paths.turns(uid, sessionId),
@@ -77,6 +78,9 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
   const { uid, deps } = ctx;
   await ensureCoreDocs(uid, deps);
   return mutation(ctx, "turn", req.requestId, req, async (key) => {
+    // Typed reply with no call open: one Responses call before the commit, so the note is in the admitted payload.
+    const typedText = req.transcriptState === "final" ? normalizedTranscript(req.transcript)! : "";
+    const reply = await typedReplyNote(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx));
     for (let attempt = 1; ; attempt++) {
       try {
         const outcome = await deps.store.transaction(uid, async (tx) => {
@@ -116,8 +120,10 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           // Lower and not a recorded replay (begin already replays those): an error (R19.10).
           if (req.clientSeq < s.nextClientSeq) throw staleError("clientSeq");
 
-          const text = req.transcriptState === "final" ? normalizedTranscript(req.transcript)! : "";
+          const text = typedText;
           const cls = classifyTurn(req);
+          // A pasted (T) turn's postCommitControl Permit carries no S1+ note, so such a note is dropped.
+          const notes = reply === null || (cls.cls === "T" && reply.sens !== "S0") ? [] : [reply];
           const coreVals = { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev };
           const { turn, evidence } = userTurnRecords({ uid, sessionId: req.sessionId, req, text, cls, clock: pair, core: coreVals, hasher: deps.hasher });
 
@@ -157,7 +163,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
               core: coreVals,
               stamp,
               head: deck?.head ?? null,
-              notes: [],
+              notes,
               turns: deck?.turns ?? [],
               audioIds: turn.itemIds,
               toolOutput: null,
@@ -167,7 +173,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             deps,
           );
           const response: TurnRes =
-            admitted.kind === "permit" ? { ...base, deck, permit: admitted.permit } : { ...base, deck, status: "hold", permit: null };
+            admitted.kind === "permit" ? { ...base, deck, notes, permit: admitted.permit } : { ...base, deck, status: "hold", permit: null };
           await completeRequest(tx, key, response, ops);
           return { kind: "committed" as const, response, jobId };
         });

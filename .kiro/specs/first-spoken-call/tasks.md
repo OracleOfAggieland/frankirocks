@@ -195,10 +195,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Witness: `packages/server/src/admission/dev-admit.test.ts` › one case per `devPermitKind` row, "throws CONFIG in production and writes no ledger", "one decision ledger entry per outcome", payload hash matches `core/admission.ts`
   - Commit: `feat(admission): seam and devAdmit`
 
-- [ ] 21. Typed reply without a call
+- [x] 21. Typed reply without a call
   - Requirements: R18.4, R18.6; contract question 24
   - Depends on: 20
-  - Estimate: 1.5 h · Actual: —
+  - Estimate: 1.5 h · Actual: 0.3 h
+  - Done: `routes/typed-reply.ts`. "No call open" means `Session.callId` is null. The Responses call runs before the Turn transaction, so the note is inside the admitted payload hash and in `permit.noteIds`; it runs only when the request's clientSeq is the Session's next, and never on a replay. A failure, refusal or the 4 s deadline gives no note, and the Turn still commits. For a pasted (T) turn an S1+ note is dropped, because its `postCommitControl` Permit carries no S1+ note.
   - Witness: `packages/server/src/routes/turn.typed-reply.test.ts` › "reply arrives as one W note", "Fake_OpenAI request uses FRANKI_BRAIN_MODEL", "Extract_Job starts only after the response (scheduled)"
   - Commit: `feat(server): typed reply without a call`
 
