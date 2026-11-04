@@ -263,12 +263,14 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Choices: a stored Memory keeps no Spans, only one root Slice per verified Span over the same range, so the panel highlights the root Slices and marks a link as mismatched when the route reports a failure at that index, the resolved text is missing, or the highlighted text differs from it. The panel refreshes on sign-in, right after each acknowledged typed turn (R29.7's 1 s), and every 5 s while a Session is open; in this slice that is the typed Session, until task 32 adds calls. Each refresh makes at least six reads of `/api/debug/memory`.
   - Commit: `feat(web): debug panel`
 
-- [ ] 28. Checkpoint: typed memory path end to end, no paid calls
+- [x] 28. Checkpoint: typed memory path end to end, no paid calls
   - Requirements: R22.12, R29.1, R26.4; brief demo goal for typed input
   - Depends on: 23, 26, 27
-  - Estimate: 1 h · Actual: —
+  - Estimate: 1 h · Actual: 0.3 h
   - Witness: `packages/server/src/routes/typed-e2e.test.ts` › "typed line → extract → debug route shows the Memory with lineage → next open's Head contains it", Fake_OpenAI only
   - Run `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`. Fix anything red before voice work starts.
+  - Done: the witness goes through the routes only: open, a typed `/api/turn` (reply note and `slowOrdinary` Permit before any extraction), the scheduled extraction, then `GET /api/debug/memory` for every section (each page checked against `DebugPage`): the Turn with its Evidence ID, U Evidence, the job `complete`, the Memory with `lineage.ok` and link text `"Pip"` at `[17, 20)`, and the `devAdmit` decision. The open Session's Head lacks the Memory; after close and open the Deck's Head and the debug route's Head contain it, with `selectedRefs` naming it. Exactly two Fake_OpenAI calls. Extra: `apps/web/src/client/typed-to-server.test.ts` runs the browser `TypedTurns` and `DebugPanelModel` against the real routes through a fetch backed by `runRoute`, so the request bodies the browser builds are the ones the routes accept (test-only relative imports of server test helpers; the import-boundary check skips test files).
+  - **Checks (2026-11-03):** `npm test` 56 files, 613 tests passed; `npm run lint` and `npm run typecheck` exit 0; `npm run build` compiled; `npm run test:emulator` (Java 21) 2 files, 35 tests passed. No real OpenAI call ran.
   - Commit: `test: typed memory path end to end`
 
 ## Phase E: voice (F1, F5)
