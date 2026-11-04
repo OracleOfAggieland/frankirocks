@@ -187,10 +187,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Witness: `packages/server/src/routes/turn.test.ts` › pasted classification, empty/oversize rejected, Turn+Evidence+Extract_Job atomic, missing/failed transcript advances seq with no Evidence; `turn.serialization.property.test.ts` › "1–50 concurrent requests commit gap-free seq"
   - Commit: `feat(server): turn route and clientSeq serialization`
 
-- [ ] 20. Admission seam and `devAdmit`
+- [x] 20. Admission seam and `devAdmit`
   - Requirements: R17.1, R17.4–R17.10, R18.5 (KV02, KV03)
   - Depends on: 19
-  - Estimate: 2 h · Actual: —
+  - Estimate: 2 h · Actual: 0.3 h
+  - Done: `core/admission.ts` (`devPermitKind`, `admissionPayload`, `payloadHash`, `RECOVERY_LINE`, `turnRef`), `admission/dev-admit.ts`, `admission/seam.ts` (`admit` writes the one `decision` entry in the caller's transaction). `/api/turn` now admits inside the Turn transaction: the Permit hashes `{stamp, head, notes:[], turns: deck.turns, audioIds: item IDs, toolOutput:null, candidates:[], attendees:[]}`. In production `devAdmit` throws CONFIG before any work, the whole Turn transaction rolls back, and no ledger entry or Turn exists. A hold is recorded with status `hold` and `retryAfterMs:0` (a clientSeq hold has `retryAfterMs` ≥ 1). Holds happen only for a `postCommitControl` turn carrying an S1+ note, or a `recoveryOnly` turn with notes or tool output.
   - Witness: `packages/server/src/admission/dev-admit.test.ts` › one case per `devPermitKind` row, "throws CONFIG in production and writes no ledger", "one decision ledger entry per outcome", payload hash matches `core/admission.ts`
   - Commit: `feat(admission): seam and devAdmit`
 

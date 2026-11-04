@@ -16,7 +16,9 @@ import {
   TurnRequest,
   type TurnResponse,
   tsFromMs,
+  turnRef,
 } from "@franki/core";
+import { admit } from "../admission/seam";
 import { ensureCoreDocs, ownerClock, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck } from "../deck";
 import { completeRequest } from "../ledger/request";
@@ -143,7 +145,29 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             updatedAt: now,
           });
 
-          const response: TurnRes = { ...base, deck: head === null ? null : issueDeck(stamp, head, ops, safe) };
+          const deck = head === null ? null : issueDeck(stamp, head, ops, safe);
+          // Every reply's Permit comes from the Admission_Seam, which writes its decision ledger entry in this
+          // transaction (R17.1, R17.10). In production devAdmit throws CONFIG and nothing commits (R17.5).
+          const admitted = admit(
+            tx,
+            {
+              uid,
+              requestId: req.requestId,
+              turnRef: turnRef(req.turnId, req.sessionId, 1),
+              core: coreVals,
+              stamp,
+              head: deck?.head ?? null,
+              notes: [],
+              turns: deck?.turns ?? [],
+              audioIds: turn.itemIds,
+              toolOutput: null,
+              turn: req.source === "asr" ? { kind: "voice", transcriptState: req.transcriptState } : { kind: "typed", cls: cls.cls },
+              opsNow: ops,
+            },
+            deps,
+          );
+          const response: TurnRes =
+            admitted.kind === "permit" ? { ...base, deck, permit: admitted.permit } : { ...base, deck, status: "hold", permit: null };
           await completeRequest(tx, key, response, ops);
           return { kind: "committed" as const, response, jobId };
         });

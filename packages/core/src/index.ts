@@ -16,3 +16,4 @@ export * from "./time";
 export * from "./eligible";
 export * from "./spoken";
 export * from "./head";
+export * from "./admission";
