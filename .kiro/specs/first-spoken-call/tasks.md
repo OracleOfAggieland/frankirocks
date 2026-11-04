@@ -221,10 +221,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Witness: `packages/server/src/routes/deadlines.test.ts` › "state returns within 1.5 s and open within 5 s when Fake_OpenAI never answers"; `routes/memory-e2e.test.ts` › "commit, extract, close, open: Memory is in the Head" (R22.12)
   - Commit: `feat(worker): job drain and bounded open wait`
 
-- [ ] 24. `GET /api/debug/memory`
+- [x] 24. `GET /api/debug/memory`
   - Requirements: R28.4, R28.5, R29.1, R29.2, R29.9, R29.11, R29.12 (KC03, KC09; Q14, Q28, Q33)
   - Depends on: 15, 22
-  - Estimate: 2.5 h · Actual: —
+  - Estimate: 2.5 h · Actual: 0.4 h
+  - Done: `routes/debug-memory.ts` and `apps/web/src/app/api/debug/memory/route.ts` (GET). The production check is the first thing `run` does, so the only work before it is the guard's token check; no Store_Port call happens. Sections: `evidence`, `memories`, `jobs` page through Q28; `turns` reads the Session's Turns through Q14 in R19.6 order (default Session: `core/epoch.activeSessionId`); `ledger` pages admission and extraction `decision` entries through Q33, newest first; `head` returns `core/bundle`. A cursor is the last item's ID and must be the requesting Owner's record (else SCOPE); a malformed cursor or an unknown query parameter is PARSE. Admission entries report `issuer:"devAdmit"` and the Permit kind from `devPermitKind` on the stored Turn; extraction holds report null for both. Memory items carry `resolveLineage` links and failures. A page with S2 Memory or Evidence content logs `debug.s2reveal` with uid, IDs and ops time only.
   - Witness: `packages/server/src/routes/debug-memory.test.ts` › paging with no repeats, other tenant's ids rejected, S2 reveal logs ids only, refuses in production before any read, lineage mismatch flag
   - Commit: `feat(server): development debug route`
 
