@@ -36,9 +36,10 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
 - [ ] 3. Clock Guard_Hook
   - Requirements: R2.2–R2.6
   - Depends on: 2
-  - Estimate: 1 h · Actual: —
+  - Estimate: 1 h · Actual: 0.4 h
   - Witness: `scripts/clock-guard-hook.test.ts` › exit 2 outside allow-list, exit 0 inside, exit 0 without `Date.now(`, exit 2 on bad stdin
   - Write `scripts/clock-guard.mjs` reading the shared allow-list. Create the hook with the `createHook` tool (PreToolUse, matcher for `fs_write|str_replace|fs_append`).
+  - **Open (R2.5 not met):** `scripts/clock-guard.mjs` and its witness tests are done and pass. The `createHook` call (id `clock-guard`, PreToolUse, matcher `^(fs_write|str_replace|fs_append)$`, command `node scripts/clock-guard.mjs`, timeout 30 s) failed twice with "the permission request failed before it was answered", so `.kiro/hooks/clock-guard.json` does not exist yet. The file was not hand-written, to avoid bypassing the permission check. Rerun `createHook` with those values once the permission prompt works, then tick this task.
   - Commit: `chore(kiro): clock guard hook`
 
 - [ ] 4. Model config module and model-ID literal check
