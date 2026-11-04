@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { APPHOSTING_PATH, formatEnvFile, parsePlainEnv, summary } from "./sync-local-env.mjs";
+import { APPHOSTING_PATH, formatEnvFile, parsePlainEnv, summary, withQuotaProject } from "./sync-local-env.mjs";
 
 const SAMPLE = `
 runConfig:
@@ -59,6 +59,21 @@ describe("parsePlainEnv", () => {
         for (const value of values) expect(line).not.toContain(value);
       }),
     );
+  });
+
+  it("adds GOOGLE_CLOUD_QUOTA_PROJECT equal to the Firebase project ID, as a plain value", () => {
+    const entries = withQuotaProject(parsePlainEnv(SAMPLE));
+    expect(entries.find((e) => e.name === "GOOGLE_CLOUD_QUOTA_PROJECT")).toEqual({
+      name: "GOOGLE_CLOUD_QUOTA_PROJECT",
+      value: "demo-project",
+    });
+    expect(formatEnvFile(entries)).toContain("\nGOOGLE_CLOUD_QUOTA_PROJECT=demo-project\n");
+    expect(withQuotaProject(withQuotaProject(parsePlainEnv(SAMPLE))).filter((e) => e.name === "GOOGLE_CLOUD_QUOTA_PROJECT")).toHaveLength(1);
+    expect(withQuotaProject([{ name: "A", value: "x" }])).toEqual([{ name: "A", value: "x" }]);
+  });
+
+  it("does not put the quota project in apphosting.yaml", () => {
+    expect(readFileSync(APPHOSTING_PATH, "utf8")).not.toContain("GOOGLE_CLOUD_QUOTA_PROJECT");
   });
 
   it("writes NAME=value lines under a generated-file header", () => {

@@ -32,6 +32,17 @@ export function parsePlainEnv(yamlText) {
   return plain;
 }
 
+/**
+ * Pure: local only. Local Application Default Credentials are a user login with no quota project, which makes
+ * the Admin SDK's verifyIdToken(token, true) fail with auth/internal-error. Setting GOOGLE_CLOUD_QUOTA_PROJECT to
+ * the Firebase project ID fixes it. Hosted code runs as a service account, so apphosting.yaml does not get it.
+ */
+export function withQuotaProject(entries) {
+  const project = entries.find((e) => e.name === "FRANKI_FIREBASE_PROJECT_ID");
+  const rest = entries.filter((e) => e.name !== "GOOGLE_CLOUD_QUOTA_PROJECT");
+  return project ? [...rest, { name: "GOOGLE_CLOUD_QUOTA_PROJECT", value: project.value }] : rest;
+}
+
 function quote(value) {
   return /^[A-Za-z0-9_.:/@+-]*$/.test(value) ? value : JSON.stringify(value);
 }
@@ -52,7 +63,7 @@ export function summary(entries) {
 
 const isMain = process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
-  const entries = parsePlainEnv(readFileSync(APPHOSTING_PATH, "utf8"));
+  const entries = withQuotaProject(parsePlainEnv(readFileSync(APPHOSTING_PATH, "utf8")));
   writeFileSync(OUTPUT_PATH, formatEnvFile(entries));
   console.log(summary(entries));
 }
