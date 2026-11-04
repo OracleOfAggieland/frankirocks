@@ -6,3 +6,7 @@ export * from "./schema/primitives";
 export * from "./schema/predicates";
 export * from "./schema/records";
 export * from "./schema/wire";
+export * from "./text";
+export * from "./ids";
+export * from "./lexicon";
+export * from "./slices";

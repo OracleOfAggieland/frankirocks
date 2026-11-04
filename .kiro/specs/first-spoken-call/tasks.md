@@ -86,10 +86,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Head, Deck, SS, Stamp, StateAck, Permit, TurnRequest, TurnResponse, W, SafeTurn, Card, InspectItem, Error, every route body used in this slice, the recall tool, and the `DebugPage` type.
   - Commit: `feat(core): closed wire schemas`
 
-- [ ] 9. Text, slices and IDs
+- [x] 9. Text, slices and IDs
   - Requirements: R20.2–R20.4, R24.7 (ranges), C§1 ID
   - Depends on: 7
-  - Estimate: 2 h · Actual: —
+  - Estimate: 2 h · Actual: 0.2 h
+  - Done: hashing is injected through a `Hasher` interface (`id`, `sha256`) defined in `core/ids.ts`; `server/crypto.ts` backs it with `node:crypto`. A Slice root key is `Hasher.id(slice)`. Extra unit tests: `core/slices.test.ts` (typed classification, slice hashing, lexicon floors, canonical JSON).
   - Witness: `packages/core/src/text.test.ts` › CRLF and lone CR to LF, surrogate split rejected; `packages/server/src/crypto.test.ts` › HMAC ID is 43 chars with the fixed fake key
   - `text.ts`, `slices.ts`, `lexicon.ts`, `ids.ts` (core) and `crypto.ts` (server). Unit tests only; the slice-hash property waits for task 12.
   - Commit: `feat(core): text normalization, slices and ids`
