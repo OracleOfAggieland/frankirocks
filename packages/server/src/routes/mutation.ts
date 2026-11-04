@@ -9,6 +9,14 @@ import { paths } from "../store/paths";
 import { toRouteError } from "./errors";
 import type { RouteContext } from "./runtime";
 
+/**
+ * Thrown by `run` to answer without recording the response (for example `/api/turn` `hold`, which must leave
+ * the requestId free so the browser's retry with the same requestId runs again, R19.2).
+ */
+export class Unrecorded<R> {
+  constructor(readonly response: R) {}
+}
+
 export async function mutation<R>(
   ctx: RouteContext,
   route: RouteName,
@@ -25,6 +33,10 @@ export async function mutation<R>(
   try {
     return await run(key);
   } catch (error) {
+    if (error instanceof Unrecorded) {
+      await releaseRequest(uid, key, "STALE", deps.clock.read().opsClock.now, deps);
+      return error.response as R;
+    }
     await releaseRequest(uid, key, toRouteError(error).code, deps.clock.read().opsClock.now, deps);
     throw error;
   }

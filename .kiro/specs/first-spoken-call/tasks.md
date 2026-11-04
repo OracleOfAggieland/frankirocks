@@ -179,10 +179,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Hangups go through Fake_OpenAI. The extract drain is a no-op hook here; task 22 fills it.
   - Commit: `feat(server): session open, state, close`
 
-- [ ] 19. **[property]** `/api/turn` typed path and turn serialization
+- [x] 19. **[property]** `/api/turn` typed path and turn serialization
   - Requirements: R18.2, R18.3, R18.7, R18.8, R19.1–R19.11, R20.1, R20.3, R20.5, R20.6, R20.8–R20.10, R22.1 (KV12, KC01, KC02; Q14)
   - Depends on: 18
-  - Estimate: 4 h · Actual: —
+  - Estimate: 4 h · Actual: 0.5 h
+  - Done: `routes/turn.ts` (+ `apps/web/src/app/api/turn/route.ts`), `turns.ts` (Turn and Evidence builders, SafeTurns, classification), `Unrecorded` in `routes/mutation.ts` so `hold` and `stale` leave the requestId free for the retry. A lost compare-and-set reruns the request up to 8 times, then answers STALE. Earlier S0/S1 Turns go in `deck.turns` (at most 4). The Permit is still null here; task 20 adds `devAdmit`. Control and chip turns (`uiControl`, `chip`, `trustedTap`) are PARSE in this slice. New conformance case "turn serialization" (8 concurrent clientSeq compare-and-sets on one Session) runs on both stores. Serialization property: 100 runs over N = 1..50, about 5 s. Emulator: 35 passed.
   - Witness: `packages/server/src/routes/turn.test.ts` › pasted classification, empty/oversize rejected, Turn+Evidence+Extract_Job atomic, missing/failed transcript advances seq with no Evidence; `turn.serialization.property.test.ts` › "1–50 concurrent requests commit gap-free seq"
   - Commit: `feat(server): turn route and clientSeq serialization`
 

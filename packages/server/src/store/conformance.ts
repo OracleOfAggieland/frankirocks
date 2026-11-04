@@ -444,5 +444,42 @@ export function storeConformance(name: string, setup: () => Promise<ConformanceC
         await expectStoreError(store.query(UID, { collection: jobs, where: [], orderBy: { field: "__name__", dir: "asc" }, limit: 101 }), "invalidInput");
       });
     });
+
+    describe("turn serialization (R19.1, R19.7, R19.11; KV12)", () => {
+      it("concurrent clientSeq compare-and-sets on one Session commit gap-free seq, one Turn per clientSeq", async () => {
+        const sessionId = testId("ser");
+        const path = paths.session(UID, sessionId);
+        await store.transaction(UID, async (tx) => tx.create(path, sampleSession({ nextClientSeq: 1 })));
+        const n = 8;
+        const order = [5, 2, 8, 1, 7, 3, 6, 4];
+        const commit = async (seq: number) => {
+          for (let attempt = 0; attempt < 400; attempt++) {
+            try {
+              const done = await store.transaction(UID, async (tx) => {
+                const s = await tx.get<Session>(path);
+                if (s!.data.nextClientSeq !== seq) return false;
+                tx.create(paths.turn(UID, sessionId, testId(`ser-turn-${seq}`)), sampleTurn({ sessionId, seq }));
+                tx.update(path, { ...s!.data, nextClientSeq: seq + 1 });
+                return true;
+              });
+              if (done) return;
+            } catch (error) {
+              if (!(error instanceof StoreError) || error.code !== "staleRevision") throw error;
+            }
+            await new Promise((r) => setTimeout(r, 1 + ((seq * 7 + attempt) % 5)));
+          }
+          throw new Error(`seq ${seq} never committed`);
+        };
+        await Promise.all(order.slice(0, n).map(commit));
+        const turns = await store.query<Turn>(UID, {
+          collection: paths.turns(UID, sessionId),
+          where: [{ field: "seq", op: ">", value: 0 }],
+          orderBy: { field: "seq", dir: "asc" },
+          limit: 100,
+        });
+        expect(turns.map((t) => t.data.seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+        expect((await store.get<Session>(UID, path))?.data.nextClientSeq).toBe(n + 1);
+      });
+    });
   });
 }
