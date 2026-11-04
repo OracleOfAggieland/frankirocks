@@ -168,10 +168,13 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Witness: `packages/core/src/head.test.ts` › drop order, ten sections, absolute date; `head.property.test.ts` › "determinism", "every know line traces to an eligible S0/S1 ref"
   - Commit: `feat(core): compileHead with properties`
 
-- [ ] 18. Session open, state and close on the server
+- [x] 18. Session open, state and close on the server
   - Requirements: R11.1–R11.9, R13.3, R13.6, R14.2–R14.7, R26.10, R26.11 (KV09, KS07; Q13, Q28)
   - Depends on: 15, 17
-  - Estimate: 4 h · Actual: —
+  - Estimate: 4 h · Actual: 0.7 h
+  - Done: `routes/{open,state,close}.ts` with Next adapters under `apps/web/src/app/api/session/*/route.ts`; `sessions.ts` (Session builder, `beginCloseInTx`/`finishCloseInTx`, `afterClosed`); `head-build.ts` (Q28 Memory pages and their Evidence inside the open transaction); `deck.ts`; `worker/hangup.ts` (durable `hangup` Job, backoff 1/2/5/10/60 s, 404 = gone); `worker/tick.ts` (Q13 expiry close ≤100, Q17 hangup jobs then the extract drain, Q18 lease requeue); `worker/extract-jobs.ts` (`ensureExtractJobs`, Q14 Turn paging); `worker/jobs.ts` (lease claim); `worker/drain.ts` (no-op hook until task 22); `openai/realtime-calls.ts` and the live hangup call in `openai/live.ts`.
+  - Choices: a Session goes `minting` → `active` on its first state call. A blocked open returns the would-be `sessionId` with `generation:0`, because `OpenResponse.sessionId` is not nullable. The prior Session at open is closed after the commit (hangups capped at 1 s, then marked `closed` whatever the outcome, with a `hangup` Job on failure), per R11.3; a close route failure stays `closing` per R14.3. The close route's hangup budget is 1.2 s of the 1.5 s limit.
+  - **Deviation:** the design's once-per-minute tick gate is "a compare-and-set on core/state", but the closed `core/state` schema has no field for it. The gate is held in process per Store_Port and Owner (`takeTickSlot`). A second process may run the same tick in the same minute; that is harmless because every tick step is a compare-and-set on the rows it touches. Proposal for contracts v3: add `core/state.lastTickOpsAt`.
   - Witness: `packages/server/src/routes/open.test.ts` › "one transaction writes bundle and session with post-compile bundleRev", barrier → blocked; `state.test.ts` › "re-issues Deck every call", "tick is scheduled, not awaited"; `close.test.ts` › hangup failure keeps `closing` and writes a `hangup` Job; `worker/hangup.test.ts`
   - Hangups go through Fake_OpenAI. The extract drain is a no-op hook here; task 22 fills it.
   - Commit: `feat(server): session open, state, close`

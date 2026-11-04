@@ -7,8 +7,9 @@ import type { TokenVerifier } from "../auth/guard";
 import type { Timers } from "../clock/timers";
 import { createHasher } from "../crypto";
 import { FakeOpenAI } from "../openai/fake";
-import type { HttpInput, Log, RouteDeps, Schedule } from "../routes/runtime";
+import { type HttpInput, type Log, type RouteDeps, type RouteSpec, type Schedule, runRoute } from "../routes/runtime";
 import { MemoryStore } from "../store/memory-store";
+import type { StorePort } from "../store/port";
 
 export const FAKE_HMAC_KEY = "test-only-franki-id-hmac-key-0000000000000";
 export const T0_MS = Date.UTC(2026, 10, 3, 12);
@@ -113,7 +114,7 @@ export async function settle<T>(work: Promise<T>, clock: FakeClock, timers: Fake
     for (let j = 0; j < 20 && !done; j++) await flush();
     if (done) break;
     if (!timers.fireNext()) {
-      await flush();
+      for (let j = 0; j < 200 && !done; j++) await flush();
       if (!done) throw new Error("settle: work is stuck with no pending timer");
     }
   }
@@ -175,5 +176,44 @@ export function fakeRequest(init: FakeRequestInit = {}): HttpInput {
     url: init.url ?? "http://localhost:3000/api/test",
     header: (name) => headers.get(name.toLowerCase()) ?? null,
     text: async () => text,
+  };
+}
+
+/** Calls a route through runRoute on virtual time. Returns status, body and the opsClock time it took. */
+export async function callRoute<Req>(
+  rig: TestRig,
+  spec: RouteSpec<Req>,
+  body: unknown,
+  init: Omit<FakeRequestInit, "body"> = {},
+): Promise<{ status: number; body: any; elapsedMs: number }> {
+  const { value, elapsedMs } = await settle(runRoute(spec, fakeRequest({ ...init, body }), rig.deps, rig.sched.schedule), rig.clock, rig.timers);
+  return { status: value.status, body: value.body, elapsedMs };
+}
+
+/** Runs every scheduled job on virtual time. */
+export async function runScheduled(rig: TestRig): Promise<void> {
+  await settle(rig.sched.runAll(), rig.clock, rig.timers);
+}
+
+/** Replaces a stored record with `patch` applied (test setup only). */
+export async function patchRecord<T extends object>(store: StorePort, uid: string, path: string, patch: Partial<T>): Promise<void> {
+  await store.transaction(uid, async (tx) => {
+    const doc = await tx.get<T>(path);
+    if (doc === null) throw new Error(`patchRecord: ${path} is missing`);
+    tx.update(path, { ...doc.data, ...patch });
+  });
+}
+
+/** A Store_Port whose transactions fail after running their body while `failing` returns true. */
+export function failingStore(inner: StorePort, failing: (uid: string) => boolean): StorePort {
+  return {
+    get: (uid, path) => inner.get(uid, path),
+    query: (uid, spec) => inner.query(uid, spec),
+    transaction: (uid, fn) =>
+      inner.transaction(uid, async (tx) => {
+        const result = await fn(tx);
+        if (failing(uid)) throw new Error("injected commit failure");
+        return result;
+      }),
   };
 }

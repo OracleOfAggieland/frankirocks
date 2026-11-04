@@ -3,8 +3,20 @@
  * ExtractV1 output Items. Used by the lineage property (task 11) and later extractor tests. Not route code:
  * `/api/turn` (task 19) writes the real Turn, Evidence and Job.
  */
-import { type ClockPort, type Evidence, type Hasher, type Job, idParts, normalizeLF, tsFromMs, turnTextSlice } from "@franki/core";
-import { commonFields, sampleEvidence, sampleJob } from "@franki/core/testing";
+import {
+  type ClockPort,
+  type Evidence,
+  type Hasher,
+  type Job,
+  type Memory,
+  type Turn,
+  idParts,
+  normalizeLF,
+  rootKey,
+  tsFromMs,
+  turnTextSlice,
+} from "@franki/core";
+import { commonFields, sampleEvidence, sampleJob, sampleMemory, sampleTurn } from "@franki/core/testing";
 import { evidenceId } from "../store/evidence";
 import { paths } from "../store/paths";
 import type { StorePort } from "../store/port";
@@ -103,4 +115,42 @@ export function factItem(act: string, target: string, valueText: string, spans: 
 
 export function extractOutput(items: unknown[]) {
   return { version: "ExtractV1", items, clarifications: [], continuation: null };
+}
+
+/** Stores an active U Memory whose lineage is the whole text Slice of a committed turn's Evidence. */
+export async function insertMemoryForTest(
+  store: StorePort,
+  uid: string,
+  turn: CommittedTurn,
+  hasher: Hasher,
+  overrides: Partial<Memory> = {},
+  label = "m1",
+): Promise<string> {
+  const slice = turnTextSlice(turn.eid, turn.text, "U", hasher);
+  const id = hasher.id(["test-memory", label]);
+  const memory = sampleMemory({
+    uid,
+    rootSlices: [slice],
+    rootKeys: [rootKey(slice, hasher)],
+    packetEids: [turn.eid],
+    dependsOn: [`e:${turn.eid}`],
+    supportingIds: [{ type: "evidence", id: turn.eid, rev: 1 }],
+    key: hasher.id(idParts.memoryKey("self", "fact", label)),
+    value: { kind: "text", text: turn.text },
+    ...overrides,
+  });
+  await store.transaction(uid, async (tx) => tx.create(paths.memory(uid, id), memory));
+  return id;
+}
+
+/** Stores a user Turn record (no Evidence or job is written). */
+export async function insertTurnForTest(
+  store: StorePort,
+  uid: string,
+  sessionId: string,
+  turnId: string,
+  init: Partial<Turn> & { seq: number },
+): Promise<void> {
+  const turn = sampleTurn({ uid, sessionId, ...init });
+  await store.transaction(uid, async (tx) => tx.create(paths.turn(uid, sessionId, turnId), turn));
 }
