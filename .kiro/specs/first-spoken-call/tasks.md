@@ -219,11 +219,12 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
 ## Phase D: browser for typed turns and the Debug_Panel (F1)
 
 - [ ] 25. Sign-in, browser clock and API client
-  - Requirements: R9.1, R9.2, R9.4, R9.6, R9.7, R12.6
+  - Requirements: R9.1, R9.2, R9.4, R9.6, R9.7, R12.6, R16.7
   - Depends on: 15
   - Estimate: 2.5 h · Actual: —
-  - Witness: `apps/web/src/client/api.test.ts` › "attaches Bearer token", "no /api call while signed out except /api/health"; manual check: sign in on `http://localhost:3000`, email shows within 5 s, closing the popup shows the right error
+  - Witness: `apps/web/src/client/api.test.ts` › "attaches Bearer token", "no /api call while signed out except /api/health"; `apps/web/src/components/Footer.test.tsx` › "root layout renders 'Built with Kiro' on every page, signed in and signed out"; existing `health.test.ts` still passes (output unchanged); manual check: sign in on `http://localhost:3000`, email shows within 5 s, closing the popup shows the right error, footer visible
   - Needs the Firebase web config values in `apphosting.yaml` (owner action 2). If they are missing, stop and ask.
+  - Add a small `Footer` component with the text "Built with Kiro" to the root layout so it shows on every page (R16.7, steering `structure.md` Attribution).
   - Commit: `feat(web): sign-in and API client`
 
 - [ ] 26. Typed input and conversation view

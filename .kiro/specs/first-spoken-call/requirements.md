@@ -339,6 +339,7 @@ The clock port, a source on every field, lineage from each memory back to its ev
 4. THE Browser_Client SHALL show exactly one call button whose press starts a call while the Stand_In_Avatar is closed and hangs up while the Stand_In_Avatar is in any other state, with a non-text visual difference between its start and hang-up forms, and SHALL show the mute toggle only while the Stand_In_Avatar is listening, thinking or speaking, with the mute toggle showing whether the microphone is muted.
 5. WHEN the Owner presses the call button to hang up, THE Browser_Client SHALL send `POST /api/session/close` for the current Session, stop the microphone track, close the peer connection, hide the mute toggle, and show the closed state within 2 seconds; WHILE that hang-up is in progress, THE Browser_Client SHALL ignore further call button presses, so no second Session opens.
 6. IF `POST /api/session/open` or `POST /api/session/close` fails or returns no response within 5 seconds, THEN THE Browser_Client SHALL release the microphone and peer connection, show the closed state with an error message indicating which step failed, and leave the call button in its start form so the Owner can retry.
+7. THE Browser_Client SHALL show a small footer with the text "Built with Kiro" on every page, whether the Owner is signed in or signed out, and SHALL NOT add attribution to any `/api` response, so `/api/health` output is unchanged.
 
 ### Requirement 17: Admission seam and devAdmit
 

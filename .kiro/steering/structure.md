@@ -26,3 +26,12 @@ Source: `README.md`, `docs/design/architecture-decision.md` and `.kiro/specs/fir
 ## Clock
 
 Only the files in `scripts/clock-allowlist.json` may read wall-clock time. Everything else takes time from the Clock_Port.
+
+## Attribution
+
+The owner's rule for work Kiro does in this repo:
+
+- Every commit message Kiro makes ends with the trailer line `Built-with: Kiro`.
+- Every pull request description mentions Kiro.
+- The web app shows a small "Built with Kiro" footer on every page.
+- `/api/health` output stays unchanged; attribution never goes into API responses.
