@@ -95,10 +95,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - `text.ts`, `slices.ts`, `lexicon.ts`, `ids.ts` (core) and `crypto.ts` (server). Unit tests only; the slice-hash property waits for task 12.
   - Commit: `feat(core): text normalization, slices and ids`
 
-- [ ] 10. Store_Port, Memory_Store and conformance suite
+- [x] 10. Store_Port, Memory_Store and conformance suite
   - Requirements: R4.6, R4.7, R4.9, R4.10, R4.12, R4.13, R7.1–R7.5, R7.9, R7.10, R24.3 (KC01, KC02, W-LINEAGE write check)
   - Depends on: 7, 9
-  - Estimate: 4 h · Actual: —
+  - Estimate: 4 h · Actual: 0.4 h
+  - Done: `store/port.ts` (buffered transactions; the store sets `rev`; `update` needs a read in the transaction or an expected rev), `store/memory-store.ts`, shared commit checks in `store/checks.ts`, declared query shapes in `store/indexes.ts` (Q03, Q13, Q14, Q17, Q18, Q28, Q33; any other shape is rejected), Evidence revisions in `store/evidence.ts`, `core/evidence.ts`. Neither store retries a transaction; a concurrent change is `staleRevision` and callers retry (R19.11). Memory immutability also covers `predicate`, `subjectId`, `scopeId` and `key`, because a Memory ID is one assertion. Sample builders are exported as `@franki/core/testing`.
   - Witness: `packages/server/src/store/conformance.ts` run by `memory-store.test.ts` › CAS abort writes nothing, rev+1, oversize, tenant mismatch, Evidence immutable, Memory value immutable, lineage write rejections, Q14/Q28 cursor order
   - Commit: `feat(store): store port, memory store, conformance suite`
 
