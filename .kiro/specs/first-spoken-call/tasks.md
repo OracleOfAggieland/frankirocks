@@ -244,11 +244,14 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - **Not ticked: manual checks still need a person.** Everything else is done and `npm test` is green. Still to do in a browser on `http://localhost:3000` (`npm run dev`): (1) sign in with Google and see the email within 5 s; (2) close the popup and see the "window was closed" message with the button enabled again; (3) reload while signed in and stay signed in without a prompt; (4) see the "Built with Kiro" footer signed in and signed out.
   - Commit: `feat(web): sign-in and API client`
 
-- [ ] 26. Typed input and conversation view
+- [x] 26. Typed input and conversation view
   - Requirements: R18.1, R18.6, R18.8–R18.10
   - Depends on: 21, 25
-  - Estimate: 2 h · Actual: —
+  - Estimate: 2 h · Actual: 0.5 h
   - Witness: `apps/web/src/components/TypedInput.test.tsx` › disabled when empty, one request per press, keeps text on error or 10 s timeout, clientSeq increments by 1
+  - Done: `client/typed-turns.ts` (`TypedTurns`, an external store read with `useSyncExternalStore`), `client/ids.ts` (32 random bytes from `crypto.getRandomValues` as a 43-character base64url ID), `components/TypedInput.tsx` (`TypedInput` and `ConversationView`), wired into `App` while signed in; signed out, the box and button show disabled. The first line opens a Session with no SDP (design "One typed turn" step 2) and keeps `ack.stamp`; the open's `deck.issuedAt` aligns the browser Clock_Port. Responses are checked against the closed `OpenResponse` and `TurnResponse` schemas. The 10 s limit is the ApiClient's timer; the timeout test uses the real ApiClient with fake timers. Extra witnesses: reply notes shown as escaped text; a STALE or SCOPE error drops the Stamp so the next press opens a new Session, starting at clientSeq 1; `client/ids.test.ts`.
+  - Choices: a failed line keeps its clientSeq. Resending the same text reuses its requestId and turnId, so a request the server did commit replays instead of erroring (R19.3); changed text keeps the clientSeq with new IDs. A `stale` status (Stamp revisions moved; nothing recorded) is retried once with the returned Stamp, and a clientSeq `hold` (retryAfterMs ≥ 1) is retried after its delay, up to 8 times. An admission hold (`retryAfterMs:0`) counts as sent with no reply. Enter sends; Shift+Enter adds a line break so pasted multi-line text can be sent and is classified T by the server.
+  - Manual check (optional, not in the witness): in `npm run dev`, a typed line shows in the conversation view. It calls the brain model only when the server has `OPENAI_API_KEY`, so it is a paid call and belongs with task 35.
   - Commit: `feat(web): typed input`
 
 - [ ] 27. Debug_Panel
