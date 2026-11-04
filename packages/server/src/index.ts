@@ -5,3 +5,6 @@ export { isSmokeAuthorized } from "./smoke-auth";
 export { ConfigError } from "./config/env";
 export { MODEL_VARS, configuredModels, healthModels, requireModel } from "./config/models";
 export type { ModelUse } from "./config/models";
+export { runRoute } from "./routes/runtime";
+export type { HttpInput, HttpResult, RouteDeps, RouteSpec, Schedule } from "./routes/runtime";
+export { runLiveRoute } from "./routes/live-deps";

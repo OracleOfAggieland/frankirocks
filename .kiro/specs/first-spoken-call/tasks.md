@@ -143,10 +143,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
 
 ## Phase C: server routes for typed turns and memory (F0, F3, F5 floors)
 
-- [ ] 15. Route_Guard, idempotency, core documents and route adapter pattern
+- [x] 15. Route_Guard, idempotency, core documents and route adapter pattern
   - Requirements: R5.4, R5.5, R10.1–R10.13 (KV10)
   - Depends on: 8, 10
-  - Estimate: 3.5 h · Actual: —
+  - Estimate: 3.5 h · Actual: 0.5 h
+  - Done: `auth/guard.ts` (Bearer token with revocation via `auth/admin-verifier.ts`, exact Origin, 128/256 KiB caps counted in UTF-8 bytes), `routes/errors.ts` (ErrorCode → HTTP, kernel errors mapped at the edge), `ledger/request.ts` + `routes/mutation.ts` (begin in its own transaction, `completeRequest` inside the route's transaction; failures are released and not replayed), `core-docs.ts` (`ensureCoreDocs`, `readCoreDocs`, `ownerClock` rejecting fixture mode per R6.7), `routes/runtime.ts` (`runRoute`, `Schedule`, `RouteDeps`), `routes/live-deps.ts`, `openai/live.ts` (Responses only; Realtime in task 30), `clock/timers.ts` (opsClock deadlines; virtual-time fakes in `testing/fakes.ts`), `core/time.ts` (`civilDay`). Adapter template: `apps/web/src/app/api/_lib/adapter.ts` (`adapt(spec)` backs `schedule` with `after()`; it lives under `app/api/` so the import-boundary check treats it as route code).
   - Witness: `packages/server/src/auth/guard.test.ts` › 401 cases, 403 origin cases, 413 oversize; `ledger/request.test.ts` › replay, 409 `HASH`, in-flight 429 `LIMIT`, 24 h expiry; `core-docs.test.ts` › "two concurrent first requests create one set"
   - Fake token verifier for tests. Define the `schedule(fn)` dependency and the adapter template that wraps `after()`.
   - Commit: `feat(server): route guard, idempotency, core docs`
