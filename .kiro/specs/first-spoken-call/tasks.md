@@ -50,10 +50,10 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Add `config/models.ts` and `config/env.ts`. Move the `/api/health` fallbacks into `config/models.ts`; `/api/health` output is unchanged. Add `FRANKI_TRANSCRIBE_MODEL` and `FRANKI_FIREBASE_PROJECT_ID: frankirocks` as plain entries in `apphosting.yaml`.
   - Commit: `feat(config): model config module and literal check`
 
-- [ ] 5. Local env sync from `apphosting.yaml`
+- [x] 5. Local env sync from `apphosting.yaml`
   - Requirements: R30.7, R30.10
   - Depends on: 4
-  - Estimate: 1 h · Actual: —
+  - Estimate: 1 h · Actual: 0.3 h
   - Witness: `scripts/sync-local-env.test.ts` › "copies plain values", "skips secret entries", "prints no values"; manual check: `git check-ignore apps/web/.env.development.local` reports ignored
   - Add `scripts/sync-local-env.mjs` with pure `parsePlainEnv`, add `predev` to `apps/web/package.json`, add the `yaml` dev dependency in the repo. Add a `.gitignore` pattern only if `check-ignore` says the file is not ignored.
   - Commit: `feat(dev): sync plain apphosting values for next dev`

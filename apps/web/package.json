@@ -6,6 +6,7 @@
     "node": "24.x"
   },
   "scripts": {
+    "predev": "node ../../scripts/sync-local-env.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
