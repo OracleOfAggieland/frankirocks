@@ -77,10 +77,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Closed validators for `sN`, `i`, `Signed`, `ID`, `Hash`, `TS`, `Zone`, Slice, Span, Ref, C fields, Evidence, Memory, Session, Turn, the five core docs, Job and Ledger (C§1). Unit tests only; the round-trip property waits for task 12 (R31.3).
   - Commit: `feat(core): closed record schemas`
 
-- [ ] 8. Wire and debug schemas
+- [x] 8. Wire and debug schemas
   - Requirements: R4.2 (KC01)
   - Depends on: 7
-  - Estimate: 2.5 h · Actual: —
+  - Estimate: 2.5 h · Actual: 0.2 h
+  - Done: `schema/wire.ts` with every type listed below, the closed request and response of open, sdp, state, close, turn, tool and receipt, `RECALL_TOOL` (strict JSON Schema for Realtime), `DebugRequest`/`DebugPage`. A stored ledger `request.response` is now checked against the response type of its `route`, which closes the task 7 gap.
   - Witness: `packages/core/src/schema/wire.test.ts` › one valid and one invalid case per type
   - Head, Deck, SS, Stamp, StateAck, Permit, TurnRequest, TurnResponse, W, SafeTurn, Card, InspectItem, Error, every route body used in this slice, the recall tool, and the `DebugPage` type.
   - Commit: `feat(core): closed wire schemas`

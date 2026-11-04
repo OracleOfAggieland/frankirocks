@@ -326,22 +326,22 @@ const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "for
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
 /**
- * `request.response` is `WireResult?` (the route-response union). Task 7 accepts any plain object here;
- * task 8 replaces it with the closed WireResult union once the wire schemas exist.
+ * `request.response` is `WireResult?`. The closed response schema depends on `route`, so the Ledger refinement
+ * checks it with the schema ./wire installs here. ./wire is imported by the package index, so it is always set
+ * before any validation runs; until then every non-null response fails closed.
  */
-let wireResult: Schema<unknown> = plainObject;
-/** Installs the closed WireResult schema (called once by ./wire). */
-export function setWireResultSchema(s: Schema<unknown>): void {
-  wireResult = s;
+let wireResultFor: ((route: RouteName) => Schema<unknown>) | null = null;
+/** Installs the route → response schema map (called once by ./wire). */
+export function setWireResultFor(lookup: (route: RouteName) => Schema<unknown>): void {
+  wireResultFor = lookup;
 }
-const WireResultRef: Schema<unknown> = { check: (v, path) => wireResult.check(v, path) };
 
 export const LEDGER_PAYLOADS = {
   request: obj({
     route: RouteName,
     keyHash: ID,
     requestHash: Hash,
-    response: nullable(WireResultRef),
+    response: nullable(plainObject),
     error: nullable(ErrorCode),
   }),
   decision: obj({
@@ -390,7 +390,15 @@ const LedgerBase = obj({
 });
 
 /** The payload union is discriminated by the entry's `kind`. */
-export const Ledger = refine(LedgerBase, (e, path) => LEDGER_PAYLOADS[e.kind].check(e.payload, `${path}.payload`));
+export const Ledger = refine(LedgerBase, (e, path) => {
+  const found = LEDGER_PAYLOADS[e.kind].check(e.payload, `${path}.payload`);
+  if (found !== null || e.kind !== "request") return found;
+  const p = e.payload as Infer<(typeof LEDGER_PAYLOADS)["request"]>;
+  if (p.response === null) return null;
+  const at = `${path}.payload.response`;
+  if (wireResultFor === null) return issue(at, "wire schemas are not loaded");
+  return wireResultFor(p.route).check(p.response, at);
+});
 type LedgerPayloads = { [K in LedgerKind]: Infer<(typeof LEDGER_PAYLOADS)[K]> };
 export type Ledger = {
   [K in LedgerKind]: Omit<Infer<typeof LedgerBase>, "kind" | "payload"> & { kind: K; payload: LedgerPayloads[K] };

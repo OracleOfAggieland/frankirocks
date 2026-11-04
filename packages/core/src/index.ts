@@ -5,3 +5,4 @@ export * from "./schema/v";
 export * from "./schema/primitives";
 export * from "./schema/predicates";
 export * from "./schema/records";
+export * from "./schema/wire";
