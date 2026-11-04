@@ -55,7 +55,7 @@ export function checkTurnRequest(req: TurnReq): TurnReq {
 }
 
 /** Up to 4 SafeTurns from the Session's earlier Turns that pass the sensitivity rule (design "Reply input"). */
-async function earlierSafeTurns(tx: Pick<Tx, "get" | "query">, uid: string, sessionId: string, beforeSeq: number, ctx: RouteContext): Promise<SafeTurn[]> {
+export async function earlierSafeTurns(tx: Pick<Tx, "get" | "query">, uid: string, sessionId: string, beforeSeq: number, ctx: RouteContext): Promise<SafeTurn[]> {
   if (beforeSeq <= 1) return [];
   const rows = await tx.query<Turn>({
     collection: paths.turns(uid, sessionId),

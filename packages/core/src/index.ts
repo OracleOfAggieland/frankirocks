@@ -20,3 +20,4 @@ export * from "./admission";
 export * from "./schema/json-schema";
 export * from "./extract";
 export * from "./voice/machine";
+export * from "./recall";

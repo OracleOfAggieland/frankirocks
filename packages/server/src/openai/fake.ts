@@ -33,6 +33,7 @@ export class FakeOpenAI implements OpenAIPort {
   readonly requests: RecordedRequest[] = [];
   private readonly queues = new Map<OpenAIEndpoint, ScriptedResult[]>();
   private readonly fallbacks = new Map<OpenAIEndpoint, ScriptedResult>();
+  private readonly responders = new Map<OpenAIEndpoint, (body: unknown) => ScriptedResult>();
 
   /** Queues results for an endpoint; they are used once each, in order. */
   script(endpoint: OpenAIEndpoint, ...results: ScriptedResult[]): this {
@@ -45,6 +46,12 @@ export class FakeOpenAI implements OpenAIPort {
   /** Result used for every call once the endpoint's queue is empty. */
   always(endpoint: OpenAIEndpoint, result: ScriptedResult): this {
     this.fallbacks.set(endpoint, result);
+    return this;
+  }
+
+  /** Answers every call to an endpoint from its request body, once the queue is empty (before `always`). */
+  respond(endpoint: OpenAIEndpoint, fn: (body: unknown) => ScriptedResult): this {
+    this.responders.set(endpoint, fn);
     return this;
   }
 
@@ -61,7 +68,7 @@ export class FakeOpenAI implements OpenAIPort {
 
   call(endpoint: OpenAIEndpoint, body: unknown): Promise<unknown> {
     this.requests.push({ endpoint, body: structuredClone(body), index: this.requests.length });
-    const result = this.queues.get(endpoint)?.shift() ?? this.fallbacks.get(endpoint);
+    const result = this.queues.get(endpoint)?.shift() ?? this.responders.get(endpoint)?.(structuredClone(body)) ?? this.fallbacks.get(endpoint);
     if (result === undefined) return Promise.reject(new FakeOpenAIUnscriptedError(endpoint));
     switch (result.kind) {
       case "ok":

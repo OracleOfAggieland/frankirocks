@@ -89,7 +89,7 @@ export async function ensureCoreDocs(uid: string, deps: CoreDocsDeps, clientZone
 }
 
 /** Reads all five core documents in a transaction. */
-export async function readCoreDocs(tx: Tx, uid: string): Promise<{ [K in keyof CoreDocs]: { data: CoreDocs[K]; rev: number } }> {
+export async function readCoreDocs(tx: Pick<Tx, "get">, uid: string): Promise<{ [K in keyof CoreDocs]: { data: CoreDocs[K]; rev: number } }> {
   const read = async <K extends keyof CoreDocs>(id: K) => {
     const doc = await tx.get<CoreDocs[K]>(paths.core(uid, id));
     if (doc === null) throw new StoreError("invalidInput", "core documents are missing", paths.core(uid, id));

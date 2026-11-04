@@ -14,4 +14,5 @@ export { closeRoute } from "./routes/close";
 export { turnRoute } from "./routes/turn";
 export { sdpRoute } from "./routes/sdp";
 export { receiptRoute } from "./routes/receipt";
+export { toolRoute } from "./routes/tool";
 export { debugMemoryRoute } from "./routes/debug-memory";
