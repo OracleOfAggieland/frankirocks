@@ -43,7 +43,12 @@ type SpanSpec =
   /** An exact but empty range [n, n) with quote "": it quotes no Evidence text. */
   | { kind: "emptySpan"; a: number };
 
-const frac = fc.double({ min: 0, max: 1, noNaN: true });
+/**
+ * A uniform fraction in [0, 1). `fc.double` and plain `fc.integer` favor values near 0, which put almost every span
+ * at the start of the text; `fc.noBias` draws the steps uniformly. Shrinking still moves toward 0.
+ */
+const FRAC_STEPS = 1 << 16;
+const frac = fc.noBias(fc.integer({ min: 0, max: FRAC_STEPS - 1 })).map((n) => n / FRAC_STEPS);
 const spanSpecArb: fc.Arbitrary<SpanSpec> = fc.oneof(
   { weight: 4, arbitrary: fc.record({ kind: fc.constant("good" as const), a: frac, b: frac }) },
   { weight: 2, arbitrary: fc.record({ kind: fc.constant("badQuote" as const), a: frac, b: frac }) },
@@ -170,6 +175,19 @@ async function listMemories(store: MemoryStore): Promise<StoredDoc<Memory>[]> {
 /** Memories checked across all runs of one property execution. */
 let storedTotal = 0;
 
+/** Where the checked Spans sit in their Evidence text, across all runs: start in each third, and long spans. */
+const coverage = { spans: 0, startThird: [0, 0, 0], halfOrLonger: 0 };
+
+function recordCoverage(spans: Span[], textLength: (eid: string) => number | undefined): void {
+  for (const s of spans) {
+    const len = textLength(s.eid);
+    if (len === undefined || len === 0) continue;
+    coverage.spans += 1;
+    coverage.startThird[Math.min(2, Math.floor((3 * s.start) / len))]! += 1;
+    if (2 * (s.end - s.start) >= len) coverage.halfOrLonger += 1;
+  }
+}
+
 async function runOps(ops: Op[]): Promise<void> {
   const hasher = createHasher(FAKE_KEY);
   const store = new MemoryStore(hasher);
@@ -238,6 +256,7 @@ async function runOps(ops: Op[]): Promise<void> {
     }
     const result = resolveLineage({ memory, evidence, hasher, spans: spans! });
     expect(result.ok ? [] : result.failures, `memory ${doc.id} lineage`).toEqual([]);
+    recordCoverage(spans!, (eid) => turns.find((t) => t.eid === eid)?.text.length);
   }
 }
 
@@ -247,10 +266,15 @@ describe("lineage property", () => {
     "every stored memory resolves to evidence spans",
     async () => {
       storedTotal = 0;
+      Object.assign(coverage, { spans: 0, startThird: [0, 0, 0], halfOrLonger: 0 });
       await fc.assert(fc.asyncProperty(opsArb, runOps), { numRuns: 1000 });
       // Not vacuous: across the runs the extractor really stored Memories that were then checked.
-      // About 150 per 1,000 runs; most generated Items carry a bad span or a non-writing act or target.
+      // About 140 per 1,000 runs; most generated Items carry a bad span or a non-writing act or target.
       expect(storedTotal).toBeGreaterThan(50);
+      // Checked spans land across the whole text, not only near its start. Typical: starts per third about
+      // 90 / 50 / 45 and about 60 spans covering half the text or more (with fc.double: 155 / 1 / 0 and 15).
+      for (const n of coverage.startThird) expect(n, `span starts per third ${coverage.startThird.join("/")}`).toBeGreaterThanOrEqual(10);
+      expect(coverage.halfOrLonger).toBeGreaterThanOrEqual(10);
     },
     120_000,
   );
