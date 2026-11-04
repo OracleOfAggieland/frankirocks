@@ -128,7 +128,7 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Estimate: 0.5 h · Actual: —
   - Witness: manual check. Steps: time `npm run test:fast` (under 30 s); save a file under `packages/` and confirm the hook runs once. `npm test` includes the same files.
   - Add `test:fast` to the root `package.json`. Create the hook with `createHook` (PostFileSave, matcher for `packages/` and `apps/web/src` `.ts`/`.tsx`, excluding `node_modules`, `.next`, `dist`).
-  - **Open (R3.4 not confirmed):** `.kiro/hooks/invariants-on-save.json` exists (written by the owner's operator) and `scripts/save-hook-matcher.test.ts` checks it against the generated matcher. The operator is still confirming that PostFileSave fires.
+  - **Open (R3.4 not confirmed):** `.kiro/hooks/invariants-on-save.json` exists (written by the owner's operator) and `scripts/save-hook-matcher.test.ts` checks it against the generated matcher. On Nov 3, 2026 the operator saved `packages/core/src/index.ts` in the Kiro IDE six times, including after a window reload and with a simpler file pattern. The IDE lists the hook as enabled with trigger File Saved, but no `test:fast` process ran; the process watcher was confirmed to detect a manual run. `test:fast` took about 3 s. The task stays open.
   - Commit: `chore(kiro): invariant save hook`
 
 - [x] 14. Firestore_Store, Admin init, indexes and rules tests
@@ -137,7 +137,7 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Estimate: 3.5 h · Actual: 0.4 h
   - Done: `config/admin.ts` (explicit `projectId`, injectable SDK for the test); `live.ts` now uses it, so `POST /api/health` needs `FRANKI_FIREBASE_PROJECT_ID`, which `apphosting.yaml` already sets. `store/firestore-store.ts` uses the shared checks and `maxAttempts: 1`, and maps ABORTED and ALREADY_EXISTS to `staleRevision`. `firestore.indexes.json` declares the five indexes, and `store/indexes.test.ts` keeps it equal to the Store_Port's shapes. `scripts/firestore-rules.test.ts` checks R8.1 in `npm test`. The emulator tests are in `tests/firestore/` (the existing `tests/rules/firestore.rules.test.ts` moved there and now covers R8.3–R8.5 and R8.8), `vitest.emulator.config.ts` includes that folder, and `tests/tsconfig.json` lets `npx tsc --noEmit -p tests` typecheck them. CI already set up Java 21 and ran `npm run test:emulator`, so the workflow is unchanged.
   - **Emulator run:** the owner's operator ran `npm run test:emulator` on Nov 3, 2026 with Java 21; 34 tests passed (`tests/firestore/rules.test.ts` and `tests/firestore/store-conformance.test.ts`). Indexes are not deployed (task 34).
-  - Witness: `firestore/rules.test.ts` and `firestore/store-conformance.test.ts` (emulator; run in CI because Java is not installed locally); `packages/server/src/config/admin.test.ts` › "CONFIG when FRANKI_FIREBASE_PROJECT_ID is missing"
+  - Witness: `firestore/rules.test.ts` and `firestore/store-conformance.test.ts` (emulator, Java 21; run by `npm run test:emulator` locally and in CI); `packages/server/src/config/admin.test.ts` › "CONFIG when FRANKI_FIREBASE_PROJECT_ID is missing"
   - `config/admin.ts` initializes with the explicit `projectId`; `live.ts` uses it. Write the five indexes to `firestore.indexes.json`. Add Java 21 and `npm run test:emulator` to CI. Do not deploy the indexes (task 34).
   - Commit: `feat(store): firestore store, indexes, rules tests`
 
