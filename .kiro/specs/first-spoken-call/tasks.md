@@ -326,12 +326,13 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Write `docs/briefs/001-report.md`: what was built with task IDs, every stub and the feature that replaces it (`devAdmit` → F2, Stand_In_Avatar → Rive, typed-turn source mapping, Memory placeholders → F6, empty `lastTurns` → later pronoun context), estimate vs actual table, and every contract question.
   - Commit: `docs: slice report draft`
 
-- [ ] 34. STOP: Firestore index deploy approval
+- [x] 34. STOP: Firestore index deploy approval
   - Requirements: R7.8, R30.6; design owner action 3 (KS08)
   - Depends on: 14, 33
   - Estimate: 0.25 h · Actual: —
   - Witness: manual check. Steps: tell the owner that job draining (Q17, Q18), supersede lookups (Q03), expiry close (Q13) and the debug ledger view (Q33) need the five indexes; give the command `firebase deploy --only firestore:indexes`; wait. The owner runs it, or approves it in writing. Then confirm the indexes show as enabled in the Firebase console before the next task.
   - Never run the deploy yourself. No commit unless the report changes.
+  - **Done (Nov 3, 2026):** the owner approved the deploy and Claude ran it. All five indexes in `firestore.indexes.json` showed READY at 21:44:23 (Pacific) on Nov 3, 2026.
 
 - [ ] 35. STOP: paid live check after notice
   - Requirements: R31.10, R32.6

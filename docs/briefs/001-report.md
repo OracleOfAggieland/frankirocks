@@ -1,6 +1,6 @@
 # Brief 001 report (draft): first spoken call
 
-Status: **draft, not complete.** Tasks 1–12, 14–24 and 26–32 are done and ticked. Task 25 (sign-in) and task 13 (save hook) stay open because their remaining checks need a person, and tasks 34 (index deploy) and 35 (paid live check) have not started. No real OpenAI call and no real WebRTC call has been made. This draft is written at task 33 on branch `build/first-spoken-call` and has not been pushed, so CI has not run on it.
+Status: **draft, not complete.** Tasks 1–12, 14–24 and 26–32 are done and ticked. Task 25 (sign-in) and task 13 (save hook) stay open because their remaining checks need a person, and task 35 (paid live check) has not started. Task 34 (index deploy) is done. The typed path has run against real OpenAI and real Firestore on Nov 3, 2026: the two extract jobs completed on the first attempt, and one active Memory was written with lineage. No real WebRTC call has been made. This draft is written at task 33 on branch `build/first-spoken-call` and has not been pushed, so CI has not run on it.
 
 The build was done with **Kiro**: the `.kiro/steering` files set the stack, structure, product and memory rules; the spec in `.kiro/specs/first-spoken-call` (requirements, design, tasks) drove every task; a Kiro PreToolUse hook (`.kiro/hooks/clock-guard.json`) blocks wall-clock reads outside the Clock_Port; every commit ends with `Built-with: Kiro`; and the web app shows a "Built with Kiro" footer on every page.
 
@@ -62,6 +62,7 @@ The build was done with **Kiro**: the `.kiro/steering` files set the stack, stru
 | Background retry, not a `hangup` Job, for a call whose ID could not be stored (contract question 32) | contracts v3 call IDs on hangup jobs |
 | `GET /api/debug/memory` (development only), not the contract's `/api/memory` | the `/api/memory` views |
 | Allergies and hard rules from ExtractV1 are held, not written | F3 FastSlots and the rule path |
+| `costMicros` is written as a hard-coded 0 in `packages/server/src/worker/extract.ts` (token counts are correct; contract question 33) | a dated price table |
 
 ## Deviations from the design
 
@@ -72,7 +73,7 @@ The build was done with **Kiro**: the `.kiro/steering` files set the stack, stru
 - **Hangup for an unstored call ID** (task 30): R12.4 asks for a `hangup` Job, but no Job field can hold a raw Realtime call ID. The route hangs up at once and retries in the background for 10 minutes, which does not survive a restart (contract question 32).
 - **Transcription model in the browser** (task 32): R13.1 puts the transcription model in the browser's `session.update`, and no route returns it. `next.config.ts` inlines `FRANKI_TRANSCRIBE_MODEL` from `apphosting.yaml` as `NEXT_PUBLIC_FRANKI_TRANSCRIBE_MODEL` at build time, using the `env` option that the Next 16 docs mark as legacy. A model change needs a rebuild.
 - **Recall asked test** (task 31): one-character tokens are not recall terms, so the "s" in "dog's" does not make every Turn count as asked.
-- **Unchecked API shapes**: the live `/v1/realtime/calls` request and `Location` header, and the Realtime event names and `response.create` input items, follow contracts §6 and the installed `openai` 7.45.1 SDK types. Web access was not permitted while building tasks 29–32, so they are checked only by task 35's live call.
+- **Realtime API shapes**: after the build, Claude compared the voice code with the types in the installed `openai` 7.45.1 SDK: the event names, `session.update`, `response.create`, `tracing`, and the multipart `sdp` and `session` fields of `/realtime/calls`. They match. Claude could not load OpenAI's docs, and the SDK types do not confirm the `Location` header, so task 35's live call is still the first real check.
 - **Test folder merge** (owner request): `test/setup.ts` and `test/setup.test.ts` moved to `tests/setup/`.
 
 ## Estimate against actual
@@ -115,7 +116,7 @@ Actual hours are the build's own working time per task.
 | 32 Voice_Client, controls, avatar | 5 | 0.9 |
 | 33 Checks and report draft | 1.5 | 0.4 |
 | **Total, tasks 1–33** | **85.5** | **14.9** |
-| 34 Index deploy approval (not started) | 0.25 | — |
+| 34 Index deploy approval (done Nov 3, 2026) | 0.25 | — |
 | 35 Paid live check (not started) | 1 | — |
 
 ## Contract questions
@@ -159,11 +160,12 @@ From `.kiro/specs/first-spoken-call/design.md` "Contract questions". `docs/desig
 31. The tick gate is in process. Proposal: `core/state.lastTickOpsAt`.
 32. A call whose ID could not be stored is hung up through a background retry, not a `hangup` Job. Proposal: `callIds` on the `hangup` work payload.
 
+33. Real cost needs a dated price table. `costMicros` stays 0 until one exists; no prices were invented.
+
 ## Still needs a person or a push
 
 - **Push and CI** (owner approval): run the CI `verify` and emulator jobs on this branch.
 - **Task 25 browser checks** on `http://localhost:3000` (`npm run dev`): sign in with Google and see the email within 5 s; close the popup and see the "window was closed" message with the button enabled again; reload while signed in and stay signed in; see the "Built with Kiro" footer signed in and signed out.
 - **Task 13 save hook**: confirm in the Kiro IDE that saving a file under `packages/` runs `npm run test:fast` once, or decide to drop R3.4.
 - **Call screen look** (no paid call needed): signed out, the call button and typed input show disabled; signed in, the call button shows its start form and the closed avatar.
-- **Task 34**: approve or run `firebase deploy --only firestore:indexes`; the build never runs it.
 - **Task 35** (paid, after notice): the live call on localhost, which is also the first real check of the Realtime API shapes listed under deviations.
