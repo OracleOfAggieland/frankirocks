@@ -19,6 +19,12 @@ env:
     value: gpt-6-luna
   - variable: FRANKI_EMBED_MODEL
     value: text-embedding-3-small
+  - variable: FRANKI_TRANSCRIBE_MODEL
+    value: gpt-4o-mini-transcribe
+
+  # Not a secret. The Admin SDK is initialized with this project ID explicitly.
+  - variable: FRANKI_FIREBASE_PROJECT_ID
+    value: frankirocks
 
   # Secrets come from Secret Manager and exist only at runtime, never in the build.
   - variable: OPENAI_API_KEY

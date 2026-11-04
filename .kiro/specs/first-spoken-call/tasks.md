@@ -42,10 +42,10 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - **Open (R2.5 not met):** `scripts/clock-guard.mjs` and its witness tests are done and pass. The `createHook` call (id `clock-guard`, PreToolUse, matcher `^(fs_write|str_replace|fs_append)$`, command `node scripts/clock-guard.mjs`, timeout 30 s) failed twice with "the permission request failed before it was answered", so `.kiro/hooks/clock-guard.json` does not exist yet. The file was not hand-written, to avoid bypassing the permission check. Rerun `createHook` with those values once the permission prompt works, then tick this task.
   - Commit: `chore(kiro): clock guard hook`
 
-- [ ] 4. Model config module and model-ID literal check
+- [x] 4. Model config module and model-ID literal check
   - Requirements: R30.1–R30.3, R30.5, R31.8; contract questions 9, 10
   - Depends on: 2
-  - Estimate: 1.5 h · Actual: —
+  - Estimate: 1.5 h · Actual: 0.5 h
   - Witness: `packages/server/src/config/models.test.ts` › "CONFIG names the missing variable without its value"; `scripts/model-literals.test.ts` › "no model ID literals outside config/models.ts"; existing `health.test.ts` still passes
   - Add `config/models.ts` and `config/env.ts`. Move the `/api/health` fallbacks into `config/models.ts`; `/api/health` output is unchanged. Add `FRANKI_TRANSCRIBE_MODEL` and `FRANKI_FIREBASE_PROJECT_ID: frankirocks` as plain entries in `apphosting.yaml`.
   - Commit: `feat(config): model config module and literal check`
