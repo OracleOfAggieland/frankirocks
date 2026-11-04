@@ -128,6 +128,30 @@ export class TypedTurns {
     }
   }
 
+  /**
+   * Closes the typed Session, if one is open (R9.5: sign-out closes any open Session). Waits at most `timeoutMs`;
+   * a failure is left to the server's expiry close (R9.8). Afterwards the next line opens a new Session.
+   */
+  async closeSession(timeoutMs = 5_000): Promise<void> {
+    const stamp = this.stamp;
+    this.stamp = null;
+    this.pending = null;
+    if (stamp === null) return;
+    this.set({ sessionId: null, lastClientSeq: 0 });
+    await this.deps.api.call("/api/session/close", {
+      body: { requestId: this.newId(), sessionId: stamp.sessionId, generation: stamp.generation, reason: "user" },
+      timeoutMs,
+    });
+  }
+
+  /** Forgets the typed Session without a request: a call open closes it on the server (KV09). */
+  dropSession(): void {
+    if (this.stamp === null) return;
+    this.stamp = null;
+    this.pending = null;
+    this.set({ sessionId: null, lastClientSeq: 0 });
+  }
+
   private fail(message: string): false {
     // The text stays in the box and no reply is shown (R18.10).
     this.set({ sending: false, error: message });

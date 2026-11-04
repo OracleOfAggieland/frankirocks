@@ -84,4 +84,29 @@ describe("browser clients against the server routes", () => {
     await panel.refresh();
     expect(panel.getSnapshot().data!.turns.map((t) => t.record.seq)).toEqual([1, 2]);
   });
+
+  it("closeSession (sign-out, R9.5) closes the typed Session on the server; the next line opens a new one", async () => {
+    const rig = testRig();
+    const fetch = serverFetch(rig);
+    const api = createApiClient({ getToken: async () => "token:owner-1", fetch });
+    const clock = createBrowserClock({ zone: "UTC", monotonic: { timeOrigin: T0_MS, now: () => 0 } });
+    let n = 0;
+    const typed = new TypedTurns({ api, clock, newId: () => testId(`b-${++n}`) });
+    rig.openai.always("responses.create", ok(completed("Noted.")));
+    typed.setText("hello");
+    await typed.submit();
+    const sessionId = typed.getSnapshot().sessionId!;
+    await typed.closeSession();
+    expect(fetch.paths.at(-1)).toBe("/api/session/close");
+    const { paths } = await import("../../../../packages/server/src/store/paths");
+    expect((await rig.store.get<{ status: string }>("owner-1", paths.session("owner-1", sessionId)))!.data.status).toBe("closed");
+    expect(typed.getSnapshot().sessionId).toBeNull();
+    typed.setText("again");
+    await typed.submit();
+    expect(typed.getSnapshot().sessionId).not.toBe(sessionId);
+    // Nothing to close: no request.
+    const before = fetch.paths.length;
+    await new TypedTurns({ api, clock }).closeSession();
+    expect(fetch.paths.length).toBe(before);
+  });
 });
