@@ -320,8 +320,9 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
 - [ ] 33. All checks green and report draft
   - Requirements: R31.6–R31.9, R32.1, R32.2, R32.4, R32.5
   - Depends on: 28, 32
-  - Estimate: 1.5 h · Actual: —
+  - Estimate: 1.5 h · Actual: 0.4 h
   - Witness: `npm test`, `npm run lint`, `npm run typecheck`, `npm run build` all exit 0; `GET /api/health` returns the same fields as before; CI `verify` and emulator jobs green (needs the owner to approve a push)
+  - **Not ticked: the CI part of the witness needs a push.** Everything else is done. Checks on 2026-11-03: `npm test` 65 files, 702 tests passed; lint, typecheck and build exit 0; `npm run test:emulator` (Java 21) 2 files, 35 tests passed. New witness `apps/web/src/app/api/health/route.test.ts` pins the `GET /api/health` fields (`ok`, `service`, `node`, `configured{openaiKey, smokeToken, brainModel, voiceModel}`) and the `POST` refusal without the smoke token; it was not checked against a running server. The draft is `docs/briefs/001-report.md`. Still to do: push with the owner's approval and see the CI `verify` and emulator jobs pass.
   - Write `docs/briefs/001-report.md`: what was built with task IDs, every stub and the feature that replaces it (`devAdmit` → F2, Stand_In_Avatar → Rive, typed-turn source mapping, Memory placeholders → F6, empty `lastTurns` → later pronoun context), estimate vs actual table, and every contract question.
   - Commit: `docs: slice report draft`
 
