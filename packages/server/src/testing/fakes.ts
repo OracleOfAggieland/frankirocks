@@ -29,7 +29,11 @@ export function fakeTokenVerifier(): TokenVerifier & { calls: number } {
     async verify(token: string) {
       v.calls++;
       const m = /^token:(.+)$/.exec(token);
-      if (m === null) throw new Error("invalid token");
+      if (m === null) {
+        // Shaped like the Admin SDK's FirebaseAuthError for a bad token.
+        const revoked = token.startsWith("revoked:");
+        throw Object.assign(new Error("invalid token"), { code: revoked ? "auth/id-token-revoked" : "auth/argument-error" });
+      }
       return { uid: m[1]! };
     },
   };

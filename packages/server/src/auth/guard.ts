@@ -6,7 +6,7 @@
  *   3. caps the body at 128 KiB, or 256 KiB for SDP (413 LIMIT).
  * The only tenant passed on is the verified token's `uid` (R10.5).
  */
-import { authError, originError, oversizeError } from "../routes/errors";
+import { authError, dependencyError, originError, oversizeError } from "../routes/errors";
 
 /** Verifies an ID token, including revocation. Throws on any invalid, expired or revoked token. */
 export interface TokenVerifier {
@@ -28,15 +28,49 @@ export interface GuardInput {
 
 const BEARER = /^Bearer ([^\s]+)$/;
 
+/**
+ * Admin SDK error codes (node_modules/firebase-admin/lib/auth/error.js) that mean the caller's token is the
+ * problem: expired, revoked, not a valid Firebase ID token, malformed (`argument-error`, which the token
+ * verifier raises for an unparseable JWT or a bad claim), or its user is disabled or gone.
+ * Every other code, such as `auth/internal-error` or a credential or network error, is our infrastructure.
+ */
+export const TOKEN_FAILURE_CODES: ReadonlySet<string> = new Set([
+  "auth/id-token-expired",
+  "auth/id-token-revoked",
+  "auth/invalid-id-token",
+  "auth/argument-error",
+  "auth/user-disabled",
+  "auth/user-not-found",
+]);
+
+const CODE_SHAPE = /^[a-z]+\/[a-z0-9-]{1,64}$/;
+
+function errorCode(error: unknown): string {
+  const code = typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
+  return typeof code === "string" && CODE_SHAPE.test(code) ? code : "unknown";
+}
+
+/** Logs one line with the failing error code only. The token and the error message are never logged. */
+export type GuardLog = (event: string, fields: Record<string, string>) => void;
+
 /** Returns the verified uid, or throws a RouteError with the guard's status. */
-export async function guardRequest(input: GuardInput, verifier: TokenVerifier, origins: readonly string[] = ALLOWED_ORIGINS): Promise<string> {
+export async function guardRequest(
+  input: GuardInput,
+  verifier: TokenVerifier,
+  origins: readonly string[] = ALLOWED_ORIGINS,
+  log?: GuardLog,
+): Promise<string> {
   const match = BEARER.exec(input.header("authorization") ?? "");
   if (match === null) throw authError("no bearer token");
   let uid: string;
   try {
     ({ uid } = await verifier.verify(match[1]!));
-  } catch {
-    throw authError("token rejected");
+  } catch (error) {
+    const code = errorCode(error);
+    if (TOKEN_FAILURE_CODES.has(code)) throw authError("token rejected");
+    // Not the token's fault (auth/internal-error, credentials, network, anything unknown): tell the client to retry.
+    log?.("auth.verifier", { code });
+    throw dependencyError(1000, "token verifier");
   }
   if (typeof uid !== "string" || uid.length === 0 || uid.length > 128 || uid.includes("/")) throw authError("bad uid");
 

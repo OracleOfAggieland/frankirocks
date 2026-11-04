@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseWith, runRoute, type RouteSpec } from "../routes/runtime";
 import { fakeRequest, testRig } from "../testing/fakes";
 import { obj, str } from "@franki/core";
-import { SDP_BODY_CAP_BYTES } from "./guard";
+import { SDP_BODY_CAP_BYTES, type TokenVerifier } from "./guard";
 
 /** A route that records whether its logic ran and which uid it saw. */
 function probe(bodyCap?: number) {
@@ -19,6 +19,15 @@ function probe(bodyCap?: number) {
   return { spec, seen };
 }
 
+/** A verifier that always throws `failure`. */
+function failingVerifier(failure: unknown): TokenVerifier {
+  return {
+    async verify() {
+      throw failure;
+    },
+  };
+}
+
 describe("Route_Guard", () => {
   describe("401 AUTH", () => {
     it.each([
@@ -33,6 +42,20 @@ describe("Route_Guard", () => {
       expect(seen).toEqual([]);
     });
 
+    it.each([
+      ["an expired token", "auth/id-token-expired"],
+      ["a revoked token", "auth/id-token-revoked"],
+      ["a malformed token", "auth/argument-error"],
+      ["a token that is not a Firebase ID token", "auth/invalid-id-token"],
+    ])("answers AUTH for %s from the verifier", async (_label, code) => {
+      const rig = testRig();
+      const deps = { ...rig.deps, tokens: failingVerifier(Object.assign(new Error("SECRET-TOKEN-TEXT"), { code })) };
+      const { spec, seen } = probe();
+      const res = await runRoute(spec, fakeRequest({ body: { note: "x" } }), deps, rig.sched.schedule);
+      expect(res).toEqual({ status: 401, body: { error: "AUTH", retryAfterMs: 0 } });
+      expect(seen).toEqual([]);
+    });
+
     it("rejects a non-Bearer scheme", async () => {
       const rig = testRig();
       const { spec, seen } = probe();
@@ -40,6 +63,31 @@ describe("Route_Guard", () => {
       const withBasic = { ...req, header: (n: string) => (n === "authorization" ? "Basic token:owner-1" : req.header(n)) };
       expect((await runRoute(spec, withBasic, rig.deps, rig.sched.schedule)).status).toBe(401);
       expect(seen).toEqual([]);
+    });
+  });
+
+  describe("503 DEPENDENCY (verifier infrastructure failures)", () => {
+    it.each([
+      ["auth/internal-error", Object.assign(new Error("An internal error has occurred."), { code: "auth/internal-error" })],
+      ["a plain thrown Error", new Error("connect ECONNRESET")],
+      ["an unknown auth code", Object.assign(new Error("x"), { code: "auth/something-new" })],
+      ["a non-Error throw", "boom"],
+    ])("answers DEPENDENCY with a retry hint for %s, and logs only the code", async (_label, failure) => {
+      const rig = testRig();
+      const deps = { ...rig.deps, tokens: failingVerifier(failure) };
+      const { spec, seen } = probe();
+      const res = await runRoute(spec, fakeRequest({ token: "token:owner-1", body: { note: "x" } }), deps, rig.sched.schedule);
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({ error: "DEPENDENCY", retryAfterMs: 1000 });
+      expect(seen).toEqual([]);
+      const line = rig.logs.find((l) => l.event === "auth.verifier");
+      expect(line).toBeDefined();
+      const text = JSON.stringify(rig.logs);
+      expect(text).not.toContain("token:owner-1");
+      expect(text).not.toContain("ECONNRESET");
+      if (failure instanceof Error && (failure as { code?: string }).code === "auth/internal-error") {
+        expect(line?.fields).toEqual({ code: "auth/internal-error" });
+      }
     });
   });
 

@@ -74,6 +74,8 @@ export async function runRoute<Req>(spec: RouteSpec<Req>, http: HttpInput, deps:
     const uid = await guardRequest(
       { method: http.method, header: (n) => http.header(n), bodyText, bodyCap: spec.bodyCap ?? BODY_CAP_BYTES },
       deps.tokens,
+      undefined,
+      deps.log,
     );
     let body: unknown = null;
     if (bodyText !== "") {
