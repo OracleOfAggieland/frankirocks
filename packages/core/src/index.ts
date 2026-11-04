@@ -13,3 +13,5 @@ export * from "./slices";
 export * from "./evidence";
 export * from "./lineage";
 export * from "./time";
+export * from "./eligible";
+export * from "./spoken";

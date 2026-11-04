@@ -152,10 +152,11 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Fake token verifier for tests. Define the `schedule(fn)` dependency and the adapter template that wraps `after()`.
   - Commit: `feat(server): route guard, idempotency, core docs`
 
-- [ ] 16. Eligibility and spoken grade
+- [x] 16. Eligibility and spoken grade
   - Requirements: R25.1–R25.7, R28.1, R28.2 (KC06, KC09)
   - Depends on: 7
-  - Estimate: 2.5 h · Actual: —
+  - Estimate: 2.5 h · Actual: 0.3 h
+  - Done: `core/eligible.ts` (closed `EC`, `DocRef` and `Snapshot` schemas; every implemented clause of the design table; invalid input is `ineligible` and never throws; validation is memoized by object identity so one Snapshot is checked once per Head build), `core/spoken.ts`, test builders `sampleEC`/`sampleSnapshot` in `@franki/core/testing`. Snapshot `refs[i]` describes `rows[i]` (contract question 29). Non-active statuses fail Spoken_Grade with `stale`; S2 with `sensitivity`; T/M with `authority`.
   - Witness: `packages/core/src/eligible.test.ts` › one test per implemented deny reason plus `ok`; `spoken.test.ts`
   - Commit: `feat(core): eligible and spokenGrade`
 
