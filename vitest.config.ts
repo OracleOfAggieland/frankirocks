@@ -9,6 +9,7 @@ export default defineConfig({
       "functions/src/**/*.test.ts",
       "scripts/**/*.test.ts",
       "test/**/*.test.ts",
+      "apps/web/src/**/*.test.{ts,tsx}",
     ],
     setupFiles: ["test/setup.ts"],
   },
