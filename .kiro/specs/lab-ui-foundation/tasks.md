@@ -220,7 +220,8 @@ Rules for every task:
     - Depends on: 6.2, 6.14.
     - Witness: `npx vitest run apps/web/src/ui/avatar/events.property.test.ts`.
     - **Validates: Requirements 8.3, 8.4**
-  - [ ] 6.17 Write the property test for approval waits
+  - [x] 6.17 Write the property test for approval waits
+    - Actual time: 2 min
     - **Property 9: Approval waits end when the approval ends**
     - Same file. At least 100 runs.
     - Depends on: 6.16.

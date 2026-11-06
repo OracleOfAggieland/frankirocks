@@ -34,3 +34,30 @@ describe("Property 8: No dead ends in the Event_Controller", () => {
     );
   });
 });
+
+// Feature: lab-ui-foundation, Property 9: Approval waits end when the approval ends
+describe("Property 9: Approval waits end when the approval ends", () => {
+  const ending = fc.constantFrom<"done" | "closed" | "signOut">("done", "closed", "signOut");
+
+  it("does not report await-approval after its approvalDone, closed or signOut", () => {
+    fc.assert(
+      fc.property(arbEventInputs, arbEventInputs, fc.constantFrom("a1", "a2", "a3"), ending, (prefix, middle0, id, end) => {
+        const middle = middle0.filter((i) => i.kind !== "await");
+        const t0 = prefix[prefix.length - 1].at;
+        const shifted = middle.map((i) => ({ ...i, at: i.at + t0 + 1 }));
+        const tEnd = (shifted[shifted.length - 1]?.at ?? t0 + 1) + 1;
+        const endInput: EventInput =
+          end === "done"
+            ? { kind: "approvalDone", approvalId: id, at: tEnd }
+            : end === "closed"
+              ? { kind: "state", state: "closed", at: tEnd }
+              : { kind: "signOut", at: tEnd };
+        const inputs: EventInput[] = [...prefix, { kind: "await", approvalId: id, at: t0 }, ...shifted, endInput];
+        const s = inputs.reduce(reduceEvents, initialEventState);
+        expect(currentEvent(s).event).not.toBe("await-approval");
+        expect(s.awaiting).toBeNull();
+      }),
+      { numRuns: 300 },
+    );
+  });
+});
