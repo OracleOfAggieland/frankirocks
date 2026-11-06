@@ -38,7 +38,8 @@ Rules for every task:
     - Depends on: 1.1.
     - Witness: `npm run build` exits 0; `npx vitest run apps/web/src/components/Footer.test.tsx`.
     - _Requirements: 2.1, 2.2, 2.3, 2.5, 2.7_
-  - [ ] 2.2 Write `apps/web/src/ui/motion.ts`
+  - [x] 2.2 Write `apps/web/src/ui/motion.ts`
+    - Actual time: 2 min
     - Hand-written mirror: `COLOR`, `SPRING.float/settle/press`, `DUR` in ms, `EASE.ecto`, `STAGGER`, and `EVENT_MS` (`wake` 1200, `present-card` 800, `celebrate` 1600). Not generated.
     - Depends on: 1.1.
     - Witness: `npm run typecheck`.
