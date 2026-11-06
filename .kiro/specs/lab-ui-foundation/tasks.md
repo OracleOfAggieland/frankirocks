@@ -138,7 +138,8 @@ Rules for every task:
     - Depends on: 6.3.
     - Witness: `npx vitest run apps/web/src/ui/avatar/look.test.ts`.
     - _Requirements: 5.3, 5.4, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 6.10_
-  - [ ] 6.5 Write the property test for look totality
+  - [x] 6.5 Write the property test for look totality
+    - Actual time: 2 min
     - **Property 1: Look totality and determinism**
     - In `apps/web/src/ui/avatar/look.property.test.ts`. At least 100 runs.
     - Depends on: 6.2, 6.3.
