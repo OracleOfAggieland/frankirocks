@@ -114,7 +114,8 @@ Rules for every task:
     - _Requirements: 22.1, 22.2_
 
 - [ ] 6. Pure avatar model
-  - [ ] 6.1 Write `apps/web/src/ui/avatar/types.ts` and `apps/web/src/ui/copy.ts`
+  - [x] 6.1 Write `apps/web/src/ui/avatar/types.ts` and `apps/web/src/ui/copy.ts`
+    - Actual time: 3 min
     - Types `AvatarEvent`, `TimedEvent`, `LookName`, `AvatarInput`, `Eyes`, `Glow`, `Posture`, `Bolts`, `BodyMotion`, `AnimationId`, `AvatarLook`, `AvatarRendererProps`, `AvatarRenderer` exactly as design "Avatar types and the Avatar_Contract". `copy.ts` holds the six avatar labels.
     - Depends on: 2.2.
     - Witness: `npm run typecheck`.
