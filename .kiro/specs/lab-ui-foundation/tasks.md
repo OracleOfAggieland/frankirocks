@@ -207,7 +207,8 @@ Rules for every task:
     - Depends on: 6.1.
     - Witness: `npm run typecheck`.
     - _Requirements: 6.2, 6.9, 8.3, 8.4_
-  - [ ] 6.15 Write `apps/web/src/ui/avatar/events.test.ts`
+  - [x] 6.15 Write `apps/web/src/ui/avatar/events.test.ts`
+    - Actual time: 2 min
     - Examples: automatic wake on first `connecting`; explicit wake ignored after; `present-card` dropped during wake; backward Frame_Time ignored; `signOut` clears both slots.
     - Depends on: 6.14.
     - Witness: `npx vitest run apps/web/src/ui/avatar/events.test.ts`.
