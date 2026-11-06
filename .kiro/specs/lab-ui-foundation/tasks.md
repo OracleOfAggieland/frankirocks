@@ -152,7 +152,8 @@ Rules for every task:
     - Depends on: 6.5.
     - Witness: `npx vitest run apps/web/src/ui/avatar/look.property.test.ts`.
     - **Validates: Requirements 5.3, 5.4, 5.7, 6.5, 6.6**
-  - [ ] 6.7 Write the property test for Ghost_Mode
+  - [x] 6.7 Write the property test for Ghost_Mode
+    - Actual time: 1 min
     - **Property 3: Ghost_Mode overlay**
     - Same file. At least 100 runs.
     - Depends on: 6.6.

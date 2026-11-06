@@ -58,3 +58,21 @@ describe("Property 2: Fixed priority order", () => {
     );
   });
 });
+
+// Feature: lab-ui-foundation, Property 3: Ghost_Mode overlay
+describe("Property 3: Ghost_Mode overlay", () => {
+  it("only sets ghost and body opacity, keeping every other field", () => {
+    fc.assert(
+      fc.property(arbInput.map((i) => ({ ...i, micMuted: true })), (input) => {
+        const ghost = lookFor(input);
+        const plain = lookFor({ ...input, micMuted: false });
+        expect(ghost.ghost).toBe(true);
+        expect(ghost.bodyOpacity).toBe(0.35);
+        expect(ghost.eyeOpacity).toBe(1);
+        expect({ ...ghost, ghost: false, bodyOpacity: 1 }).toEqual(plain);
+        expect(plain.ghost).toBe(false);
+      }),
+      { numRuns: 300 },
+    );
+  });
+});
