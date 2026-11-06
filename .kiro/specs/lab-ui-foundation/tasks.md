@@ -145,7 +145,8 @@ Rules for every task:
     - Depends on: 6.2, 6.3.
     - Witness: `npx vitest run apps/web/src/ui/avatar/look.property.test.ts`.
     - **Validates: Requirements 5.1, 5.2**
-  - [ ] 6.6 Write the property test for the priority order
+  - [x] 6.6 Write the property test for the priority order
+    - Actual time: 2 min
     - **Property 2: Fixed priority order**
     - Same file; the oracle is written from the design's priority table; extra weight on `recovery` and `closed` with each event. At least 100 runs.
     - Depends on: 6.5.
