@@ -213,7 +213,8 @@ Rules for every task:
     - Depends on: 6.14.
     - Witness: `npx vitest run apps/web/src/ui/avatar/events.test.ts`.
     - _Requirements: 6.2, 8.3_
-  - [ ] 6.16 Write the property test for no dead ends
+  - [x] 6.16 Write the property test for no dead ends
+    - Actual time: 2 min
     - **Property 8: No dead ends in the Event_Controller**
     - In `apps/web/src/ui/avatar/events.property.test.ts`; final frame at the last new event plus 1600 plus `fc.nat(5000)`. At least 100 runs.
     - Depends on: 6.2, 6.14.
