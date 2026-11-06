@@ -99,11 +99,12 @@ Rules for every task:
     - Witness: `npx vitest run scripts/copy-check.test.ts`.
     - **Validates: Requirements 17.1**
 
-- [ ] 4. Checkpoint: tokens and checks
+- [x] 4. Checkpoint: tokens and checks
   - Run `npm test` and `npm run typecheck`; both exit 0. Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. The `motion` dependency
-  - [ ] 5.1 Install `motion@14.9.1` and confirm it
+- [x] 5. The `motion` dependency
+  - [x] 5.1 Install `motion@14.9.1` and confirm it
+    - Actual time: 5 min
     - `npm install motion@14.9.1 -w @franki/web`; `apps/web/package.json` shows `"motion": "14.9.1"` with no range. Add nothing else (R22.2).
     - Read the docs and type definitions in `node_modules/motion` and `node_modules/framer-motion`. Confirm `MotionConfig` with `reducedMotion`, `AnimatePresence`, spring `stiffness` and `damping`, and the `motion/react` export.
     - Confirm `motion/react` builds under Turbopack: import it from a temporary `"use client"` component on `/`, run `npm run build`, then remove the probe before committing. The commit holds only `apps/web/package.json` and `package-lock.json`.
