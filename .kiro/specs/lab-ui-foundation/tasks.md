@@ -194,7 +194,8 @@ Rules for every task:
     - Depends on: 6.11.
     - Witness: `npx vitest run apps/web/src/ui/avatar/look.property.test.ts`.
     - **Validates: Requirements 9.1, 9.2**
-  - [ ] 6.13 Write the property test for distinct looks
+  - [x] 6.13 Write the property test for distinct looks
+    - Actual time: 2 min
     - **Property 12: Different looks look different**
     - Same file; random pairs plus one hand-built input per Look_Name so every pair is covered in each motion setting. At least 100 runs.
     - Depends on: 6.12.

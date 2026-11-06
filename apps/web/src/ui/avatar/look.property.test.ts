@@ -170,3 +170,46 @@ describe("Property 11: Reduced motion is calm", () => {
     );
   });
 });
+
+// Feature: lab-ui-foundation, Property 12: Different looks look different
+describe("Property 12: Different looks look different", () => {
+  const visual = (l: ReturnType<typeof lookFor>) => [l.eyes, l.glow, l.posture, l.bolts, l.body, l.bodyOpacity, l.follows].join("|");
+  const BY_NAME: Record<LookName, Partial<AvatarInput>> = {
+    Dormant: { state: "closed" },
+    Waking: { state: "connecting", firstConnecting: true },
+    Connecting: { state: "connecting" },
+    Listening: { state: "listening" },
+    Thinking: { state: "thinking" },
+    Speaking: { state: "speaking" },
+    Recovery: { state: "recovery" },
+    Presenting: { state: "listening", event: "present-card" },
+    Awaiting_Approval: { state: "listening", event: "await-approval" },
+    Celebrate: { state: "listening", event: "celebrate" },
+  };
+  const base: AvatarInput = {
+    state: "listening", micMuted: false, outputMuted: false, inputLevel: 0, outputLevel: 0,
+    event: null, eventElapsedMs: 0, firstConnecting: false, reducedMotion: false,
+  };
+
+  it("every pair of hand-built Look_Names differs, in both motion settings and ghost values", () => {
+    for (const reducedMotion of [false, true]) {
+      for (const micMuted of [false, true]) {
+        const looks = (Object.keys(BY_NAME) as LookName[]).map((n) => lookFor({ ...base, ...BY_NAME[n], reducedMotion, micMuted }));
+        expect(looks.map((l) => l.name)).toEqual(Object.keys(BY_NAME));
+        expect(new Set(looks.map(visual)).size).toBe(looks.length);
+      }
+    }
+  });
+
+  it("random pairs with different names or ghost values differ in a non-text field", () => {
+    fc.assert(
+      fc.property(arbInput, arbInput, fc.boolean(), (a0, b0, reducedMotion) => {
+        const a = lookFor({ ...a0, reducedMotion });
+        const b = lookFor({ ...b0, reducedMotion });
+        fc.pre(a.name !== b.name || a.ghost !== b.ghost);
+        expect(visual(a)).not.toBe(visual(b));
+      }),
+      { numRuns: 300 },
+    );
+  });
+});
