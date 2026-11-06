@@ -58,7 +58,8 @@ Rules for every task:
     - _Requirements: 18.4_
 
 - [ ] 3. Token check and copy check
-  - [ ] 3.1 Write `scripts/token-check.mjs`
+  - [x] 3.1 Write `scripts/token-check.mjs`
+    - Actual time: 5 min
     - Pure `findTokenViolations(path, text)` returning `{ line, match, kind }` with kinds `hex`, `duration` and `palette`, using the patterns in design "Token_Check" (hex of 3, 4, 6 or 8 digits at a boundary; CSS transition and animation times; Tailwind `duration-*`/`delay-*` except `(--…)` and `[var(--…)]` forms; numeric `duration`/`delay` keys in `.ts`/`.tsx`; SVG `dur`/`begin` literals; Tailwind default palette, `-white` and `-black` classes).
     - `scanTokens(root)` over `.ts`, `.tsx`, `.css` and `.mjs` in `apps/web/src/components/` and `apps/web/src/ui/`, skipping the Token_Files and `*.test.*`. CLI prints `path:line: match` per violation and exits 1, else 0.
     - Depends on: 2.1, 2.2.
