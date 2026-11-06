@@ -18,8 +18,9 @@ Rules for every task:
 
 ## Tasks
 
-- [ ] 1. UI steering file
-  - [ ] 1.1 Write `.kiro/steering/ui-design.md` and its check
+- [x] 1. UI steering file
+  - [x] 1.1 Write `.kiro/steering/ui-design.md` and its check
+    - Actual time: 4 min
     - Front matter `inclusion: fileMatch` and `fileMatchPattern: "apps/web/src/**"`.
     - At most 119 lines including front matter. Summarizes UI direction principles (including 5 to 8 and 10), the colour, type, radius and motion tokens with their exact values, the motion rules including Reduced_Motion and the two-Electricity limit, and the copy rules including the Banned_Cause_Words. Names `docs/design/ui-direction.md` as the source and says the source wins on any difference.
     - Write `scripts/ui-steering.test.ts`: front matter fields, line count at most 119, the source path present, and every colour hex in UI direction "Colour" present with the same value (R1.6).
