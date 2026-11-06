@@ -275,7 +275,8 @@ Rules for every task:
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/audio/context.test.ts`.
     - _Requirements: 11.7, 19.2_
-  - [ ] 9.4 Write `apps/web/src/ui/levels/level-meter.ts` and `level-meter.test.ts`
+  - [x] 9.4 Write `apps/web/src/ui/levels/level-meter.ts` and `level-meter.test.ts`
+    - Actual time: 4 min
     - `createLevelMeter(getContext)` with `setStreams`, `sample`, `pause`, `resume`, `dispose`; one `AnalyserNode` (`fftSize` 512) per stream, connected to nothing else; old nodes disconnected first; Web Audio errors caught and reported as 0.
     - Test with a fake context: 0 and 0 with no streams or no context, disconnect on `setStreams` with nulls, paused meter reads nothing, and no `fetch`, storage or `MediaRecorder` use.
     - Depends on: 9.1, 9.3.
