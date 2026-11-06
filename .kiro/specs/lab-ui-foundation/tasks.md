@@ -91,7 +91,8 @@ Rules for every task:
     - Depends on: 1.1.
     - Witness: `npx vitest run scripts/copy-check.test.ts`.
     - _Requirements: 17.1_
-  - [ ] 3.6 Write the property test for the copy check
+  - [x] 3.6 Write the property test for the copy check
+    - Actual time: 2 min
     - **Property 17: Banned cause words are found**
     - In `scripts/copy-check.test.ts`: one Banned_Cause_Word inserted at a word boundary in random case is reported; text of non-banned words that do not contain one as a whole word reports nothing. At least 100 runs.
     - Depends on: 3.5.

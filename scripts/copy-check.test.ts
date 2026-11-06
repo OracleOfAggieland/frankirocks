@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import fc from "fast-check";
 import { afterEach, describe, expect, it } from "vitest";
 import { REPO_ROOT } from "./clock-check.mjs";
 import { findBannedCauseWords, findCopyViolations, formatCopyViolations, scanCopy } from "./copy-check.mjs";
@@ -77,5 +78,38 @@ describe("copy check CLI", () => {
   it("exits 0 on clean copy", () => {
     const run = tree({ "apps/web/src/ui/copy.ts": 'export const A = "Franki is listening";\n' });
     expect(run.status).toBe(0);
+  });
+});
+
+// Feature: lab-ui-foundation, Property 17: Banned cause words are found
+describe("Property 17: Banned cause words are found", () => {
+  const BANNED = ["because", "caused", "thanks to", "led to", "won back"];
+  const SAFE_WORDS = ["Franki", "listening", "becausey", "leader", "causedx", "thanksto", "ledto", "wonback", "nights", "less", "$115", "meetings", "after", "6", "you", "led", "to", "won", "thanks", "back"];
+  // "led to", "thanks to" and "won back" must not form from adjacent safe words.
+  const safeText = fc
+    .array(fc.constantFrom(...SAFE_WORDS), { minLength: 0, maxLength: 20 })
+    .filter((ws) => !/\b(led to|thanks to|won back)\b/i.test(ws.join(" ")));
+  const randomCase = (word: string, flips: boolean[]) =>
+    [...word].map((ch, i) => (flips[i % flips.length] ? ch.toUpperCase() : ch.toLowerCase())).join("");
+
+  it("reports one inserted banned word in any case, and nothing for safe text", () => {
+    fc.assert(
+      fc.property(
+        safeText,
+        fc.nat(),
+        fc.constantFrom(...BANNED),
+        fc.array(fc.boolean(), { minLength: 1, maxLength: 9 }),
+        fc.constantFrom(" ", ". ", ", ", "\n"),
+        (ws, at, word, flips, sep) => {
+          expect(findBannedCauseWords(ws.join(" "))).toEqual([]);
+          const inserted = randomCase(word, flips);
+          const index = at % (ws.length + 1);
+          const text = [...ws.slice(0, index), inserted, ...ws.slice(index)].join(sep);
+          const hits = findBannedCauseWords(text).map((h: { match: string }) => h.match.toLowerCase());
+          expect(hits).toContain(word);
+        },
+      ),
+      { numRuns: 200 },
+    );
   });
 });
