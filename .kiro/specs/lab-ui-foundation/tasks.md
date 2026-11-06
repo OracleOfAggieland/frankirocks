@@ -159,7 +159,8 @@ Rules for every task:
     - Depends on: 6.6.
     - Witness: `npx vitest run apps/web/src/ui/avatar/look.property.test.ts`.
     - **Validates: Requirements 6.11**
-  - [ ] 6.8 Write the property test for output muted
+  - [x] 6.8 Write the property test for output muted
+    - Actual time: 1 min
     - **Property 4: Output muted never drives the body**
     - Same file. At least 100 runs.
     - Depends on: 6.7.

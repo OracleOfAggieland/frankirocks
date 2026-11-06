@@ -3,7 +3,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { AvatarState } from "@franki/core";
 import { AVATAR_LABELS } from "../copy";
-import { arbEvent, arbInput } from "../test-arbitraries";
+import { arbEvent, arbInput, arbLevel } from "../test-arbitraries";
 import { isAvatarLook, lookFor } from "./look";
 import type { AvatarInput, LookName } from "./types";
 
@@ -71,6 +71,22 @@ describe("Property 3: Ghost_Mode overlay", () => {
         expect(ghost.eyeOpacity).toBe(1);
         expect({ ...ghost, ghost: false, bodyOpacity: 1 }).toEqual(plain);
         expect(plain.ghost).toBe(false);
+      }),
+      { numRuns: 300 },
+    );
+  });
+});
+
+// Feature: lab-ui-foundation, Property 4: Output muted never drives the body
+describe("Property 4: Output muted never drives the body", () => {
+  it("never follows output or squishes, and ignores the Output_Level", () => {
+    fc.assert(
+      fc.property(arbInput.map((i) => ({ ...i, outputMuted: true })), arbLevel, arbLevel, (input, a, b) => {
+        const la = lookFor({ ...input, outputLevel: a });
+        const lb = lookFor({ ...input, outputLevel: b });
+        expect(la.follows).not.toBe("output");
+        expect(la.body).not.toBe("squish");
+        expect(la).toEqual(lb);
       }),
       { numRuns: 300 },
     );
