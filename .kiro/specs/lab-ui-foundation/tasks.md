@@ -269,7 +269,8 @@ Rules for every task:
     - Depends on: 6.2, 9.1.
     - Witness: `npx vitest run apps/web/src/ui/levels/level-math.property.test.ts`.
     - **Validates: Requirements 11.6, 11.1**
-  - [ ] 9.3 Write `apps/web/src/ui/audio/context.ts` and `context.test.ts`
+  - [x] 9.3 Write `apps/web/src/ui/audio/context.ts` and `context.test.ts`
+    - Actual time: 3 min
     - One shared `AudioContext`, created on the first `pointerdown` or `keydown` of the Visit; `getContext()` returns null before. Tested with an injected fake window and context constructor.
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/audio/context.test.ts`.
