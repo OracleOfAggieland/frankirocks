@@ -252,11 +252,12 @@ Rules for every task:
     - Witness: `npx vitest run scripts/ui-boundaries.test.ts`.
     - _Requirements: 4.4, 5.1, 10.6, 16.1_
 
-- [ ] 8. Checkpoint: avatar model
+- [x] 8. Checkpoint: avatar model
   - Run `npm test` and `npm run typecheck`; both exit 0, including Properties 1 to 12, 17 and 18. Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. Audio levels and the Voice_Client change
-  - [ ] 9.1 Write `apps/web/src/ui/levels/level-math.ts` and `level-math.test.ts`
+  - [x] 9.1 Write `apps/web/src/ui/levels/level-math.ts` and `level-math.test.ts`
+    - Actual time: 3 min
     - `rawLevel` (RMS of 8-bit samples centred on 128, scaled, clamped; invalid gives 0), `smoothLevel` (attack 0.5, release 0.12; non-finite prior counts as 0), `levelFrom`. Examples for silence, full scale and empty buffers.
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/levels/level-math.test.ts`.
