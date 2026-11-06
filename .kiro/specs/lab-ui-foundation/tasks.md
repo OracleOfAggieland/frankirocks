@@ -85,7 +85,8 @@ Rules for every task:
     - Depends on: 3.3.
     - Witness: `npx vitest run scripts/token-check.test.ts`.
     - **Validates: Requirements 3.2, 3.3, 3.4**
-  - [ ] 3.5 Write `scripts/copy-check.mjs` and `scripts/copy-check.test.ts`
+  - [x] 3.5 Write `scripts/copy-check.mjs` and `scripts/copy-check.test.ts`
+    - Actual time: 5 min
     - Pure `findBannedCauseWords(text)` matching the Banned_Cause_Words as whole words or phrases in any letter case; a scan over string literals and JSX text in `apps/web/src/components/`, `apps/web/src/ui/` and `apps/web/src/app/specimens/`; CLI exit codes as in the Token_Check. The test runs the scan on the repo and expects none, plus examples ("Because", "led to", "becausey" passes).
     - Depends on: 1.1.
     - Witness: `npx vitest run scripts/copy-check.test.ts`.
