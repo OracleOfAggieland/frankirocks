@@ -18,7 +18,7 @@ export function AuthPanel({ state, busy, configMissing, onSignIn, onSignOut }: A
   if (configMissing !== null) {
     return (
       <section aria-label="Sign-in" className="flex flex-col items-center gap-2">
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-ember">
           Sign-in is not configured. Missing: {configMissing.join(", ")}.
         </p>
       </section>
@@ -27,10 +27,10 @@ export function AuthPanel({ state, busy, configMissing, onSignIn, onSignOut }: A
   if (state.kind === "signedIn") {
     return (
       <section aria-label="Signed in" className="flex items-center gap-3">
-        <span data-testid="signed-in-email" className="text-sm text-zinc-300">
+        <span data-testid="signed-in-email" className="text-sm text-ink">
           {state.email}
         </span>
-        <button type="button" onClick={onSignOut} className="rounded border border-zinc-600 px-3 py-1 text-sm hover:bg-zinc-800">
+        <button type="button" onClick={onSignOut} className="rounded border border-ink-dim px-3 py-1 text-sm hover:bg-night-2">
           Sign out
         </button>
       </section>
@@ -43,13 +43,13 @@ export function AuthPanel({ state, busy, configMissing, onSignIn, onSignOut }: A
         type="button"
         onClick={onSignIn}
         disabled={state.kind === "loading" || busy}
-        className="rounded bg-zinc-100 px-4 py-2 font-medium text-zinc-900 disabled:opacity-50"
+        className="rounded bg-brass px-4 py-2 font-medium text-night-0 disabled:opacity-50"
       >
         Sign in with Google
       </button>
-      {state.kind === "loading" ? <p className="text-xs text-zinc-500">Checking sign-in…</p> : null}
+      {state.kind === "loading" ? <p className="text-xs text-ink-dim">Checking sign-in…</p> : null}
       {error !== null ? (
-        <p role="alert" data-cause={error.cause} className="max-w-sm text-sm text-red-400">
+        <p role="alert" data-cause={error.cause} className="max-w-sm text-sm text-ember">
           {error.message}
         </p>
       ) : null}

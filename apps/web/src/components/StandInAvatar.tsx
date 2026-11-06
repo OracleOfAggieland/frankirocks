@@ -15,19 +15,19 @@ export interface AvatarStyle {
 }
 
 export const AVATAR_STYLES: Record<AvatarState, AvatarStyle> = {
-  closed: { shape: "circle", size: "sm", colour: "bg-zinc-600", animation: "none" },
-  connecting: { shape: "circle", size: "md", colour: "bg-amber-400", animation: "spin" },
-  listening: { shape: "circle", size: "md", colour: "bg-emerald-400", animation: "pulse" },
-  thinking: { shape: "rounded", size: "md", colour: "bg-indigo-400", animation: "bounce" },
-  speaking: { shape: "circle", size: "lg", colour: "bg-sky-400", animation: "ping" },
-  recovery: { shape: "diamond", size: "md", colour: "bg-red-500", animation: "none" },
+  closed: { shape: "circle", size: "sm", colour: "bg-stitch", animation: "none" },
+  connecting: { shape: "circle", size: "md", colour: "bg-brass", animation: "spin" },
+  listening: { shape: "circle", size: "md", colour: "bg-ecto", animation: "pulse" },
+  thinking: { shape: "rounded", size: "md", colour: "bg-ghost-deep", animation: "bounce" },
+  speaking: { shape: "circle", size: "lg", colour: "bg-ghost", animation: "ping" },
+  recovery: { shape: "diamond", size: "md", colour: "bg-ember", animation: "none" },
 };
 
 const SHAPE: Record<AvatarStyle["shape"], string> = { circle: "rounded-full", rounded: "rounded-2xl", diamond: "rotate-45 rounded-md" };
 const SIZE: Record<AvatarStyle["size"], string> = { sm: "h-16 w-16", md: "h-24 w-24", lg: "h-32 w-32" };
 const ANIMATION: Record<AvatarStyle["animation"], string> = {
   none: "",
-  spin: "animate-spin border-4 border-dashed border-amber-100",
+  spin: "animate-spin border-4 border-dashed border-brass-hi",
   pulse: "animate-pulse",
   bounce: "animate-bounce",
   ping: "",
@@ -43,7 +43,7 @@ export function StandInAvatar({ state }: { state: AvatarState }) {
   return (
     <div role="img" aria-label={`Franki is ${state}`} data-state={state} className="relative flex h-36 w-36 items-center justify-center">
       {style.animation === "ping" ? <span aria-hidden="true" className={`absolute ${SHAPE[style.shape]} ${SIZE[style.size]} ${style.colour} animate-ping opacity-40`} /> : null}
-      <span aria-hidden="true" className={`relative transition-all duration-200 ${avatarClasses(state)}`} />
+      <span aria-hidden="true" className={`relative transition-all duration-(--dur-quick) ${avatarClasses(state)}`} />
     </div>
   );
 }

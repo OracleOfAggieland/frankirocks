@@ -65,7 +65,8 @@ Rules for every task:
     - Depends on: 2.1, 2.2.
     - Witness: `node scripts/token-check.mjs` runs and lists the current violations in existing components (expected non-zero until 3.2).
     - _Requirements: 2.8, 3.1, 3.2, 3.3, 3.4, 3.5_
-  - [ ] 3.2 Move existing components to token classes
+  - [x] 3.2 Move existing components to token classes
+    - Actual time: 4 min
     - In `App.tsx`, `AuthPanel.tsx`, `CallScreen.tsx`, `DebugPanel.tsx`, `Footer.tsx`, `TypedInput.tsx` and `StandInAvatar.tsx`, replace every palette class, raw hex and ad hoc duration with token classes. Behavior and text stay the same. The call button keeps `rounded-full` with `bg-ecto` for start and a squared `bg-ember` form for hang-up; the six stand-in states keep six distinct token colours.
     - Update the class assertions in `StandInAvatar.test.tsx` from `bg-emerald-500`/`bg-red-600` to `bg-ecto`/`bg-ember`, keeping the shape assertions, so the same FSC R16.4 behavior stays checked (R23.4, R23.5).
     - Depends on: 2.1, 3.1.

@@ -41,8 +41,8 @@ export function CallScreen({ voice, enabled, configMissing = null, onCall, onHan
           onClick={start ? onCall : onHangUp}
           className={
             start
-              ? "rounded-full bg-emerald-500 px-6 py-3 font-medium text-zinc-950 disabled:opacity-40"
-              : "rounded-md bg-red-600 px-6 py-3 font-medium text-white disabled:opacity-40"
+              ? "rounded-full bg-ecto px-6 py-3 font-medium text-night-0 disabled:opacity-40"
+              : "rounded-md bg-ember px-6 py-3 font-medium text-night-0 disabled:opacity-40"
           }
         >
           {start ? "Call" : "Hang up"}
@@ -53,28 +53,28 @@ export function CallScreen({ voice, enabled, configMissing = null, onCall, onHan
             aria-pressed={voice.micMuted}
             aria-label={voice.micMuted ? "Unmute microphone" : "Mute microphone"}
             onClick={onToggleMute}
-            className={voice.micMuted ? "rounded border border-red-400 px-3 py-2 text-sm text-red-300" : "rounded border border-zinc-600 px-3 py-2 text-sm"}
+            className={voice.micMuted ? "rounded border border-ember px-3 py-2 text-sm text-ember" : "rounded border border-ink-dim px-3 py-2 text-sm"}
           >
             {voice.micMuted ? "Muted" : "Mute"}
           </button>
         ) : null}
       </div>
       {voice.micMuted && muteVisible(voice) ? (
-        <p data-testid="muted-indicator" className="text-xs text-red-300">
+        <p data-testid="muted-indicator" className="text-xs text-ember">
           Your microphone is muted.
         </p>
       ) : null}
       {showRetry ? (
-        <button type="button" onClick={onRetry} className="rounded border border-amber-400 px-3 py-1 text-sm text-amber-200">
+        <button type="button" onClick={onRetry} className="rounded border border-brass px-3 py-1 text-sm text-brass">
           Retry
         </button>
       ) : null}
       {voice.error !== null ? (
-        <p role="alert" data-step={voice.error} className="max-w-sm text-sm text-red-400">
+        <p role="alert" data-step={voice.error} className="max-w-sm text-sm text-ember">
           {CALL_ERRORS[voice.error]}
         </p>
       ) : null}
-      {configMissing !== null ? <p className="text-xs text-zinc-500">Calls are not configured. Missing: {configMissing}.</p> : null}
+      {configMissing !== null ? <p className="text-xs text-ink-dim">Calls are not configured. Missing: {configMissing}.</p> : null}
     </section>
   );
 }

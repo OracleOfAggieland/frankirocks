@@ -13,26 +13,26 @@ export interface DebugPanelProps {
 }
 
 const HEAD_CAP = 3500;
-const box = "rounded border border-zinc-800 p-3 text-left";
+const box = "rounded border border-stitch p-3 text-left";
 const mono = "font-mono text-xs break-all";
 
 export function DebugPanel({ state, selectedMemoryId, onSelectMemory, onRefresh }: DebugPanelProps) {
   const { data } = state;
   return (
-    <section aria-label="Debug panel" className="flex w-full max-w-5xl flex-col gap-4 text-left text-sm text-zinc-200">
+    <section aria-label="Debug panel" className="flex w-full max-w-5xl flex-col gap-4 text-left text-sm text-ink">
       <header className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">Debug panel</h2>
-        <button type="button" onClick={onRefresh} disabled={state.loading} className="rounded border border-zinc-600 px-2 py-0.5 text-xs disabled:opacity-50">
+        <button type="button" onClick={onRefresh} disabled={state.loading} className="rounded border border-ink-dim px-2 py-0.5 text-xs disabled:opacity-50">
           {state.loading ? "Loading…" : "Refresh"}
         </button>
-        {state.lastLoadedAt !== null ? <span className="text-xs text-zinc-500">Loaded at {state.lastLoadedAt}</span> : null}
+        {state.lastLoadedAt !== null ? <span className="text-xs text-ink-dim">Loaded at {state.lastLoadedAt}</span> : null}
         {state.stale ? (
-          <span role="status" data-testid="stale" className="rounded bg-amber-900 px-2 py-0.5 text-xs text-amber-100">
+          <span role="status" data-testid="stale" className="rounded bg-night-2 px-2 py-0.5 text-xs text-brass-hi">
             Stale: showing data from {state.lastLoadedAt ?? "no successful load"}. {state.error}
           </span>
         ) : null}
       </header>
-      {data === null ? <p className="text-zinc-500">{state.stale ? "Nothing loaded yet." : "Loading…"}</p> : <Sections data={data} selectedMemoryId={selectedMemoryId} onSelectMemory={onSelectMemory} />}
+      {data === null ? <p className="text-ink-dim">{state.stale ? "Nothing loaded yet." : "Loading…"}</p> : <Sections data={data} selectedMemoryId={selectedMemoryId} onSelectMemory={onSelectMemory} />}
     </section>
   );
 }
@@ -40,17 +40,17 @@ export function DebugPanel({ state, selectedMemoryId, onSelectMemory, onRefresh 
 function Sections({ data, selectedMemoryId, onSelectMemory }: { data: DebugData; selectedMemoryId: string | null; onSelectMemory: (id: string | null) => void }) {
   const evidenceById = new Map<string, Evidence>(data.evidence.map((e) => [e.id, e.record]));
   const selected = data.memories.find((m) => m.id === selectedMemoryId) ?? null;
-  const more = (s: string) => (data.truncated.includes(s as never) ? <p className="text-xs text-amber-300">More {s} exist than were loaded.</p> : null);
+  const more = (s: string) => (data.truncated.includes(s as never) ? <p className="text-xs text-brass">More {s} exist than were loaded.</p> : null);
   return (
     <>
       <div className={box}>
         <h3 className="mb-2 font-semibold">Turns</h3>
         {data.turns.length === 0 ? (
-          <p className="text-zinc-500">No turns in the current Session.</p>
+          <p className="text-ink-dim">No turns in the current Session.</p>
         ) : (
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-zinc-500">
+              <tr className="text-ink-dim">
                 <th className="text-left">seq</th>
                 <th className="text-left">role</th>
                 <th className="text-left">clientSeq</th>
@@ -66,7 +66,7 @@ function Sections({ data, selectedMemoryId, onSelectMemory }: { data: DebugData;
                   <td>{t.role}</td>
                   <td>{t.role === "user" ? t.seq : "—"}</td>
                   <td>{t.state}</td>
-                  <td className={mono}>{t.evidenceId ?? <span data-testid="no-evidence" className="text-amber-300">none</span>}</td>
+                  <td className={mono}>{t.evidenceId ?? <span data-testid="no-evidence" className="text-brass">none</span>}</td>
                   <td>{t.text ?? ""}</td>
                 </tr>
               ))}
@@ -78,12 +78,12 @@ function Sections({ data, selectedMemoryId, onSelectMemory }: { data: DebugData;
 
       <div className={box}>
         <h3 className="mb-2 font-semibold">Evidence</h3>
-        {data.evidence.length === 0 ? <p className="text-zinc-500">No Evidence.</p> : null}
+        {data.evidence.length === 0 ? <p className="text-ink-dim">No Evidence.</p> : null}
         <ul className="flex flex-col gap-1">
           {data.evidence.map(({ id, record: e }) => (
             <li key={id}>
               <span className={mono}>{id}</span> · {e.source} · {e.fieldSlices.map((s) => `${s.class}/${s.sens}`).join(", ")} · turn <span className={mono}>{e.turnId ?? "none"}</span>
-              <pre className="whitespace-pre-wrap text-xs text-zinc-300">{evidenceFieldText(e)}</pre>
+              <pre className="whitespace-pre-wrap text-xs text-ink">{evidenceFieldText(e)}</pre>
             </li>
           ))}
         </ul>
@@ -92,7 +92,7 @@ function Sections({ data, selectedMemoryId, onSelectMemory }: { data: DebugData;
 
       <div className={box}>
         <h3 className="mb-2 font-semibold">Memories</h3>
-        {data.memories.length === 0 ? <p className="text-zinc-500">No Memories.</p> : null}
+        {data.memories.length === 0 ? <p className="text-ink-dim">No Memories.</p> : null}
         <ul className="flex flex-col gap-1">
           {data.memories.map(({ id, record: m, lineage }) => (
             <li key={id}>
@@ -101,7 +101,7 @@ function Sections({ data, selectedMemoryId, onSelectMemory }: { data: DebugData;
                 {m.predicate}: <code>{JSON.stringify(m.value)}</code> · {m.status} · {m.sourceClass}/{m.sens}
               </button>
               {lineage.ok ? null : (
-                <span data-testid="lineage-mismatch" className="ml-2 rounded bg-red-900 px-1 text-xs text-red-100">
+                <span data-testid="lineage-mismatch" className="ml-2 rounded bg-night-2 px-1 text-xs text-ember">
                   lineage mismatch
                 </span>
               )}
@@ -114,14 +114,14 @@ function Sections({ data, selectedMemoryId, onSelectMemory }: { data: DebugData;
 
       <div className={box}>
         <h3 className="mb-2 font-semibold">Extract jobs</h3>
-        {data.jobs.length === 0 ? <p className="text-zinc-500">No jobs.</p> : null}
+        {data.jobs.length === 0 ? <p className="text-ink-dim">No jobs.</p> : null}
         <ul className="flex flex-col gap-1 text-xs">
           {data.jobs.map(({ id, record: j }) => {
             const src = jobSource(j, evidenceById);
             return (
               <li key={id} data-testid="job-row">
                 <span className={mono}>{id}</span> · {j.kind} · turn <span className={mono}>{src.turnId ?? "unknown"}</span> (evidence <span className={mono}>{src.eid ?? "none"}</span>) · {j.status} · attempts {j.attempts}
-                {j.error !== null ? <span className="ml-1 text-red-300">error {j.error}</span> : null}
+                {j.error !== null ? <span className="ml-1 text-ember">error {j.error}</span> : null}
               </li>
             );
           })}
@@ -131,7 +131,7 @@ function Sections({ data, selectedMemoryId, onSelectMemory }: { data: DebugData;
 
       <div className={box}>
         <h3 className="mb-2 font-semibold">Admission and extraction decisions</h3>
-        {data.ledger.length === 0 ? <p className="text-zinc-500">No decisions.</p> : null}
+        {data.ledger.length === 0 ? <p className="text-ink-dim">No decisions.</p> : null}
         <ul className="flex flex-col gap-1 text-xs">
           {data.ledger.map(({ id, record, issuer, permitKind }) => {
             // The validated record matches the Ledger union; its schema type keeps `payload` open.
@@ -179,14 +179,14 @@ function MemoryDetail({ item, evidenceById }: { item: DebugData["memories"][numb
     ["createdAt", m.createdAt, "opsClock"],
   ];
   return (
-    <div data-testid="memory-detail" className="mt-3 flex flex-col gap-3 border-t border-zinc-800 pt-3">
+    <div data-testid="memory-detail" className="mt-3 flex flex-col gap-3 border-t border-stitch pt-3">
       <table className="w-full text-xs">
         <tbody>
           {fields.map(([name, value, source]) => (
             <tr key={name}>
-              <td className="pr-2 text-zinc-500">{name}</td>
+              <td className="pr-2 text-ink-dim">{name}</td>
               <td className={mono}>{value}</td>
-              <td className="pl-2 text-zinc-500">{source}</td>
+              <td className="pl-2 text-ink-dim">{source}</td>
             </tr>
           ))}
         </tbody>
@@ -210,26 +210,26 @@ function MemoryDetail({ item, evidenceById }: { item: DebugData["memories"][numb
                 root {i}: evidence <span className={mono}>{link.slice.eid}</span> · {link.slice.fieldPath} [{link.slice.start}, {link.slice.end}) · {link.slice.class}/{link.slice.sens} · rootKey{" "}
                 <span className={mono}>{m.rootKeys[i] ?? "missing"}</span>
                 {mismatch ? (
-                  <span data-testid="span-mismatch" className="ml-2 rounded bg-red-900 px-1 text-red-100">
+                  <span data-testid="span-mismatch" className="ml-2 rounded bg-night-2 px-1 text-ember">
                     lineage mismatch
                   </span>
                 ) : null}
               </p>
               {seg !== null ? (
-                <pre className="whitespace-pre-wrap text-zinc-300">
+                <pre className="whitespace-pre-wrap text-ink">
                   {seg.before}
-                  <mark className="bg-yellow-300 text-zinc-900">{seg.marked}</mark>
+                  <mark className="bg-gold text-night-0">{seg.marked}</mark>
                   {seg.after}
                 </pre>
               ) : (
-                <p className="text-zinc-500">{ev === undefined ? "Evidence not loaded." : "Range does not fit the Evidence text."}</p>
+                <p className="text-ink-dim">{ev === undefined ? "Evidence not loaded." : "Range does not fit the Evidence text."}</p>
               )}
             </li>
           );
         })}
       </ol>
       {item.lineage.failures.length > 0 ? (
-        <p className="text-xs text-red-300">Failed links: {item.lineage.failures.map((f) => `${f.kind} at ${f.index}`).join(", ")}</p>
+        <p className="text-xs text-ember">Failed links: {item.lineage.failures.map((f) => `${f.kind} at ${f.index}`).join(", ")}</p>
       ) : null}
     </div>
   );
@@ -242,7 +242,7 @@ function HeadView({ bundle }: { bundle: CoreBundle | null }) {
     return (
       <div className={box} data-testid="no-head">
         <h3 className="mb-2 font-semibold">Head</h3>
-        <p className="text-zinc-500">No Head compiled yet.</p>
+        <p className="text-ink-dim">No Head compiled yet.</p>
       </div>
     );
   }
@@ -257,7 +257,7 @@ function HeadView({ bundle }: { bundle: CoreBundle | null }) {
         <tbody>
           {HEAD_SECTIONS.map((id) => (
             <tr key={id}>
-              <td className="pr-2 text-zinc-500">{id}</td>
+              <td className="pr-2 text-ink-dim">{id}</td>
               <td>{tokens.get(id) ?? 0}</td>
             </tr>
           ))}
@@ -266,7 +266,7 @@ function HeadView({ bundle }: { bundle: CoreBundle | null }) {
       <p className="text-xs">
         selectedRefs: <span className={mono}>{head.selectedRefs.map((r) => `${r.type}:${r.id}@${r.rev}`).join(", ") || "none"}</span>
       </p>
-      <pre className="mt-2 whitespace-pre-wrap text-xs text-zinc-300">{head.text}</pre>
+      <pre className="mt-2 whitespace-pre-wrap text-xs text-ink">{head.text}</pre>
     </div>
   );
 }

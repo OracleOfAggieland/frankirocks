@@ -91,7 +91,7 @@ export function App() {
   };
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 bg-zinc-950 px-6 py-10 text-center text-zinc-100">
+    <main className="flex flex-1 flex-col items-center justify-center gap-6 bg-night-0 px-6 py-10 text-center text-ink">
       <h1 className="text-5xl font-semibold tracking-tight">Franki</h1>
       <AuthPanel
         state={state}

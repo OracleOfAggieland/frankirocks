@@ -41,14 +41,14 @@ export function TypedInput({ text, enabled, sending, canSend, error, onChange, o
           disabled={!enabled}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
-          className="flex-1 resize-y rounded border border-zinc-700 bg-zinc-900 p-2 text-left text-sm text-zinc-100 disabled:opacity-50"
+          className="flex-1 resize-y rounded border border-ink-dim bg-night-1 p-2 text-left text-sm text-ink disabled:opacity-50"
         />
-        <button type="submit" disabled={sendDisabled} className="rounded bg-zinc-100 px-4 text-sm font-medium text-zinc-900 disabled:opacity-40">
+        <button type="submit" disabled={sendDisabled} className="rounded bg-brass px-4 text-sm font-medium text-night-0 disabled:opacity-40">
           {sending ? "Sending…" : "Send"}
         </button>
       </div>
       {error !== null ? (
-        <p role="alert" className="text-left text-sm text-red-400">
+        <p role="alert" className="text-left text-sm text-ember">
           {error}
         </p>
       ) : null}
@@ -62,7 +62,7 @@ export function ConversationView({ entries }: { entries: ConversationEntry[] }) 
   return (
     <ol aria-label="Conversation" className="flex w-full max-w-xl flex-col gap-2 text-left text-sm">
       {entries.map((e) => (
-        <li key={e.key} data-role={e.role} className={e.role === "user" ? "self-end rounded bg-zinc-800 px-3 py-2" : "self-start rounded bg-zinc-900 px-3 py-2 text-zinc-300"}>
+        <li key={e.key} data-role={e.role} className={e.role === "user" ? "self-end rounded bg-night-2 px-3 py-2" : "self-start rounded bg-night-1 px-3 py-2 text-ink"}>
           <span className="sr-only">{e.role === "user" ? "You: " : "Franki: "}</span>
           {e.text}
         </li>

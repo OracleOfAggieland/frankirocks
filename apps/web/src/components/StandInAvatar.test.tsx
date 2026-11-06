@@ -42,8 +42,9 @@ describe("call controls (R16.4–R16.6)", () => {
     expect(closed).toContain('data-form="start"');
     expect(live).toContain('data-form="hangup"');
     const cls = (html: string) => /data-form="[^"]+"[^>]*class="([^"]+)"/.exec(html)?.[1];
-    expect(cls(closed)).toContain("bg-emerald-500");
-    expect(cls(live)).toContain("bg-red-600");
+    expect(cls(closed)).toContain("bg-ecto");
+    expect(cls(live)).toContain("bg-ember");
+    expect(cls(live)).not.toContain("bg-ecto");
     expect(cls(closed)).toContain("rounded-full");
     expect(cls(live)).not.toContain("rounded-full");
   });
