@@ -29,7 +29,7 @@ Rules for every task:
     - Witness: `npx vitest run scripts/ui-steering.test.ts`.
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
 
-- [ ] 2. Token source
+- [x] 2. Token source
   - [x] 2.1 Write the `@theme static` token block in `apps/web/src/app/globals.css`
     - Actual time: 5 min
     - First confirm `@theme static` in the installed Tailwind 4 docs or source under `node_modules/tailwindcss`; if it is missing, stop and ask the owner.
@@ -57,7 +57,7 @@ Rules for every task:
     - Witness: `npx vitest run apps/web/src/ui/contrast.test.ts`.
     - _Requirements: 18.4_
 
-- [ ] 3. Token check and copy check
+- [x] 3. Token check and copy check
   - [x] 3.1 Write `scripts/token-check.mjs`
     - Actual time: 5 min
     - Pure `findTokenViolations(path, text)` returning `{ line, match, kind }` with kinds `hex`, `duration` and `palette`, using the patterns in design "Token_Check" (hex of 3, 4, 6 or 8 digits at a boundary; CSS transition and animation times; Tailwind `duration-*`/`delay-*` except `(--…)` and `[var(--…)]` forms; numeric `duration`/`delay` keys in `.ts`/`.tsx`; SVG `dur`/`begin` literals; Tailwind default palette, `-white` and `-black` classes).
@@ -113,7 +113,7 @@ Rules for every task:
     - Witness: `npm ls motion -w @franki/web` shows `motion@14.9.1`; the probe `npm run build` exited 0.
     - _Requirements: 22.1, 22.2_
 
-- [ ] 6. Pure avatar model
+- [x] 6. Pure avatar model
   - [x] 6.1 Write `apps/web/src/ui/avatar/types.ts` and `apps/web/src/ui/copy.ts`
     - Actual time: 3 min
     - Types `AvatarEvent`, `TimedEvent`, `LookName`, `AvatarInput`, `Eyes`, `Glow`, `Posture`, `Bolts`, `BodyMotion`, `AnimationId`, `AvatarLook`, `AvatarRendererProps`, `AvatarRenderer` exactly as design "Avatar types and the Avatar_Contract". `copy.ts` holds the six avatar labels.
@@ -236,7 +236,8 @@ Rules for every task:
     - **Validates: Requirements 6.2**
 
 - [ ] 7. UI boundary check
-  - [ ] 7.1 Write `scripts/ui-boundaries.mjs`
+  - [x] 7.1 Write `scripts/ui-boundaries.mjs`
+    - Actual time: 5 min
     - Rule 3: the full list of design pure modules (files not yet present are skipped) may import only types, `@franki/core`, `ui/motion.ts`, `ui/copy.ts` and each other, and must not mention `window`, `document`, `navigator`, `localStorage`, `fetch`, `requestAnimationFrame`, `AudioContext` or `Math.random`.
     - Rule 4: no `performance`-form Wall_Clock_Read in `components/` or `ui/` (the existing clock check covers the `Date` forms).
     - Rule 5: nothing in `components/surfaces/` imports from `client/`.
