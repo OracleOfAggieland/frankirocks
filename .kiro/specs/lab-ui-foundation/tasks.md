@@ -30,7 +30,8 @@ Rules for every task:
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
 
 - [ ] 2. Token source
-  - [ ] 2.1 Write the `@theme static` token block in `apps/web/src/app/globals.css`
+  - [x] 2.1 Write the `@theme static` token block in `apps/web/src/app/globals.css`
+    - Actual time: 5 min
     - First confirm `@theme static` in the installed Tailwind 4 docs or source under `node_modules/tailwindcss`; if it is missing, stop and ask the owner.
     - Colour tokens `--color-night-0` … `--color-ember` with the 14 exact UI direction values; `--font-sans`, `--font-mono`, `--text-xs` to `--text-display`; `--radius-card`, `--radius-chip`, `--radius-control`; `--shadow-ecto-glow`, `--shadow-brass-glow`, `--shadow-card`; spring, `--dur-*`, `--ease-ecto` and `--stagger` properties as in design "Data Models".
     - Remove the starter colours and `Arial`/`Helvetica`. Body uses `var(--color-night-0)`, `var(--color-ink)` and `var(--font-sans)`, with tabular figures for `font-mono`. Update `apps/web/src/app/layout.tsx` body classes to token classes only (read the Next.js layout guide first); the Footer stays last in `<body>`.
