@@ -44,7 +44,8 @@ Rules for every task:
     - Depends on: 1.1.
     - Witness: `npm run typecheck`.
     - _Requirements: 2.4, 2.5, 6.2, 6.8, 6.10_
-  - [ ] 2.3 Write `scripts/token-sync.test.ts`
+  - [x] 2.3 Write `scripts/token-sync.test.ts`
+    - Actual time: 3 min
     - Parse the `@theme static` block and compare every mirrored value in `motion.ts`, normalizing hex case and `ms` units. Assert the starter colours and `Arial`/`Helvetica` are gone and the body rules use the three tokens.
     - Depends on: 2.1, 2.2.
     - Witness: `npx vitest run scripts/token-sync.test.ts`.
