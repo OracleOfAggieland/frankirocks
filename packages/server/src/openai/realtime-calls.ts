@@ -7,6 +7,13 @@ import type { OpenAIPort } from "./fake";
 
 export type HangupOutcome = "hungUp" | "gone";
 
+/**
+ * How long one hangup request may take. A hangup for a call that has just ended answers 404 "No session found" only
+ * after about 5.2 s (Nov 6 probe; a live call answers in about 0.1 s, and a call ended minutes ago in about 0.1 s).
+ * A 404 means the call is gone. With 5 s, every close timed out just before that 404 and the Session stayed `closing`.
+ */
+export const HANGUP_CALL_DEADLINE_MS = 10_000;
+
 export async function hangupCall(openai: OpenAIPort, callId: string): Promise<HangupOutcome> {
   try {
     await openai.call("realtime.calls.hangup", { callId });

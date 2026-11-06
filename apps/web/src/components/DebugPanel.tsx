@@ -97,6 +97,7 @@ function Sections({ data, selectedMemoryId, onSelectMemory }: { data: DebugData;
           {data.memories.map(({ id, record: m, lineage }) => (
             <li key={id}>
               <button type="button" onClick={() => onSelectMemory(id === selectedMemoryId ? null : id)} className="text-left underline-offset-2 hover:underline" aria-pressed={id === selectedMemoryId}>
+                {m.sayAs !== null ? <>{m.sayAs.text} · </> : null}
                 {m.predicate}: <code>{JSON.stringify(m.value)}</code> · {m.status} · {m.sourceClass}/{m.sens}
               </button>
               {lineage.ok ? null : (

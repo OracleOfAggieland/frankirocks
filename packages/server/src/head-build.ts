@@ -24,6 +24,8 @@ import type { StorePort, Tx } from "./store/port";
 
 type Reader = Pick<Tx, "query" | "get">;
 
+const EVIDENCE_READ_BATCH = 16;
+
 /** Every Memory of the Owner, in document-ID order, through Q28 pages of 100. */
 export async function readAllMemories(reader: Reader, uid: string): Promise<HeadMemory[]> {
   const out: HeadMemory[] = [];
@@ -66,11 +68,17 @@ export async function snapshotFor(
     const p = parseDep(d);
     if (p?.collection === "evidence") eids.add(p.id);
   }
-  for (const eid of [...eids].sort()) {
-    const doc = await reader.get<Evidence>(paths.evidence(uid, eid));
-    if (doc === null) continue;
-    refs.push({ collection: "evidence", id: eid, parentId: null, rev: doc.data.rev });
-    rows.push(doc.data);
+  // Reads in parallel batches: one sequential read per Evidence cost ~100 ms each from a laptop to us-central1,
+  // which used up the recall tool's time before its reader started. Order stays sorted by eid.
+  const sorted = [...eids].sort();
+  for (let i = 0; i < sorted.length; i += EVIDENCE_READ_BATCH) {
+    const batch = sorted.slice(i, i + EVIDENCE_READ_BATCH);
+    const docs = await Promise.all(batch.map((eid) => reader.get<Evidence>(paths.evidence(uid, eid))));
+    docs.forEach((doc, j) => {
+      if (doc === null) return;
+      refs.push({ collection: "evidence", id: batch[j]!, parentId: null, rev: doc.data.rev });
+      rows.push(doc.data);
+    });
   }
   return {
     uid,

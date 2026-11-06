@@ -11,8 +11,8 @@
  */
 import { type Dependent, type DocRef, type EC, type Snapshot, eligible } from "./eligible";
 import { PREFIX, estimateTokens } from "./extract";
-import { valueText } from "./head";
 import { maxSens } from "./lexicon";
+import { renderedMemory } from "./memory-text";
 import { type JsonSchema, jsonSchemaOf } from "./schema/json-schema";
 import { type Class, Cov, ID, type RecallArgs, Ref, type Sens, Span } from "./schema/primitives";
 import type { Evidence, Memory } from "./schema/records";
@@ -29,7 +29,13 @@ export const RECALL_MAX_LINES = 200;
 export const RECALL_LINE_CHARS = 160;
 export const RECALL_INPUT_TOKEN_CAP = 8_000;
 export const RECALL_OUTPUT_TOKEN_CAP = 768;
-export const RECALL_DEADLINE_MS = 1_500;
+/**
+ * The reader's deadline. Measured Nov 6 on the live bg model with 14 lines: effort low p50 2.6 s, effort none p50
+ * 1.7 s, so the contract's 1.5 s timed out on most reads and every timeout answered "nothing saved". The read now
+ * runs at effort none with up to 2.5 s, and a timeout falls back to code-ranked excerpts (`recallExcerpts`).
+ */
+export const RECALL_DEADLINE_MS = 2_500;
+export const RECALL_EFFORT = "none";
 export const RECALL_MAX_NOTES = 4;
 const MAX_ROOTS = 4;
 
@@ -81,9 +87,9 @@ export interface RecallLine {
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** One recall line's text: `predicate: value`, single-line, at most 160 characters. */
+/** One recall line's text: the Memory's stored plain-English line, single-line, at most 160 characters. */
 export function recallLineText(m: Memory): string {
-  return `${m.predicate}: ${valueText(m.value)}`.replace(/\s*\n\s*/g, " ").slice(0, RECALL_LINE_CHARS);
+  return renderedMemory(m).slice(0, RECALL_LINE_CHARS);
 }
 
 /** Root Spans whose Slice is S0 or S1, quoting the Evidence text (R28.3: no S2 quote crosses). */
@@ -174,11 +180,11 @@ export function recallOutputJsonSchema(): JsonSchema {
   return jsonSchemaOf(RecallOutput);
 }
 
-/** The Responses request for one tool-less RecallAllV1 read (contracts §5: L/low, 8000/768). */
+/** The Responses request for one tool-less RecallAllV1 read (contracts §5: L, 8000/768; effort see RECALL_DEADLINE_MS). */
 export function recallRequest(model: string, input: RecallInput) {
   return {
     model,
-    reasoning: { effort: "low" },
+    reasoning: { effort: RECALL_EFFORT },
     store: false,
     tools: [],
     instructions: RECALL_INSTRUCTIONS,
@@ -247,6 +253,41 @@ export function recallNotes(out: RecallOutput, used: readonly RecallLine[], ctx:
     });
   }
   return notes;
+}
+
+/** Words that carry no topic: question words, fillers and the word every stored line has ("owner"). */
+const EXCERPT_STOP = new Set([
+  "what", "whats", "who", "whos", "where", "when", "which", "how", "why", "the", "and", "for", "you", "your", "did", "does", "doe", "have", "has",
+  "had", "about", "tell", "know", "remember", "recall", "saved", "save", "called", "call", "owner", "owners", "that", "this", "with", "are", "was",
+  "were", "can", "could", "would", "will", "please", "again", "said", "say", "told", "any", "all", "there",
+]);
+
+/**
+ * Code-only excerpts (contracts §5 Recall readers: a failed read gives excerpts, not silence). The supplied lines
+ * that share a topic word with the query or the Owner's question, best overlap first, at most 4. Each note is a
+ * stored line verbatim, carrying that line's lineage and sensitivity, so nothing new is said.
+ */
+export function recallExcerpts(query: string, turnText: string | null, used: readonly RecallLine[], ctx: NoteContext): W[] {
+  const terms = new Set(tokenize(`${query} ${turnText ?? ""}`).filter((t) => t.length > 2 && !EXCERPT_STOP.has(t)));
+  if (terms.size === 0) return [];
+  const scored = used
+    .map((line, i) => ({ line, i, score: new Set(tokenize(line.item.text).filter((t) => terms.has(t))).size }))
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .slice(0, RECALL_MAX_NOTES);
+  return scored.map(({ line }, n) => ({
+    noteId: ctx.noteId(n),
+    rev: 1,
+    kind: "result" as const,
+    text: line.item.text,
+    rootKeys: line.rootKeys.slice(0, 128),
+    dependsOn: line.dependsOn.slice(0, 256),
+    sens: line.item.sens,
+    expiresAt: ctx.expiresAt,
+    unprompted: false,
+    momentId: null,
+    tokens: [],
+  }));
 }
 
 const coverage = (state: Infer<typeof Cov>["state"]): Infer<typeof Cov> => ({ state, from: null, to: null, missingRanges: [], generation: 0 });

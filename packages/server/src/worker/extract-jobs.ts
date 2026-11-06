@@ -7,6 +7,7 @@ import { type CoreEpoch, type Evidence, type Hasher, type ID, type Job, type Tur
 import { paths } from "../store/paths";
 import type { StorePort } from "../store/port";
 import { workJob } from "./jobs";
+import { turnOrder } from "../turns";
 
 export const extractJobId = (eid: ID, hasher: Hasher): ID => hasher.id(idParts.extractJob(eid));
 
@@ -52,10 +53,7 @@ export async function readTurns(store: StorePort, uid: string, sessionId: ID): P
 
 /** Turn order (R19.6): seq ascending; user before assistant at equal seq; then committedAt. */
 export function sortTurns<T extends { turn: Turn }>(turns: T[]): T[] {
-  const role = (t: Turn) => (t.role === "user" ? 0 : 1);
-  return [...turns].sort(
-    (a, b) => a.turn.seq - b.turn.seq || role(a.turn) - role(b.turn) || (a.turn.committedAt < b.turn.committedAt ? -1 : a.turn.committedAt > b.turn.committedAt ? 1 : 0),
-  );
+  return [...turns].sort((a, b) => turnOrder(a.turn, b.turn));
 }
 
 /** Ensures exactly one Extract_Job per committed user Turn with U Evidence in the Session. Returns created job IDs. */

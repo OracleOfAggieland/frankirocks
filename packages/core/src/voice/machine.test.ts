@@ -9,7 +9,9 @@ import { sampleHead, testId } from "../testing/samples";
 import {
   ACK_LIMIT_MS,
   CONNECT_LIMIT_MS,
+  MAX_RECENT_RESPONSES,
   type RealtimeServerEvent,
+  TOOL_LIMIT_MS,
   type VoiceCommand,
   type VoiceEvent,
   type VoiceState,
@@ -74,9 +76,8 @@ class Rig {
   }
 }
 
-/** Signed-in call up to LISTENING. */
-function listening(): Rig {
-  const r = new Rig();
+/** Signed-in call up to LISTENING; pass a closed Rig to start its next call. */
+function listening(r = new Rig()): Rig {
   r.ev({ type: "callPressed", zone: "America/Chicago" });
   const deck = deckAt(r.now + 200);
   r.ev({ type: "openOk", response: { sessionId: SID, generation: 1, deck, state: "connecting", ack: ackAt(deck, r.now + 200), proactive: null } }, 200);
@@ -144,6 +145,23 @@ function speaking(): Rig {
   return r;
 }
 
+/** The final transcript of each message a response spoke, in order. */
+function spoke(r: Rig, responseId: string, ...texts: string[]): void {
+  for (const transcript of texts) r.rt({ type: "response.output_audio_transcript.done", response_id: responseId, transcript });
+}
+
+/** From LISTENING, one more spoken Turn up to `response.created` for `resp_<n>`; returns that event's commands. */
+function replyTo(r: Rig, n: number): VoiceCommand[] {
+  speak(r, `item_${n}`, `Line ${n}`);
+  r.ev({ type: "turnOk", turnId: turnBody(r).turnId, response: admitted(r, "slowOrdinary") }, 100);
+  answerVerify(r);
+  return r.rt({ type: "response.created", response: { id: `resp_${n}`, metadata: { purpose: "speech", turnId: localStamp(r.st)!.turnId, generation: "1", noteIds: "" } } }, 20);
+}
+
+const responseDone = (id: string): RealtimeServerEvent => ({ type: "response.done", response: { id, metadata: { purpose: "speech", generation: "1" } } });
+
+const transcripts = (cmds: VoiceCommand[]) => cmds.flatMap((c) => (c.kind === "receipt" && c.body.kind === "transcript" ? [c.body] : []));
+
 describe("voice state machine", () => {
   it("one voice turn: final transcript → TurnRequest → verified Permit → one response.create → unmute", () => {
     const r = listening();
@@ -174,6 +192,71 @@ describe("voice state machine", () => {
     expect(stop[0]).toEqual({ kind: "muteOutput" });
     expect(stop).toContainEqual(expect.objectContaining({ kind: "receipt", body: expect.objectContaining({ kind: "playbackEnded" }) }));
     expect(r.st.phase).toBe("LISTENING");
+  });
+
+  it("a response that speaks two messages sends one transcript receipt with both, in order, at response.done", () => {
+    const r = speaking();
+    const meta = { purpose: "speech", turnId: r.st.active!.permit.stamp.turnId, generation: "1" };
+    expect(r.rt({ type: "response.output_audio_transcript.done", response_id: "resp_1", transcript: "Okay, let me note that." })).toEqual([]);
+    expect(r.rt({ type: "response.output_audio_transcript.done", response_id: "resp_1", transcript: " Your dog is called Pip. " })).toEqual([]);
+    const done = r.rt({ type: "response.done", response: { id: "resp_1", metadata: meta } });
+    expect(done.filter((c) => c.kind === "receipt")).toEqual([
+      { kind: "receipt", body: expect.objectContaining({ kind: "transcript", responseId: "resp_1", text: "Okay, let me note that. Your dog is called Pip." }) },
+    ]);
+    // A second response.done sends nothing more; a transcript that comes after it is sent on its own.
+    expect(r.rt({ type: "response.done", response: { id: "resp_1", metadata: meta } }).filter((c) => c.kind === "receipt")).toEqual([]);
+    expect(r.rt({ type: "response.output_audio_transcript.done", response_id: "resp_1", transcript: "Late." })).toEqual([
+      { kind: "receipt", body: expect.objectContaining({ kind: "transcript", responseId: "resp_1", text: "Late." }) },
+    ]);
+    // An unknown response's transcript is dropped.
+    expect(r.rt({ type: "response.output_audio_transcript.done", response_id: "resp_x", transcript: "Not ours." })).toEqual([]);
+  });
+
+  it("a response pushed out of `recent` before its response.done sends what it held, once", () => {
+    const r = speaking();
+    spoke(r, "resp_1", "Okay, let me note that.", "Your dog is called Pip.");
+    r.rt({ type: "output_audio_buffer.stopped", response_id: "resp_1" }, 1500);
+    // resp_1's response.done never comes; later replies finish normally until it is the oldest one kept.
+    for (let n = 2; n <= MAX_RECENT_RESPONSES; n++) {
+      replyTo(r, n);
+      r.rt(responseDone(`resp_${n}`));
+    }
+    expect(transcripts(r.log)).toEqual([]);
+    expect(transcripts(replyTo(r, MAX_RECENT_RESPONSES + 1))).toEqual([
+      expect.objectContaining({ responseId: "resp_1", text: "Okay, let me note that. Your dog is called Pip." }),
+    ]);
+    expect(r.st.recent.map((x) => x.responseId)).not.toContain("resp_1");
+    expect(transcripts(r.rt(responseDone("resp_1")))).toEqual([]);
+  });
+
+  it("hanging up sends what a response still held after teardown and before close, and never again", () => {
+    const r = speaking();
+    const stamp = r.st.active!.permit.stamp;
+    spoke(r, "resp_1", "Okay, let me note that.", "Your dog is called Pip.");
+    const cmds = r.ev({ type: "hangupPressed" });
+    expect(cmds.map((c) => c.kind)).toEqual(["muteOutput", "teardown", "receipt", "close"]);
+    expect(transcripts(cmds)).toEqual([expect.objectContaining({ stamp, responseId: "resp_1", text: "Okay, let me note that. Your dog is called Pip." })]);
+    // The next call's replies push resp_1 out of `recent` without a second receipt.
+    r.ev({ type: "closeDone" });
+    listening(r);
+    for (let n = 2; n <= MAX_RECENT_RESPONSES + 1; n++) {
+      replyTo(r, n);
+      r.rt(responseDone(`resp_${n}`));
+    }
+    expect(r.st.recent.map((x) => x.responseId)).not.toContain("resp_1");
+    expect(transcripts(r.log).map((b) => b.responseId)).toEqual(["resp_1"]);
+  });
+
+  it("a lost connection or closed data channel sends what a response still held before close, and never again", () => {
+    const r = speaking();
+    const stamp = r.st.active!.permit.stamp;
+    spoke(r, "resp_1", "Okay, let me note that.");
+    const cmds = r.ev({ type: "connectionLost" });
+    expect(cmds.map((c) => c.kind).filter((k) => k !== "armTimer")).toEqual(["muteOutput", "teardown", "receipt", "close"]);
+    expect(transcripts(cmds)).toEqual([expect.objectContaining({ stamp, responseId: "resp_1", text: "Okay, let me note that." })]);
+    expect(r.st.phase).toBe("RECOVERY");
+    // Hanging up during recovery sends nothing more.
+    expect(r.ev({ type: "hangupPressed" }).filter((c) => c.kind === "receipt")).toEqual([]);
   });
 
   it("barge-in mutes before anything else, cancels each recorded response, then clears", () => {
@@ -373,7 +456,7 @@ describe("voice state machine", () => {
         type: "realtime",
         tracing: null,
         instructions: sampleHead().text,
-        audio: { input: { transcription: { model: "test-transcribe-model" }, turn_detection: { type: "server_vad", silence_duration_ms: 300, create_response: false, interrupt_response: false } } },
+        audio: { input: { noise_reduction: { type: "near_field" }, transcription: { model: "test-transcribe-model", language: "en" }, turn_detection: { type: "semantic_vad", eagerness: "auto", create_response: false, interrupt_response: false } } },
       },
     });
     expect(update.session).not.toHaveProperty("model");
@@ -452,6 +535,16 @@ describe("voice state machine", () => {
     const input = (created[0]!.response as { input: { type: string }[] }).input;
     expect(input.map((i) => i.type)).toEqual(["item_reference", "function_call", "function_call_output"]);
     expect(turnId).toBe(stamp.turnId);
+  });
+
+  it("waits TOOL_LIMIT_MS for a recall result, even after the words said before the call finish playing", () => {
+    const r = speaking();
+    const cmds = r.rt({ type: "response.function_call_arguments.done", response_id: "resp_1", call_id: "call_1", name: "recall", arguments: "{}" });
+    expect(cmds).toContainEqual({ kind: "armTimer", name: "tool", at: r.now + TOOL_LIMIT_MS });
+    // "Let me check" ends after 1.5 s; the result is still on its way.
+    r.rt({ type: "output_audio_buffer.stopped", response_id: "resp_1" }, 1500);
+    expect(r.st.phase).toBe("TOOL_WAIT");
+    expect(avatarState(r.st)).toBe("thinking");
   });
 
   it("a stale tool result requests no reply (R27.10)", () => {

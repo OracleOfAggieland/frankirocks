@@ -26,7 +26,7 @@ import { SESSION_IDLE_MS } from "../sessions";
 import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
-import { classifyTurn, normalizedTranscript, safeTurn, userTurnRecords } from "../turns";
+import { classifyTurn, normalizedTranscript, safeTurn, turnOrder, userTurnRecords } from "../turns";
 import { drainExtractJobs } from "../worker/drain";
 import { extractJobId, extractJobRecord } from "../worker/extract-jobs";
 import { barrierError, parseError, scopeError, staleError } from "./errors";
@@ -64,7 +64,7 @@ export async function earlierSafeTurns(tx: Pick<Tx, "get" | "query">, uid: strin
     limit: 100,
   });
   const out: SafeTurn[] = [];
-  for (const row of rows) {
+  for (const row of [...rows].sort((a, b) => turnOrder(a.data, b.data))) {
     if (row.data.seq >= beforeSeq || row.data.evidenceId === null) continue;
     const ev = await tx.get<Evidence>(paths.evidence(uid, row.data.evidenceId));
     if (ev === null) continue;

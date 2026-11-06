@@ -19,7 +19,7 @@ import { DeadlineError, withDeadline } from "../clock/timers";
 import { requireModel } from "../config/models";
 import { ensureCoreDocs } from "../core-docs";
 import { completeRequest } from "../ledger/request";
-import { callIdFromLocation, callSession, createCall, hangupCall } from "../openai/realtime-calls";
+import { HANGUP_CALL_DEADLINE_MS, callIdFromLocation, callSession, createCall, hangupCall } from "../openai/realtime-calls";
 import { SESSION_IDLE_MS } from "../sessions";
 import { paths } from "../store/paths";
 import { HANGUP_BACKOFF_MS } from "../worker/hangup";
@@ -53,7 +53,7 @@ export async function orphanHangup(callId: string, deps: Pick<RouteDeps, "openai
   const start = deps.clock.read().opsClock.now;
   for (let attempt = 1; ; attempt++) {
     try {
-      await withDeadline(hangupCall(deps.openai, callId), 5_000, deps.timers);
+      await withDeadline(hangupCall(deps.openai, callId), HANGUP_CALL_DEADLINE_MS, deps.timers);
       return true;
     } catch {
       if (deps.clock.read().opsClock.now - start >= ORPHAN_RETRY_LIMIT_MS) {

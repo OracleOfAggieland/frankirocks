@@ -7,7 +7,7 @@
 import OpenAI from "openai";
 import { type Env, openaiApiKey } from "../config/env";
 import type { OpenAIEndpoint, OpenAIPort } from "./fake";
-import type { CreateCallBody, CreateCallResult } from "./realtime-calls";
+import { type CreateCallBody, type CreateCallResult, HANGUP_CALL_DEADLINE_MS } from "./realtime-calls";
 import type { ResponsesResult } from "./responses";
 
 interface SdkResponse {
@@ -44,7 +44,8 @@ export function liveOpenAI(env: Env = process.env): OpenAIPort {
         }
         case "realtime.calls.hangup": {
           const { callId } = body as { callId: string };
-          await sdk().post(`/realtime/calls/${encodeURIComponent(callId)}/hangup`);
+          // No SDK retries: the hangup Job owns retries and backoff, and hidden retries used up the close budget.
+          await sdk().post(`/realtime/calls/${encodeURIComponent(callId)}/hangup`, { maxRetries: 0, timeout: HANGUP_CALL_DEADLINE_MS });
           return null;
         }
         case "realtime.calls.create": {

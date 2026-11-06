@@ -47,13 +47,20 @@ export const ITEM_WAIT_MS = 600;
 export const TRANSCRIPT_WAIT_MS = 1_500;
 export const HOLD_LIMIT_MS = 2_500;
 export const REFRESH_MS = 45_000;
-export const TOOL_LIMIT_MS = 3_000;
+/**
+ * How long TOOL_WAIT waits for /api/tool. The route answers within 4.5 s (server TOOL_RESULT_LIMIT_MS), and live
+ * recalls took 3.9 and 4.2 s on Nov 6. At 3 s the machine went back to LISTENING first and dropped the answer, so
+ * Franki said "let me check" and then nothing.
+ */
+export const TOOL_LIMIT_MS = 6_000;
 export const FAST_ACK_AGE_MS = 2_500;
 export const RETRY_DELAYS_MS = [1_000, 2_000, 5_000] as const;
 export const RETRY_UI_MS = 30_000;
 /** How long RECOVERY shows when there is no neutral line to play. */
 export const LINE_FALLBACK_MS = 1_500;
 export const MAX_TURN_ITEMS = 8;
+/** How many responses `recent` keeps. */
+export const MAX_RECENT_RESPONSES = 4;
 
 // ---------------------------------------------------------------------------------------------
 // State
@@ -148,8 +155,13 @@ export interface VoiceState {
   active: ActiveReply | null;
   /** Response IDs created for this Session and not yet done. */
   inFlight: string[];
-  /** Stamps of recent responses, for transcript receipts that arrive after playback. */
-  recent: { responseId: string; stamp: Stamp }[];
+  /**
+   * Recent responses, for transcript receipts that arrive after playback: each one's Stamp and the transcript of
+   * every message it has spoken so far. A response can speak more than one message (a short preamble, then the
+   * answer); they go to the server in order as one transcript receipt at `response.done`. If that never comes,
+   * they go when the entry is pushed out of this list, at hang-up, or when the connection is lost.
+   */
+  recent: { responseId: string; stamp: Stamp; parts: string[]; done: boolean }[];
   deadlines: Partial<Record<TimerName, number>>;
   micMuted: boolean;
   outputMuted: boolean;
@@ -269,6 +281,13 @@ export interface StepResult {
 // ---------------------------------------------------------------------------------------------
 // Realtime client event builders (contracts §6 Realtime, Tools)
 
+/**
+ * Transcription hint. The transcript is what memory is extracted from, so names matter most: without a language
+ * the Nov 6 live check heard "哈喽" and "Hej." for English greetings, and "Pip" as "Tip" or "Hip".
+ */
+export const TRANSCRIBE_LANGUAGE = "en";
+export const TRANSCRIBE_PROMPT = "A friendly conversation in English with Franki, a personal assistant. The speaker often mentions names of people, pets and places; spell names as said.";
+
 export function sessionUpdate(instructions: string, transcribeModel: string): RealtimeClientEvent {
   // No `model` and no `voice`: those are fixed when the SDP proxy creates the call (R13.1, R13.5).
   return {
@@ -280,8 +299,11 @@ export function sessionUpdate(instructions: string, transcribeModel: string): Re
       tools: [RECALL_TOOL],
       audio: {
         input: {
-          transcription: { model: transcribeModel },
-          turn_detection: { type: "server_vad", silence_duration_ms: 300, create_response: false, interrupt_response: false },
+          noise_reduction: { type: "near_field" },
+          transcription: { model: transcribeModel, language: TRANSCRIBE_LANGUAGE, prompt: TRANSCRIBE_PROMPT },
+          // Semantic end-of-turn: a 300 ms silence cut the Owner off mid-sentence in the Nov 6 live check
+          // ("I only heard 'By the way…'"). Responses stay app-created after admission, and barge-in app-handled.
+          turn_detection: { type: "semantic_vad", eagerness: "auto", create_response: false, interrupt_response: false },
         },
       },
     },
@@ -476,6 +498,32 @@ class Step {
   }
 }
 
+/** The transcript receipt for a response (R21.1): what Franki said, as one text, under the response's own Stamp. */
+function transcriptReceipt(s: Step, r: { responseId: string; stamp: Stamp }, text: string): void {
+  s.push({
+    kind: "receipt",
+    body: { stamp: r.stamp, responseId: r.responseId, kind: "transcript", momentIds: [], noteIds: [], pendingId: null, permitKind: null, text: text.slice(0, 4096) },
+  });
+}
+
+type SpokenResponse = VoiceState["recent"][number];
+
+/** One transcript receipt for each response still waiting for `response.done`, with every message it held. */
+function sendHeld(s: Step, responses: readonly SpokenResponse[]): void {
+  for (const r of responses) if (!r.done && r.parts.length > 0) transcriptReceipt(s, r, r.parts.join(" "));
+}
+
+/**
+ * Hang-up or a lost connection: no `response.done` can come now, so every response still waiting sends what it
+ * held and is marked done, so nothing is sent twice. A receipt needs only the entry's own Stamp, so this does not
+ * depend on the Session still being held; the server refuses a Stamp that is no longer current (R21.5).
+ */
+function flushRecent(s: Step): void {
+  if (s.st.recent.every((r) => r.done)) return;
+  sendHeld(s, s.st.recent);
+  s.set({ recent: s.st.recent.map((r) => (r.done ? r : { ...r, parts: [], done: true })) });
+}
+
 export function step(state: VoiceState, event: VoiceEvent, now: number): StepResult {
   const s = new Step(state, now);
   switch (event.type) {
@@ -654,9 +702,11 @@ function closedFields(st: VoiceState): Partial<VoiceState> {
 function hangUp(s: Step): void {
   const st = s.st;
   if (st.phase === "CLOSED") return;
-  // R14.1: stop the mic, close the channel and the peer connection, then post close.
+  // R14.1: stop the mic, close the channel and the peer connection, then post close; held transcripts go just
+  // before close (R21.1).
   s.mute();
   s.push({ kind: "teardown" });
+  flushRecent(s);
   if (st.session !== null) s.push({ kind: "close", body: { sessionId: st.session.sessionId, generation: st.session.generation, reason: "user" } });
   s.set({ ...closedFields(st), hangingUp: st.session !== null, awaitingOpen: false, error: null });
 }
@@ -666,6 +716,7 @@ function connectionRecovery(s: Step, closeSession: boolean): void {
   const st = s.st;
   s.mute();
   s.push({ kind: "teardown" });
+  flushRecent(s);
   if (closeSession && st.session !== null) s.push({ kind: "close", body: { sessionId: st.session.sessionId, generation: st.session.generation, reason: "error" } });
   const since = st.recovery?.kind === "connection" ? st.recovery.since : s.now;
   s.set({
@@ -969,14 +1020,21 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string): void {
         s.send({ type: "response.cancel", response_id: ev.response.id });
         return;
       }
-      s.set({
-        active: { ...a, responseId: ev.response.id },
-        inFlight: [...st.inFlight, ev.response.id],
-        recent: [...st.recent, { responseId: ev.response.id, stamp: a.permit.stamp }].slice(-4),
-      });
+      const recent: VoiceState["recent"] = [...st.recent, { responseId: ev.response.id, stamp: a.permit.stamp, parts: [], done: false }];
+      // A response pushed out before its response.done sends what it held now; later events for it find nothing.
+      sendHeld(s, recent.slice(0, -MAX_RECENT_RESPONSES));
+      s.set({ active: { ...a, responseId: ev.response.id }, inFlight: [...st.inFlight, ev.response.id], recent: recent.slice(-MAX_RECENT_RESPONSES) });
       return;
     }
     case "response.done": {
+      // One transcript receipt per response, every spoken message in order. The server keeps the first transcript
+      // it gets for a response, so sending one per message kept only a preamble ("Okay, let me note that.") and
+      // dropped the answer after it (Nov 6 live test).
+      const said = st.recent.find((r) => r.responseId === ev.response.id);
+      if (said !== undefined && !said.done) {
+        s.set({ recent: st.recent.map((r) => (r === said ? { ...r, parts: [], done: true } : r)) });
+        sendHeld(s, [said]);
+      }
       if (!st.inFlight.includes(ev.response.id) || metaGeneration(ev.response.metadata) !== gen) return;
       s.set({ inFlight: st.inFlight.filter((id) => id !== ev.response.id) });
       const a = s.st.active;
@@ -1020,12 +1078,11 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string): void {
     }
     case "response.output_audio_transcript.done": {
       const known = st.recent.find((r) => r.responseId === ev.response_id);
-      const text = ev.transcript.slice(0, 4096);
-      if (known === undefined || text.trim() === "") return;
-      s.push({
-        kind: "receipt",
-        body: { stamp: known.stamp, responseId: ev.response_id, kind: "transcript", momentIds: [], noteIds: [], pendingId: null, permitKind: null, text },
-      });
+      const text = ev.transcript.trim();
+      if (known === undefined || text === "") return;
+      // Held until response.done (see `recent`); one that comes after it is sent on its own.
+      if (known.done) transcriptReceipt(s, known, text);
+      else s.set({ recent: st.recent.map((r) => (r === known ? { ...r, parts: [...r.parts, text].slice(-8) } : r)) });
       return;
     }
     case "response.function_call_arguments.done": {
@@ -1175,7 +1232,7 @@ function onTimer(s: Step, name: TimerName): void {
       if (st.recovery?.kind === "connection" && st.phase !== "LISTENING") s.set({ retryVisible: true });
       return;
     case "tool":
-      // TOOL_WAIT: LISTENING after 3 s with no result.
+      // TOOL_WAIT: LISTENING after TOOL_LIMIT_MS (6 s) with no result.
       if (st.phase === "TOOL_WAIT") toListening(s);
       return;
   }

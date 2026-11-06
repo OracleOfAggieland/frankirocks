@@ -65,10 +65,12 @@ async function q28<T>(ctx: RouteContext, collection: "evidence" | "memories" | "
 async function memoryItem(ctx: RouteContext, doc: StoredDoc<Memory>): Promise<DebugItem> {
   const m = doc.data;
   const evidence = new Map<string, Evidence>();
-  for (const eid of new Set(m.rootSlices.map((s) => s.eid))) {
-    const e = await ctx.deps.store.get<Evidence>(ctx.uid, paths.evidence(ctx.uid, eid)).catch(() => null);
-    if (e !== null) evidence.set(eid, e.data);
-  }
+  const eids = [...new Set(m.rootSlices.map((s) => s.eid))];
+  const docs = await Promise.all(eids.map((eid) => ctx.deps.store.get<Evidence>(ctx.uid, paths.evidence(ctx.uid, eid)).catch(() => null)));
+  eids.forEach((eid, i) => {
+    const e = docs[i];
+    if (e !== null && e !== undefined) evidence.set(eid, e.data);
+  });
   const r = resolveLineage({ memory: m, evidence, hasher: ctx.deps.hasher });
   const links = m.rootSlices.slice(0, 128).map((slice) => ({ slice, text: r.links.find((l) => l.slice === slice)?.text ?? null }));
   const failures = r.ok ? [] : r.failures.slice(0, 256).map((f) => ({ kind: f.kind, index: Math.max(0, f.index), eid: f.eid }));
@@ -112,16 +114,20 @@ async function ledgerPage(ctx: RouteContext, cursor: string | null): Promise<Deb
       limit: 100,
     });
     let fresh = 0;
+    const picked: typeof rows = [];
     for (const row of rows) {
       if (after !== null && skipThrough !== null && (row.data.at > after.at || (row.data.at === after.at && row.id >= skipThrough))) continue;
       fresh++;
-      if (items.length === DEBUG_PAGE_SIZE) {
+      if (items.length + picked.length === DEBUG_PAGE_SIZE) {
         more = true;
         break;
       }
-      const a = await admissionOf(ctx, row.data);
-      items.push({ kind: "ledger", id: row.id, record: row.data, issuer: a.issuer, permitKind: a.permitKind });
+      picked.push(row);
     }
+    // Each row's Turn read in parallel: one round trip after another (about 75 ms each from a laptop to us-central1)
+    // passed the panel's 3 s budget at about 40 decisions, so the panel showed stale data on every refresh.
+    const admissions = await Promise.all(picked.map((row) => admissionOf(ctx, row.data)));
+    picked.forEach((row, i) => items.push({ kind: "ledger", id: row.id, record: row.data, issuer: admissions[i]!.issuer, permitKind: admissions[i]!.permitKind }));
     if (more || rows.length < 100 || fresh === 0) break;
     const last = rows[rows.length - 1]!;
     bound = last.data.at;
@@ -189,8 +195,7 @@ export async function debugMemory(ctx: RouteContext, req: DebugReq): Promise<Deb
     }
     case "memories": {
       const { rows, more } = await q28<Memory>(ctx, "memories", req.cursor);
-      const items: DebugItem[] = [];
-      for (const r of rows) items.push(await memoryItem(ctx, r));
+      const items: DebugItem[] = await Promise.all(rows.map((r) => memoryItem(ctx, r)));
       result = page("memories", items, more, (i) => i.id);
       break;
     }

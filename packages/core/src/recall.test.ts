@@ -8,6 +8,7 @@ import {
   packRecall,
   parseRecallOutput,
   recallLines,
+  recallExcerpts,
   recallNotes,
   recallOutputJsonSchema,
 } from "./recall";
@@ -115,5 +116,34 @@ describe("packRecall and notes", () => {
   it("builds a strict JSON Schema for the Responses text format", () => {
     const schema = recallOutputJsonSchema();
     expect(schema).toMatchObject({ type: "object", additionalProperties: false, required: ["kind", "statements", "alternatives"] });
+  });
+});
+
+describe("recallExcerpts (when the reader fails)", () => {
+  const ctx = { noteId: (n: number) => testId(`x${n}`), expiresAt: "2026-11-03T12:01:00.000Z" };
+  const lineRows = () =>
+    linesFor([
+      mem(1, { value: { kind: "text", text: "Ana lives in Denver" } }),
+      mem(2, { value: { kind: "text", text: "Pip is the owner's dog" } }),
+      mem(3, { value: { kind: "text", text: "The dog park near Ana opens at 9" } }),
+      mem(4, { value: { kind: "text", text: "Locker code 4417" }, sens: "S1" }),
+    ]).lines;
+
+  it("keeps stored lines sharing a topic word with the query or question, best overlap first, verbatim", () => {
+    const notes = recallExcerpts("dog park", "What time does the dog park open?", lineRows(), ctx);
+    expect(notes.map((n) => n.text)).toEqual(["fact: The dog park near Ana opens at 9", "fact: Pip is the owner's dog"]);
+    expect(notes[0]).toMatchObject({ noteId: testId("x0"), kind: "result", unprompted: false, sens: "S0", dependsOn: [`e:${EID}`] });
+    expect(notes[0]!.rootKeys).toEqual([rootKey(slice, hasher)]);
+  });
+
+  it("question words, 'owner' and short words never match, so nothing comes back for them", () => {
+    expect(recallExcerpts("what", "What did I tell you about the owner?", lineRows(), ctx)).toEqual([]);
+    expect(recallExcerpts("my", "is it", lineRows(), ctx)).toEqual([]);
+  });
+
+  it("carries each line's sensitivity and stops at four notes", () => {
+    expect(recallExcerpts("locker code", null, lineRows(), ctx)).toEqual([expect.objectContaining({ text: "fact: Locker code 4417", sens: "S1" })]);
+    const many = linesFor(Array.from({ length: 9 }, (_, i) => mem(i, { value: { kind: "text", text: `dog fact ${i}` } }))).lines;
+    expect(recallExcerpts("dog", null, many, ctx)).toHaveLength(4);
   });
 });

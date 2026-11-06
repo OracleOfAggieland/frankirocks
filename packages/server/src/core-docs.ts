@@ -72,6 +72,9 @@ export function initialCoreDocs(uid: string, pair: ClockPair, clientZone: string
 
 /** Creates the core documents once. Returns true when this call created them. */
 export async function ensureCoreDocs(uid: string, deps: CoreDocsDeps, clientZone: string | null = null): Promise<boolean> {
+  // Fast path: the five documents are created together, so an existing core/epoch means they all exist. A plain
+  // read costs one round trip; the transaction below costs two or three on every request.
+  if ((await deps.store.get(uid, paths.core(uid, "epoch"))) !== null) return false;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await deps.store.transaction(uid, async (tx) => {

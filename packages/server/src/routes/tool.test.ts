@@ -1,4 +1,4 @@
-import { type Ledger, ToolResponse, idParts, payloadHash, validate } from "@franki/core";
+import { type Ledger, RECALL_DEADLINE_MS, TOOL_LIMIT_MS, ToolResponse, idParts, payloadHash, validate } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { type ScriptedResult, fail, never, ok } from "../openai/fake";
@@ -7,7 +7,7 @@ import { paths } from "../store/paths";
 import { commitUserTurnForTest, insertMemoryForTest } from "../testing/extract-fixtures";
 import { callRoute, testRig } from "../testing/fakes";
 import { asrTurn, openTestSession } from "../testing/session-fixtures";
-import { toolRoute } from "./tool";
+import { TOOL_RESULT_LIMIT_MS, toolRoute } from "./tool";
 import { turnRoute } from "./turn";
 
 const UID = "owner-1";
@@ -42,6 +42,10 @@ const statement = (text: string, citations: unknown[]) => ({ text, citations, me
 const output = (...statements: unknown[]) => ok(completed(JSON.stringify({ kind: "supported", statements, alternatives: [] })));
 
 describe("POST /api/tool (recall)", () => {
+  it("answers well before the browser stops waiting for it, with a second to spare for the network", () => {
+    expect(TOOL_RESULT_LIMIT_MS + 1_000).toBeLessThanOrEqual(TOOL_LIMIT_MS);
+  });
+
   it("ready: one RecallAllV1 read on FRANKI_BG_MODEL, cited notes, and a tool-continuation Permit over the tool output", async () => {
     const { rig, stamp, tool, memIds, memTurns, setRecall, recallRequests } = await setup();
     const ref = { type: "memory", id: memIds[0], rev: 1 };
@@ -49,7 +53,7 @@ describe("POST /api/tool (recall)", () => {
     const res = await tool();
     expect(res.status).toBe(200);
     expect(validate(ToolResponse, res.body).ok).toBe(true);
-    expect(res.elapsedMs).toBeLessThanOrEqual(3_000);
+    expect(res.elapsedMs).toBeLessThanOrEqual(TOOL_RESULT_LIMIT_MS);
     expect(res.body.status).toBe("ready");
     expect(res.body.result).toMatchObject({ name: "recall", coverage: { state: "complete" }, truncated: false, cursor: null, pendingId: null, snapshot: null });
     expect(res.body.result.notes).toEqual([
@@ -59,7 +63,7 @@ describe("POST /api/tool (recall)", () => {
 
     const [req] = recallRequests();
     expect(recallRequests()).toHaveLength(1);
-    expect(req!.body).toMatchObject({ model: "test-bg-model", store: false, tools: [], max_output_tokens: 768, reasoning: { effort: "low" } });
+    expect(req!.body).toMatchObject({ model: "test-bg-model", store: false, tools: [], max_output_tokens: 768, reasoning: { effort: "none" } });
     expect((req!.body as any).text.format).toMatchObject({ type: "json_schema", name: "RecallAllV1", strict: true });
     const input = JSON.parse((req!.body as any).input);
     expect(input).toMatchObject({ query: "dog name", purpose: "answer", coverage: { complete: true, truncated: false } });
@@ -120,14 +124,33 @@ describe("POST /api/tool (recall)", () => {
     ["a schema violation", ok(completed(JSON.stringify({ kind: "maybe", statements: [], alternatives: [] })))],
     ["a refusal", ok({ status: "completed", outputText: null, refusal: "no", usage: { inputTokens: 0, outputTokens: 0 } })],
     ["incomplete output", ok({ status: "incomplete", outputText: "{}", refusal: null, usage: { inputTokens: 0, outputTokens: 0 } })],
-    ["no answer by the 1.5 s deadline", never()],
-  ])("RecallAllV1 failure (%s) → ready with empty notes and coverage unknown, within 3 s", async (_label, result) => {
-    const { tool, setRecall } = await setup();
+    ["no answer by the 2.5 s deadline", never()],
+  ])("RecallAllV1 failure (%s) → ready with code-ranked excerpts of the stored lines and coverage partial", async (_label, result) => {
+    const { tool, memTurns, setRecall } = await setup();
     setRecall(() => result);
     const res = await tool();
-    expect(res.body).toMatchObject({ status: "ready", result: { notes: [], coverage: { state: "unknown" } } });
+    expect(res.body).toMatchObject({ status: "ready", result: { coverage: { state: "partial" } } });
+    expect(res.body.result.notes).toEqual([
+      expect.objectContaining({ kind: "result", text: "fact: My dog is called Pip", unprompted: false, sens: "S0", dependsOn: [`e:${memTurns[0]!.eid}`] }),
+    ]);
     expect(res.body.permit).not.toBeNull();
-    expect(res.elapsedMs).toBeLessThanOrEqual(3_000);
+    expect(res.elapsedMs).toBeLessThanOrEqual(TOOL_RESULT_LIMIT_MS);
+  });
+
+  it("a failed read with no stored line on the topic → empty notes and coverage unknown", async () => {
+    const { tool, setRecall } = await setup({ turnText: "What is my cat called" });
+    setRecall(() => fail(new Error("openai 500")));
+    const res = await tool({}, { query: "cat" });
+    expect(res.body).toMatchObject({ status: "ready", result: { notes: [], coverage: { state: "unknown" } } });
+  });
+
+  it("the read gets at most RECALL_DEADLINE_MS, then excerpts answer within the route limit", async () => {
+    const { tool, setRecall } = await setup();
+    setRecall(() => never());
+    const res = await tool();
+    expect(res.elapsedMs).toBeGreaterThanOrEqual(RECALL_DEADLINE_MS);
+    expect(res.elapsedMs).toBeLessThanOrEqual(TOOL_RESULT_LIMIT_MS);
+    expect(res.body.result.notes).toHaveLength(1);
   });
 
   it("asked test: a Turn without any query term or alias gets empty notes and no read", async () => {

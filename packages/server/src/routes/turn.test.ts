@@ -1,7 +1,8 @@
-import { type Evidence, type Job, type Session, type Turn, TurnResponse, utf8, validate } from "@franki/core";
+import { type Evidence, type Job, type Session, type Turn, TurnResponse, msFromTs, tsFromMs, utf8, validate } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { paths } from "../store/paths";
+import { insertTurnForTest } from "../testing/extract-fixtures";
 import { callRoute, testRig } from "../testing/fakes";
 import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
 import { turnEvidenceId } from "../turns";
@@ -181,6 +182,26 @@ describe("POST /api/turn (typed path)", () => {
     await callRoute(rig, turnRoute, typedTurn(s.stamp, 2, "my diagnosis came back"));
     const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 3, "what now"));
     expect(res.body.deck.turns.map((t: { text: string }) => t.text)).toEqual(["I like tea"]);
+  });
+
+  it("gives the Deck earlier Turns in R19.6 order: the question, then Franki's replies by commit time, whatever their IDs", async () => {
+    const { rig, s, turnOf } = await setup();
+    await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "What's my favorite movie?"));
+    const question = (await turnOf(1))!;
+    const after = (ms: number) => tsFromMs(msFromTs(question.committedAt) + ms);
+    // Franki's preamble and its answer after a recall share the question's seq (R21.5). Their IDs sort before the
+    // question's and opposite to their commit order, the way Firestore's tie order put the answer before the
+    // question in the Nov 6 live test; the model then answered the old question again. Only Turn text is read
+    // here, so both reuse the question's Evidence.
+    const reply = { seq: 1, role: "assistant" as const, evidenceId: question.evidenceId, sourceClass: "M" as const };
+    await insertTurnForTest(rig.store, UID, s.sessionId, `${"-".repeat(42)}A`, { ...reply, text: "You haven't told me one yet.", committedAt: after(2_000) });
+    await insertTurnForTest(rig.store, UID, s.sessionId, `${"-".repeat(42)}B`, { ...reply, text: "Let me check.", committedAt: after(1_000) });
+    const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 2, "What's my dog's name?"));
+    expect(res.body.deck.turns.map((t: { role: string; text: string }) => `${t.role}: ${t.text}`)).toEqual([
+      "user: What's my favorite movie?",
+      "assistant: Let me check.",
+      "assistant: You haven't told me one yet.",
+    ]);
   });
 
   it("rejects a Session of another Owner with SCOPE", async () => {

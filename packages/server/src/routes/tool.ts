@@ -9,11 +9,13 @@
  *      for at most 1.5 s, else `hold` with no read (R27.2, R27.3).
  *   4. Asked test: the Turn's own words must contain a recall term or alias, else `ready` with empty notes (R27.9).
  *   5. Read: eligible, spoken-grade, non-S2 Memory lines through Q28 (at most 200, 160 characters each), packed to
- *      8,000 tokens, one tool-less RecallAllV1 call on FRANKI_BG_MODEL with a 1.5 s deadline (R27.4). Any failure
- *      gives empty notes with coverage `unknown` (R27.7). Statements without supplied citations are dropped (R27.6).
+ *      8,000 tokens, one tool-less RecallAllV1 call on FRANKI_BG_MODEL with up to RECALL_DEADLINE_MS (R27.4). A
+ *      failed or late read gives code-ranked excerpts of the same lines (contracts §5 Recall readers), and empty
+ *      notes with coverage `unknown` only when none match (R27.7). Statements without supplied citations are
+ *      dropped (R27.6).
  *   6. In one transaction, `devAdmit` issues the tool continuation's `slowOrdinary` Permit over a payload that
  *      includes the tool output, its decision is written to the ledger, and the response is recorded (R27.8).
- * The response is sent within 3 s (R27.5): the RecallAllV1 deadline shrinks by whatever the parse wait used.
+ * The response is sent within TOOL_RESULT_LIMIT_MS (R27.5): the read's deadline shrinks by whatever the parse wait and reads used.
  */
 import {
   type Evidence,
@@ -24,8 +26,10 @@ import {
   type ToolResponse,
   type ToolResult,
   type W,
+  RECALL_DEADLINE_MS,
   explicitRequest,
   packRecall,
+  recallExcerpts,
   parseRecallOutput,
   recallLines,
   recallNotes,
@@ -51,8 +55,13 @@ import { earlierSafeTurns } from "./turn";
 
 export const PARSE_WAIT_MS = 1_500;
 export const PARSE_POLL_MS = 100;
-export const TOOL_RESULT_LIMIT_MS = 3_000;
-/** Time kept back from the 3 s limit for the admission transaction. */
+/**
+ * The route answers within this limit. Raised from 3 s: reading every Memory and its Evidence from a laptop to
+ * us-central1 took most of 3 s before the reader even started, and the client gave up at 3 s, which left Franki
+ * silent after "let me check". The client now waits 6 s (voice-client TOOL_TIMEOUT_MS).
+ */
+export const TOOL_RESULT_LIMIT_MS = 4_500;
+/** Time kept back from the route limit for the admission transaction. */
 const TOOL_COMMIT_RESERVE_MS = 300;
 
 type ToolReq = Infer<typeof ToolRequest>;
@@ -77,13 +86,19 @@ async function checkTurn(ctx: RouteContext, req: ToolReq): Promise<TurnCheck> {
   return turn.data.parseState === "committed" ? { kind: "ok", turn: turn.data } : { kind: "wait" };
 }
 
-/** The recall read (steps 4 and 5). Never throws for model problems: they give empty notes with `unknown`. */
-async function readRecall(ctx: RouteContext, req: ToolReq, turn: Turn, budgetMs: number): Promise<Result> {
+/** Below this, the reader is not started and code-ranked excerpts answer instead. */
+const MIN_READ_MS = 400;
+
+/**
+ * The recall read (steps 4 and 5). Never throws for model problems: a failed, refused, unparsable or late read
+ * gives code-ranked excerpts of the same supplied lines (partial coverage), and empty notes only when none match.
+ */
+async function readRecall(ctx: RouteContext, req: ToolReq, turn: Turn, deadlineAt: number): Promise<Result> {
   const { uid, deps } = ctx;
   const args = req.tool.args;
   if (!explicitRequest(turn.text, args)) return recallResult([], "unknown", false);
   // `inspect` is snapshot() in the contract, which this slice does not build.
-  if (args.purpose === "inspect" || budgetMs <= 0) return recallResult([], "unknown", false);
+  if (args.purpose === "inspect" || deadlineAt <= deps.clock.read().opsClock.now) return recallResult([], "unknown", false);
 
   const reader = storeReader(deps.store, uid);
   const core = await readCoreDocs(reader, uid);
@@ -98,22 +113,29 @@ async function readRecall(ctx: RouteContext, req: ToolReq, turn: Turn, budgetMs:
   const { lines, eligibleCount } = recallLines(rows, ec, snapshot, evidence);
   if (lines.length === 0) return recallResult([], "complete", false);
   const { input, used, truncated } = packRecall(lines, eligibleCount, args.query, args.purpose);
+  const noteCtx = {
+    noteId: (n: number) => deps.hasher.id(["note", req.stamp.sessionId, req.stamp.turnId, req.callId, n]),
+    expiresAt: tsFromMs(deps.clock.read().opsClock.now + NOTE_TTL_MS),
+  };
+  const excerpts = (): Result => {
+    const notes = recallExcerpts(args.query, turn.text, used, noteCtx);
+    deps.log("tool.recallExcerpts", { turnId: req.stamp.turnId, notes: notes.length });
+    return recallResult(notes, notes.length === 0 ? "unknown" : "partial", truncated);
+  };
 
+  const budgetMs = Math.min(RECALL_DEADLINE_MS, deadlineAt - deps.clock.read().opsClock.now);
+  if (budgetMs < MIN_READ_MS) return excerpts();
   let out: ResponsesResult;
   try {
     const body = recallRequest(requireModel("bg", deps.env), input);
     out = (await withDeadline(deps.openai.call("responses.create", body), budgetMs, deps.timers)) as ResponsesResult;
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === "CONFIG") throw error;
-    return recallResult([], "unknown", false);
+    return excerpts();
   }
   const parsed = out.status === "completed" && out.refusal === null ? parseRecallOutput(out.outputText) : null;
-  if (parsed === null) return recallResult([], "unknown", false);
-  const ops = deps.clock.read().opsClock.now;
-  const notes: W[] = recallNotes(parsed, used, {
-    noteId: (n) => deps.hasher.id(["note", req.stamp.sessionId, req.stamp.turnId, req.callId, n]),
-    expiresAt: tsFromMs(ops + NOTE_TTL_MS),
-  });
+  if (parsed === null) return excerpts();
+  const notes: W[] = recallNotes(parsed, used, noteCtx);
   return recallResult(notes, truncated ? "partial" : "complete", truncated);
 }
 
@@ -132,8 +154,7 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
     if (check.kind === "stale") throw new Unrecorded<ToolRes>({ ...empty, status: "stale" });
     if (check.kind === "wait") throw new Unrecorded<ToolRes>({ ...empty, status: "hold" });
 
-    const budget = Math.min(TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS - (deps.clock.read().opsClock.now - start), 1_500);
-    const result = await readRecall(ctx, req, check.turn, budget);
+    const result = await readRecall(ctx, req, check.turn, start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS);
 
     return deps.store.transaction(uid, async (tx) => {
       const doc = await tx.get<Session>(paths.session(uid, req.stamp.sessionId));

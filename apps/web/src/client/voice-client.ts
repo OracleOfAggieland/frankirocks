@@ -12,6 +12,7 @@ import {
   type RealtimeServerEvent,
   ReceiptResponse,
   SdpResponse,
+  TOOL_LIMIT_MS,
   StateResponse,
   ToolResponse,
   TurnResponse,
@@ -34,7 +35,7 @@ export const OPEN_TIMEOUT_MS = 5_000;
 export const SDP_TIMEOUT_MS = 5_000;
 export const STATE_TIMEOUT_MS = 1_500;
 export const TURN_TIMEOUT_MS = 10_000;
-export const TOOL_TIMEOUT_MS = 3_000;
+export const TOOL_TIMEOUT_MS = TOOL_LIMIT_MS;
 export const CLOSE_TIMEOUT_MS = 1_500;
 export const RECEIPT_TIMEOUT_MS = 1_500;
 export const RECEIPT_RETRY_MS = [1_000, 2_000, 5_000] as const;

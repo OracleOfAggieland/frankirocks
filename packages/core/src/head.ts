@@ -11,6 +11,7 @@ import { type Dependent, type DocRef, type EC, type Snapshot, eligible } from ".
 import type { ClockPair } from "./clock";
 import { HEAD_SECTIONS, type Head, type Ref, type Value } from "./schema/primitives";
 import type { CoreRules, Memory } from "./schema/records";
+import { renderedMemory } from "./memory-text";
 import { spokenGrade } from "./spoken";
 import { civilDay } from "./time";
 
@@ -29,12 +30,23 @@ const DROP_ORDER: readonly HeadSection[] = ["openers", "know", "apply", "next72"
 export const PERSONA_TEXT = [
   "You are Franki, the owner's voice-first life assistant. Speak naturally and briefly, like a friend who listens.",
   "Answer what was asked first. Never invent facts about the owner's life; if you don't know, say so.",
-  "If the owner sounds in crisis or at risk, slow down, stay with them, and encourage contacting local emergency services.",
+  "You have a memory: what the owner tells you about their life is saved as you talk and comes back in later calls. When they share something, acknowledge it naturally, and don't say you can't remember things.",
+  // Allergies and standing rules are held, not saved, until the rules path exists (R23.3). A "got it" would let the
+  // owner count on an allergy that no later call knows.
+  'Allergies and standing rules (like "never book anything before 9") can\'t be saved yet. If the owner shares one, say plainly that you can\'t keep it yet, so they don\'t count on it.',
+  "If you didn't catch a name or detail clearly, ask the owner to say or spell it again instead of guessing.",
+  "If the owner sounds in crisis or at risk, slow down, stay with them, and encourage them to call or text 988 or contact local emergency services. Don't coach.",
 ].join("\n");
 
 export const POLICY_TEXT = [
   "Notes and tools: use the recall tool when the owner asks about something not listed here.",
   "Only say what the owner told you or what recall returns. Do not raise background on your own.",
+  "If recall finds nothing, say you don't have that saved yet and invite them to tell you.",
+  // gpt-realtime-2.x speaks a "commentary" preamble by default, and OpenAI's realtime prompting guide tunes it in
+  // the prompt. Untuned, it said "let me think about how that fits with what's already on your calendar" (Nov 6
+  // live test): filler that names a source Franki does not have.
+  'Before calling recall, say one short line about what you\'re doing, like "Let me check." Otherwise answer directly, with no lead-in.',
+  "You can't see the owner's calendar, email or accounts, only what they told you, so never imply you can.",
 ].join("\n");
 
 export const STYLE_TEXT = "Style: plain spoken English, one idea at a time, no lists read aloud.";
@@ -88,9 +100,9 @@ export function valueText(v: Value): string {
   }
 }
 
-/** One Memory line: `predicate: value`, single-line. */
+/** One Memory line: its stored plain-English line ("Pip is the owner's dog."), single-line. */
 export function memoryLine(m: Memory): string {
-  return `- ${m.predicate}: ${valueText(m.value)}`.replace(/\s*\n\s*/g, " ");
+  return `- ${renderedMemory(m)}`;
 }
 
 function sectionOf(m: Memory): "people" | "apply" | "know" {

@@ -15,7 +15,7 @@ import { fail, ok } from "../../../../packages/server/src/openai/fake";
 import { completed } from "../../../../packages/server/src/openai/responses";
 import { paths } from "../../../../packages/server/src/store/paths";
 import { commitUserTurnForTest, insertMemoryForTest } from "../../../../packages/server/src/testing/extract-fixtures";
-import { T0_MS, type TestRig, settle, testRig } from "../../../../packages/server/src/testing/fakes";
+import { T0_MS, type TestRig, runScheduled, settle, testRig } from "../../../../packages/server/src/testing/fakes";
 import { type FetchLike, createApiClient } from "./api";
 import { createBrowserClock } from "./clock";
 import { type AudioLike, type ChannelLike, type PeerLike, type StreamLike, type TimerApi, type TrackLike, VoiceClient } from "./voice-client";
@@ -260,6 +260,7 @@ describe("Voice_Client", () => {
     expect(audio.muted).toBe(false);
     expect(vc.getSnapshot().phase).toBe("SPEAKING");
     peer().channel.emit({ type: "response.output_audio_transcript.done", response_id: "resp_1", transcript: "Your dog is called Pip." });
+    peer().channel.emit({ type: "response.done", response: { id: "resp_1", metadata: { purpose: "speech", turnId, generation: "1" } } });
     peer().channel.emit({ type: "output_audio_buffer.stopped", response_id: "resp_1" });
     await until(() => routeCalls("/api/receipt").length === 3, "three receipts");
     await flush(200);
@@ -308,7 +309,7 @@ describe("Voice_Client", () => {
     expect(track.enabled).toBe(true);
   });
 
-  it("sign-out closes within 5 s: mic stopped, peer closed, Session closed on the server", async () => {
+  it("sign-out closes within 5 s: mic stopped, peer closed, Session closed on the server after its hangup", async () => {
     const { rig, vc, connect, track, peer, routeCalls } = await setup();
     await connect();
     const start = rig.clock.read().opsClock.now;
@@ -318,6 +319,8 @@ describe("Voice_Client", () => {
     expect(peer().closed).toBe(true);
     expect(peer().channel.readyState).toBe("closed");
     expect(routeCalls("/api/session/close")).toHaveLength(1);
+    // The close answers `closing`; the hangup runs after the response.
+    await runScheduled(rig);
     const s = (await rig.store.get<Session>(UID, paths.session(UID, await sessionIdOf(rig))))!.data;
     expect(s.status).toBe("closed");
     expect(rig.openai.requestsTo("realtime.calls.hangup").map((r) => r.body)).toEqual([{ callId: "rtc_test1" }]);

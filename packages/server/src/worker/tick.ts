@@ -13,6 +13,7 @@
 import { type ID, type Job, type Session, tsFromMs } from "@franki/core";
 import type { RouteContext } from "../routes/runtime";
 import { afterClosed, beginCloseInTx, finishCloseInTx } from "../sessions";
+import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
 import type { StorePort } from "../store/port";
 import { drainExtractJobs } from "./drain";
@@ -96,11 +97,25 @@ export async function requeueExpiredLeases(ctx: RouteContext): Promise<number> {
   return n;
 }
 
+/**
+ * A step that lost a compare-and-set race (staleRevision) is left to the next tick; it must not stop the steps
+ * after it, the extract drain above all. Every other error still throws.
+ */
+async function racing(ctx: RouteContext, step: string, run: () => Promise<unknown>): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    if (!isStoreError(error, "staleRevision")) throw error;
+    ctx.deps.log?.("tick.lostRace", { step });
+  }
+}
+
 /** Q17 for hangup Jobs, then the extract drain. */
 export async function runDueJobs(ctx: RouteContext): Promise<void> {
   const { uid, deps } = ctx;
   for (const jobId of await dueJobs(deps.store, uid, deps.clock.read().opsClock.now, "hangup")) {
-    await runHangupJob(uid, jobId, deps, (sessionId) => afterClosed(ctx, sessionId));
+    // The attempt's commit can race Q13's expiry close of the same Session.
+    await racing(ctx, "hangup", () => runHangupJob(uid, jobId, deps, (sessionId) => afterClosed(ctx, sessionId)));
   }
   await drainExtractJobs(uid, deps);
 }
@@ -114,7 +129,7 @@ export function startTick(ctx: RouteContext): Promise<number> | null {
   const expiry = expireSessions(ctx);
   ctx.schedule(async () => {
     await expiry.catch(() => 0);
-    await requeueExpiredLeases(ctx);
+    await racing(ctx, "requeue", () => requeueExpiredLeases(ctx));
     await runDueJobs(ctx);
   });
   return expiry;

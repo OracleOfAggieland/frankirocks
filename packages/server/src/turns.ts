@@ -164,6 +164,17 @@ export function safeTurn(turnId: ID, turn: Turn, evidence: Evidence, eid: ID, ha
   };
 }
 
+/**
+ * Turn order within a Session (R19.6): `seq` ascending; at equal `seq`, the user Turn before the assistant Turns
+ * that answered it; then `committedAt`. An assistant Turn takes the `seq` of the user Turn it answered (R21.5), so
+ * a query ordered by `seq` alone returns equal-seq Turns in document-ID order, which is random: Franki's answer
+ * could come before the question it answered, and the model then answered the question again (Nov 6 live test).
+ */
+export function turnOrder(a: Turn, b: Turn): number {
+  const role = (t: Turn) => (t.role === "user" ? 0 : 1);
+  return a.seq - b.seq || role(a) - role(b) || (a.committedAt < b.committedAt ? -1 : a.committedAt > b.committedAt ? 1 : 0);
+}
+
 /** Normalizes and bounds a final transcript (R18.8, R20.2): 1 to 8192 code units after LF normalization. */
 export function normalizedTranscript(raw: string): string | null {
   const text = normalizeLF(raw);

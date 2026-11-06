@@ -4,7 +4,7 @@
  * the emulator (CI). Transactions run with `maxAttempts: 1`, so neither store retries; contention is staleRevision.
  */
 import type { Evidence, Hasher, Memory } from "@franki/core";
-import { FieldPath, type Firestore, type Query, type Transaction } from "firebase-admin/firestore";
+import { type DocumentSnapshot, FieldPath, type Firestore, type Query, type Transaction } from "firebase-admin/firestore";
 import { checkImmutable, checkRecord, lineageFailures, throwOnLineage } from "./checks";
 import { StoreError, isStoreError } from "./errors";
 import { checkQuerySpec } from "./memory-store";
@@ -68,15 +68,26 @@ export class FirestoreStore implements StorePort {
     const reads = new Map<string, number | null>();
     let rereadConflict: string | null = null;
     const writes = new Map<string, PendingWrite>();
+    // Every document this transaction has read, by path. The transaction holds what it read until it commits, so
+    // a second read of the same path, and the commit's own checks, use this snapshot instead of another round trip
+    // (each one cost ~75 ms from a laptop to us-central1, and a close or turn made a dozen).
+    const snaps = new Map<string, DocumentSnapshot>();
     const observe = (path: string, rev: number | null) => {
       if (!reads.has(path)) reads.set(path, rev);
       else if (reads.get(path) !== rev) rereadConflict ??= path;
+    };
+    const readDoc = async (path: string): Promise<DocumentSnapshot> => {
+      const known = snaps.get(path);
+      if (known !== undefined) return known;
+      const snap = await t.get(this.db.doc(path));
+      snaps.set(path, snap);
+      return snap;
     };
 
     const tx: Tx = {
       get: async <T>(path: string) => {
         const p = parseDocPath(uid, path);
-        const snap = await t.get(this.db.doc(path));
+        const snap = await readDoc(path);
         const data = snap.exists ? (snap.data() as Data) : undefined;
         observe(path, data === undefined ? null : (data.rev as number));
         return data === undefined ? null : ({ path, id: p.id, data: data as T } satisfies StoredDoc<T>);
@@ -84,6 +95,7 @@ export class FirestoreStore implements StorePort {
       query: async <T>(spec: QuerySpec) => {
         const snap = await t.get(this.buildQuery(uid, spec));
         const rows = snap.docs.map((d) => ({ path: d.ref.path, id: d.id, data: d.data() as T }));
+        for (const d of snap.docs) if (!snaps.has(d.ref.path)) snaps.set(d.ref.path, d);
         for (const r of rows) observe(r.path, (r.data as Data).rev as number);
         return rows;
       },
@@ -106,10 +118,16 @@ export class FirestoreStore implements StorePort {
 
     for (const w of writes.values()) checkRecord(uid, w.parsed, { ...w.record, rev: 1 });
 
-    // Every remaining read happens before the first write, as Firestore transactions require.
+    // Every remaining read happens before the first write, as Firestore transactions require. Paths this
+    // transaction never read are fetched together in one round trip.
+    const unread = [...writes.keys()].filter((path) => !snaps.has(path));
+    if (unread.length > 0) {
+      const got = await t.getAll(...unread.map((path) => this.db.doc(path)));
+      got.forEach((snap, i) => snaps.set(unread[i]!, snap));
+    }
     const current = new Map<string, Data | undefined>();
     for (const w of writes.values()) {
-      const snap = await t.get(this.db.doc(w.parsed.path));
+      const snap = snaps.get(w.parsed.path)!;
       current.set(w.parsed.path, snap.exists ? (snap.data() as Data) : undefined);
     }
     for (const w of writes.values()) {
@@ -120,7 +138,7 @@ export class FirestoreStore implements StorePort {
           const path = `users/${uid}/evidence/${eid}`;
           const pending = writes.get(path);
           if (pending !== undefined) return pending.record as unknown as Evidence;
-          const snap = await t.get(this.db.doc(path));
+          const snap = await readDoc(path);
           return snap.exists ? (snap.data() as Evidence) : null;
         },
         this.hasher,
