@@ -201,7 +201,8 @@ Rules for every task:
     - Depends on: 6.12.
     - Witness: `npx vitest run apps/web/src/ui/avatar/look.property.test.ts`.
     - **Validates: Requirements 6.12, 9.2**
-  - [ ] 6.14 Write the Event_Controller `apps/web/src/ui/avatar/events.ts`
+  - [x] 6.14 Write the Event_Controller `apps/web/src/ui/avatar/events.ts`
+    - Actual time: 3 min
     - `EventInput`, `EventState`, `initialEventState`, `reduceEvents`, `currentEvent` with rules 1 to 6 of design "Event_Controller": monotonic Frame_Time, expiry on every input, wake once per Visit, timed replacement except over wake, approval slot cleared by `approvalDone`, `closed` and `signOut`. No timers and no Wall_Clock_Read.
     - Depends on: 6.1.
     - Witness: `npm run typecheck`.
