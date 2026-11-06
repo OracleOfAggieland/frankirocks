@@ -120,7 +120,8 @@ Rules for every task:
     - Depends on: 2.2.
     - Witness: `npm run typecheck`.
     - _Requirements: 4.1, 5.4_
-  - [ ] 6.2 Write `apps/web/src/ui/test-arbitraries.ts`
+  - [x] 6.2 Write `apps/web/src/ui/test-arbitraries.ts`
+    - Actual time: 3 min
     - `arbState`, `arbEvent`, `arbLevel`, `arbElapsed`, `arbInput` and `arbEventInputs` as in design "Correctness Properties". Imported by tests only.
     - Depends on: 6.1.
     - Witness: `npm run typecheck`.
