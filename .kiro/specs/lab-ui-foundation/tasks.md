@@ -245,7 +245,8 @@ Rules for every task:
     - Depends on: 6.3, 6.14.
     - Witness: `node scripts/ui-boundaries.mjs` exits 0.
     - _Requirements: 4.4, 5.1, 8.3, 10.6, 16.1_
-  - [ ] 7.2 Write `scripts/ui-boundaries.test.ts`
+  - [x] 7.2 Write `scripts/ui-boundaries.test.ts`
+    - Actual time: 4 min
     - Runs the check on the repo (expects none) and on temporary fake trees showing each rule failing and passing.
     - Depends on: 7.1.
     - Witness: `npx vitest run scripts/ui-boundaries.test.ts`.
