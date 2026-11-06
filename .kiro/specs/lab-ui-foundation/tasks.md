@@ -262,7 +262,8 @@ Rules for every task:
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/levels/level-math.test.ts`.
     - _Requirements: 11.1, 11.6_
-  - [ ] 9.2 Write the property test for level bounds
+  - [x] 9.2 Write the property test for level bounds
+    - Actual time: 1 min
     - **Property 13: Levels stay in bounds**
     - In `apps/web/src/ui/levels/level-math.property.test.ts`; `fc.uint8Array` of length 0 to 2048, `fc.array(fc.double())`, priors from `arbLevel`. At least 100 runs.
     - Depends on: 6.2, 9.1.
