@@ -187,7 +187,8 @@ Rules for every task:
     - Depends on: 6.10.
     - Witness: `npx vitest run apps/web/src/ui/avatar/look.property.test.ts`.
     - **Validates: Requirements 8.2, 6.8, 6.10**
-  - [ ] 6.12 Write the property test for reduced motion
+  - [x] 6.12 Write the property test for reduced motion
+    - Actual time: 1 min
     - **Property 11: Reduced motion is calm**
     - Same file. At least 100 runs.
     - Depends on: 6.11.

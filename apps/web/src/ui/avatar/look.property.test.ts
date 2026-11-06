@@ -154,3 +154,19 @@ describe("Property 7: Timed events expire in the look", () => {
     );
   });
 });
+
+// Feature: lab-ui-foundation, Property 11: Reduced motion is calm
+describe("Property 11: Reduced motion is calm", () => {
+  it("has no infinite animation, no Electricity, no blur and a still body", () => {
+    fc.assert(
+      fc.property(arbInput.map((i) => ({ ...i, reducedMotion: true })), (input) => {
+        const look = lookFor(input);
+        expect(look.animations.some((a) => a.iterations === "infinite")).toBe(false);
+        expect(look.electric).toBe(false);
+        expect(look.blur).toBe(false);
+        expect(look.body).toBe("still");
+      }),
+      { numRuns: 300 },
+    );
+  });
+});
