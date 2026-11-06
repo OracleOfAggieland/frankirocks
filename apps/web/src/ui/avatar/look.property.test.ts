@@ -3,6 +3,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { AvatarState } from "@franki/core";
 import { AVATAR_LABELS } from "../copy";
+import { EVENT_MS } from "../motion";
 import { arbEvent, arbInput, arbLevel } from "../test-arbitraries";
 import { isAvatarLook, lookFor } from "./look";
 import type { AvatarInput, LookName } from "./types";
@@ -132,6 +133,24 @@ describe("Property 6: Every look returns to rest", () => {
         expect(idle.ghost).toBe(false);
       }),
       { numRuns: 200 },
+    );
+  });
+});
+
+// Feature: lab-ui-foundation, Property 7: Timed events expire in the look
+describe("Property 7: Timed events expire in the look", () => {
+  const expired = fc
+    .constantFrom("wake", "present-card", "celebrate" as const)
+    .chain((event) =>
+      fc.tuple(fc.constant(event), fc.integer({ min: EVENT_MS[event], max: EVENT_MS[event] + 10000 })),
+    );
+
+  it("looks the same as no event once the duration has passed", () => {
+    fc.assert(
+      fc.property(arbInput, expired, (input, [event, eventElapsedMs]) => {
+        expect(lookFor({ ...input, event, eventElapsedMs })).toEqual(lookFor({ ...input, event: null, eventElapsedMs: 0 }));
+      }),
+      { numRuns: 300 },
     );
   });
 });

@@ -180,7 +180,8 @@ Rules for every task:
     - Depends on: 6.9.
     - Witness: `npx vitest run apps/web/src/ui/avatar/look.property.test.ts`.
     - **Validates: Requirements 8.1**
-  - [ ] 6.11 Write the property test for timed event expiry
+  - [x] 6.11 Write the property test for timed event expiry
+    - Actual time: 1 min
     - **Property 7: Timed events expire in the look**
     - Same file; `eventElapsedMs` from `EVENT_MS[e]` to `EVENT_MS[e] + 10000`. At least 100 runs.
     - Depends on: 6.10.
