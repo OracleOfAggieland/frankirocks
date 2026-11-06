@@ -50,7 +50,8 @@ Rules for every task:
     - Depends on: 2.1, 2.2.
     - Witness: `npx vitest run scripts/token-sync.test.ts`.
     - _Requirements: 2.6, 2.7_
-  - [ ] 2.4 Write `apps/web/src/ui/contrast.ts` and `contrast.test.ts`
+  - [x] 2.4 Write `apps/web/src/ui/contrast.ts` and `contrast.test.ts`
+    - Actual time: 3 min
     - WCAG relative-luminance ratio and `PAIRINGS` (foreground, background, use: normal text, large text or control boundary) from `COLOR`. The test fails below 4.5:1 for normal text and 3:1 for large text and control boundaries, and asserts `stitch` is never listed as a control boundary (contract question 6).
     - Depends on: 2.2.
     - Witness: `npx vitest run apps/web/src/ui/contrast.test.ts`.
