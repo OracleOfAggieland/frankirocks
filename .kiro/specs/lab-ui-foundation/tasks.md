@@ -132,7 +132,8 @@ Rules for every task:
     - Depends on: 6.1.
     - Witness: `npm run typecheck`.
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 6.10, 6.11, 7.1, 7.2, 8.2, 9.1, 9.2_
-  - [ ] 6.4 Write `apps/web/src/ui/avatar/look.test.ts`
+  - [x] 6.4 Write `apps/web/src/ui/avatar/look.test.ts`
+    - Actual time: 4 min
     - One example per look-table row in both motion settings; labels per state; speaking with output muted gives Thinking and "Franki is thinking"; wake over connecting, wake continuing into listening, hang-up and recovery ending it; Listening and Speaking differ in `posture` and `follows`.
     - Depends on: 6.3.
     - Witness: `npx vitest run apps/web/src/ui/avatar/look.test.ts`.
