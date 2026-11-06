@@ -126,7 +126,8 @@ Rules for every task:
     - Depends on: 6.1.
     - Witness: `npm run typecheck`.
     - _Requirements: 23.1_
-  - [ ] 6.3 Write the Look_Mapper `apps/web/src/ui/avatar/look.ts`
+  - [x] 6.3 Write the Look_Mapper `apps/web/src/ui/avatar/look.ts`
+    - Actual time: 6 min
     - `lookFor(input)`: sanitize, effective event, fixed priority order, record built from the look table, `follows`/`drive`/`body` rules, Ghost overlay; and the closed validator `isAvatarLook`. No Wall_Clock_Read, random source, DOM, storage or network.
     - Depends on: 6.1.
     - Witness: `npm run typecheck`.
