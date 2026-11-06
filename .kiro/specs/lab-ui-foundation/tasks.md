@@ -173,7 +173,8 @@ Rules for every task:
     - Depends on: 6.8.
     - Witness: `npx vitest run apps/web/src/ui/avatar/look.property.test.ts`.
     - **Validates: Requirements 5.5**
-  - [ ] 6.10 Write the property test for returning to rest
+  - [x] 6.10 Write the property test for returning to rest
+    - Actual time: 1 min
     - **Property 6: Every look returns to rest**
     - Same file. At least 100 runs.
     - Depends on: 6.9.

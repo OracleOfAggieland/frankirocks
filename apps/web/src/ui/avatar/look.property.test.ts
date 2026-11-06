@@ -120,3 +120,18 @@ describe("Property 5: Invalid levels count as zero", () => {
     );
   });
 });
+
+// Feature: lab-ui-foundation, Property 6: Every look returns to rest
+describe("Property 6: Every look returns to rest", () => {
+  it("closed with no event is Dormant; listening, unmuted, with no event is Idle", () => {
+    fc.assert(
+      fc.property(arbInput, (input) => {
+        expect(lookFor({ ...input, event: null, state: "closed" }).name).toBe("Dormant");
+        const idle = lookFor({ ...input, event: null, state: "listening", firstConnecting: false, micMuted: false });
+        expect(idle.name).toBe("Listening");
+        expect(idle.ghost).toBe(false);
+      }),
+      { numRuns: 200 },
+    );
+  });
+});
