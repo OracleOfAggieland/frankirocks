@@ -131,7 +131,7 @@ All colour, type, radius, shadow and motion values live in one token source (CSS
 | `brass-hi` | `#F3CF7A` | Brass highlight |
 | `gold` | `#FFD24D` | Wins, lightning core halo |
 | `spark` | `#FFF6D8` | Lightning white-hot core |
-| `stitch` | `#3B4C45` | Seams, dividers |
+| `stitch` | `#3B4C45` | Seams, dividers. Decorative only: it is below 3:1 on `night-0`, so it is never the only boundary of a control |
 | `ember` | `#FF6A4D` | Hang-up, errors, sparingly |
 
 Check every text pairing against WCAG AA before use. Glows are layered `box-shadow` or SVG blur at low opacity, never a flat neon.
@@ -189,7 +189,7 @@ Sound starts only after the first user gesture, never plays over Franki's voice,
 
 ## Signed out
 
-The room is dark. Franki is dormant, eyes closed, barely glowing. `FRANKIROCKS` sits above with K-I-R-O lighting gold once on load. One brass button: "Sign in to wake Franki". The call button and chips show, disabled.
+The room is dark. Franki is dormant, eyes closed, barely glowing. `FRANKIROCKS` sits above with K-I-R-O lighting gold once on load. One brass button: "Sign in to wake Franki". The call button shows, disabled. No chips while signed out.
 
 ## Out of scope for the foundation
 
