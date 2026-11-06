@@ -227,7 +227,8 @@ Rules for every task:
     - Depends on: 6.16.
     - Witness: `npx vitest run apps/web/src/ui/avatar/events.property.test.ts`.
     - **Validates: Requirements 8.3, 6.9**
-  - [ ] 6.18 Write the property test for wake once
+  - [x] 6.18 Write the property test for wake once
+    - Actual time: 2 min
     - **Property 10: Wake at most once per Visit**
     - Same file; many `connecting`/`closed` flips and explicit `wake` inputs. At least 100 runs.
     - Depends on: 6.17.

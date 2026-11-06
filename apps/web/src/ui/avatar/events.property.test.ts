@@ -61,3 +61,35 @@ describe("Property 9: Approval waits end when the approval ends", () => {
     );
   });
 });
+
+// Feature: lab-ui-foundation, Property 10: Wake at most once per Visit
+describe("Property 10: Wake at most once per Visit", () => {
+  const flips = fc
+    .array(
+      fc.oneof(
+        fc.constantFrom<EventInput["kind"]>("state").chain(() =>
+          fc.constantFrom("connecting", "closed").map((state) => ({ kind: "state" as const, state })),
+        ),
+        fc.constant({ kind: "event" as const, event: "wake" as const }),
+        fc.constant({ kind: "frame" as const }),
+        fc.constant({ kind: "signOut" as const }),
+      ),
+      { minLength: 1, maxLength: 50 },
+    )
+    .chain((bodies) =>
+      fc.array(fc.integer({ min: 0, max: 900 }), { minLength: bodies.length, maxLength: bodies.length }).map((gaps) => {
+        let at = 0;
+        return bodies.map((b, i) => ({ ...b, at: (at += gaps[i]) })) as EventInput[];
+      }),
+    );
+
+  it("changes the timed slot to a new wake at most once", () => {
+    fc.assert(
+      fc.property(fc.oneof(flips, arbEventInputs), (inputs) => {
+        const { starts } = trace(inputs);
+        expect(starts.filter((s) => s.event === "wake").length).toBeLessThanOrEqual(1);
+      }),
+      { numRuns: 300 },
+    );
+  });
+});
