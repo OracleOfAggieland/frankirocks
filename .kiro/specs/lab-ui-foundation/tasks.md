@@ -72,7 +72,8 @@ Rules for every task:
     - Depends on: 2.1, 3.1.
     - Witness: `node scripts/token-check.mjs` exits 0; `npx vitest run apps/web/src/components`.
     - _Requirements: 2.8, 23.4, 23.5, 23.6_
-  - [ ] 3.3 Write `scripts/token-check.test.ts` examples and the repo scan
+  - [x] 3.3 Write `scripts/token-check.test.ts` examples and the repo scan
+    - Actual time: 4 min
     - Runs `scanTokens` on the repo and expects no violation, so every `npm test` runs the Token_Check. Examples for each hex, duration and palette form, the accepted token forms, the skipped Token_Files and test files, and the CLI exit codes on a temporary tree.
     - Depends on: 3.1, 3.2.
     - Witness: `npx vitest run scripts/token-check.test.ts`.
