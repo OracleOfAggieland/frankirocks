@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import fc from "fast-check";
 import { afterEach, describe, expect, it } from "vitest";
 import { REPO_ROOT } from "./clock-check.mjs";
 import { findTokenViolations, formatTokenViolations, isSkipped, scanTokens } from "./token-check.mjs";
@@ -122,5 +123,54 @@ describe("Token_Check CLI", () => {
     const run = tree({ "apps/web/src/components/Good.tsx": 'const c = "bg-night-0";\n' });
     expect(run.status).toBe(0);
     expect(run.stdout).toBe("");
+  });
+});
+
+// Feature: lab-ui-foundation, Property 18: Token_Check finds raw values
+describe("Property 18: Token_Check finds raw values", () => {
+  const TOKEN_LINES = [
+    "transition: opacity var(--dur-base) var(--ease-ecto);",
+    '<div className="duration-(--dur-quick) bg-night-2 text-ink-dim" />',
+    "const spring = { ...SPRING.settle, duration: DUR.base / 1000 };",
+    "const delay = { delay: STAGGER / 1000 };",
+    '<path stroke="var(--color-spark)" />',
+    "animation-duration: var(--dur-ritual);",
+    "const c = COLOR.brass;",
+    "",
+  ];
+  const tokenLine = fc.constantFrom(...TOKEN_LINES);
+  const hexDigit = fc.constantFrom(..."0123456789abcdefABCDEF".split(""));
+  const hex = fc
+    .constantFrom(3, 4, 6, 8)
+    .chain((n) => fc.array(hexDigit, { minLength: n, maxLength: n }))
+    .map((d) => `#${d.join("")}`);
+  const amount = fc.integer({ min: 1, max: 5000 });
+  const duration = fc.oneof(
+    fc.tuple(fc.constantFrom("transition", "animation-duration", "animation-delay"), amount, fc.constantFrom("ms", "s")).map(
+      ([prop, n, unit]) => ({ snippet: `${prop}: ${n}${unit};`, key: `${n}${unit}` }),
+    ),
+    fc.tuple(fc.constantFrom("duration", "delay"), amount).map(([p, n]) => ({ snippet: `"${p}-${n}"`, key: `${p}-${n}` })),
+    fc.tuple(fc.constantFrom("duration", "delay"), amount).map(([p, n]) => ({ snippet: `{ ${p}: ${n} }`, key: `${p}: ${n}` })),
+    fc.tuple(fc.constantFrom("dur", "begin"), amount).map(([p, n]) => ({ snippet: `<animate ${p}="${n}ms" />`, key: `${p}="${n}ms"` })),
+  );
+
+  it("reports an inserted raw value on its line, and nothing for token-only text", () => {
+    fc.assert(
+      fc.property(
+        fc.array(tokenLine, { minLength: 0, maxLength: 20 }),
+        fc.nat(),
+        fc.oneof(hex.map((h) => ({ snippet: `const c = "${h}";`, key: h, kind: "hex" })), duration.map((d) => ({ ...d, kind: "duration" }))),
+        (lines, at, inserted) => {
+          expect(findTokenViolations(TSX, lines.join("\n"))).toEqual([]);
+          const index = lines.length === 0 ? 0 : at % (lines.length + 1);
+          const withRaw = [...lines.slice(0, index), inserted.snippet, ...lines.slice(index)];
+          const found = findTokenViolations(TSX, withRaw.join("\n"));
+          expect(found.length).toBeGreaterThanOrEqual(1);
+          expect(found.every((v: { line: number }) => v.line === index + 1)).toBe(true);
+          expect(found.some((v: { match: string; kind: string }) => v.kind === inserted.kind && v.match.includes(inserted.key))).toBe(true);
+        },
+      ),
+      { numRuns: 200 },
+    );
   });
 });

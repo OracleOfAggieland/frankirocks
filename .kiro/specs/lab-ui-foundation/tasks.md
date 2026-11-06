@@ -78,7 +78,8 @@ Rules for every task:
     - Depends on: 3.1, 3.2.
     - Witness: `npx vitest run scripts/token-check.test.ts`.
     - _Requirements: 3.4, 3.5, 3.6, 3.7_
-  - [ ] 3.4 Write the property test for the Token_Check
+  - [x] 3.4 Write the property test for the Token_Check
+    - Actual time: 4 min
     - **Property 18: Token_Check finds raw values**
     - In `scripts/token-check.test.ts`: random hex colours (3, 4, 6 or 8 digits) or ad hoc duration snippets inserted on a random line are reported on that line with the inserted text; text made only of token references reports nothing. At least 100 runs.
     - Depends on: 3.3.

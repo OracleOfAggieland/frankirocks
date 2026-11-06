@@ -24,7 +24,7 @@ const LITERAL_TIME = /(?<![\w.-])\d*\.?\d+(ms|s)(?![\w-])/;
 const TW_TIMING = /(?<![\w-])(duration|delay)-(\d+|\[[^\]\s]*\])/g;
 
 /** Object keys `duration` or `delay` with a numeric literal value, in .ts and .tsx only. */
-const NUMERIC_KEY = /(?<![\w$.])(duration|delay)\s*:\s*-?(\d|\.\d)/g;
+const NUMERIC_KEY = /(?<![\w$.])(duration|delay)\s*:\s*-?(\d+(?:\.\d*)?|\.\d+)/g;
 
 /** SVG SMIL `dur` and `begin` attributes with a literal time. */
 const SVG_TIMING = /(?<![\w-])(dur|begin)\s*=\s*\{?\s*["'`]\s*-?\d*\.?\d+(ms|s)?\s*["'`]/g;
