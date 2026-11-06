@@ -92,3 +92,31 @@ describe("Property 4: Output muted never drives the body", () => {
     );
   });
 });
+
+// Feature: lab-ui-foundation, Property 5: Invalid levels count as zero
+describe("Property 5: Invalid levels count as zero", () => {
+  const invalidLevel = fc.oneof(
+    fc.constantFrom(NaN, Infinity, -Infinity, 1.0000001, -1e-9, 2, -1),
+    fc.double().filter((x) => !(Number.isFinite(x) && x >= 0 && x <= 1)),
+  );
+  const biased = fc.oneof({ arbitrary: invalidLevel, weight: 3 }, { arbitrary: arbLevel, weight: 1 });
+  const valid = (x: number) => Number.isFinite(x) && x >= 0 && x <= 1;
+
+  it("treats a non-finite or out-of-range followed level as 0, and keeps drive in 0..1", () => {
+    fc.assert(
+      fc.property(arbInput, biased, biased, (base, inputLevel, outputLevel) => {
+        const input = { ...base, inputLevel, outputLevel };
+        const look = lookFor(input);
+        expect(look.drive).toBeGreaterThanOrEqual(0);
+        expect(look.drive).toBeLessThanOrEqual(1);
+        const zeroed = {
+          ...input,
+          inputLevel: valid(inputLevel) ? inputLevel : 0,
+          outputLevel: valid(outputLevel) ? outputLevel : 0,
+        };
+        expect(look).toEqual(lookFor(zeroed));
+      }),
+      { numRuns: 300 },
+    );
+  });
+});

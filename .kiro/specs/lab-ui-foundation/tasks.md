@@ -166,7 +166,8 @@ Rules for every task:
     - Depends on: 6.7.
     - Witness: `npx vitest run apps/web/src/ui/avatar/look.property.test.ts`.
     - **Validates: Requirements 7.1, 7.2, 7.4**
-  - [ ] 6.9 Write the property test for invalid levels
+  - [x] 6.9 Write the property test for invalid levels
+    - Actual time: 1 min
     - **Property 5: Invalid levels count as zero**
     - Same file; `arbLevel` biased to invalid values. At least 100 runs.
     - Depends on: 6.8.
