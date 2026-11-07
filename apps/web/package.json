@@ -9,6 +9,7 @@
     "predev": "node ../../scripts/sync-local-env.mjs",
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node ../../scripts/specimens-absent.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit"

@@ -557,7 +557,7 @@ Rules for every task:
 - [x] 17. Checkpoint: main screen
   - Run `npm test`, `npm run typecheck`, `npm run lint` and `npm run build`; all exit 0, including Properties 20 and 21. Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 18. Specimens page
+- [x] 18. Specimens page
   - [x] 18.1 Make `apps/web/next.config.ts` a function of phase
     - Actual time: 4 min
     - Read `pageExtensions.md` and the "Phase" section of `next.config.js` docs under `node_modules/next/dist/docs/` first. `config(phase)` keeps every existing setting and sets `pageExtensions` to `["tsx", "ts", "jsx", "js"]`, adding `"dev.tsx"` only for `PHASE_DEVELOPMENT_SERVER`.
@@ -572,7 +572,8 @@ Rules for every task:
     - Depends on: 14.4, 14.5, 14.6, 14.7, 14.8, 14.9, 14.10, 18.1.
     - Witness: `npx vitest run apps/web/src/app/specimens apps/web/src/components/Footer.test.tsx scripts/copy-check.test.ts`.
     - _Requirements: 12.5, 17.1, 20.1, 20.2, 20.5, 20.6_
-  - [ ] 18.3 Write `scripts/specimens-absent.mjs`, its test and the `postbuild` script
+  - [x] 18.3 Write `scripts/specimens-absent.mjs`, its test and the `postbuild` script
+    - Actual time: 6 min
     - Run `npm run build` once and confirm the 16.4.3 route manifest names under `apps/web/.next/` before writing the check. The check fails if any manifest key contains `specimens` or any file under `.next/server` or `.next/static` contains `SPECIMENS_SENTINEL_9c41`. Add `"postbuild": "node ../../scripts/specimens-absent.mjs"` (path adjusted to the repo layout) to `apps/web/package.json`.
     - `scripts/specimens-absent.test.ts` on temporary fake `.next` trees: a manifest with `/specimens/page` fails, a file with the sentinel fails, a clean tree passes.
     - Depends on: 18.2.
