@@ -323,7 +323,8 @@ Rules for every task:
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/sound/score.test.ts`.
     - _Requirements: 19.1, 19.5_
-  - [ ] 10.6 Write `apps/web/src/ui/sound/schedule.ts` and `schedule.test.ts`
+  - [x] 10.6 Write `apps/web/src/ui/sound/schedule.ts` and `schedule.test.ts`
+    - Actual time: 3 min
     - `scheduleCues(prev, look, extra, gate)` with `SoundGate` and `SoundTrack`; the track still updates while the gate is closed. Examples for each cue and each closed gate.
     - Depends on: 6.1, 10.5.
     - Witness: `npx vitest run apps/web/src/ui/sound/schedule.test.ts`.
