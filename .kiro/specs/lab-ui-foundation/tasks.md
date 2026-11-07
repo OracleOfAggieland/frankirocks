@@ -381,7 +381,7 @@ Rules for every task:
 - [x] 12. Checkpoint: browser modules
   - Run `npm test` and `npm run typecheck`; both exit 0, including Properties 13 to 16 and 19, and `voice-client.test.ts` unchanged. Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 13. Avatar renderer
+- [x] 13. Avatar renderer
   - [x] 13.1 Write `apps/web/src/components/avatar/Electricity.tsx`
     - Actual time: 7 min
     - `"use client"`. Draws `boltPath` as an SVG polyline stroked `spark` with a `gold` glow, regenerating when Frame_Time passes `regenGapMs`; asks the budget for a grant and draws a steady glow without one; renders nothing under Reduced_Motion; releases its grant on unmount.
@@ -389,7 +389,8 @@ Rules for every task:
     - Depends on: 5.1, 10.3.
     - Witness: `npx vitest run apps/web/src/components/avatar/Electricity.test.tsx`.
     - _Requirements: 9.1, 10.3_
-  - [ ] 13.2 Write `SvgGhost.tsx`, `Avatar.tsx`, `Stage.tsx` and the CSS loops
+  - [x] 13.2 Write `SvgGhost.tsx`, `Avatar.tsx`, `Stage.tsx` and the CSS loops
+    - Actual time: 14 min
     - `SvgGhost` implements the Avatar_Contract and draws the parts of R4.3 with `data-part` names `hem`, `hair`, `bolt-left`, `bolt-right`, `scar`, `eye-left`, `eye-right`, and no mouth. Squish scale follows `drive` only when `follows` is `output`; float only with Reduced_Motion off; glows use blur in full motion and radial gradients when reduced.
     - `Avatar` is the only place a renderer is chosen (default `SvgGhost`), with `role="img"`, `aria-label={look.label}`, `data-look`, `data-ghost` and `data-reduced`. `Stage` holds the halo and the floor shadow that narrows as Franki rises.
     - In `globals.css`: keyframes for float, breathe, blink and the other `AnimationId`s using duration tokens, inside `@media (prefers-reduced-motion: no-preference)`, switched off by `[data-reduced="true"]` and paused by `[data-paused="true"]`. Only `transform` and `opacity` animate per frame.

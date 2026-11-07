@@ -63,6 +63,8 @@
   --dur-base: 320ms;
   --dur-ritual: 1200ms;
   --stagger: 40ms;
+  /* The idle float period (UI direction "Motion": ±6 px on a 4 s sine). CSS-only. */
+  --dur-float: 4000ms;
 }
 
 body {
@@ -73,4 +75,115 @@ body {
 
 .font-mono {
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Avatar loops (lab-ui-foundation R6.13, R9.1, R9.3, R10.5, R10.7). Only transform and opacity animate.
+ * Loops run only under `prefers-reduced-motion: no-preference`, are switched off by
+ * [data-reduced="true"] (a forced specimen), and pause under [data-paused="true"] (hidden tab).
+ * The idle float is UI direction's ±6 px on a 4 s sine.
+ */
+.franki-ghost g,
+.franki-ghost ellipse {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes franki-float {
+  0%, 100% { transform: translateY(6px); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes franki-floor {
+  0%, 100% { transform: scaleX(1); opacity: 0.4; }
+  50% { transform: scaleX(0.82); opacity: 0.28; }
+}
+@keyframes franki-halo {
+  0%, 100% { transform: translateY(6px); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes franki-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.015, 0.985); }
+}
+@keyframes franki-blink {
+  0%, 46%, 50%, 88%, 92%, 100% { transform: scaleY(1); }
+  48%, 90% { transform: scaleY(0.1); }
+}
+@keyframes franki-strike {
+  0% { opacity: 0; }
+  10%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes franki-rise {
+  0% { transform: translateY(14px); }
+  100% { transform: translateY(0); }
+}
+@keyframes franki-flicker {
+  0%, 100% { opacity: 0.25; }
+  30% { opacity: 0.6; }
+  55% { opacity: 0.15; }
+  80% { opacity: 0.5; }
+}
+@keyframes franki-arc {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+@keyframes franki-glance {
+  0%, 100% { transform: translate(0, 0); }
+  30%, 70% { transform: translate(3px, -2px); }
+}
+@keyframes franki-wobble {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-3deg); }
+  75% { transform: rotate(3deg); }
+}
+@keyframes franki-fizzle {
+  0%, 40% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes franki-nod {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(4px); }
+}
+@keyframes franki-sparks {
+  0% { opacity: 0; transform: translateY(4px); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+@keyframes franki-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .franki-float { animation: franki-float var(--dur-float) ease-in-out infinite; }
+  .franki-floor { animation: franki-floor var(--dur-float) ease-in-out infinite; }
+  .franki-halo { animation: franki-halo var(--dur-float) ease-in-out infinite; }
+  .franki-breathe { animation: franki-breathe calc(var(--dur-float) * 1.5) ease-in-out infinite; }
+  .franki-blink { animation: franki-blink calc(var(--dur-ritual) * 4.5) linear infinite; }
+  .franki-strike { animation: franki-strike var(--dur-ritual) var(--ease-ecto) 1 both; }
+  .franki-rise { animation: franki-rise var(--dur-ritual) var(--ease-ecto) 1 both; }
+  .franki-flicker { animation: franki-flicker calc(var(--dur-base) * 2) steps(4, end) infinite; }
+  .franki-arc { animation: franki-arc var(--dur-base) linear infinite; }
+  .franki-glance { animation: franki-glance calc(var(--dur-base) * 2.5) var(--ease-ecto) 1; }
+  .franki-wobble { animation: franki-wobble calc(var(--dur-base) * 1.5) ease-in-out 2; }
+  .franki-fizzle { animation: franki-fizzle var(--dur-ritual) var(--ease-ecto) 1 both; }
+  .franki-nod { animation: franki-nod calc(var(--dur-ritual) * 1.5) ease-in-out infinite; }
+  .franki-sparks { animation: franki-sparks var(--dur-ritual) var(--ease-ecto) 1 both; }
+  .franki-fade { animation: franki-fade var(--dur-base) var(--ease-ecto) 1 both; }
+}
+
+/* A forced reduced specimen gets fades only, like the media query. */
+[data-reduced="true"] .franki-anim:not(.franki-fade) {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .franki-fade { animation: franki-fade var(--dur-base) linear 1 both; }
+}
+[data-reduced="true"] .franki-fade {
+  animation: franki-fade var(--dur-base) linear 1 both;
+}
+
+[data-paused="true"] .franki-anim {
+  animation-play-state: paused !important;
 }
