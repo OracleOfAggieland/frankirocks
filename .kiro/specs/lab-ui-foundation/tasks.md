@@ -378,11 +378,12 @@ Rules for every task:
     - Witness: `npx vitest run apps/web/src/ui/hooks/frame-loop.test.ts`.
     - _Requirements: 10.6, 10.7, 11.1_
 
-- [ ] 12. Checkpoint: browser modules
+- [x] 12. Checkpoint: browser modules
   - Run `npm test` and `npm run typecheck`; both exit 0, including Properties 13 to 16 and 19, and `voice-client.test.ts` unchanged. Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 13. Avatar renderer
-  - [ ] 13.1 Write `apps/web/src/components/avatar/Electricity.tsx`
+  - [x] 13.1 Write `apps/web/src/components/avatar/Electricity.tsx`
+    - Actual time: 7 min
     - `"use client"`. Draws `boltPath` as an SVG polyline stroked `spark` with a `gold` glow, regenerating when Frame_Time passes `regenGapMs`; asks the budget for a grant and draws a steady glow without one; renders nothing under Reduced_Motion; releases its grant on unmount.
     - Test in `Electricity.test.tsx`: no output with Reduced_Motion on; steady glow when the budget is full; token colours only.
     - Depends on: 5.1, 10.3.
