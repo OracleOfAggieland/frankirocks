@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { lookFor } from "../../ui/avatar/look";
 import type { AvatarInput } from "../../ui/avatar/types";
+import type { CardProps } from "../../ui/surface-props";
 import { AuthPanel } from "../AuthPanel";
 import { CallScreen } from "../CallScreen";
 import { LiveRegion } from "../LiveRegion";
@@ -19,7 +20,7 @@ const storage = () => {
   return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
 };
 
-function render(signedIn: boolean, voice: VoiceState = initialVoiceState({ transcribeModel: "m" })) {
+function render(signedIn: boolean, voice: VoiceState = initialVoiceState({ transcribeModel: "m" }), cards?: CardProps[], reduced = true) {
   const input: AvatarInput = {
     state: signedIn ? avatarState(voice) : "closed", micMuted: voice.micMuted, outputMuted: voice.outputMuted,
     inputLevel: 0, outputLevel: 0, event: null, eventElapsedMs: 0, firstConnecting: false, reducedMotion: true,
@@ -27,7 +28,8 @@ function render(signedIn: boolean, voice: VoiceState = initialVoiceState({ trans
   return renderToStaticMarkup(
     <MainScreen
       signedIn={signedIn}
-      reduced
+      reduced={reduced}
+      cards={cards}
       paused={false}
       auth={
         <AuthPanel
@@ -87,6 +89,35 @@ describe("MainScreen", () => {
     expect(html).toContain(">Sign out<");
     expect(html.indexOf('data-area="header"')).toBeLessThan(html.indexOf("owner@example.com"));
     expect(html.indexOf("owner@example.com")).toBeLessThan(html.indexOf('data-area="stage"'));
+  });
+
+  it("with no Card the grid has one column at every width, so the stage is centred", () => {
+    for (const html of [render(true), render(false)]) {
+      expect(html).toContain('data-layout="center"');
+      expect(html).not.toContain("lg:grid-cols-[1fr_minmax(0,22rem)]");
+      expect(html).not.toContain("stage_dock");
+    }
+  });
+
+  it("with a Card the dock column appears from 1024 px and the dock holds the Card", () => {
+    const card: CardProps = { kind: "read", id: "r", title: "Your list", sources: [], onOpenSource: noop, lines: ["Milk"] };
+    const html = render(true, undefined, [card]);
+    expect(html).toContain('data-layout="dock"');
+    expect(html).toContain("lg:grid-cols-[1fr_minmax(0,22rem)]");
+    expect(html).toContain("stage_dock");
+    expect(html).toContain("data-dock=");
+    expect(html.indexOf('data-area="dock"')).toBeLessThan(html.indexOf('data-card="read"'));
+    // An empty Card is not a Card: the layout stays centred.
+    expect(render(true, undefined, [{ ...card, lines: [] }])).toContain('data-layout="center"');
+  });
+
+  it("the stage sits in one glide wrapper in both motion settings", () => {
+    for (const reduced of [true, false]) {
+      const html = render(true, undefined, undefined, reduced);
+      const glide = html.indexOf("data-stage-glide");
+      expect(glide).toBeGreaterThan(html.indexOf('data-area="stage"'));
+      expect(glide).toBeLessThan(html.indexOf('data-stage=""'));
+    }
   });
 
   it("controls are in DOM order, with no positive tabindex, a focus ring and a 44 px target", () => {

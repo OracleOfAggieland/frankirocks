@@ -63,6 +63,13 @@ describe("Specimens_Page (R20.1, R20.2)", () => {
     expect(html).toContain('data-phase="after forget"');
   });
 
+  it("shows the Main_Screen without and with a Card (Brief 004 item 1)", () => {
+    expect(html).toContain('data-specimen-screen="no-card"');
+    expect(html).toContain('data-specimen-screen="with-card"');
+    expect(html).toContain('data-layout="center"');
+    expect(html).toContain('data-layout="dock"');
+  });
+
   it("calls no /api/ route and exports the sentinel", () => {
     expect(html).not.toContain("/api/");
     expect(SPECIMENS_SENTINEL_9c41).toBe("SPECIMENS_SENTINEL_9c41");

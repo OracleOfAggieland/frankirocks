@@ -1,8 +1,18 @@
+"use client";
 // The one-screen layout (lab-ui-foundation R12.1 to R12.4, R13, R14.1, R14.2, R14.9). A CSS grid with
 // named areas after the UI direction diagram. Slots for Surfaces with no source today keep their area
 // and render nothing. Below 1024 px the dock is a bottom sheet (the Card_Dock positions itself); below
 // 640 px the corners stack. No element is wider than 343 px at 375 px.
+// With no Card the grid has one column, so the stage sits on the page's centre axis with the call
+// button and the Wordmark (Brief 004 item 1). A Card adds the dock column from 1024 px, and the stage
+// glides between the two positions as a motion layout animation on spring.settle; instant under
+// Reduced_Motion.
+import { motion } from "motion/react";
 import type { ReactNode } from "react";
+import { SPRING } from "../../ui/motion";
+import type { CardProps } from "../../ui/surface-props";
+import { cardHasContent } from "../surfaces/Card";
+import { CardDock } from "../surfaces/CardDock";
 import { Wordmark } from "../surfaces/Wordmark";
 import { Backdrop } from "./Backdrop";
 
@@ -25,14 +35,23 @@ export interface MainScreenProps {
   live: ReactNode;
   reduced: boolean;
   paused: boolean;
+  /** Cards for the Card_Dock. No card source reaches the Main_Screen yet; the Specimens_Page passes some. */
+  cards?: CardProps[];
 }
 
 export const GRID_AREAS = ["header", "strip", "stage", "dock", "chips", "controls", "reply", "corners"] as const;
 
-const GRID =
-  "grid w-full max-w-6xl flex-1 grid-cols-1 gap-y-4 px-4 py-4 [grid-template-areas:'header'_'strip'_'stage'_'chips'_'controls'_'reply'_'corners'_'dock'] lg:grid-cols-[1fr_minmax(0,22rem)] lg:gap-x-8 lg:[grid-template-areas:'header_header'_'strip_strip'_'stage_dock'_'chips_chips'_'controls_controls'_'reply_reply'_'corners_corners']";
+const GRID_BASE =
+  "grid w-full max-w-6xl flex-1 grid-cols-1 gap-y-4 px-4 py-4 [grid-template-areas:'header'_'strip'_'stage'_'chips'_'controls'_'reply'_'corners'_'dock']";
 
-export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed, reply, debug, live, reduced, paused }: MainScreenProps) {
+/** No Card: one column at every width, so the stage is centred on the page. */
+export const GRID_CENTER = GRID_BASE;
+
+/** A Card: the stage and the dock side by side from 1024 px. */
+export const GRID_WITH_DOCK = `${GRID_BASE} lg:grid-cols-[1fr_minmax(0,22rem)] lg:gap-x-8 lg:[grid-template-areas:'header_header'_'strip_strip'_'stage_dock'_'chips_chips'_'controls_controls'_'reply_reply'_'corners_corners']`;
+
+export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed, reply, debug, live, reduced, paused, cards = [] }: MainScreenProps) {
+  const docked = cards.some(cardHasContent);
   return (
     <main
       data-screen={signedIn ? "signed-in" : "signed-out"}
@@ -42,7 +61,7 @@ export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed
     >
       <Backdrop />
       {live}
-      <div className={GRID}>
+      <div data-layout={docked ? "dock" : "center"} className={docked ? GRID_WITH_DOCK : GRID_CENTER}>
         <header data-area="header" className="flex min-w-0 flex-wrap items-center justify-between gap-3 [grid-area:header]">
           {signedIn ? <Wordmark variant="header" /> : <span />}
           {/* Time_Badge slot: no simulated-time source yet (contract question 8). */}
@@ -54,13 +73,22 @@ export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed
         </header>
         {/* Strip slot: no open-loop source yet. */}
         <div data-area="strip" className="[grid-area:strip]" />
-        <section data-area="stage" aria-label="Franki" className="flex flex-col items-center justify-center gap-6 py-4 [grid-area:stage]">
-          {signedIn ? null : <Wordmark variant="signedOut" />}
-          {stage}
-          {signedIn ? null : auth}
+        <section data-area="stage" aria-label="Franki" className="flex min-w-0 flex-col items-center justify-center py-4 [grid-area:stage]">
+          {/* Position-only layout animation: the stage glides when the grid gains or loses the dock column. */}
+          <motion.div
+            data-stage-glide=""
+            layout={reduced ? false : "position"}
+            transition={{ layout: { type: "spring", ...SPRING.settle } }}
+            className="flex w-full max-w-sm flex-col items-center gap-6"
+          >
+            {signedIn ? null : <Wordmark variant="signedOut" />}
+            {stage}
+            {signedIn ? null : auth}
+          </motion.div>
         </section>
-        {/* Card_Dock slot: no card source yet. */}
-        <div data-area="dock" className="[grid-area:dock]" />
+        <div data-area="dock" className="[grid-area:dock]">
+          {docked ? <CardDock cards={cards} /> : null}
+        </div>
         {/* Chips slot: chips show only when the server offers them. */}
         <div data-area="chips" className="[grid-area:chips]" />
         <div data-area="controls" className="flex flex-col items-center gap-3 [grid-area:controls]">
