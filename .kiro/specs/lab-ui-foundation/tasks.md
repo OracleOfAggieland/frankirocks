@@ -421,7 +421,8 @@ Rules for every task:
     - Depends on: 14.1, 14.2.
     - Witness: `npx vitest run apps/web/src/components/surfaces/Card.test.tsx`.
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 16.1, 16.12_
-  - [ ] 14.4 Write `surfaces/CardDock.tsx`
+  - [x] 14.4 Write `surfaces/CardDock.tsx`
+    - Actual time: 3 min
     - First card primary; up to two older ones behind at scale 0.96 and 0.92; right column at 1024 px and wider, bottom sheet below; enters from the stage side with `spring.settle`; `null` with no cards.
     - `CardDock.test.tsx`: one primary, stacked scales, breakpoint classes, `null` when empty.
     - Depends on: 14.3.
