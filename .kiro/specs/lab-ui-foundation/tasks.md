@@ -496,7 +496,8 @@ Rules for every task:
     - Depends on: 16.1.
     - Witness: `npx vitest run apps/web/src/ui/turn-copies.property.test.ts`.
     - **Validates: Requirements 17.5**
-  - [ ] 16.3 Write the property test for the latest reply
+  - [x] 16.3 Write the property test for the latest reply
+    - Actual time: 1 min
     - **Property 21: Only the latest reply shows**
     - Same file; unique marker text per entry. At least 100 runs.
     - Depends on: 16.2.

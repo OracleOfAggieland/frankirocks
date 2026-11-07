@@ -4,7 +4,7 @@ import type { ApiClient } from "../client/api";
 import type { BrowserClock } from "../client/clock";
 import { TypedTurns } from "../client/typed-turns";
 import type { CardProps, KnownItem, TurnCopies } from "./surface-props";
-import { clearTurnCopies } from "./turn-copies";
+import { clearTurnCopies, latestReply } from "./turn-copies";
 
 const arbCard: fc.Arbitrary<CardProps> = fc.record({ id: fc.string(), title: fc.string(), lines: fc.array(fc.string()) }).map(
   ({ id, title, lines }) => ({ kind: "read", id, title, lines, sources: [], onOpenSource: () => {} }),
@@ -51,6 +51,28 @@ describe("Property 20: Forget clears every turn copy", () => {
         },
       ),
       { numRuns: 200 },
+    );
+  });
+});
+
+// Feature: lab-ui-foundation, Property 21: Only the latest reply shows
+describe("Property 21: Only the latest reply shows", () => {
+  it("equals the joined Franki text after the last user entry and holds nothing earlier", () => {
+    fc.assert(
+      fc.property(fc.array(fc.constantFrom("user", "franki" as const), { maxLength: 30 }), (roles) => {
+        const entries = roles.map((role, i) => ({ role, text: `m${i}x` }));
+        let last = -1;
+        entries.forEach((e, i) => {
+          if (e.role === "user") last = i;
+        });
+        const latest = entries.slice(last + 1).filter((e) => e.role === "franki");
+        const out = latestReply(entries);
+        expect(out).toBe(latest.length === 0 ? null : latest.map((e) => e.text).join(" "));
+        for (const e of entries.slice(0, last + 1)) {
+          if (out !== null) expect(out.split(" ")).not.toContain(e.text);
+        }
+      }),
+      { numRuns: 300 },
     );
   });
 });
