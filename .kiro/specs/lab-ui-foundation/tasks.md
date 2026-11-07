@@ -463,7 +463,8 @@ Rules for every task:
     - Depends on: 14.1.
     - Witness: `npx vitest run apps/web/src/components/surfaces/TimeBadge.test.tsx apps/web/src/ui/format-time.test.ts`.
     - _Requirements: 16.1, 16.8, 16.12_
-  - [ ] 14.10 Write `surfaces/Captions.tsx` and `surfaces/Chips.tsx`
+  - [x] 14.10 Write `surfaces/Captions.tsx` and `surfaces/Chips.tsx`
+    - Actual time: 4 min
     - Captions: one line, fades after it ends, no history, off by default with a "Captions" toggle calling `onToggle`. Chips: glass capsules with a stitched outline, each a button calling `onChip(text)`, disabled per props; `null` with no chips.
     - `Captions.test.tsx` and `Chips.test.tsx`: off by default, one line only, toggle, chip callback, `null` when empty.
     - Depends on: 14.1, 14.2.
