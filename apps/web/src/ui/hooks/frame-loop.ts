@@ -26,6 +26,8 @@ export interface FrameLoopDeps {
   /** The non-time inputs, read each frame. */
   read: () => { state: AvatarState; micMuted: boolean; outputMuted: boolean; reducedMotion: boolean };
   publish: (look: AvatarLook, input: AvatarInput) => void;
+  /** Told after every frame, with its Frame_Time and the latest look (for Electricity, sound and announcements). */
+  onFrame?: (frameTime: number, look: AvatarLook, input: AvatarInput) => void;
 }
 
 const DISCRETE: readonly (keyof AvatarLook)[] = [
@@ -95,11 +97,12 @@ export class FrameLoop {
     if (!this.running) return;
     this.levels = this.deps.meter.sample();
     this.events = reduceEvents(this.events, { kind: "frame", at: frameTime });
-    this.evaluate();
+    const { look, input } = this.evaluate();
+    this.deps.onFrame?.(frameTime, look, input);
     this.schedule();
   }
 
-  private evaluate(): void {
+  private evaluate(): { look: AvatarLook; input: AvatarInput } {
     const r = this.deps.read();
     if (r.state !== this.events.state) this.events = reduceEvents(this.events, { kind: "state", state: r.state, at: this.events.now ?? 0 });
     const ev = currentEvent(this.events);
@@ -119,6 +122,7 @@ export class FrameLoop {
       this.published = look;
       this.deps.publish(look, input);
     }
+    return { look, input };
   }
 }
 

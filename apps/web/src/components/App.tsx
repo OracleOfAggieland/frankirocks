@@ -1,23 +1,39 @@
 "use client";
 
-import { avatarState, initialVoiceState } from "@franki/core";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { type VoiceState, initialVoiceState } from "@franki/core";
+import { MotionConfig } from "motion/react";
+import { createContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createApiClient } from "../client/api";
 import { type AuthClient, type AuthState, createAuthClient } from "../client/auth";
 import { createBrowserClock } from "../client/clock";
+import { DEBUG_POLL_MS, type DebugPanelModel } from "../client/debug-panel";
 import { publicEnv, readFirebaseConfig } from "../client/firebase-config";
-import { DEBUG_POLL_MS, DebugPanelModel } from "../client/debug-panel";
-import { TypedTurns } from "../client/typed-turns";
-import { type AudioLike, type PeerLike, SIGN_OUT_LIMIT_MS, VoiceClient } from "../client/voice-client";
+import type { TypedTurns } from "../client/typed-turns";
+import { type AudioLike, type PeerLike, SIGN_OUT_LIMIT_MS } from "../client/voice-client";
 import { TRANSCRIBE_VAR, transcribeModel } from "../client/voice-config";
+import { sharedAudio } from "../ui/audio/context";
+import { debugVisible } from "../ui/debug-flag";
+import { browserScheduler } from "../ui/hooks/frame-loop";
+import { browserVisibility } from "../ui/hooks/page-visible";
+import { browserWatcher } from "../ui/hooks/reduced-motion";
+import { ScreenController, type ScreenSnapshot } from "../ui/hooks/screen-controller";
+import { createLevelMeter } from "../ui/levels/level-meter";
+import { createSoundEngine } from "../ui/sound/engine";
+import { EMPTY_COPIES, type SignedInControllers, createSignedInControllers, onForgetComplete } from "./app-controllers";
 import { AuthPanel } from "./AuthPanel";
-import { CallScreen } from "./CallScreen";
+import { Avatar } from "./avatar/Avatar";
+import { Stage } from "./avatar/Stage";
+import { CALL_ERRORS, CallScreen } from "./CallScreen";
 import { DebugPanel } from "./DebugPanel";
+import { LiveRegion } from "./LiveRegion";
 import { ReplyLine } from "./ReplyLine";
-import { StandInAvatar } from "./StandInAvatar";
+import { MainScreen } from "./screen/MainScreen";
+import { SoundToggle, soundPreference } from "./SoundToggle";
 import { TypedLine } from "./TypedLine";
 
 const SIGNED_OUT_VOICE = initialVoiceState({ transcribeModel: "" });
+const noop = () => {};
+const noSubscribe = () => noop;
 
 /** The output audio element: muted until a verified Permit unmutes it (KV02). */
 function outputAudio(): AudioLike {
@@ -27,9 +43,27 @@ function outputAudio(): AudioLike {
   return el as unknown as AudioLike;
 }
 
+/** Called when a forget completes (R17.5). No forget result reaches the browser in this slice. */
+export const ForgetCompleteContext = createContext<() => void>(noop);
+
+function createScreen(meter: ReturnType<typeof createLevelMeter>): ScreenController {
+  const context = () => sharedAudio()?.getContext() ?? null;
+  return new ScreenController({
+    scheduler: browserScheduler(),
+    meter,
+    visibility: browserVisibility(),
+    reduced: browserWatcher(),
+    gestured: () => sharedAudio()?.hasGesture() ?? false,
+    soundOn: () => soundPreference().getSnapshot(),
+    sound: createSoundEngine(context),
+    callErrors: CALL_ERRORS,
+  });
+}
+
 /**
- * The Browser_Client shell. Owns the Firebase auth state and, while signed in, the typed-turn controller.
- * R9.4: nothing here calls an /api/ route while signed out; the controller exists only while signed in.
+ * The Browser_Client shell. Owns the Firebase auth state and, while signed in, the controllers.
+ * FSC R9.4: nothing here calls an /api/ route while signed out; the controllers exist only while signed in.
+ * The screen shows only today's sources (lab-ui-foundation R14.1).
  */
 export function App() {
   const config = useMemo(() => readFirebaseConfig(publicEnv()), []);
@@ -39,6 +73,11 @@ export function App() {
   /** The signed-in user's ID token source, set with the auth state; null while signed out. */
   const [tokens, setTokens] = useState<{ idToken: () => Promise<string> } | null>(null);
   const [busy, setBusy] = useState(false);
+  // R21: read once on the client; the server snapshot is false, so the panel never renders on the server.
+  const debugOn = useSyncExternalStore(noSubscribe, () => debugVisible(process.env.NODE_ENV, window.location.search), () => false);
+  const [meter] = useState(() => createLevelMeter(() => sharedAudio()?.getContext() ?? null));
+  const [screen] = useState(() => createScreen(meter));
+  const [, setCopies] = useState(EMPTY_COPIES);
 
   useEffect(() => {
     if (!config.ok) return;
@@ -50,25 +89,34 @@ export function App() {
     });
   }, [config]);
 
+  useEffect(() => {
+    sharedAudio(); // listens for the Visit's first gesture (R11.7, R19.2)
+    screen.start();
+    return () => screen.stop();
+  }, [screen]);
+
   // One set of controllers per signed-in user; a new sign-in starts with no Session and clientSeq 0.
-  const signedIn = useMemo(() => {
+  const signedIn = useMemo<SignedInControllers | null>(() => {
     if (tokens === null) return null;
     const api = createApiClient({ getToken: () => tokens.idToken(), fetch: (input, init) => fetch(input, init) });
-    const clock = createBrowserClock();
-    const model = transcribeModel();
-    const voice =
-      model === null
-        ? null
-        : new VoiceClient({
-            api,
-            clock,
-            transcribeModel: model,
-            audio: outputAudio(),
-            createPeer: () => new RTCPeerConnection() as unknown as PeerLike,
-            getMicrophone: () => navigator.mediaDevices.getUserMedia({ audio: true }),
-          });
-    return { typed: new TypedTurns({ api, clock }), debug: new DebugPanelModel({ api, clock }), voice };
-  }, [tokens]);
+    return createSignedInControllers({
+      api,
+      clock: createBrowserClock(),
+      transcribeModel: transcribeModel(),
+      debug: debugOn,
+      audio: outputAudio,
+      createPeer: () => new RTCPeerConnection() as unknown as PeerLike,
+      getMicrophone: () => navigator.mediaDevices.getUserMedia({ audio: true }),
+      onStreams: (s) => meter.setStreams({ mic: s.mic as unknown as MediaStream | null, output: s.output as MediaStream | null }),
+    });
+  }, [tokens, debugOn, meter]);
+
+  useEffect(() => {
+    screen.setSources(signedIn !== null, signedIn?.voice ?? null);
+  }, [screen, signedIn]);
+
+  const snap = useSyncExternalStore(screen.subscribe, screen.getSnapshot, screen.getSnapshot);
+  const forget = () => setCopies((c) => onForgetComplete(signedIn?.typed ?? null, c));
 
   const signIn = async () => {
     const auth = authRef.current;
@@ -92,39 +140,111 @@ export function App() {
     await auth.signOut();
   };
 
+  const auth = (
+    <AuthPanel state={state} busy={busy} configMissing={config.ok ? null : config.missing} onSignIn={() => void signIn()} onSignOut={() => void signOut()} />
+  );
+
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 bg-night-0 px-6 py-10 text-center text-ink">
-      <h1 className="text-5xl font-semibold tracking-tight">Franki</h1>
-      <AuthPanel
-        state={state}
-        busy={busy}
-        configMissing={config.ok ? null : config.missing}
-        onSignIn={() => void signIn()}
-        onSignOut={() => void signOut()}
-      />
-      {/* Signed out, the typed input shows disabled and the Debug_Panel is hidden (R9.4). */}
-      {signedIn === null ? <SignedOutArea /> : <SignedInArea typed={signedIn.typed} debug={signedIn.debug} voice={signedIn.voice} />}
-    </main>
+    <MotionConfig reducedMotion={snap.input.reducedMotion ? "always" : "never"}>
+      <ForgetCompleteContext.Provider value={forget}>
+        {signedIn === null ? <SignedOutScreen snap={snap} auth={auth} /> : <SignedInScreen snap={snap} auth={auth} controllers={signedIn} />}
+      </ForgetCompleteContext.Provider>
+    </MotionConfig>
   );
 }
 
-const noop = () => {};
+function StageFor({ snap }: { snap: ScreenSnapshot }) {
+  return (
+    <Stage reduced={snap.input.reducedMotion}>
+      <Avatar look={snap.look} input={snap.input} frameTime={snap.frameTime} />
+    </Stage>
+  );
+}
 
-function SignedInArea({ typed, debug, voice }: { typed: TypedTurns; debug: DebugPanelModel; voice: VoiceClient | null }) {
-  const t = useSyncExternalStore(typed.subscribe, typed.getSnapshot, typed.getSnapshot);
-  const d = useSyncExternalStore(debug.subscribe, debug.getSnapshot, debug.getSnapshot);
-  const subscribeVoice = voice?.subscribe ?? (() => noop);
+/** Signed out or loading: Dormant, FRANKIROCKS, the sign-in button, and disabled call and typed controls (R13). */
+function SignedOutScreen({ snap, auth }: { snap: ScreenSnapshot; auth: React.ReactNode }) {
+  return (
+    <MainScreen
+      signedIn={false}
+      reduced={snap.input.reducedMotion}
+      paused={snap.paused}
+      auth={auth}
+      soundToggle={<SoundToggle />}
+      stage={<StageFor snap={snap} />}
+      controls={<CallScreen voice={SIGNED_OUT_VOICE} enabled={false} onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />}
+      typed={<TypedLine text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />}
+      live={<LiveRegion message={snap.live.message} seq={snap.live.seq} />}
+    />
+  );
+}
+
+function SignedInScreen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React.ReactNode; controllers: SignedInControllers }) {
+  const { typed, voice, debug } = controllers;
+  const subscribeVoice = voice?.subscribe ?? noSubscribe;
   const getVoice = voice?.getSnapshot ?? (() => SIGNED_OUT_VOICE);
   const v = useSyncExternalStore(subscribeVoice, getVoice, getVoice);
-  const [selected, setSelected] = useState<string | null>(null);
+  const t = useSyncExternalStore(typed.subscribe, typed.getSnapshot, typed.getSnapshot);
   const inCall = v.phase !== "CLOSED";
-  // Polls at most every 5 s while a Session is open (R29.7): the typed Session or a call.
-  const live = t.sessionId !== null || inCall;
+
+  const call = () => {
+    // A call open closes the typed Session on the server (KV09); the next typed line outside a call opens a new one.
+    typed.dropSession();
+    voice?.call();
+  };
+  const submit = () => {
+    if (!inCall || voice === null) return void typed.submit();
+    if (voice.sendTyped(t.text)) typed.setText("");
+  };
+
+  return (
+    <MainScreen
+      signedIn
+      reduced={snap.input.reducedMotion}
+      paused={snap.paused}
+      auth={auth}
+      soundToggle={<SoundToggle />}
+      stage={<StageFor snap={snap} />}
+      controls={
+        <CallScreen
+          voice={v}
+          enabled={voice !== null}
+          configMissing={voice === null ? TRANSCRIBE_VAR : null}
+          onCall={call}
+          onHangUp={() => voice?.hangUp()}
+          onToggleMute={() => voice?.toggleMute()}
+          onRetry={() => voice?.retry()}
+        />
+      }
+      typed={
+        <TypedLine
+          text={t.text}
+          enabled
+          sending={t.sending}
+          canSend={typed.canSend() && (!inCall || v.phase === "LISTENING")}
+          error={t.error}
+          onChange={(text) => typed.setText(text)}
+          onSubmit={submit}
+        />
+      }
+      reply={inCall ? null : <ReplyLine entries={t.entries} />}
+      debug={debug === null ? null : <DebugArea debug={debug} typed={typed} voice={v} />}
+      live={<LiveRegion message={snap.live.message} seq={snap.live.seq} />}
+    />
+  );
+}
+
+/** The Debug_Panel, only behind ?debug=1 in development (R21). It loads at once and polls while live. */
+function DebugArea({ debug, typed, voice }: { debug: DebugPanelModel; typed: TypedTurns; voice: VoiceState }) {
+  const d = useSyncExternalStore(debug.subscribe, debug.getSnapshot, debug.getSnapshot);
+  const t = useSyncExternalStore(typed.subscribe, typed.getSnapshot, typed.getSnapshot);
+  const [selected, setSelected] = useState<string | null>(null);
+  // Polls at most every 5 s while a Session is open (FSC R29.7): the typed Session or a call.
+  const live = t.sessionId !== null || voice.phase !== "CLOSED";
   const turnsAcked = t.entries.length;
 
   useEffect(() => {
     void debug.refresh();
-  }, [debug, turnsAcked, v.nextClientSeq]);
+  }, [debug, turnsAcked, voice.nextClientSeq]);
 
   useEffect(() => {
     if (!live) return;
@@ -132,63 +252,5 @@ function SignedInArea({ typed, debug, voice }: { typed: TypedTurns; debug: Debug
     return () => clearInterval(timer);
   }, [debug, live]);
 
-  const call = () => {
-    // A call open closes the typed Session on the server (KV09); the next typed line outside a call opens a new one.
-    typed.dropSession();
-    voice?.call();
-  };
-
-  return (
-    <>
-      <StandInAvatar state={avatarState(v)} />
-      <CallScreen
-        voice={v}
-        enabled={voice !== null}
-        configMissing={voice === null ? TRANSCRIBE_VAR : null}
-        onCall={call}
-        onHangUp={() => voice?.hangUp()}
-        onToggleMute={() => voice?.toggleMute()}
-        onRetry={() => voice?.retry()}
-      />
-      <TypedArea typed={typed} voice={inCall ? voice : null} listening={v.phase === "LISTENING"} />
-      <DebugPanel state={d} selectedMemoryId={selected} onSelectMemory={setSelected} onRefresh={() => void debug.refresh()} />
-    </>
-  );
-}
-
-/** Signed out or loading: the call button and typed input show but are disabled (R9.4, R9.7). */
-function SignedOutArea() {
-  return (
-    <>
-      <StandInAvatar state="closed" />
-      <CallScreen voice={SIGNED_OUT_VOICE} enabled={false} onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />
-      <TypedLine text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />
-    </>
-  );
-}
-
-/**
- * Typed input. With no call, lines go through `TypedTurns` (own Session, text reply). During a call they go to
- * the Voice_Client, which sends them while it is listening and plays the reply (design "One typed turn" step 4).
- */
-function TypedArea({ typed, voice, listening }: { typed: TypedTurns; voice: VoiceClient | null; listening: boolean }) {
-  const s = useSyncExternalStore(typed.subscribe, typed.getSnapshot, typed.getSnapshot);
-  const submit = () => {
-    if (voice === null) return void typed.submit();
-    if (voice.sendTyped(s.text)) typed.setText("");
-  };
-  return (
-    <>
-      {voice === null ? <ReplyLine entries={s.entries} /> : null}
-      <TypedLine
-        text={s.text}
-        enabled
-        sending={s.sending}
-        canSend={typed.canSend() && (voice === null || listening)}
-        error={s.error}
-        onChange={(t) => typed.setText(t)}
-        onSubmit={submit}
-      />
-    </>
-  );
+  return <DebugPanel state={d} selectedMemoryId={selected} onSelectMemory={setSelected} onRefresh={() => void debug.refresh()} />;
 }

@@ -481,7 +481,7 @@ Rules for every task:
 - [x] 15. Checkpoint: components
   - Run `npm test`, `npm run typecheck` and `npm run lint`; all exit 0, including the token check and copy check over the new components. Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 16. Main screen
+- [x] 16. Main screen
   - [x] 16.1 Write `apps/web/src/ui/turn-copies.ts` and `TypedTurns.dropTurnCopies()`
     - Actual time: 4 min
     - Pure `latestReply(entries)` and `clearTurnCopies(s)`. In `apps/web/src/client/typed-turns.ts`, add only `dropTurnCopies()`, which empties `entries` and `text`.
@@ -545,7 +545,8 @@ Rules for every task:
     - Depends on: 13.2, 14.11, 16.5, 16.6, 16.7, 16.8.
     - Witness: `npx vitest run apps/web/src/components/screen/MainScreen.test.tsx`.
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 13.1, 13.3, 13.4, 14.1, 14.2, 14.9, 17.2, 17.3, 18.1, 18.2, 18.3_
-  - [ ] 16.10 Wire `App.tsx` and retire the Stand_In_Avatar
+  - [x] 16.10 Wire `App.tsx` and retire the Stand_In_Avatar
+    - Actual time: 18 min
     - `App.tsx` keeps the auth, controllers and sign-in/out flow and feeds only today's sources: `AuthState`, `VoiceState` via `avatarState()`, `callButton()` and `muteVisible()`, `micMuted`, `outputMuted`, Level_Meter levels via `onStreams`, and `TypedTurns`. It runs the frame loop, the Event_Controller (`signOut` on sign-out), `lookFor`, the announcement into `LiveRegion`, `scheduleCues` into the sound engine with the gesture, preference and `outputMuted` gate, `MotionConfig reducedMotion` with `data-reduced` and `data-paused` on the root, and `onForgetComplete()` calling `clearTurnCopies` and `dropTurnCopies` (wired, no caller in this slice). The `DebugPanelModel` is created and polled only when `debugVisible(process.env.NODE_ENV, window.location.search)` read once after mount is true.
     - Delete `StandInAvatar.tsx` and `StandInAvatar.test.tsx`. Each remaining check maps per design "Existing tests that change": six distinct states → Properties 2 and 12; labels and `role="img"` → `SvgGhost.test.tsx`; no image, video or canvas → `SvgGhost.test.tsx` (`<svg>` now required, R4.3); `data-state="recovery"` → `data-look="Recovery"` asserted in `App.test.tsx`.
     - `App.test.tsx` with a fake API and fake sources: no `/api/` call while signed out except `/api/health`; no `GET /api/debug/memory` without `debug=1` or in production; one call with `debug=1` in development; one coalesced announcement on a state and call change; Recovery look on a call error; `onForgetComplete` empties the reply line.

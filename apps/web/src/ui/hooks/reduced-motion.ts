@@ -33,7 +33,8 @@ export class ReducedMotionWatcher {
 
 let shared: ReducedMotionWatcher | null = null;
 
-function browserWatcher(): ReducedMotionWatcher {
+/** The Visit's watcher over the browser's media query. */
+export function browserWatcher(): ReducedMotionWatcher {
   if (shared === null) {
     const mql = typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(REDUCED_MOTION_QUERY) : null;
     shared = new ReducedMotionWatcher(mql);
