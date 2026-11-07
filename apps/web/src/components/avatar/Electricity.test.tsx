@@ -1,44 +1,92 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createElectricityBudget } from "../../ui/electricity-budget";
-import { bolt, boltPath } from "../../ui/electricity";
-import { BOLT_GLOW_FILTER, Electricity, ElectricityView, boltSeed } from "./Electricity";
+import { bolt, boltPath, crackle, toPolyline } from "../../ui/electricity";
+import { BOLT_BLOOM_FILTER, BOLT_GLOW_FILTER, Electricity, ElectricityView, boltSeed, steadySeed, stillBolt } from "./Electricity";
 import { ARC_WAYPOINTS, HAIR, STRIKE_WAYPOINTS } from "./SvgGhost";
 
+/** The core trunk's full width at its widest: twice the ribbon's peak half width. */
+const CORE_PEAK = 2.1;
 const a = { x: 10, y: 50 };
 const b = { x: 90, y: 50 };
+
+/** A budget with no grants left. */
+function fullBudget() {
+  const budget = createElectricityBudget();
+  budget.request();
+  budget.request();
+  expect(budget.request()).toBeNull();
+  return budget;
+}
 
 describe("Electricity", () => {
   it("renders nothing with Reduced_Motion on", () => {
     expect(renderToStaticMarkup(<Electricity a={a} b={b} frameTime={0} reduced />)).toBe("");
   });
 
-  it("draws a steady glow along the waypoints without a grant, such as when the budget is full", () => {
-    const budget = createElectricityBudget();
-    budget.request();
-    budget.request();
-    expect(budget.request()).toBeNull();
-    const html = renderToStaticMarkup(<Electricity a={a} b={b} via={[{ x: 50, y: 10 }]} frameTime={0} reduced={false} budget={budget} />);
+  it("without a grant draws a still, jagged crackle at both ends, fixed by its seed: no blur, no motion, not a wire", () => {
+    const budget = fullBudget();
+    const via = [{ x: 50, y: 10 }];
+    const at = (frameTime: number, seed = 5) => renderToStaticMarkup(<Electricity a={a} b={b} via={via} frameTime={frameTime} reduced={false} seed={seed} budget={budget} />);
+    const html = at(0);
     expect(html).toContain('data-electricity="steady"');
-    expect(html).toContain('points="10.00,50.00 50.00,10.00 90.00,50.00"');
-    expect(html).not.toContain("data-bolt-core");
+    // The same crackle whatever the Frame_Time, and a different one for another seed.
+    expect(at(37)).toBe(html);
+    expect(at(5000)).toBe(html);
+    expect(at(0, 6)).not.toBe(html);
+    const still = stillBolt([a, ...via, b], 5, 4);
+    expect(still).toEqual(bolt([a, ...via, b], steadySeed(5), 3));
+    // Two jagged arms, one from each end, and not the whole bolt or the straight waypoint line.
+    const { arms, branches } = crackle(still, 2);
+    expect(arms).toHaveLength(2);
+    expect(arms[0][0]).toEqual(a);
+    expect(arms[1][0]).toEqual(b);
+    for (const arm of arms) {
+      expect(arm.length).toBeGreaterThan(3);
+      expect(html).toContain(`points="${toPolyline(arm)}"`);
+    }
+    expect(html).not.toContain(`points="${toPolyline(still.trunk)}"`);
+    expect(html).not.toContain('points="10.00,50.00 50.00,10.00 90.00,50.00"');
+    expect(html.match(/data-bolt-core="/g)).toHaveLength(2);
+    expect((html.match(/data-branch="/g) ?? []).length).toBe(branches.length);
+    // Cheap and calm: no filter, no animation class, and faint.
+    expect(html).not.toContain("<filter");
+    expect(html).not.toContain("filter=");
+    expect(html).not.toContain("franki-anim");
+    for (const o of html.match(/opacity="([\d.]+)"/g)!.map((s) => Number(/[\d.]+/.exec(s)![0]))) expect(o).toBeLessThanOrEqual(0.7);
+    expect(html).not.toMatch(/#[0-9a-f]{3,8}\b/i);
   });
 
-  it("draws a spark core over a wider, blurred gold glow, branches included, using token colours only", () => {
-    const shape = bolt([a, b], 3, 4);
+  it("without a grant, a one-leg spark keeps its whole trunk as one arm from its start", () => {
+    const html = renderToStaticMarkup(<Electricity a={a} b={b} frameTime={0} reduced={false} seed={2} depth={3} budget={fullBudget()} />);
+    const still = stillBolt([a, b], 2, 3);
+    expect(html).toContain(`points="${toPolyline(still.trunk)}"`);
+    expect(html.match(/data-bolt-core="/g)).toHaveLength(1);
+  });
+
+  it("draws a tapered spark core inside a tight and a wide blurred gold bloom, branches and twigs included, using token colours only", () => {
+    let shape = bolt([a, b], 3, 4);
+    for (let s = 4; shape.twigs.length === 0; s++) shape = bolt([a, b], s, 4);
     const html = renderToStaticMarkup(<ElectricityView waypoints={[a, b]} shape={shape} granted flashKey={3} />);
     expect(html).toContain('data-electricity="bolt"');
-    expect(html).toMatch(new RegExp(`<filter id="${BOLT_GLOW_FILTER}"[^>]*><feGaussianBlur`));
+    for (const id of [BOLT_GLOW_FILTER, BOLT_BLOOM_FILTER]) {
+      expect(html).toMatch(new RegExp(`<filter id="${id}" filterUnits="userSpaceOnUse"[^>]*><feGaussianBlur`));
+      expect(html).toContain(`filter="url(#${id})"`);
+    }
+    const blur = (id: string) => Number(new RegExp(`<filter id="${id}"[^>]*><feGaussianBlur stdDeviation="([\\d.]+)"`).exec(html)![1]);
+    expect(blur(BOLT_BLOOM_FILTER)).toBeGreaterThan(blur(BOLT_GLOW_FILTER));
     const glow = /<g data-bolt-glow=""[^>]*>/.exec(html)![0];
-    expect(glow).toContain(`filter="url(#${BOLT_GLOW_FILTER})"`);
     expect(glow).toContain("franki-bolt-flash");
-    // The glow sits under the core, and is wider.
+    // The blooms sit under the core.
     expect(html.indexOf("data-bolt-glow")).toBeLessThan(html.indexOf("data-bolt-core"));
-    const width = (re: RegExp) => Number(re.exec(html)![1]);
-    expect(width(/data-bolt-glow[\s\S]*?stroke="var\(--color-gold\)" stroke-width="([\d.]+)"/)).toBeGreaterThan(width(/data-bolt-core="" points="[^"]*" fill="none" stroke="var\(--color-spark\)" stroke-width="([\d.]+)"/));
+    // The core is a filled spark ribbon, at most CORE_PEAK across, narrower than either bloom's gold trunk.
+    expect(html).toMatch(/<g fill="var\(--color-spark\)"><path data-bolt-core="" d="M[^"]+Z"/);
+    const trunkGlows = [...html.matchAll(/filter="url\(#[\w-]+\)"[^>]*><polyline points="[^"]*" stroke-width="([\d.]+)" fill="none" stroke="var\(--color-gold\)"/g)].map((m) => Number(m[1]));
+    expect(trunkGlows).toHaveLength(2);
+    for (const w of trunkGlows) expect(w).toBeGreaterThan(CORE_PEAK);
     expect(html.match(/data-branch="/g)?.length).toBe(shape.branches.length);
-    expect(html.match(/data-branch-glow="/g)?.length).toBe(shape.branches.length);
-    expect(shape.branches.length).toBeGreaterThanOrEqual(1);
+    expect(html.match(/data-branch-glow="/g)?.length).toBe(2 * shape.branches.length);
+    expect(html.match(/data-twig="/g)?.length).toBe(shape.twigs.length);
     expect(html).not.toMatch(/#[0-9a-f]{3,8}\b/i);
   });
 
@@ -61,14 +109,15 @@ describe("Electricity", () => {
 describe("where the avatar's bolts run (Brief 004 item 5)", () => {
   const hairTop = Math.min(...HAIR.match(/-?\d+(\.\d+)?/g)!.map(Number).filter((_, i) => i % 2 === 1));
 
-  it("the thinking arc runs bolt to bolt over the top of the head, clear of the hair", () => {
+  it("the thinking arc runs bolt to bolt over the top of the head, clear of the hair, branches and twigs included", () => {
     expect(ARC_WAYPOINTS[0].x).toBeLessThan(40);
     expect(ARC_WAYPOINTS.at(-1)!.x).toBeGreaterThan(160);
     for (let s = 0; s < 400; s++) {
-      const { trunk } = bolt(ARC_WAYPOINTS, s, 4);
+      const { trunk, branches, twigs } = bolt(ARC_WAYPOINTS, s, 4);
       const top = trunk.filter((p) => p.x >= 60 && p.x <= 140);
       expect(top.length).toBeGreaterThan(0);
-      for (const p of top) expect(p.y, `seed ${s}`).toBeLessThan(hairTop);
+      const overHead = [...top, ...branches.flat(), ...twigs.flat()].filter((q) => q.x >= 60 && q.x <= 140);
+      expect(Math.max(...overHead.map((p) => p.y)), `seed ${s}`).toBeLessThan(hairTop);
     }
   });
 

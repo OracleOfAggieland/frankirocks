@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createElectricityBudget } from "./electricity-budget";
-import { boltPath, regenGapMs, toPolyline } from "./electricity";
+import { boltPath, regenGapMs, ribbon, toClosedPath, toPolyline } from "./electricity";
 
 describe("Electricity budget", () => {
   it("grants two effects and refuses the third until one is released", () => {
@@ -24,6 +24,12 @@ describe("boltPath", () => {
     expect(p[0]).toEqual({ x: 0, y: 0 });
     expect(p[8]).toEqual({ x: 100, y: 0 });
     expect(toPolyline(p.slice(0, 1))).toBe("0.00,0.00");
+  });
+
+  it("outlines a ribbon as a closed path", () => {
+    const outline = ribbon([{ x: 0, y: 0 }, { x: 10, y: 0 }], 1, 2, 0.5);
+    expect(outline).toEqual([{ x: 0, y: 1 }, { x: 10, y: 0.5 }, { x: 10, y: -0.5 }, { x: 0, y: -1 }]);
+    expect(toClosedPath(outline)).toBe("M0.00 1.00L10.00 0.50L10.00 -0.50L0.00 -1.00Z");
   });
 
   it("gives gaps from 60 to 90 ms", () => {

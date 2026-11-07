@@ -154,11 +154,12 @@ body {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-/* A brief flash in a bolt's glow each time the bolt regenerates (Brief 004 item 5). Ends at the
-   glow's resting opacity, the 0.6 on [data-bolt-glow]. */
+/* A brief flicker in a bolt's blooms each time the bolt regenerates (Brief 004 item 5). Ends at the
+   blooms' resting opacity, the 0.8 on [data-bolt-glow]. A small step on thin lines: a flicker, not a
+   strobe (WCAG 2.3.1). */
 @keyframes franki-bolt-flash {
   from { opacity: 1; }
-  to { opacity: 0.6; }
+  to { opacity: 0.8; }
 }
 
 @media (prefers-reduced-motion: no-preference) {

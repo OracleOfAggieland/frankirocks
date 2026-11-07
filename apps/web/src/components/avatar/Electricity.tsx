@@ -1,12 +1,13 @@
 "use client";
-// Electricity (lab-ui-foundation R9.1, R10.3; Brief 004 item 5): a jagged bolt through its waypoints
-// with one or two short side branches, drawn as a bright `spark` core over a wider, blurred `gold`
-// glow. The glow flashes briefly each time the bolt regenerates, when Frame_Time passes a 60 to 90 ms
-// gap. At most two effects hold a grant from the budget at once; one without a grant draws a steady
-// glow along the waypoints. Nothing renders under Reduced_Motion. Drawn as SVG inside the avatar's <svg>.
+// Electricity (lab-ui-foundation R9.1, R10.3; Brief 004 item 5): a jagged trunk through its waypoints
+// with forking side branches, drawn as a tapered, near-white `spark` core inside two `gold` blooms, a
+// tight bright one and a wide faint one. The blooms flicker up briefly each time the bolt regenerates,
+// when Frame_Time passes a 60 to 90 ms gap. At most two effects hold a grant from the budget at once;
+// one without a grant draws a still crackle near the bolt's ends (the neck bolts), fixed by its seed,
+// in faint unblurred layers. Nothing renders under Reduced_Motion. Drawn as SVG inside the avatar's <svg>.
 import { useEffect, useState } from "react";
 import { type ElectricityBudget, electricityBudget } from "../../ui/electricity-budget";
-import { type Bolt, type Point, bolt, regenGapMs, toPolyline } from "../../ui/electricity";
+import { type Bolt, type Point, bolt, crackle, regenGapMs, ribbon, toClosedPath, toPolyline } from "../../ui/electricity";
 
 export interface ElectricityProps {
   a: Point;
@@ -22,38 +23,108 @@ export interface ElectricityProps {
   budget?: ElectricityBudget;
 }
 
-/** The glow's blur. One fixed definition, so repeated ids across bolts are identical. */
+/** The tight bloom's blur. One fixed definition, so repeated ids across bolts are identical. */
 export const BOLT_GLOW_FILTER = "franki-bolt-glow";
+/** The wide bloom's blur. */
+export const BOLT_BLOOM_FILTER = "franki-bolt-bloom";
 
-/** Presentational: a bolt when granted, else a steady glow along the waypoints. `flashKey` restarts the glow's flash. */
-export function ElectricityView({ waypoints, shape, granted, flashKey = 0 }: { waypoints: readonly Point[]; shape: Bolt; granted: boolean; flashKey?: number }) {
+/** Half widths of the core ribbons: the trunk swells mid-way, branches and twigs taper to a point. */
+const CORE = { trunkEnd: 0.4, trunkPeak: 1.05, branchBase: 0.6, branchTip: 0.08, twigBase: 0.38, twigTip: 0.05 } as const;
+
+/**
+ * A fixed blur region in user space, far larger than the avatar's 200 by 220 box. Bounding-box units
+ * would clip a nearly straight bolt, whose box is almost flat.
+ */
+const FILTER_REGION = { x: -200, y: -200, width: 600, height: 620 } as const;
+
+/** What gets drawn: one or more trunks (the whole trunk, or a crackle's arms) and the offshoots on them. */
+interface Paths {
+  trunks: Point[][];
+  branches: Point[][];
+  twigs: Point[][];
+}
+
+function Strokes({ shape, trunk, branch, twig, colour }: { shape: Paths; trunk: number; branch: number; twig: number; colour: string }) {
+  const line = { fill: "none", stroke: colour, strokeLinecap: "round", strokeLinejoin: "round" } as const;
+  return (
+    <>
+      {shape.trunks.map((p, i) => (
+        <polyline key={`a${i}`} points={toPolyline(p)} strokeWidth={trunk} {...line} />
+      ))}
+      {shape.branches.map((p, i) => (
+        <polyline key={`b${i}`} data-branch-glow={i} points={toPolyline(p)} strokeWidth={branch} {...line} />
+      ))}
+      {shape.twigs.map((p, i) => (
+        <polyline key={`t${i}`} points={toPolyline(p)} strokeWidth={twig} {...line} />
+      ))}
+    </>
+  );
+}
+
+/**
+ * The tapered core: filled ribbons. A whole trunk is thickest mid-way; a crackle's arm is thickest at
+ * its end of the bolt and runs out to a point; every branch and twig ends in a point.
+ */
+function Core({ shape, arms = false, opacity, thin = 1 }: { shape: Paths; arms?: boolean; opacity?: number; thin?: number }) {
+  const c = (w: number) => w * thin;
+  const trunkRibbon = (p: Point[]) =>
+    arms ? ribbon(p, c(CORE.branchBase), c(CORE.branchBase), c(CORE.branchTip), 0) : ribbon(p, c(CORE.trunkEnd), c(CORE.trunkPeak), c(CORE.trunkEnd));
+  return (
+    <g fill="var(--color-spark)" opacity={opacity}>
+      {shape.trunks.map((p, i) => (
+        <path key={`a${i}`} data-bolt-core="" d={toClosedPath(trunkRibbon(p))} />
+      ))}
+      {shape.branches.map((p, i) => (
+        <path key={`b${i}`} data-branch={i} d={toClosedPath(ribbon(p, c(CORE.branchBase), c(CORE.branchBase), c(CORE.branchTip), 0))} />
+      ))}
+      {shape.twigs.map((p, i) => (
+        <path key={`t${i}`} data-twig={i} d={toClosedPath(ribbon(p, c(CORE.twigBase), c(CORE.twigBase), c(CORE.twigTip), 0))} />
+      ))}
+    </g>
+  );
+}
+
+/**
+ * Presentational. Granted: the live bolt, its blooms keyed on `flashKey` so a new bolt replays their
+ * brief flicker. Not granted: a still crackle of the bolt in `shape`, only near its ends (the neck
+ * bolts), in faint layered strokes with no blur or motion, cheap enough for a wall of avatars.
+ * `waypoints` gives the leg count for the crackle; without it the bolt counts as one leg.
+ */
+export function ElectricityView({ waypoints, shape, granted, flashKey = 0 }: { waypoints?: readonly Point[]; shape: Bolt; granted: boolean; flashKey?: number }) {
   if (!granted) {
+    const { arms, branches, twigs } = crackle(shape, waypoints ? waypoints.length - 1 : 1);
+    const still = { trunks: arms, branches, twigs };
     return (
       <g data-electricity="steady" aria-hidden="true">
-        <polyline points={toPolyline(waypoints)} fill="none" stroke="var(--color-gold)" strokeOpacity={0.35} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+        {/* One narrow halo only: a wide unblurred band at low opacity reads as a brown cable casing. */}
+        <g opacity={0.22}>
+          <Strokes shape={still} trunk={2.4} branch={1.6} twig={1.1} colour="var(--color-gold)" />
+        </g>
+        <Core shape={still} arms opacity={0.7} thin={0.85} />
       </g>
     );
   }
-  const trunk = toPolyline(shape.trunk);
-  const branches = shape.branches.map(toPolyline);
+  const live = { trunks: [shape.trunk], branches: shape.branches, twigs: shape.twigs };
+  const region = { filterUnits: "userSpaceOnUse", ...FILTER_REGION } as const;
   return (
     <g data-electricity="bolt" aria-hidden="true">
       <defs>
-        <filter id={BOLT_GLOW_FILTER} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation={2.4} />
+        <filter id={BOLT_BLOOM_FILTER} {...region}>
+          <feGaussianBlur stdDeviation={4.5} />
+        </filter>
+        <filter id={BOLT_GLOW_FILTER} {...region}>
+          <feGaussianBlur stdDeviation={1.2} />
         </filter>
       </defs>
-      {/* Keyed on the bolt's seed: a new bolt remounts the glow and replays its brief flash. */}
-      <g key={flashKey} data-bolt-glow="" className="franki-anim franki-bolt-flash" opacity={0.6} filter={`url(#${BOLT_GLOW_FILTER})`}>
-        <polyline points={trunk} fill="none" stroke="var(--color-gold)" strokeWidth={7} strokeLinecap="round" strokeLinejoin="round" />
-        {branches.map((p, i) => (
-          <polyline key={i} data-branch-glow={i} points={p} fill="none" stroke="var(--color-gold)" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />
-        ))}
+      <g key={flashKey} data-bolt-glow="" className="franki-anim franki-bolt-flash" opacity={0.8}>
+        <g data-bolt-bloom="" filter={`url(#${BOLT_BLOOM_FILTER})`} opacity={0.5}>
+          <Strokes shape={live} trunk={8} branch={4.5} twig={3} colour="var(--color-gold)" />
+        </g>
+        <g filter={`url(#${BOLT_GLOW_FILTER})`}>
+          <Strokes shape={live} trunk={3.2} branch={2} twig={1.3} colour="var(--color-gold)" />
+        </g>
       </g>
-      <polyline data-bolt-core="" points={trunk} fill="none" stroke="var(--color-spark)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-      {branches.map((p, i) => (
-        <polyline key={i} data-branch={i} points={p} fill="none" stroke="var(--color-spark)" strokeWidth={1.1} strokeLinecap="round" strokeLinejoin="round" />
-      ))}
+      <Core shape={live} />
     </g>
   );
 }
@@ -90,10 +161,21 @@ export function boltSeed(frameTime: number, seed: number): number {
   return (seed * 7919 + w * 2 + half) >>> 0;
 }
 
+/** The still bolt's seed: fixed by the effect's seed alone, so it never moves with Frame_Time. */
+export function steadySeed(seed: number): number {
+  return (seed * 7919 + 0x5bd1e995) >>> 0;
+}
+
+/** The still bolt drawn without a grant: one level less detail than the live one, so it reads calm. */
+export function stillBolt(waypoints: readonly Point[], seed: number, depth: number): Bolt {
+  return bolt(waypoints, steadySeed(seed), Math.max(1, depth - 1));
+}
+
 export function Electricity({ a, b, via = [], frameTime, reduced, seed = 1, depth = 4, budget = electricityBudget }: ElectricityProps) {
   const granted = useGrant(budget, !reduced);
   if (reduced) return null;
   const waypoints = [a, ...via, b];
+  if (!granted) return <ElectricityView waypoints={waypoints} shape={stillBolt(waypoints, seed, depth)} granted={false} />;
   const s = boltSeed(frameTime, seed);
-  return <ElectricityView waypoints={waypoints} shape={bolt(waypoints, s, depth)} granted={granted} flashKey={s} />;
+  return <ElectricityView waypoints={waypoints} shape={bolt(waypoints, s, depth)} granted flashKey={s} />;
 }
