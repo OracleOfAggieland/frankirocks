@@ -449,7 +449,8 @@ Rules for every task:
     - Depends on: 14.1, 14.2.
     - Witness: `npx vitest run apps/web/src/components/surfaces/Lab.test.tsx`.
     - _Requirements: 16.1, 16.5, 16.12_
-  - [ ] 14.8 Write `surfaces/Receipt.tsx` and `apps/web/src/ui/receipt-from.ts`
+  - [x] 14.8 Write `surfaces/Receipt.tsx` and `apps/web/src/ui/receipt-from.ts`
+    - Actual time: 6 min
     - Receipt prints up over `dur.ritual`; shows "Blocked now", "Cleaned up", "Kept: n safety rule(s)" and counts by kind; `null` when nothing completed. Pure `receiptFrom(payload)` maps a `forgetReceipt`-shaped value with the fixed collection-to-kind map (contract question 7); `scopePending` adds no line. Add `receipt-from.ts` to the pure list in `scripts/ui-boundaries.mjs`.
     - `Receipt.test.tsx`: lines and counts, `null` when empty, and an `expectTypeOf` test that `ReceiptProps` has no string field that could carry item text; `receipt-from.test.ts` for the mapping.
     - Depends on: 14.1, 14.2.
