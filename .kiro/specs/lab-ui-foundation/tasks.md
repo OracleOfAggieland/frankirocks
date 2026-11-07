@@ -358,7 +358,8 @@ Rules for every task:
     - _Requirements: 19.6_
 
 - [ ] 11. Reduced motion, visibility and the frame loop
-  - [ ] 11.1 Write `apps/web/src/ui/hooks/reduced-motion.ts` and `reduced-motion.test.ts`
+  - [x] 11.1 Write `apps/web/src/ui/hooks/reduced-motion.ts` and `reduced-motion.test.ts`
+    - Actual time: 3 min
     - `ReducedMotionWatcher` over a `MediaQueryList`-shaped object, `useReducedMotion()` on `useSyncExternalStore` with server snapshot `true`, and the `ReducedMotionOverride` context. Test: a `change` event applies synchronously; missing `matchMedia` stays `true`; the override wins.
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/hooks/reduced-motion.test.ts`.
