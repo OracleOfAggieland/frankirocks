@@ -343,7 +343,8 @@ Rules for every task:
     - Depends on: 10.7.
     - Witness: `npx vitest run apps/web/src/ui/sound/sound.property.test.ts`.
     - **Validates: Requirements 19.1, 19.5**
-  - [ ] 10.9 Write `apps/web/src/ui/sound/engine.ts` and `engine.test.ts`
+  - [x] 10.9 Write `apps/web/src/ui/sound/engine.ts` and `engine.test.ts`
+    - Actual time: 5 min
     - Plays a score on the shared context through a master `GainNode` never above 0.25; when `outputMuted` becomes false, ramps to 0 over 40 ms with `linearRampToValueAtTime` and stops sources. Loads no audio file.
     - Test with a fake context that records gain values: master never above 0.25, ramp ends within 50 ms, no play without a context.
     - Depends on: 9.3, 10.5.
