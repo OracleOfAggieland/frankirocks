@@ -255,7 +255,7 @@ Rules for every task:
 - [x] 8. Checkpoint: avatar model
   - Run `npm test` and `npm run typecheck`; both exit 0, including Properties 1 to 12, 17 and 18. Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. Audio levels and the Voice_Client change
+- [x] 9. Audio levels and the Voice_Client change
   - [x] 9.1 Write `apps/web/src/ui/levels/level-math.ts` and `level-math.test.ts`
     - Actual time: 3 min
     - `rawLevel` (RMS of 8-bit samples centred on 128, scaled, clamped; invalid gives 0), `smoothLevel` (attack 0.5, release 0.12; non-finite prior counts as 0), `levelFrom`. Examples for silence, full scale and empty buffers.
@@ -291,7 +291,8 @@ Rules for every task:
     - _Requirements: 11.3, 11.5_
 
 - [ ] 10. Announcements, Electricity and sound
-  - [ ] 10.1 Write `apps/web/src/ui/announce.ts` and `announce.test.ts`
+  - [x] 10.1 Write `apps/web/src/ui/announce.ts` and `announce.test.ts`
+    - Actual time: 3 min
     - `announcement(prev, next)` and `callStatus(voice)` as in design "Announcements"; call-status labels added to `copy.ts`. Examples: first render null, one change, three changes joined in order, cleared error not announced.
     - Depends on: 6.1.
     - Witness: `npx vitest run apps/web/src/ui/announce.test.ts`.
