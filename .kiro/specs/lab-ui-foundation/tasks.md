@@ -456,7 +456,8 @@ Rules for every task:
     - Depends on: 14.1, 14.2.
     - Witness: `npx vitest run apps/web/src/components/surfaces/Receipt.test.tsx apps/web/src/ui/receipt-from.test.ts scripts/ui-boundaries.test.ts`.
     - _Requirements: 16.1, 16.6, 16.7, 16.12, 17.7_
-  - [ ] 14.9 Write `surfaces/TimeBadge.tsx` and `apps/web/src/ui/format-time.ts`
+  - [x] 14.9 Write `surfaces/TimeBadge.tsx` and `apps/web/src/ui/format-time.ts`
+    - Actual time: 3 min
     - "Simulated: Thu 6:00 PM" with a bolt glyph, rendered whenever `simulated` is true and `null` otherwise. `format-time.ts` uses `Intl.DateTimeFormat` over a `Date` built from the supplied milliseconds and zone, never a Wall_Clock_Read.
     - `TimeBadge.test.tsx` and `format-time.test.ts`: fixed instants in two zones, `null` when not simulated.
     - Depends on: 14.1.
