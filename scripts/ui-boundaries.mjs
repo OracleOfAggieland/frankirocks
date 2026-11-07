@@ -145,6 +145,76 @@ function* walk(dir) {
 const isTest = (file) => /\.test\.[^/]+$/.test(file);
 const isSource = (file) => /\.(ts|tsx|mjs|js|css)$/.test(file);
 
+// Specimens rules (R14.3, R17.2, R20.3, R20.5).
+const APP = "apps/web/src/app/";
+export const SPECIMENS_DIR = APP + "specimens/";
+export const SPECIMENS_PAGE = SPECIMENS_DIR + "page.dev.tsx";
+export const ENTRY_POINTS = [APP + "page.tsx", APP + "layout.tsx"];
+const WORKSPACE = {
+  "@franki/core": "packages/core/src/index.ts",
+  "@franki/core/testing": "packages/core/src/testing/index.ts",
+  "@franki/server": "packages/server/src/index.ts",
+};
+const CODE = /\.(ts|tsx|js|jsx|mjs)$/;
+
+/** Resolves one import of `file` to a repo-relative code module, or null (packages, CSS, assets). */
+export function resolveModule(file, specifier, exists) {
+  if (Object.hasOwn(WORKSPACE, specifier)) return WORKSPACE[specifier];
+  if (!specifier.startsWith(".")) return null;
+  const base = posix.normalize(posix.join(posix.dirname(file), specifier));
+  for (const candidate of [base, ...[".ts", ".tsx", ".js", ".mjs", "/index.ts", "/index.tsx"].map((e) => base + e)]) {
+    if (CODE.test(candidate) && exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+/** Rule 2: every module reachable from the entry points, with the import that first reached it. */
+export function reachable(entries, read, exists) {
+  const seen = new Map();
+  const queue = entries.filter(exists).map((e) => [e, null]);
+  while (queue.length > 0) {
+    const [file, via] = queue.shift();
+    if (seen.has(file)) continue;
+    seen.set(file, via);
+    let text;
+    try {
+      text = read(file);
+    } catch {
+      continue;
+    }
+    for (const { specifier } of importsOf(text)) {
+      const target = resolveModule(file, specifier, exists);
+      if (target !== null && !seen.has(target)) queue.push([target, file]);
+    }
+  }
+  return seen;
+}
+
+export function checkSpecimens(root = REPO_ROOT) {
+  const exists = (rel) => existsSync(join(root, rel));
+  const read = (rel) => readFileSync(join(root, rel), "utf8");
+  const violations = [];
+  for (const [file, via] of reachable(ENTRY_POINTS, read, exists)) {
+    if (file.startsWith(SPECIMENS_DIR)) {
+      violations.push({ file: via ?? file, line: 1, match: file, rule: "the Main_Screen reaches a Specimens_Page module" });
+    }
+  }
+  for (const abs of walk(join(root, "apps/web/src"))) {
+    const file = toRepoPath(abs, root);
+    if (file.endsWith(".dev.tsx") && file !== SPECIMENS_PAGE) {
+      violations.push({ file, line: 1, match: ".dev.tsx", rule: "only app/specimens/page.dev.tsx may use the .dev.tsx suffix" });
+    }
+    if (file.startsWith(SPECIMENS_DIR) || isTest(file) || !CODE.test(file)) continue;
+    for (const { specifier, line } of importsOf(read(file))) {
+      const target = resolveModule(file, specifier, exists);
+      if (target !== null && target.startsWith(SPECIMENS_DIR)) {
+        violations.push({ file, line, match: specifier, rule: "imports from the Specimens_Page directory" });
+      }
+    }
+  }
+  return violations;
+}
+
 export function scanUiBoundaries(root = REPO_ROOT) {
   const exists = (rel) => existsSync(join(root, rel));
   const read = (rel) => readFileSync(join(root, rel), "utf8");
@@ -152,7 +222,9 @@ export function scanUiBoundaries(root = REPO_ROOT) {
 
   for (const file of PURE_MODULES) {
     if (exists(file)) violations.push(...checkPureModule(file, read(file), exists));
+    else violations.push({ file, line: 0, match: file, rule: "a listed pure module does not exist" });
   }
+  violations.push(...checkSpecimens(root));
   for (const dir of ["apps/web/src/components", "apps/web/src/ui"]) {
     for (const abs of walk(join(root, dir))) {
       const file = toRepoPath(abs, root);

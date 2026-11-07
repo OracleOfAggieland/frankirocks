@@ -580,8 +580,9 @@ Rules for every task:
     - Witness: `npx vitest run scripts/specimens-absent.test.ts`; `npm run build` exits 0 with the postbuild check run.
     - _Requirements: 20.3, 20.4_
 
-- [ ] 19. Fixture-import check
-  - [ ] 19.1 Extend `scripts/ui-boundaries.mjs` with the Specimens rules
+- [x] 19. Fixture-import check
+  - [x] 19.1 Extend `scripts/ui-boundaries.mjs` with the Specimens rules
+    - Actual time: 7 min
     - Rule 2: walk the import graph (relative imports and `@franki/*` names) from `app/page.tsx` and `app/layout.tsx` and fail on any module under `app/specimens/`; fail if any file other than `app/specimens/page.dev.tsx` uses the `.dev.tsx` suffix; fail if any file outside `app/specimens/` imports from it. Also fail if any module in the pure list does not exist.
     - Extend `scripts/ui-boundaries.test.ts` with fake trees for each new rule, and the repo run.
     - Depends on: 16.10, 18.2.
