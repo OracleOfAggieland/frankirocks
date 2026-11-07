@@ -435,7 +435,8 @@ Rules for every task:
     - Depends on: 14.1, 14.2.
     - Witness: `npx vitest run apps/web/src/components/surfaces/Strip.test.tsx`.
     - _Requirements: 16.1, 16.2, 16.12_
-  - [ ] 14.6 Write `surfaces/Jar.tsx` and `surfaces/WhatIKnowSheet.tsx`
+  - [x] 14.6 Write `surfaces/Jar.tsx` and `surfaces/WhatIKnowSheet.tsx`
+    - Actual time: 5 min
     - Jar: one mote per memory up to 48, solid, dashed, brass and frosted by kind; a button named "What I know" that calls `onOpen`; `null` with no motes. Sheet: hard rules first under their seal, then the five areas in order; "Guessed" with dashed outline; text, origin and **Wrong**, **Forget**, **Don't bring it up** per item, each calling its prop with the item ID.
     - `Jar.test.tsx` and `WhatIKnowSheet.test.tsx`: cap at 48, mote kinds, callbacks, grouping order, `null` when empty.
     - Depends on: 14.1, 14.2.
