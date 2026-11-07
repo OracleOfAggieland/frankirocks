@@ -297,7 +297,8 @@ Rules for every task:
     - Depends on: 6.1.
     - Witness: `npx vitest run apps/web/src/ui/announce.test.ts`.
     - _Requirements: 4.6, 18.5, 18.6, 18.7, 18.8_
-  - [ ] 10.2 Write the property test for announcements
+  - [x] 10.2 Write the property test for announcements
+    - Actual time: 2 min
     - **Property 14: One coalesced announcement**
     - In `apps/web/src/ui/announce.property.test.ts`; strings from the real label sets, `CALL_ERRORS` values and null. At least 100 runs.
     - Depends on: 10.1.
