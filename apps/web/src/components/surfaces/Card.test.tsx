@@ -1,7 +1,10 @@
+import fc from "fast-check";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { contrastRatio } from "../../ui/contrast";
+import { COLOR } from "../../ui/motion";
 import type { CardProps } from "../../ui/surface-props";
-import { Card } from "./Card";
+import { Card, sourceTagPlan } from "./Card";
 
 const noop = () => {};
 const sources = [{ id: "bank", label: "Bank · 6 purchases" }];
@@ -41,15 +44,59 @@ describe("Card", () => {
     expect(out).toContain("data-seam");
   });
 
-  it("puts every number in mono with a source tag that opens its rows", () => {
+  it("puts every number in mono with its source tag inline right after it, opening its rows", () => {
     const onOpenSource = vi.fn();
     const out = html(SOURCE);
-    expect(out).toMatch(/class="font-mono[^"]*"[^>]*>\$115 less/);
-    expect(out).toContain('data-figure-source="bank"');
+    expect(out).toMatch(/class="font-mono[^"]*"[^>]*>\$115 less<\/span><button[^>]*data-figure-source="bank"/);
     expect(click(Card({ ...SOURCE, onOpenSource }), (p) => p["data-figure-source"] === "bank")).toBe(true);
-    expect(click(Card({ ...SOURCE, onOpenSource }), (p) => p["data-source"] === "bank")).toBe(true);
     expect(onOpenSource).toHaveBeenCalledWith("bank");
-    expect(onOpenSource).toHaveBeenCalledTimes(2);
+    expect(onOpenSource).toHaveBeenCalledTimes(1);
+  });
+
+  it("a source tag is a quiet chip: mono 12 px, ink-dim, ink-dim outline, brass on hover and focus, 44 px target", () => {
+    const out = html({ ...SOURCE, sources: [...sources, { id: "cal", label: "Calendar" }] });
+    const tags = [...out.matchAll(/<button type="button" data-(?:figure-)?source="[^"]*" class="([^"]*)"><span class="([^"]*)">/g)];
+    expect(tags).toHaveLength(2);
+    for (const [, button, chip] of tags) {
+      for (const k of ["font-mono", "text-xs", "text-ink-dim", "hover:text-brass", "focus-visible:text-brass", "min-h-11", "focus-visible:outline"]) expect(button).toContain(k);
+      expect(button).not.toMatch(/(^|\s)(border-brass|bg-brass|text-sm)(\s|$)/);
+      for (const k of ["border", "border-ink-dim", "group-hover:border-brass", "group-focus-visible:border-brass"]) expect(chip.split(" ")).toContain(k);
+    }
+    // The outline meets 3:1 against the Card.
+    expect(contrastRatio(COLOR["ink-dim"], COLOR["night-2"])).toBeGreaterThanOrEqual(3);
+  });
+
+  it("the sources row lists only sources no figure has cited", () => {
+    const p: CardProps = {
+      ...SOURCE,
+      sources: [{ id: "bank", label: "Bank" }, { id: "cal", label: "Calendar" }, { id: "notes", label: "Notes" }],
+      figures: [{ label: "This month", value: "$115 less", sourceId: "bank" }],
+    } as CardProps;
+    const out = html(p);
+    expect(out).toContain('data-figure-source="bank"');
+    expect(out).not.toContain('data-source="bank"');
+    expect(out).toContain('data-source="cal"');
+    expect(out).toContain('data-source="notes"');
+    expect(sourceTagPlan(p).row.map((s) => s.id)).toEqual(["cal", "notes"]);
+    // Every source cited: no sources row at all.
+    expect(html(SOURCE)).not.toContain('data-section="sources"');
+  });
+
+  it("shows each source at most once on a Card", () => {
+    const sourceArb = fc.constantFrom("a", "b", "c", "d");
+    fc.assert(
+      fc.property(fc.array(sourceArb, { maxLength: 6 }), fc.array(sourceArb, { maxLength: 6 }), (sourceIds, figureIds) => {
+        const p = {
+          ...SOURCE,
+          sources: sourceIds.map((id) => ({ id, label: `Label ${id}` })),
+          figures: figureIds.map((id, i) => ({ label: `F${i}`, value: String(i), sourceId: id })),
+        } as CardProps;
+        const ids = [...html(p).matchAll(/data-(?:figure-)?source="([^"]*)"/g)].map((m) => m[1]);
+        expect(new Set(ids).size).toBe(ids.length);
+        // Nothing is dropped: every listed or cited source appears once.
+        expect(new Set(ids)).toEqual(new Set([...sourceIds, ...figureIds]));
+      }),
+    );
   });
 
   it("approval offers exactly Yes and Not now, neither pre-selected", () => {

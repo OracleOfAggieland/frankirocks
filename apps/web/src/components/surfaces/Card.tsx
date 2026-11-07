@@ -2,12 +2,45 @@
 // title, then the content, then sources, then actions. Every number is in mono tabular figures with
 // its source tag. Renders nothing when its props have nothing true to show.
 import { COPY } from "../../ui/copy";
-import type { CardProps, HardRule } from "../../ui/surface-props";
-import { BRASS_BUTTON, GLASS, QUIET_BUTTON, SOURCE_TAG } from "./classes";
+import type { CardProps, HardRule, SourceTag } from "../../ui/surface-props";
+import { BRASS_BUTTON, GLASS, QUIET_BUTTON, SOURCE_TAG, SOURCE_TAG_CHIP } from "./classes";
 import { Seal } from "./Seal";
 import { Seam } from "./Seam";
 
 const blank = (s: string) => s.trim() === "";
+
+export interface SourceTagPlan {
+  /** Per figure, in order: the tag shown right after it, or null when an earlier figure already cited that source. */
+  figureTags: (SourceTag | null)[];
+  /** The sources row: sources no figure has cited, each once. */
+  row: SourceTag[];
+}
+
+/**
+ * Pure (Brief 004 item 3). Each source appears at most once on a Card: inline after the first figure
+ * that cites it, otherwise once in the sources row. A figure citing an ID missing from `sources` gets
+ * a tag with the generic sources label.
+ */
+export function sourceTagPlan(p: CardProps): SourceTagPlan {
+  const byId = new Map<string, SourceTag>();
+  for (const s of p.sources) if (!byId.has(s.id)) byId.set(s.id, s);
+  const shown = new Set<string>();
+  const figureTags = (p.kind === "source" ? p.figures : []).map((f) => {
+    if (shown.has(f.sourceId)) return null;
+    shown.add(f.sourceId);
+    return byId.get(f.sourceId) ?? { id: f.sourceId, label: COPY.card.sources };
+  });
+  const row = [...byId.values()].filter((s) => !shown.has(s.id));
+  return { figureTags, row };
+}
+
+function SourceTagButton({ tag, onOpen, data }: { tag: SourceTag; onOpen: (id: string) => void; data: Record<`data-${string}`, string> }) {
+  return (
+    <button type="button" {...data} className={SOURCE_TAG} onClick={() => onOpen(tag.id)}>
+      <span className={SOURCE_TAG_CHIP}>{tag.label}</span>
+    </button>
+  );
+}
 
 /** True when the props hold something to read or approve. */
 export function cardHasContent(p: CardProps): boolean {
@@ -40,23 +73,26 @@ function RuleLine({ rule, onRemove }: { rule: HardRule; onRemove?: (id: string) 
   );
 }
 
-function Content(p: CardProps) {
+function Content({ p, plan }: { p: CardProps; plan: SourceTagPlan }) {
   switch (p.kind) {
     case "source":
       return (
         <>
           {blank(p.body) ? null : <p className="text-base text-ink">{p.body}</p>}
           {p.figures.length > 0 ? (
-            <dl className="mt-2 flex flex-col gap-2">
-              {p.figures.map((f) => (
-                <div key={`${f.label}-${f.sourceId}`} className="flex flex-wrap items-center gap-2">
-                  <dt className="text-sm text-ink-dim">{f.label}</dt>
-                  <dd className="font-mono text-lg text-ink">{f.value}</dd>
-                  <button type="button" data-figure-source={f.sourceId} className={SOURCE_TAG} onClick={() => p.onOpenSource(f.sourceId)}>
-                    {p.sources.find((s) => s.id === f.sourceId)?.label ?? COPY.card.sources}
-                  </button>
-                </div>
-              ))}
+            <dl className="mt-2 flex flex-col gap-1">
+              {p.figures.map((f, i) => {
+                const tag = plan.figureTags[i];
+                return (
+                  <div key={`${f.label}-${f.sourceId}`} data-figure="" className="flex flex-wrap items-center gap-x-2">
+                    <dt className="text-sm text-ink-dim">{f.label}</dt>
+                    <dd className="inline-flex flex-wrap items-center gap-x-1">
+                      <span className="font-mono text-lg text-ink">{f.value}</span>
+                      {tag ? <SourceTagButton tag={tag} onOpen={p.onOpenSource} data={{ "data-figure-source": tag.id }} /> : null}
+                    </dd>
+                  </div>
+                );
+              })}
             </dl>
           ) : null}
         </>
@@ -131,6 +167,7 @@ function Actions(p: CardProps) {
 export function Card(props: CardProps) {
   if (!cardHasContent(props)) return null;
   const actions = Actions(props);
+  const plan = sourceTagPlan(props);
   return (
     <article data-card={props.kind} aria-label={props.title} className={`${GLASS} flex w-full max-w-[343px] flex-col gap-3 p-4 text-left`}>
       <Seam />
@@ -138,14 +175,12 @@ export function Card(props: CardProps) {
         {props.title}
       </h2>
       <div data-section="content">
-        <Content {...props} />
+        <Content p={props} plan={plan} />
       </div>
-      {props.sources.length > 0 ? (
-        <div data-section="sources" className="flex flex-wrap gap-2">
-          {props.sources.map((s) => (
-            <button key={s.id} type="button" data-source={s.id} className={SOURCE_TAG} onClick={() => props.onOpenSource(s.id)}>
-              {s.label}
-            </button>
+      {plan.row.length > 0 ? (
+        <div data-section="sources" className="flex flex-wrap gap-x-1">
+          {plan.row.map((s) => (
+            <SourceTagButton key={s.id} tag={s} onOpen={props.onOpenSource} data={{ "data-source": s.id }} />
           ))}
         </div>
       ) : null}
