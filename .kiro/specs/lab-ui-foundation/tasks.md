@@ -530,7 +530,8 @@ Rules for every task:
     - Depends on: 3.2, 5.1, 10.3, 13.1.
     - Witness: `npx vitest run apps/web/src/components/CallScreen.test.tsx apps/web/src/components/StandInAvatar.test.tsx`.
     - _Requirements: 10.4, 14.4, 14.5, 14.6, 18.1, 18.2, 18.3, 23.4, 23.6_
-  - [ ] 16.8 Update `AuthPanel.tsx`, `Footer.tsx` and `Footer.test.tsx`
+  - [x] 16.8 Update `AuthPanel.tsx`, `Footer.tsx` and `Footer.test.tsx`
+    - Actual time: 3 min
     - Signed out: one brass "Sign in to wake Franki" button calling the same Google sign-in, disabled while `loading` or `busy`, with the existing inline error and cause. Signed in: the email and "Sign out" for the header. Footer changes token classes only; same text and `data-testid`.
     - In `Footer.test.tsx`, change the sign-in label to "Sign in to wake Franki" and keep every other check (footer once per page and last in `<body>`, email, enabled and disabled sign-in).
     - Depends on: 3.2.

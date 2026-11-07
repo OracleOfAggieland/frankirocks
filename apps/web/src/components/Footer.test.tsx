@@ -50,16 +50,16 @@ describe("Built with Kiro footer (R16.7)", () => {
       <AuthPanel state={{ kind: "signedIn", email: "owner@example.com", uid: "u1" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />,
     );
     expect(signedIn).toContain("owner@example.com");
-    expect(signedIn).not.toContain("Sign in with Google");
+    expect(signedIn).not.toContain("Sign in to wake Franki");
 
     const signedOut = renderToStaticMarkup(
       <AuthPanel state={{ kind: "signedOut", error: { cause: "popupBlocked", message: "blocked msg" } }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />,
     );
-    expect(signedOut).toMatch(/<button type="button"[^>]*>Sign in with Google<\/button>/);
+    expect(signedOut).toMatch(/<button type="button"[^>]*>Sign in to wake Franki<\/button>/);
     expect(signedOut).not.toMatch(/<button[^>]*\sdisabled=""/);
     expect(signedOut).toContain('data-cause="popupBlocked"');
 
     const loading = renderToStaticMarkup(<AuthPanel state={{ kind: "loading" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />);
-    expect(loading).toMatch(/<button[^>]*\sdisabled=""[^>]*>Sign in with Google/);
+    expect(loading).toMatch(/<button[^>]*\sdisabled=""[^>]*>Sign in to wake Franki/);
   });
 });

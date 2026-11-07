@@ -1,4 +1,6 @@
 import type { AuthState } from "../client/auth";
+import { COPY } from "../ui/copy";
+import { BRASS_BUTTON, QUIET_BUTTON } from "./surfaces/classes";
 
 export interface AuthPanelProps {
   state: AuthState;
@@ -11,8 +13,10 @@ export interface AuthPanelProps {
 }
 
 /**
- * Sign-in control and signed-in identity (R9.1, R9.2, R9.4, R9.6, R9.7). Presentational only.
- * While `loading`, the sign-in control shows but stays disabled until Firebase reports whether a user exists.
+ * Sign-in control and signed-in identity (FSC R9.1, R9.2, R9.4, R9.6, R9.7; lab-ui-foundation R13.1,
+ * R13.4, R13.5, R14.9). Signed out: one brass "Sign in to wake Franki" button for the same Google
+ * sign-in, disabled until Firebase reports and while a popup is open, with any error inline. Signed in:
+ * the email and "Sign out", for the header. Presentational only.
  */
 export function AuthPanel({ state, busy, configMissing, onSignIn, onSignOut }: AuthPanelProps) {
   if (configMissing !== null) {
@@ -26,12 +30,12 @@ export function AuthPanel({ state, busy, configMissing, onSignIn, onSignOut }: A
   }
   if (state.kind === "signedIn") {
     return (
-      <section aria-label="Signed in" className="flex items-center gap-3">
-        <span data-testid="signed-in-email" className="text-sm text-ink">
+      <section aria-label="Signed in" className="flex min-w-0 items-center gap-3">
+        <span data-testid="signed-in-email" className="truncate text-sm text-ink-dim">
           {state.email}
         </span>
-        <button type="button" onClick={onSignOut} className="rounded border border-ink-dim px-3 py-1 text-sm hover:bg-night-2">
-          Sign out
+        <button type="button" onClick={onSignOut} className={`${QUIET_BUTTON} text-sm`}>
+          {COPY.auth.signOut}
         </button>
       </section>
     );
@@ -39,17 +43,12 @@ export function AuthPanel({ state, busy, configMissing, onSignIn, onSignOut }: A
   const error = state.kind === "signedOut" ? state.error : null;
   return (
     <section aria-label="Sign-in" className="flex flex-col items-center gap-2">
-      <button
-        type="button"
-        onClick={onSignIn}
-        disabled={state.kind === "loading" || busy}
-        className="rounded bg-brass px-4 py-2 font-medium text-night-0 disabled:opacity-50"
-      >
-        Sign in with Google
+      <button type="button" onClick={onSignIn} disabled={state.kind === "loading" || busy} className={BRASS_BUTTON}>
+        {COPY.auth.signIn}
       </button>
       {state.kind === "loading" ? <p className="text-xs text-ink-dim">Checking sign-in…</p> : null}
       {error !== null ? (
-        <p role="alert" data-cause={error.cause} className="max-w-sm text-sm text-ember">
+        <p role="alert" data-cause={error.cause} className="max-w-[343px] text-sm text-ember">
           {error.message}
         </p>
       ) : null}
