@@ -282,7 +282,8 @@ Rules for every task:
     - Depends on: 9.1, 9.3.
     - Witness: `npx vitest run apps/web/src/ui/levels/level-meter.test.ts`.
     - _Requirements: 10.7, 11.1, 11.2, 11.4, 11.5, 11.7_
-  - [ ] 9.5 Add `onStreams` to the Voice_Client
+  - [x] 9.5 Add `onStreams` to the Voice_Client
+    - Actual time: 6 min
     - In `apps/web/src/client/voice-client.ts` only: the optional `onStreams` field on `VoiceClientDeps` and a private `reportStreams()` wrapped in `try`/`catch`, called after the mic is set in `connect`, in `ontrack` after `srcObject` is set, and at the end of `teardown` with both null. No other change.
     - Write `apps/web/src/client/voice-client.streams.test.ts`: the three reporting points, and a throwing callback leaves call state unchanged. `voice-client.test.ts` is not edited.
     - Depends on: 7.2.

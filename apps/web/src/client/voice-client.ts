@@ -92,6 +92,8 @@ export interface VoiceClientDeps {
   newId?: () => string;
   timers?: TimerApi;
   hash?: typeof permitPayloadHash;
+  /** Told when the mic or remote stream appears or goes away. For the Level_Meter only; never changes call behavior. */
+  onStreams?: (s: { mic: StreamLike | null; output: unknown | null }) => void;
 }
 
 const liveTimers: TimerApi = { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
@@ -117,6 +119,8 @@ export class VoiceClient {
   /** Bumped on teardown, so callbacks of an old connection do nothing. */
   private connection = 0;
   private pendingClose: Promise<void> | null = null;
+  /** Last remote stream reported to `onStreams`. */
+  private remoteStream: unknown | null = null;
 
   constructor(private readonly deps: VoiceClientDeps) {
     this.state = initialVoiceState({ transcribeModel: deps.transcribeModel }, deps.clock.read().worldClock.zone);
@@ -312,11 +316,15 @@ export class VoiceClient {
       const mic = this.mic ?? (await this.deps.getMicrophone());
       if (!live()) return mic.getAudioTracks().forEach((t) => t.stop());
       this.mic = mic;
+      this.reportStreams();
       for (const t of mic.getAudioTracks()) t.enabled = !this.state.micMuted;
       const pc = this.deps.createPeer();
       this.peer = pc;
       pc.ontrack = (ev) => {
-        if (live()) this.deps.audio.srcObject = ev.streams[0] ?? null;
+        if (!live()) return;
+        this.deps.audio.srcObject = ev.streams[0] ?? null;
+        this.remoteStream = ev.streams[0] ?? null;
+        this.reportStreams();
       };
       pc.onconnectionstatechange = () => {
         if (live() && pc.connectionState === "failed") this.dispatch({ type: "connectionLost" });
@@ -374,5 +382,16 @@ export class VoiceClient {
       // already closed
     }
     this.deps.audio.srcObject = null;
+    this.remoteStream = null;
+    this.reportStreams();
+  }
+
+  /** Tells the Level_Meter the current streams. A throwing callback never reaches the call. */
+  private reportStreams(): void {
+    try {
+      this.deps.onStreams?.({ mic: this.mic, output: this.remoteStream });
+    } catch {
+      // the meter's problem, not the call's
+    }
   }
 }
