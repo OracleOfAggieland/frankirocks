@@ -503,7 +503,8 @@ Rules for every task:
     - Depends on: 16.2.
     - Witness: `npx vitest run apps/web/src/ui/turn-copies.property.test.ts`.
     - **Validates: Requirements 14.8**
-  - [ ] 16.4 Write `apps/web/src/ui/debug-flag.ts` and `debug-flag.test.ts`
+  - [x] 16.4 Write `apps/web/src/ui/debug-flag.ts` and `debug-flag.test.ts`
+    - Actual time: 1 min
     - Pure `debugVisible(nodeEnv, search)`: true only when `nodeEnv` is not `production` and `search` has `debug=1`.
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/debug-flag.test.ts`.
