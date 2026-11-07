@@ -18,6 +18,10 @@ describe("Wordmark", () => {
     expect(lit).toEqual(["K", "I", "R", "O"]);
   });
 
+  it("keeps FRANKIROCKS on one line", () => {
+    expect(renderToStaticMarkup(<Wordmark variant="signedOut" />)).toMatch(/data-wordmark="signedOut"[^>]*class="[^"]*\bwhitespace-nowrap\b/);
+  });
+
   it("lights them by a one-iteration animation and only fades under reduced motion", () => {
     const rules = [...CSS.matchAll(/\.franki-kiro\s*\{([^}]*)\}/g)].map((m) => m[1]);
     expect(rules.length).toBeGreaterThanOrEqual(2);
