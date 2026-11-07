@@ -187,3 +187,24 @@ body {
 [data-paused="true"] .franki-anim {
   animation-play-state: paused !important;
 }
+
+/* The signed-out Wordmark (R13.2): K-I-R-O light gold once and stay gold; a plain fade under reduced motion. */
+@keyframes franki-kiro-light {
+  0% { color: var(--color-ink); transform: translateY(0); }
+  50% { color: var(--color-gold); transform: translateY(-2px); }
+  100% { color: var(--color-gold); transform: translateY(0); }
+}
+@keyframes franki-kiro-fade {
+  from { color: var(--color-ink); }
+  to { color: var(--color-gold); }
+}
+.franki-kiro {
+  display: inline-block;
+  animation: franki-kiro-fade var(--dur-ritual) linear 1 both;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .franki-kiro { animation: franki-kiro-light var(--dur-ritual) var(--ease-ecto) 1 both; }
+}
+[data-reduced="true"] .franki-kiro {
+  animation: franki-kiro-fade var(--dur-ritual) linear 1 both;
+}

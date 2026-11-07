@@ -399,7 +399,7 @@ Rules for every task:
     - Witness: `npx vitest run apps/web/src/components/avatar`; `node scripts/token-check.mjs` exits 0.
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 6.13, 7.3, 7.4, 9.1, 9.3, 10.5, 10.7, 18.1_
 
-- [ ] 14. Surfaces
+- [x] 14. Surfaces
   - [x] 14.1 Write `apps/web/src/ui/surface-props.ts` and the Surface copy
     - Actual time: 4 min
     - Type-only module with the props in design "Data Models" (`SourceTag`, `HardRule`, `CardProps`, `StripProps`, `MoteKind`, `JarProps`, `Area`, `KnownItem`, `WhatIKnowProps`, `LabProps`, `ReceiptProps`, `TimeBadgeProps`, `CaptionsProps`, `ChipsProps`, `TurnCopies`).
@@ -470,7 +470,8 @@ Rules for every task:
     - Depends on: 14.1, 14.2.
     - Witness: `npx vitest run apps/web/src/components/surfaces/Captions.test.tsx apps/web/src/components/surfaces/Chips.test.tsx`.
     - _Requirements: 16.1, 16.9, 16.10, 16.12_
-  - [ ] 14.11 Write `surfaces/Wordmark.tsx` and its keyframes
+  - [x] 14.11 Write `surfaces/Wordmark.tsx` and its keyframes
+    - Actual time: 3 min
     - "Franki" for `header`; `FRANKIROCKS` for `signedOut` with K, I, R, O (letters 5 to 8) lighting gold once by a one-iteration CSS animation in `globals.css` using duration tokens, and a fade only under Reduced_Motion.
     - `Wordmark.test.tsx`: both variants, the four lit letters, one iteration.
     - Depends on: 13.2, 14.1.
