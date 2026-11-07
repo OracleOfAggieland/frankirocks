@@ -442,7 +442,8 @@ Rules for every task:
     - Depends on: 14.1, 14.2.
     - Witness: `npx vitest run apps/web/src/components/surfaces/Jar.test.tsx apps/web/src/components/surfaces/WhatIKnowSheet.test.tsx`.
     - _Requirements: 16.1, 16.3, 16.4, 16.12_
-  - [ ] 14.7 Write `surfaces/Lab.tsx` and `surfaces/Odometer.tsx`
+  - [x] 14.7 Write `surfaces/Lab.tsx` and `surfaces/Odometer.tsx`
+    - Actual time: 3 min
     - Mono tabular counters; `—` for null and no placeholder zero; odometer roll on change (transform only, fade under Reduced_Motion); a `<details>` fold for honest limits; `null` with no counters.
     - `Lab.test.tsx`: real values, `—` for null, no "0" for null, the fold, `null` when empty.
     - Depends on: 14.1, 14.2.
