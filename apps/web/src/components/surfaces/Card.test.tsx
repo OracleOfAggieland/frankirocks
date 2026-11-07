@@ -15,7 +15,7 @@ const SOURCE: CardProps = {
 const APPROVAL: CardProps = { kind: "approval", id: "c2", title: "Book a table", sources: [], onOpenSource: noop, effect: "I'll book a table for two at 7 PM.", onYes: noop, onNotNow: noop };
 const FOOD: CardProps = {
   kind: "food", id: "c3", title: "Dinner pick", sources: [], onOpenSource: noop, choice: "Pad thai, no peanuts", ingredients: ["rice noodles", "egg"],
-  checkedFor: [{ person: "Sam", rules: [{ id: "r1", person: "Sam", text: "No peanuts" }] }], onRemoveRule: noop,
+  checkedFor: [{ person: "Sam", rules: [{ id: "r1", person: "Sam", text: "No peanuts" }] }],
 };
 const ASK: CardProps = { kind: "ask", id: "c4", title: "Which one?", sources: [], onOpenSource: noop, question: "Forget the dentist or the doctor?", options: [{ id: "a", label: "Dentist" }, { id: "b", label: "Doctor" }], onAnswer: noop };
 const READ: CardProps = { kind: "read", id: "c5", title: "Your list", sources: [], onOpenSource: noop, lines: ["Milk", "Eggs"] };
@@ -121,19 +121,12 @@ describe("Card", () => {
     expect(out).not.toMatch(/\bsafe\b/i);
   });
 
-  it("removes a hard rule only through its Remove button", () => {
-    const onRemoveRule = vi.fn();
-    const card = Card({ ...(FOOD as Extract<CardProps, { kind: "food" }>), onRemoveRule });
-    expect(click(card, (p) => typeof p["aria-label"] === "string" && (p["aria-label"] as string).startsWith("Remove"))).toBe(true);
-    expect(onRemoveRule).toHaveBeenCalledWith("r1");
+  it("never offers to remove a hard rule: the rule lines are locked and read-only", () => {
     const out = html(FOOD);
+    expect(out).toContain('aria-label="Locked rule"');
+    expect(out).not.toMatch(/remove/i);
     expect(out).not.toMatch(/onSwipe|dismiss|draggable/i);
-    expect(out).toContain(">Remove rule<");
-    expect(out).toContain('aria-label="Remove rule: No peanuts for Sam"');
-    const locked = html({ ...(FOOD as Extract<CardProps, { kind: "food" }>), onRemoveRule: undefined });
-    expect(locked).not.toContain("Remove");
-    expect(locked).not.toContain("<button");
-    expect(locked).toContain('aria-label="Locked rule"');
+    expect(out).not.toContain("<button");
   });
 
   it("ask calls onAnswer with the option ID", () => {

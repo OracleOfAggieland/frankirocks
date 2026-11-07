@@ -294,7 +294,7 @@ These are gaps found while writing requirements. The design records each under "
 2. THE Card SHALL render every number in its props with a source tag (for example "Bank · 6 purchases"), and WHEN the owner activates a source tag, THE Card SHALL call its `onOpenSource` prop with that tag's ID.
 3. WHERE the Card kind is `approval`, THE Card SHALL say exactly what will happen, SHALL offer exactly two actions, **Yes** (brass, primary) and **Not now** (quiet), and SHALL pre-select neither.
 4. WHERE the Card kind is `food`, THE Card SHALL show a "Checked for" line naming every hard rule applied, per person, with the safety seal, and SHALL contain no copy that calls a place or dish "safe".
-5. WHERE a hard rule appears on a Card, THE Card SHALL show a brass seal with a lock, and SHALL remove the rule only through a deliberate activation of a remove control, never through a swipe or a dismiss of the Card.
+5. WHERE a hard rule appears on a Card, THE Card SHALL show it as a locked, read-only line with a brass seal, and SHALL offer no control that removes or changes the rule; no swipe or dismiss of the Card affects it. A hard rule is removed only in the What_I_Know_Sheet. (Amended Nov 6 by the owner: removal on a Card was one tap away from dropping an allergy from every future meal.)
 6. THE Card_Dock SHALL show one primary Card at a time, with older Cards stacked behind it, slightly smaller.
 7. WHEN a Card enters the Card_Dock, THE Card SHALL rise in from Franki's side of the screen with `spring.settle`.
 

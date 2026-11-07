@@ -29,7 +29,6 @@ export type CardProps =
       choice: string;
       ingredients: string[];
       checkedFor: { person: string; rules: HardRule[] }[];
-      onRemoveRule?: (id: string) => void;
     })
   | (CardBase & { kind: "ask"; question: string; options: { id: string; label: string }[]; onAnswer: (id: string) => void })
   | (CardBase & { kind: "read"; lines: string[] });

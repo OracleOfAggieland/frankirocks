@@ -432,7 +432,7 @@ All Surface components are presentational: props in, callbacks out, no fetching,
 
 | Component | File | Props (see Data Models) | Notes |
 |---|---|---|---|
-| Card | `surfaces/Card.tsx` | `CardProps` | Title, content, sources, actions, in that order. Approval: **Yes** (brass) and **Not now** (quiet), neither focused or pre-selected (R15.3). Food: "Checked for" line with seals; no "safe" copy (R15.4). Hard rules: `Seal` with a lock and a separate **Remove** button; no swipe or dismiss removes them (R15.5). |
+| Card | `surfaces/Card.tsx` | `CardProps` | Title, content, sources, actions, in that order. Approval: **Yes** (brass) and **Not now** (quiet), neither focused or pre-selected (R15.3). Food: "Checked for" line with seals; no "safe" copy (R15.4). Hard rules: a locked, read-only line with a `Seal`; no control on a Card removes them, and no swipe or dismiss affects them. Removal lives only in the What_I_Know_Sheet (R15.5, amended Nov 6). |
 | Card_Dock | `surfaces/CardDock.tsx` | `{ cards: CardProps[] }` | First card primary; up to two older ones behind at scale 0.96 and 0.92. Right column at 1024 px and wider, bottom sheet below. Enters from the stage side with `spring.settle` (R15.6, R15.7). |
 | Strip | `surfaces/Strip.tsx` | `StripProps` | Five terminals; current runs along the wire to each newly filled one (stagger 40 ms); last terminal `gold` when filled (R16.2). Null when `open` is false. |
 | Jar | `surfaces/Jar.tsx` | `JarProps` | Motes up to a cap of 48; solid, dashed, brass and frosted by kind; button with accessible name "What I know" (R16.3). |
@@ -591,7 +591,7 @@ interface CardBase { id: string; title: string; sources: SourceTag[]; onOpenSour
 export type CardProps =
   | (CardBase & { kind: "source"; body: string; figures: { label: string; value: string; sourceId: string }[] })
   | (CardBase & { kind: "approval"; effect: string; onYes: () => void; onNotNow: () => void })
-  | (CardBase & { kind: "food"; choice: string; ingredients: string[]; checkedFor: { person: string; rules: HardRule[] }[]; onRemoveRule?: (id: string) => void })
+  | (CardBase & { kind: "food"; choice: string; ingredients: string[]; checkedFor: { person: string; rules: HardRule[] }[] })
   | (CardBase & { kind: "ask"; question: string; options: { id: string; label: string }[]; onAnswer: (id: string) => void })
   | (CardBase & { kind: "read"; lines: string[] });
 

@@ -3,7 +3,7 @@
 // its source tag. Renders nothing when its props have nothing true to show.
 import { COPY } from "../../ui/copy";
 import type { CardProps, HardRule, SourceTag } from "../../ui/surface-props";
-import { BRASS_BUTTON, FOCUS, GLASS, QUIET_BUTTON, SOURCE_TAG, SOURCE_TAG_CHIP, TARGET } from "./classes";
+import { BRASS_BUTTON, GLASS, QUIET_BUTTON, SOURCE_TAG, SOURCE_TAG_CHIP } from "./classes";
 import { Seal } from "./Seal";
 import { Seam } from "./Seam";
 
@@ -60,26 +60,14 @@ export function cardHasContent(p: CardProps): boolean {
 }
 
 /**
- * A hard rule the food was checked against: a locked line. The remove control exists only when the
- * caller passes `onRemoveRule` (R15.5), and it reads as removing the rule itself, never the dish or an
- * ingredient: a quiet text control, so the check reads first and removal stays a deliberate tap.
+ * A hard rule the food was checked against: a locked line, read-only (R15.5). A Card never offers to
+ * remove a hard rule; that happens only in the What_I_Know_Sheet, where the person manages rules on purpose.
  */
-function RuleLine({ rule, onRemove }: { rule: HardRule; onRemove?: (id: string) => void }) {
+function RuleLine({ rule }: { rule: HardRule }) {
   return (
     <li data-rule={rule.id} className="flex min-h-8 items-center gap-2">
       <Seal />
       <span className="text-sm text-ink">{rule.text}</span>
-      {onRemove ? (
-        <button
-          type="button"
-          data-action="remove-rule"
-          className={`${TARGET} ${FOCUS} ml-auto inline-flex items-center rounded-control px-2 text-sm text-ink-dim underline-offset-4 transition-colors duration-(--dur-quick) hover:text-ink hover:underline`}
-          aria-label={COPY.card.removeRuleFor(rule.text, rule.person)}
-          onClick={() => onRemove(rule.id)}
-        >
-          {COPY.card.removeRule}
-        </button>
-      ) : null}
     </li>
   );
 }
@@ -126,7 +114,7 @@ function Content({ p, plan }: { p: CardProps; plan: SourceTagPlan }) {
               </p>
               <ul className="mt-1 flex flex-col gap-1">
                 {c.rules.map((r) => (
-                  <RuleLine key={r.id} rule={r} onRemove={p.onRemoveRule} />
+                  <RuleLine key={r.id} rule={r} />
                 ))}
               </ul>
             </div>

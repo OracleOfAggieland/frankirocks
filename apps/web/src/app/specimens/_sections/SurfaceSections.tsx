@@ -15,7 +15,6 @@ import { TimeBadge } from "../../../components/surfaces/TimeBadge";
 import { WhatIKnowSheet } from "../../../components/surfaces/WhatIKnowSheet";
 import { Wordmark } from "../../../components/surfaces/Wordmark";
 import { ReducedMotionOverride } from "../../../ui/hooks/reduced-motion";
-import type { CardProps } from "../../../ui/surface-props";
 import { clearTurnCopies } from "../../../ui/turn-copies";
 import {
   CAPTION_LINE,
@@ -57,13 +56,6 @@ export function SurfaceSections() {
           <Tile key={c.id} label={c.kind} data-specimen="card" data-kind={c.kind}>
             <div className="w-[343px]">
               <Card {...c} />
-            </div>
-          </Tile>
-        ))}
-        {CARDS.filter((c): c is Extract<CardProps, { kind: "food" }> => c.kind === "food").map((c) => (
-          <Tile key={`${c.id}-remove`} label="food, with a rule remove control" data-specimen="card" data-kind="food-remove">
-            <div className="w-[343px]">
-              <Card {...c} onRemoveRule={noop} />
             </div>
           </Tile>
         ))}

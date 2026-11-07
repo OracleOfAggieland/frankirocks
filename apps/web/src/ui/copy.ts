@@ -27,9 +27,6 @@ export const COPY = {
     yes: "Yes",
     notNow: "Not now",
     checkedFor: "Checked for",
-    removeRule: "Remove rule",
-    /** The accessible name of a rule's remove control: which rule, for whom. */
-    removeRuleFor: (rule: string, person: string) => `Remove rule: ${rule} for ${person}`,
     sources: "Sources",
     ingredients: "Ingredients",
     lockedRule: "Locked rule",
