@@ -1,6 +1,6 @@
 "use client";
 
-import { initialVoiceState } from "@franki/core";
+import { avatarState, initialVoiceState } from "@franki/core";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createApiClient } from "../client/api";
 import { type AuthClient, type AuthState, createAuthClient } from "../client/auth";
@@ -14,6 +14,7 @@ import { AuthPanel } from "./AuthPanel";
 import { CallScreen } from "./CallScreen";
 import { DebugPanel } from "./DebugPanel";
 import { ReplyLine } from "./ReplyLine";
+import { StandInAvatar } from "./StandInAvatar";
 import { TypedLine } from "./TypedLine";
 
 const SIGNED_OUT_VOICE = initialVoiceState({ transcribeModel: "" });
@@ -139,6 +140,7 @@ function SignedInArea({ typed, debug, voice }: { typed: TypedTurns; debug: Debug
 
   return (
     <>
+      <StandInAvatar state={avatarState(v)} />
       <CallScreen
         voice={v}
         enabled={voice !== null}
@@ -158,6 +160,7 @@ function SignedInArea({ typed, debug, voice }: { typed: TypedTurns; debug: Debug
 function SignedOutArea() {
   return (
     <>
+      <StandInAvatar state="closed" />
       <CallScreen voice={SIGNED_OUT_VOICE} enabled={false} onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />
       <TypedLine text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />
     </>

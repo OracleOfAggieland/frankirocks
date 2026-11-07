@@ -523,7 +523,8 @@ Rules for every task:
     - Depends on: 16.5.
     - Witness: `npx vitest run apps/web/src/components/TypedInput.test.tsx apps/web/src/components/TypedLine.test.tsx`.
     - _Requirements: 14.7, 14.8, 18.1, 18.2, 18.3, 23.4, 23.5_
-  - [ ] 16.7 Rebuild `CallScreen.tsx` and move its tests
+  - [x] 16.7 Rebuild `CallScreen.tsx` and move its tests
+    - Actual time: 9 min
     - Same file name, `CALL_ERRORS` export and props. One button with `data-form` `start`/`hangup`, `aria-label` "Call Franki"/"Hang up", 64 px target; start `data-shape="round"` with `ring-brass` and an `bg-ecto` core; hang-up `data-shape="square"` with `bg-ember`; disabled exactly as today. Press moves down 2 px with `spring.press`; with Reduced_Motion off and an Electricity grant, one spark runs around the ring. Mute toggle as R14.5 with the muted indicator. Retry and errors stay inline.
     - Write `CallScreen.test.tsx` with the call-control tests moved from `StandInAvatar.test.tsx` (one button, `data-shape` round vs square, `ring-brass`/`bg-ecto` vs `bg-ember`, labels, disabled states, mute only while listening, thinking or speaking, `aria-pressed`, muted indicator, failed step named, retry after 30 s) and remove them from `StandInAvatar.test.tsx` in the same commit.
     - Depends on: 3.2, 5.1, 10.3, 13.1.

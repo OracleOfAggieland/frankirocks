@@ -208,3 +208,14 @@ body {
 [data-reduced="true"] .franki-kiro {
   animation: franki-kiro-fade var(--dur-ritual) linear 1 both;
 }
+
+/* The call button's ring spark (R10.4): one turn around the ring on press; never under reduced motion. */
+@keyframes franki-ring-spark {
+  from { transform: rotate(0deg); opacity: 1; }
+  to { transform: rotate(360deg); opacity: 0; }
+}
+.franki-ring-spark { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .franki-ring-spark { animation: franki-ring-spark calc(var(--dur-base) * 2) var(--ease-ecto) 1 both; }
+}
+[data-reduced="true"] .franki-ring-spark { animation: none; opacity: 0; }
