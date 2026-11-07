@@ -537,7 +537,8 @@ Rules for every task:
     - Depends on: 3.2.
     - Witness: `npx vitest run apps/web/src/components/Footer.test.tsx`.
     - _Requirements: 12.5, 13.1, 13.4, 13.5, 14.9, 23.4, 23.5, 23.6_
-  - [ ] 16.9 Write `screen/MainScreen.tsx` and `screen/Backdrop.tsx`
+  - [x] 16.9 Write `screen/MainScreen.tsx` and `screen/Backdrop.tsx`
+    - Actual time: 7 min
     - Read the Next.js App Router guides for client components first. CSS grid with the named areas of design "Main screen"; empty slots keep their area and render nothing; dock bottom sheet below 1024 px; corners stack below 640 px; no fixed width above 343 px. `Backdrop` draws the blueprint grid at about 3%, `feTurbulence` grain at about 4% and the vignette, `aria-hidden`.
     - Signed out: Dormant avatar, `FRANKIROCKS` Wordmark, the sign-in button, the call button in start form disabled, the typed-line glyph disabled, no Chips or other Surface.
     - `MainScreen.test.tsx`: signed-out and signed-in screens with fake sources; grid areas; Card, Strip, Jar, What_I_Know_Sheet, Lab, Receipt, Time_Badge, Chips and Captions absent; header email; controls in DOM order with no positive `tabindex`, a visible focus class and a 44 px minimum size class on every control.
