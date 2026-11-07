@@ -509,7 +509,8 @@ Rules for every task:
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/debug-flag.test.ts`.
     - _Requirements: 21.1, 21.3, 21.4_
-  - [ ] 16.5 Write `ReplyLine.tsx`, `LiveRegion.tsx` and `SoundToggle.tsx`
+  - [x] 16.5 Write `ReplyLine.tsx`, `LiveRegion.tsx` and `SoundToggle.tsx`
+    - Actual time: 5 min
     - `ReplyLine` shows `latestReply` as one line in a polite region, escaping stored markup. `LiveRegion` is one visually hidden `aria-live="polite" aria-atomic="true"` region that alternates two child nodes so a repeated message is spoken again. `SoundToggle` is one button named "Sound effects" with `aria-pressed`, using `preference.ts`, at least 44 px.
     - Tests: `ReplyLine.test.tsx` (latest only, escaping), `LiveRegion.test.tsx` (one region, alternation), `SoundToggle.test.tsx` (name, `aria-pressed`, toggling writes the preference).
     - Depends on: 10.1, 10.10, 16.1.
