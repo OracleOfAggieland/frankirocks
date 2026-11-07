@@ -364,7 +364,8 @@ Rules for every task:
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/hooks/reduced-motion.test.ts`.
     - _Requirements: 9.4, 20.2_
-  - [ ] 11.2 Write `apps/web/src/ui/hooks/page-visible.ts` and `page-visible.test.ts`
+  - [x] 11.2 Write `apps/web/src/ui/hooks/page-visible.ts` and `page-visible.test.ts`
+    - Actual time: 2 min
     - `VisibilityGate` over a `document`-shaped object and its hook. Test: listeners told on hidden and visible.
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/hooks/page-visible.test.ts`.
