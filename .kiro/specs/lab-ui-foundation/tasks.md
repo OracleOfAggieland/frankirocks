@@ -357,7 +357,7 @@ Rules for every task:
     - Witness: `npx vitest run apps/web/src/ui/sound/preference.test.ts`.
     - _Requirements: 19.6_
 
-- [ ] 11. Reduced motion, visibility and the frame loop
+- [x] 11. Reduced motion, visibility and the frame loop
   - [x] 11.1 Write `apps/web/src/ui/hooks/reduced-motion.ts` and `reduced-motion.test.ts`
     - Actual time: 3 min
     - `ReducedMotionWatcher` over a `MediaQueryList`-shaped object, `useReducedMotion()` on `useSyncExternalStore` with server snapshot `true`, and the `ReducedMotionOverride` context. Test: a `change` event applies synchronously; missing `matchMedia` stays `true`; the override wins.
@@ -370,7 +370,8 @@ Rules for every task:
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/hooks/page-visible.test.ts`.
     - _Requirements: 10.7_
-  - [ ] 11.3 Write `apps/web/src/ui/hooks/frame-loop.ts` and `frame-loop.test.ts`
+  - [x] 11.3 Write `apps/web/src/ui/hooks/frame-loop.ts` and `frame-loop.test.ts`
+    - Actual time: 5 min
     - One `requestAnimationFrame` loop (scheduler injected) that samples the meter, feeds `{kind:"frame", at}` to the Event_Controller, calls `lookFor`, and publishes only when a discrete field changes or `drive` moves by at least 1/32; stops while hidden and pauses the meter, resumes on visible.
     - Test with a fake scheduler and meter: Frame_Time is the only time used, publish throttling, pause and resume.
     - Depends on: 6.3, 6.14, 9.4, 11.2.
