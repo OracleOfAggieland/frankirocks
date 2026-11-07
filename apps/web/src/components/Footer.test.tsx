@@ -10,6 +10,7 @@ vi.mock("next/font/google", () => ({
 const { default: RootLayout } = await import("../app/layout");
 const { default: Home } = await import("../app/page");
 const { AuthPanel } = await import("./AuthPanel");
+const { default: SpecimensPage } = await import("../app/specimens/page.dev");
 
 const noop = () => {};
 const layoutProps = (children: React.ReactNode) => ({ children, params: Promise.resolve({}) }) as Parameters<typeof RootLayout>[0];
@@ -19,6 +20,7 @@ describe("Built with Kiro footer (R16.7)", () => {
   it("root layout renders 'Built with Kiro' on every page, signed in and signed out", () => {
     const pages: [string, React.ReactNode][] = [
       ["home page", <Home key="home" />],
+      ["specimens page", <SpecimensPage key="specimens" />],
       ["loading", <AuthPanel key="l" state={{ kind: "loading" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />],
       ["signed out", <AuthPanel key="o" state={{ kind: "signedOut", error: null }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />],
       [

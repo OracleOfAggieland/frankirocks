@@ -565,7 +565,8 @@ Rules for every task:
     - Depends on: 16.10.
     - Witness: `npx vitest run apps/web/src/next-config.test.ts`; `npm run build` exits 0.
     - _Requirements: 20.3, 22.5_
-  - [ ] 18.2 Write `app/specimens/page.dev.tsx`, `_fixtures` and `_sections`
+  - [x] 18.2 Write `app/specimens/page.dev.tsx`, `_fixtures` and `_sections`
+    - Actual time: 12 min
     - A plain Server Component rendering client sections, no Server Action, `use cache`, `next/og`, ISR or `/api/` call. `_fixtures/index.ts` exports `SPECIMENS_SENTINEL_9c41`. Sections show the avatar for every Look_Name, every Avatar_Event over every state and Ghost_Mode over each state, each with Reduced_Motion off and forced on through `ReducedMotionOverride`; every Card kind including hard rules and approval; the Strip at fills 0 to 5; the Jar with every mote kind and over the cap; the What_I_Know_Sheet; the Lab with real counts and `—`; the Receipt; the Time_Badge; Captions on and off; Chips; both Wordmarks; the call button in every form; the forget clear before and after. Fixture copy passes the copy check.
     - `app/specimens/specimens.test.tsx` imports `page.dev.tsx` and asserts one `data-look` per Look_Name × Avatar_Event × Reduced_Motion combination and every Surface kind. Add the Specimens_Page to the page list in `Footer.test.tsx`.
     - Depends on: 14.4, 14.5, 14.6, 14.7, 14.8, 14.9, 14.10, 18.1.
