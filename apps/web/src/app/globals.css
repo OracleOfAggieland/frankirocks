@@ -154,6 +154,12 @@ body {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+/* A brief flash in a bolt's glow each time the bolt regenerates (Brief 004 item 5). Ends at the
+   glow's resting opacity, the 0.6 on [data-bolt-glow]. */
+@keyframes franki-bolt-flash {
+  from { opacity: 1; }
+  to { opacity: 0.6; }
+}
 
 @media (prefers-reduced-motion: no-preference) {
   .franki-float { animation: franki-float var(--dur-float) ease-in-out infinite; }
@@ -171,6 +177,7 @@ body {
   .franki-nod { animation: franki-nod calc(var(--dur-ritual) * 1.5) ease-in-out infinite; }
   .franki-sparks { animation: franki-sparks var(--dur-ritual) var(--ease-ecto) 1 both; }
   .franki-fade { animation: franki-fade var(--dur-base) var(--ease-ecto) 1 both; }
+  .franki-bolt-flash { animation: franki-bolt-flash calc(var(--dur-quick) / 3) var(--ease-ecto) 1 both; }
 }
 
 /* A forced reduced specimen gets fades only, like the media query. */

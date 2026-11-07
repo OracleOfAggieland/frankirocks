@@ -51,6 +51,24 @@ const HAIR_HIGHLIGHT = "M66 30 C84 23 104 26 126 22";
 
 const LEFT_BOLT = { x: 23, y: 90 };
 const RIGHT_BOLT = { x: 177, y: 90 };
+/** The thinking arc's waypoints: up past the left temple, over the hair, down past the right. */
+export const ARC_WAYPOINTS = [
+  LEFT_BOLT,
+  { x: 8, y: 56 },
+  { x: 14, y: 18 },
+  { x: 46, y: -14 },
+  { x: 100, y: -24 },
+  { x: 154, y: -14 },
+  { x: 186, y: 18 },
+  { x: 192, y: 56 },
+  RIGHT_BOLT,
+] as const;
+const ARC_VIA = ARC_WAYPOINTS.slice(1, -1);
+/** The wake strikes: from above, around the outside of the head, onto each neck bolt. */
+export const STRIKE_WAYPOINTS = [
+  [{ x: 46, y: -46 }, { x: 8, y: 34 }, LEFT_BOLT],
+  [{ x: 154, y: -46 }, { x: 192, y: 34 }, RIGHT_BOLT],
+] as const;
 
 /** The scar: a short curved seam at the upper right of the forehead. */
 const SCAR = { p0: { x: 114, y: 84 }, p1: { x: 132, y: 80 }, p2: { x: 148, y: 93 } };
@@ -169,12 +187,15 @@ function Bolts({ look, input }: AvatarRendererProps) {
   const reduced = input.reducedMotion;
   switch (look.bolts) {
     case "arc":
-      return <Electricity a={LEFT_BOLT} b={RIGHT_BOLT} frameTime={frameTime} reduced={reduced} seed={11} />;
+      // The thinking arc crosses over the top of the head, from bolt to bolt, clear of the hair.
+      return <Electricity a={LEFT_BOLT} b={RIGHT_BOLT} via={ARC_VIA} frameTime={frameTime} reduced={reduced} seed={11} />;
     case "strike":
+      // The wake strike comes down from above onto both neck bolts at once, outside the face.
       return (
         <g className={animClass(look, "strike")}>
-          <Electricity a={{ x: 30, y: 0 }} b={LEFT_BOLT} frameTime={frameTime} reduced={reduced} seed={21} />
-          <Electricity a={{ x: 170, y: 0 }} b={RIGHT_BOLT} frameTime={frameTime} reduced={reduced} seed={22} />
+          {STRIKE_WAYPOINTS.map(([a, mid, b], i) => (
+            <Electricity key={i} a={a} b={b} via={[mid]} frameTime={frameTime} reduced={reduced} seed={21 + i} />
+          ))}
         </g>
       );
     case "fizzle":
@@ -207,7 +228,7 @@ export function SvgGhost({ look, input }: AvatarRendererProps) {
   const glow = glowOpacity(look);
   const glowColour = look.glow === "gold" ? "var(--color-gold)" : "var(--color-ecto)";
   return (
-    <svg viewBox="0 0 200 220" className="franki-ghost block h-auto w-full" aria-hidden="true" focusable="false" data-renderer="svg-ghost">
+    <svg viewBox="0 0 200 220" overflow="visible" className="franki-ghost block h-auto w-full" aria-hidden="true" focusable="false" data-renderer="svg-ghost">
       <defs>
         {/* A soft vertical gradient, ghost at the head to ghost-deep at the hem. */}
         <linearGradient id="franki-body" x1="0" y1="0" x2="0" y2="1">

@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { type Point, boltPath, regenGapMs } from "./electricity";
+import { BRANCH, type Point, bolt, boltPath, regenGapMs } from "./electricity";
 
 /** Distance from p to the segment a-b. */
 function distanceToSegment(p: Point, a: Point, b: Point): number {
@@ -34,4 +34,64 @@ describe("Property 19: Electricity paths are well formed", () => {
       { numRuns: 300 },
     );
   });
+
+  it("branches: one or two, each starting on an interior trunk point, short, well formed, repeatable", () => {
+    fc.assert(
+      fc.property(fc.array(point, { minLength: 2, maxLength: 5 }), fc.integer(), fc.integer({ min: 1, max: 5 }), (waypoints, seed, depth) => {
+        const b = bolt(waypoints, seed, depth);
+        const per = 2 ** depth;
+        // The trunk: every waypoint once at k * 2^depth, each leg near its own line.
+        expect(b.trunk).toHaveLength((waypoints.length - 1) * per + 1);
+        waypoints.forEach((w, k) => expect(b.trunk[k * per]).toEqual(w));
+        for (let k = 1; k < waypoints.length; k++) {
+          const half = Math.hypot(waypoints[k].x - waypoints[k - 1].x, waypoints[k].y - waypoints[k - 1].y) / 2;
+          for (const p of b.trunk.slice((k - 1) * per, k * per + 1)) expect(distanceToSegment(p, waypoints[k - 1], waypoints[k])).toBeLessThanOrEqual(half + 1e-9);
+        }
+        const legs = waypoints.slice(1).map((w, k) => Math.hypot(w.x - waypoints[k].x, w.y - waypoints[k].y));
+        const scale = legs.reduce((s, l) => s + l, 0) / legs.length;
+        if (scale === 0) {
+          expect(b.branches).toEqual([]);
+          return;
+        }
+        expect(b.branches.length).toBeGreaterThanOrEqual(BRANCH.min);
+        expect(b.branches.length).toBeLessThanOrEqual(BRANCH.max);
+        const interior = b.trunk.slice(1, -1);
+        for (const br of b.branches) {
+          expect(br).toHaveLength(2 ** BRANCH.depth + 1);
+          expect(interior.some((p) => p.x === br[0].x && p.y === br[0].y)).toBe(true);
+          const chord = Math.hypot(br.at(-1)!.x - br[0].x, br.at(-1)!.y - br[0].y);
+          expect(chord).toBeLessThanOrEqual(BRANCH.maxShare * scale * (1 + 1e-9) + 1e-9);
+          for (const p of br) expect(distanceToSegment(p, br[0], br.at(-1)!)).toBeLessThanOrEqual(chord / 2 + 1e-9);
+          for (const p of br) expect(Number.isFinite(p.x) && Number.isFinite(p.y)).toBe(true);
+        }
+        expect(bolt(waypoints, seed, depth)).toEqual(b);
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("is visibly jagged at stage size: at least five clear kinks", () => {
+    const stageCoord = fc.double({ min: 0, max: 200, noNaN: true });
+    const stagePoint = fc.record({ x: stageCoord, y: stageCoord });
+    fc.assert(
+      fc.property(stagePoint, stagePoint, fc.integer(), (a, b, seed) => {
+        fc.pre(Math.hypot(b.x - a.x, b.y - a.y) >= 40);
+        expect(kinks(boltPath(a, b, seed, 4))).toBeGreaterThanOrEqual(5);
+      }),
+      { numRuns: 500 },
+    );
+  });
 });
+
+/** Vertices where the path turns by at least `minDeg` degrees. */
+function kinks(path: readonly Point[], minDeg = 20): number {
+  let n = 0;
+  for (let i = 1; i < path.length - 1; i++) {
+    const a = Math.atan2(path[i].y - path[i - 1].y, path[i].x - path[i - 1].x);
+    const b = Math.atan2(path[i + 1].y - path[i].y, path[i + 1].x - path[i].x);
+    let turn = Math.abs(b - a);
+    if (turn > Math.PI) turn = 2 * Math.PI - turn;
+    if ((turn * 180) / Math.PI >= minDeg) n++;
+  }
+  return n;
+}
