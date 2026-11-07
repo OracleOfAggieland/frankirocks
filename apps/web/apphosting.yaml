@@ -57,3 +57,7 @@ env:
     secret: SMOKE_TOKEN
     availability:
       - RUNTIME
+  - variable: FRANKI_ID_HMAC_KEY
+    secret: FRANKI_ID_HMAC_KEY
+    availability:
+      - RUNTIME
