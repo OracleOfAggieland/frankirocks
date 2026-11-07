@@ -428,7 +428,8 @@ Rules for every task:
     - Depends on: 14.3.
     - Witness: `npx vitest run apps/web/src/components/surfaces/CardDock.test.tsx`.
     - _Requirements: 12.2, 15.6, 15.7, 16.12_
-  - [ ] 14.5 Write `surfaces/Strip.tsx`
+  - [x] 14.5 Write `surfaces/Strip.tsx`
+    - Actual time: 3 min
     - Five terminals (Noticed, Connected, Suggested, You said yes, result label); filled per props; current along the wire to each newly filled terminal with `STAGGER`; last terminal `gold` when filled; `null` when `open` is false.
     - `Strip.test.tsx`: every fill level 0 to 5, gold last terminal, `null` when closed.
     - Depends on: 14.1, 14.2.
