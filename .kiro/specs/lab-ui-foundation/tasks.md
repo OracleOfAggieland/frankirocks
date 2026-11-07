@@ -317,7 +317,8 @@ Rules for every task:
     - Depends on: 10.3.
     - Witness: `npx vitest run apps/web/src/ui/electricity.property.test.ts`.
     - **Validates: Requirements 10.3**
-  - [ ] 10.5 Write `apps/web/src/ui/sound/score.ts` and `score.test.ts`
+  - [x] 10.5 Write `apps/web/src/ui/sound/score.ts` and `score.test.ts`
+    - Actual time: 2 min
     - `scoreFor(cue)` for `wake`, `thinking`, `card`, `celebrate` and `receipt` as in design "Sound engine"; every `peakGain` at most 0.25.
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/sound/score.test.ts`.
