@@ -407,7 +407,8 @@ Rules for every task:
     - Depends on: 7.1.
     - Witness: `npm run typecheck`; `npx vitest run scripts/copy-check.test.ts`.
     - _Requirements: 16.1, 16.7, 17.4_
-  - [ ] 14.2 Write `components/motion/Materialize.tsx`, `surfaces/Seal.tsx` and `surfaces/Seam.tsx`
+  - [x] 14.2 Write `components/motion/Materialize.tsx`, `surfaces/Seal.tsx` and `surfaces/Seam.tsx`
+    - Actual time: 4 min
     - `Materialize`: `AnimatePresence` wrapper; enter rises 12 px, fades in, unblurs 6 px to 0; exit rises 8 px, fades out, blurs to 6 px; springs and durations from `motion.ts`; a plain opacity fade under Reduced_Motion. `Seal`: brass lock seal. `Seam`: stitched dashed divider in `stitch`, `aria-hidden`.
     - Tests in `Materialize.test.tsx` and `Seal.test.tsx`: variants with and without Reduced_Motion; the seal has an accessible name; the seam is hidden from assistive tech.
     - Depends on: 5.1, 11.1.
