@@ -400,7 +400,8 @@ Rules for every task:
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 6.13, 7.3, 7.4, 9.1, 9.3, 10.5, 10.7, 18.1_
 
 - [ ] 14. Surfaces
-  - [ ] 14.1 Write `apps/web/src/ui/surface-props.ts` and the Surface copy
+  - [x] 14.1 Write `apps/web/src/ui/surface-props.ts` and the Surface copy
+    - Actual time: 4 min
     - Type-only module with the props in design "Data Models" (`SourceTag`, `HardRule`, `CardProps`, `StripProps`, `MoteKind`, `JarProps`, `Area`, `KnownItem`, `WhatIKnowProps`, `LabProps`, `ReceiptProps`, `TimeBadgeProps`, `CaptionsProps`, `ChipsProps`, `TurnCopies`).
     - Add every Surface and control string from the design to `copy.ts` ("Yes", "Not now", "Checked for", "Guessed", "Wrong", "Forget", "Don't bring it up", "What I know", "Blocked now", "Cleaned up", "Simulated:", "Captions", "Sound effects", "Sign in to wake Franki", "Type to Franki", the area names), short, second-person and sentence case.
     - Depends on: 7.1.
