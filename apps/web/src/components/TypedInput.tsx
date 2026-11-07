@@ -1,5 +1,4 @@
 import type { KeyboardEvent } from "react";
-import type { ConversationEntry } from "../client/typed-turns";
 
 export interface TypedInputProps {
   text: string;
@@ -53,20 +52,5 @@ export function TypedInput({ text, enabled, sending, canSend, error, onChange, o
         </p>
       ) : null}
     </form>
-  );
-}
-
-/** The conversation view: typed lines and Franki's text replies, as plain text (R18.6). */
-export function ConversationView({ entries }: { entries: ConversationEntry[] }) {
-  if (entries.length === 0) return null;
-  return (
-    <ol aria-label="Conversation" className="flex w-full max-w-xl flex-col gap-2 text-left text-sm">
-      {entries.map((e) => (
-        <li key={e.key} data-role={e.role} className={e.role === "user" ? "self-end rounded bg-night-2 px-3 py-2" : "self-start rounded bg-night-1 px-3 py-2 text-ink"}>
-          <span className="sr-only">{e.role === "user" ? "You: " : "Franki: "}</span>
-          {e.text}
-        </li>
-      ))}
-    </ol>
   );
 }

@@ -516,7 +516,8 @@ Rules for every task:
     - Depends on: 10.1, 10.10, 16.1.
     - Witness: `npx vitest run apps/web/src/components/ReplyLine.test.tsx apps/web/src/components/LiveRegion.test.tsx apps/web/src/components/SoundToggle.test.tsx`.
     - _Requirements: 4.6, 14.8, 18.1, 18.3, 18.5, 18.8, 19.6_
-  - [ ] 16.6 Write `TypedLine.tsx` and update `TypedInput`
+  - [x] 16.6 Write `TypedLine.tsx` and update `TypedInput`
+    - Actual time: 7 min
     - Collapsed: a keyboard-glyph button "Type to Franki". Open: a one-row `<textarea>` that sends on Enter, keeps line feeds on Shift+Enter and paste, respects IME composition, and collapses on Escape when empty; existing send rules (FSC R18.1, R18.8 to R18.10). Remove `ConversationView` from `TypedInput.tsx`; keep `TypedInput` exported.
     - In `TypedInput.test.tsx`, the conversation-view escaping test renders `ReplyLine` instead; every `TypedTurns` behavior test stays. Add `TypedLine.test.tsx` for collapse, open, Enter, Shift+Enter, paste line feeds, IME and Escape.
     - Depends on: 16.5.

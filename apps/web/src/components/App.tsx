@@ -13,7 +13,8 @@ import { TRANSCRIBE_VAR, transcribeModel } from "../client/voice-config";
 import { AuthPanel } from "./AuthPanel";
 import { CallScreen } from "./CallScreen";
 import { DebugPanel } from "./DebugPanel";
-import { ConversationView, TypedInput } from "./TypedInput";
+import { ReplyLine } from "./ReplyLine";
+import { TypedLine } from "./TypedLine";
 
 const SIGNED_OUT_VOICE = initialVoiceState({ transcribeModel: "" });
 
@@ -158,7 +159,7 @@ function SignedOutArea() {
   return (
     <>
       <CallScreen voice={SIGNED_OUT_VOICE} enabled={false} onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />
-      <TypedInput text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />
+      <TypedLine text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />
     </>
   );
 }
@@ -175,8 +176,8 @@ function TypedArea({ typed, voice, listening }: { typed: TypedTurns; voice: Voic
   };
   return (
     <>
-      <ConversationView entries={s.entries} />
-      <TypedInput
+      {voice === null ? <ReplyLine entries={s.entries} /> : null}
+      <TypedLine
         text={s.text}
         enabled
         sending={s.sending}

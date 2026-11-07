@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { type ApiCallOptions, type ApiClient, type ApiResult, createApiClient } from "../client/api";
 import { createBrowserClock } from "../client/clock";
 import { TURN_TIMEOUT_MS, TypedTurns } from "../client/typed-turns";
-import { ConversationView, TypedInput } from "./TypedInput";
+import { ReplyLine } from "./ReplyLine";
+import { TypedInput } from "./TypedInput";
 
 const SESSION = testId("session");
 const SS0: SS = { sessionId: SESSION, epoch: 0, policyRev: 0, bundleRev: 1, rulesRev: 0, generation: 1 };
@@ -183,19 +184,21 @@ describe("TypedInput (R18)", () => {
     expect(typed.getSnapshot().lastClientSeq).toBe(5);
   });
 
-  it("shows the reply as text in the conversation view, with stored markup escaped", async () => {
-    const { typed } = rig();
+  it("shows the reply as text in the Reply_Line, with stored markup escaped", async () => {
+    // lab-ui-foundation R14.8 narrows FSC R18.6 to the latest reply: the typed line itself is not shown.
+    const { typed } = rig((path, body) => (path === "/api/session/open" ? ok(OPEN_OK) : ok(turnOk(body as TurnRequest, [note("<b>Got it.</b>")]))));
     typed.setText("<b>hi</b>");
     expect(await typed.submit()).toBe(true);
     const s = typed.getSnapshot();
     expect(s.text).toBe("");
     expect(s.entries.map((e) => [e.role, e.text])).toEqual([
       ["user", "<b>hi</b>"],
-      ["franki", "Got it."],
+      ["franki", "<b>Got it.</b>"],
     ]);
-    const html = renderToStaticMarkup(<ConversationView entries={s.entries} />);
-    expect(html).toContain("&lt;b&gt;hi&lt;/b&gt;");
+    const html = renderToStaticMarkup(<ReplyLine entries={s.entries} />);
+    expect(html).toContain("&lt;b&gt;Got it.&lt;/b&gt;");
     expect(html).not.toContain("<b>");
+    expect(html).not.toContain("hi");
   });
 
   it("opens a new Session after the old one is gone, starting clientSeq at 1", async () => {
