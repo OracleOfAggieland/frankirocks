@@ -304,7 +304,8 @@ Rules for every task:
     - Depends on: 10.1.
     - Witness: `npx vitest run apps/web/src/ui/announce.property.test.ts`.
     - **Validates: Requirements 4.6, 18.5, 18.6, 18.7, 18.8**
-  - [ ] 10.3 Write `apps/web/src/ui/electricity.ts`, `electricity-budget.ts` and `electricity.test.ts`
+  - [x] 10.3 Write `apps/web/src/ui/electricity.ts`, `electricity-budget.ts` and `electricity.test.ts`
+    - Actual time: 3 min
     - Seeded mulberry32 `boltPath(a, b, seed, depth)` by midpoint displacement and `regenGapMs(seed)` in 60 to 90; a budget with at most two grants and release. Examples for the budget's third request.
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/electricity.test.ts`.
