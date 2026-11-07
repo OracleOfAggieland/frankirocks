@@ -489,7 +489,8 @@ Rules for every task:
     - Depends on: 14.1.
     - Witness: `npx vitest run apps/web/src/ui/turn-copies.test.ts apps/web/src/client`.
     - _Requirements: 14.8, 17.5_
-  - [ ] 16.2 Write the property test for forget clearing
+  - [x] 16.2 Write the property test for forget clearing
+    - Actual time: 2 min
     - **Property 20: Forget clears every turn copy**
     - In `apps/web/src/ui/turn-copies.property.test.ts`. At least 100 runs.
     - Depends on: 16.1.
