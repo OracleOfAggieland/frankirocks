@@ -290,7 +290,7 @@ Rules for every task:
     - Witness: `npx vitest run apps/web/src/client`; `git diff --quiet build/lab-ui~1 -- apps/web/src/client/voice-client.test.ts` exits 0 after the commit.
     - _Requirements: 11.3, 11.5_
 
-- [ ] 10. Announcements, Electricity and sound
+- [x] 10. Announcements, Electricity and sound
   - [x] 10.1 Write `apps/web/src/ui/announce.ts` and `announce.test.ts`
     - Actual time: 3 min
     - `announcement(prev, next)` and `callStatus(voice)` as in design "Announcements"; call-status labels added to `copy.ts`. Examples: first render null, one change, three changes joined in order, cleared error not announced.
@@ -350,7 +350,8 @@ Rules for every task:
     - Depends on: 9.3, 10.5.
     - Witness: `npx vitest run apps/web/src/ui/sound/engine.test.ts`.
     - _Requirements: 19.1, 19.4, 19.5_
-  - [ ] 10.10 Write `apps/web/src/ui/sound/preference.ts` and `preference.test.ts`
+  - [x] 10.10 Write `apps/web/src/ui/sound/preference.ts` and `preference.test.ts`
+    - Actual time: 2 min
     - `localStorage["franki.sound"]` as `"on"` or `"off"`; default on when missing or when storage throws. Tested with a fake storage.
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/sound/preference.test.ts`.
