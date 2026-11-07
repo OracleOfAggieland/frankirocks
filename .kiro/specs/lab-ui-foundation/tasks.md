@@ -414,7 +414,8 @@ Rules for every task:
     - Depends on: 5.1, 11.1.
     - Witness: `npx vitest run apps/web/src/components/motion apps/web/src/components/surfaces`.
     - _Requirements: 9.3, 10.1, 10.2, 15.5_
-  - [ ] 14.3 Write `surfaces/Card.tsx` with all five kinds
+  - [x] 14.3 Write `surfaces/Card.tsx` with all five kinds
+    - Actual time: 7 min
     - Title, content, sources, actions in that order; numbers in mono tabular figures, each with a source tag that calls `onOpenSource(id)`. Approval: exactly **Yes** (brass) and **Not now** (quiet), neither focused nor pre-selected. Food: "Checked for" line per person with seals, no "safe" copy. Hard rules: seal with lock and a separate **Remove** button; no swipe or dismiss removes them. Returns `null` when nothing true to show.
     - `Card.test.tsx`: each kind's markup order, the source callback, two approval actions with no `autofocus`, `aria-pressed` or `checked`, "safe" absent, Remove the only removal path, `null` for empty props.
     - Depends on: 14.1, 14.2.
