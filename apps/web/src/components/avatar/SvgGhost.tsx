@@ -4,18 +4,79 @@
 // hair with a ragged fringe, two brass neck bolts, a short stitched scar at the upper right of the
 // forehead, and two big glossy black oval eyes with a highlight. No mouth. Implements the
 // Avatar_Contract; the look decides everything, this file only draws it.
+// Brief 004 item 4 redraw, after the concept art's proportions and shading: one smooth closed body
+// path of curves only (a dome widest across the head, a gentle uneven taper, three unequal hem
+// lobes), a vertical ghost to ghost-deep gradient with a faint ecto rim and one specular highlight,
+// hair with a flat top and a fringe of uneven tufts, cylinder bolts, and a curved stitched scar. The
+// drawing is the same under Reduced_Motion; only motion changes. Tokens only.
 import type { AnimationId, AvatarLook, AvatarRendererProps, Eyes, Glow, Posture } from "../../ui/avatar/types";
 import { Electricity } from "./Electricity";
 import { useFrameTime } from "./frame-time";
 
-const BODY =
-  "M36 96 C36 34 164 34 164 96 C164 128 157 156 152 170 Q140 196 126 176 Q113 158 100 182 Q87 158 74 176 Q60 196 48 170 C43 156 36 128 36 96 Z";
-const HEM = "M48 170 Q60 196 74 176 Q87 158 100 182 Q113 158 126 176 Q140 196 152 170";
-const HAIR =
-  "M50 64 L50 48 Q50 40 60 40 L140 40 Q150 40 150 48 L150 64 L143 71 L137 62 L129 73 L121 63 L113 72 L105 62 L97 73 L89 63 L81 72 L73 62 L65 71 L58 63 Z";
+/** Curves only, no straight edge: dome, right side, three hem lobes (small, middle, large), left side. */
+export const BODY =
+  "M36 92 C36 48 66 28 102 28 C140 28 168 50 166 92 C165 122 156 146 146 160 C148 176 134 184 124 174 C116 190 96 194 88 180 C78 196 44 204 34 184 C26 166 34 128 36 92 Z";
+/** The hem lobes on their own, for a soft shading line along the bottom. */
+export const HEM = "M146 160 C148 176 134 184 124 174 C116 190 96 194 88 180 C78 196 44 204 34 184";
 
-const LEFT_BOLT = { x: 22, y: 96 };
-const RIGHT_BOLT = { x: 178, y: 96 };
+/** Fringe tufts from right to left: the valley where each starts and the tip it hangs to. Uneven on purpose. */
+export const HAIR_TUFTS = [
+  { valley: { x: 152, y: 52 }, tip: { x: 144, y: 70 } },
+  { valley: { x: 134, y: 52 }, tip: { x: 123, y: 74 } },
+  { valley: { x: 112, y: 54 }, tip: { x: 100, y: 81 } },
+  { valley: { x: 90, y: 54 }, tip: { x: 79, y: 72 } },
+  { valley: { x: 68, y: 52 }, tip: { x: 56, y: 77 } },
+] as const;
+const HAIR_TEMPLE_RIGHT = { x: 164, y: 66 };
+const HAIR_TEMPLE_LEFT = { x: 40, y: 66 };
+const HAIR_LAST_VALLEY = { x: 50, y: 56 };
+
+/** A flat top with volume and a ragged fringe of uneven, slightly hooked tufts. Curves only. */
+export const HAIR = (() => {
+  const top =
+    `M${HAIR_TEMPLE_LEFT.x} ${HAIR_TEMPLE_LEFT.y} C34 48 44 30 62 24 C80 18 96 22 108 19 C128 16 150 20 160 30 ` +
+    `C170 40 170 54 ${HAIR_TEMPLE_RIGHT.x} ${HAIR_TEMPLE_RIGHT.y}`;
+  let prev: { x: number; y: number } = HAIR_TEMPLE_RIGHT;
+  const segs: string[] = [];
+  const up = (from: { x: number; y: number }, v: { x: number; y: number }) => `C${from.x - 2} ${from.y - 7} ${v.x + 3} ${v.y + 2} ${v.x} ${v.y}`;
+  const down = (v: { x: number; y: number }, t: { x: number; y: number }) => `C${v.x - 2} ${v.y + 5} ${t.x + 5} ${t.y - 7} ${t.x} ${t.y}`;
+  for (const { valley, tip } of HAIR_TUFTS) {
+    segs.push(up(prev, valley), down(valley, tip));
+    prev = tip;
+  }
+  segs.push(up(prev, HAIR_LAST_VALLEY), down(HAIR_LAST_VALLEY, HAIR_TEMPLE_LEFT));
+  return `${top} ${segs.join(" ")} Z`;
+})();
+const HAIR_HIGHLIGHT = "M66 30 C84 23 104 26 126 22";
+
+const LEFT_BOLT = { x: 23, y: 90 };
+const RIGHT_BOLT = { x: 177, y: 90 };
+
+/** The scar: a short curved seam at the upper right of the forehead. */
+const SCAR = { p0: { x: 114, y: 84 }, p1: { x: 132, y: 80 }, p2: { x: 148, y: 93 } };
+const SCAR_PATH = `M${SCAR.p0.x} ${SCAR.p0.y} Q${SCAR.p1.x} ${SCAR.p1.y} ${SCAR.p2.x} ${SCAR.p2.y}`;
+
+/** Crossing stitches at even steps along the seam, each perpendicular to it. */
+export const SCAR_STITCHES = [0.2, 0.45, 0.7, 0.92].map((t) => {
+  const { p0, p1, p2 } = SCAR;
+  const u = 1 - t;
+  const x = u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x;
+  const y = u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y;
+  const tx = 2 * u * (p1.x - p0.x) + 2 * t * (p2.x - p1.x);
+  const ty = 2 * u * (p1.y - p0.y) + 2 * t * (p2.y - p1.y);
+  const len = Math.hypot(tx, ty);
+  const half = 4.5;
+  const nx = (-ty / len) * half;
+  const ny = (tx / len) * half;
+  return { x1: x - nx, y1: y - ny, x2: x + nx, y2: y + ny };
+});
+
+/** Bolt geometry: a shaft out from the side of the head and a cap at its outer end. */
+const BOLT_SHAFT = { length: 16, height: 14 };
+const BOLT_CAP = { rx: 5, ry: 11 };
+
+/** A darker cap: brass mixed toward the night (tokens only). */
+const BOLT_CAP_FILL = "color-mix(in srgb, var(--color-brass) 62%, var(--color-night-0))";
 
 /** Eye ellipse radius-y and offset per Eyes value. */
 const EYE_SHAPE: Record<Eyes, { ry: number; dx: number; dy: number; arc?: "closed" | "happy" }> = {
@@ -78,15 +139,27 @@ function Eye({ cx, look }: { cx: number; look: AvatarLook }) {
   );
 }
 
-function Bolt({ x, y, part, look }: { x: number; y: number; part: "bolt-left" | "bolt-right"; look: AvatarLook }) {
+/**
+ * A neck bolt: a short horizontal cylinder (a shaft shaded brass to brass-hi across its round side)
+ * coming out of the side of the head, with a darker cap disc at its outer end. `side` is -1 on the
+ * left, 1 on the right; (x, y) is the cap centre, where electricity lands.
+ */
+function Bolt({ x, y, side, part, look }: { x: number; y: number; side: -1 | 1; part: "bolt-left" | "bolt-right"; look: AvatarLook }) {
   const dark = look.bolts === "one-dark" && part === "bolt-right";
-  const fill = dark ? "var(--color-stitch)" : look.bolts === "gold-glow" ? "var(--color-gold)" : "var(--color-brass)";
-  const lit = look.bolts === "glow" || look.bolts === "gold-glow";
+  const gold = look.bolts === "gold-glow";
+  const lit = look.bolts === "glow" || gold;
+  const shaft = dark ? "var(--color-stitch)" : gold ? "url(#franki-bolt-gold)" : "url(#franki-bolt)";
+  const cap = dark ? "var(--color-night-2)" : gold ? "var(--color-gold)" : BOLT_CAP_FILL;
+  const rim = dark ? "var(--color-stitch)" : "var(--color-brass-hi)";
+  const { length, height } = BOLT_SHAFT;
+  // The shaft runs from the cap inward, toward the head.
+  const shaftX = side === -1 ? x : x - length;
   return (
     <g data-part={part}>
-      {lit ? <circle cx={x} cy={y} r={11} fill={look.bolts === "gold-glow" ? "var(--color-gold)" : "var(--color-brass-hi)"} opacity={0.35} /> : null}
-      <rect x={x - 6} y={y - 7} width={12} height={14} rx={2} fill={fill} />
-      <rect x={x - 8} y={y - 3} width={16} height={6} rx={2} fill={dark ? "var(--color-night-2)" : "var(--color-brass-hi)"} />
+      {lit ? <circle cx={x - side * 4} cy={y} r={13} fill={gold ? "var(--color-gold)" : "var(--color-brass-hi)"} opacity={0.35} /> : null}
+      <rect data-part="bolt-shaft" x={shaftX} y={y - height / 2} width={length} height={height} rx={2.5} fill={shaft} />
+      <ellipse data-part="bolt-cap" cx={x} cy={y} rx={BOLT_CAP.rx} ry={BOLT_CAP.ry} fill={cap} stroke={rim} strokeOpacity={0.7} strokeWidth={1.2} />
+      <ellipse cx={x - side * 0.8} cy={y - 4} rx={1.4} ry={3} fill="var(--color-brass-hi)" opacity={dark ? 0 : 0.6} />
     </g>
   );
 }
@@ -136,11 +209,31 @@ export function SvgGhost({ look, input }: AvatarRendererProps) {
   return (
     <svg viewBox="0 0 200 220" className="franki-ghost block h-auto w-full" aria-hidden="true" focusable="false" data-renderer="svg-ghost">
       <defs>
-        <radialGradient id="franki-body" cx="40%" cy="30%" r="75%">
+        {/* A soft vertical gradient, ghost at the head to ghost-deep at the hem. */}
+        <linearGradient id="franki-body" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="var(--color-ghost)" />
-          <stop offset="70%" stopColor="var(--color-ghost)" />
+          <stop offset="45%" stopColor="var(--color-ghost)" />
           <stop offset="100%" stopColor="var(--color-ghost-deep)" />
+        </linearGradient>
+        <radialGradient id="franki-specular" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="var(--color-spark)" stopOpacity={0.9} />
+          <stop offset="100%" stopColor="var(--color-spark)" stopOpacity={0} />
         </radialGradient>
+        <linearGradient id="franki-hair" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--color-night-2)" />
+          <stop offset="100%" stopColor="var(--color-night-1)" />
+        </linearGradient>
+        {/* A cylinder lit from above: brass at the edges, brass-hi across the upper middle. */}
+        <linearGradient id="franki-bolt" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--color-brass)" />
+          <stop offset="35%" stopColor="var(--color-brass-hi)" />
+          <stop offset="100%" stopColor="var(--color-brass)" />
+        </linearGradient>
+        <linearGradient id="franki-bolt-gold" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--color-gold)" />
+          <stop offset="35%" stopColor="var(--color-spark)" />
+          <stop offset="100%" stopColor="var(--color-gold)" />
+        </linearGradient>
         <radialGradient id="franki-glow-gradient">
           <stop offset="0%" stopColor={glowColour} stopOpacity={1} />
           <stop offset="100%" stopColor={glowColour} stopOpacity={0} />
@@ -164,20 +257,27 @@ export function SvgGhost({ look, input }: AvatarRendererProps) {
             opacity={glow}
             className={animClass(look, "flicker")}
           />
-          <g data-part="body-group" opacity={look.bodyOpacity} data-squish={sy.toFixed(3)} transform={sx === 1 && sy === 1 ? undefined : `translate(100 182) scale(${sx.toFixed(3)} ${sy.toFixed(3)}) translate(-100 -182)`}>
+          <g data-part="body-group" opacity={look.bodyOpacity} data-squish={sy.toFixed(3)} transform={sx === 1 && sy === 1 ? undefined : `translate(100 196) scale(${sx.toFixed(3)} ${sy.toFixed(3)}) translate(-100 -196)`}>
             <g className={animClass(look, "breathe")}>
+              {/* Bolts first, so the head overlaps the inner end of each shaft. */}
+              <Bolt x={LEFT_BOLT.x} y={LEFT_BOLT.y} side={-1} part="bolt-left" look={look} />
+              <Bolt x={RIGHT_BOLT.x} y={RIGHT_BOLT.y} side={1} part="bolt-right" look={look} />
               <path data-part="body" d={BODY} fill="url(#franki-body)" />
-              <path d="M58 66 Q70 52 88 50" fill="none" stroke="var(--color-spark)" strokeOpacity={0.55} strokeWidth={5} strokeLinecap="round" />
-              <path data-part="hem" d={HEM} fill="none" stroke="var(--color-ghost-deep)" strokeWidth={3} strokeLinejoin="round" />
-              <path data-part="hair" d={HAIR} fill="var(--color-night-1)" />
-              <g data-part="scar" stroke="var(--color-stitch)" strokeWidth={2} strokeLinecap="round">
-                <line x1={116} y1={84} x2={138} y2={78} />
-                <line x1={120} y1={79} x2={122} y2={87} />
-                <line x1={127} y1={77} x2={129} y2={85} />
-                <line x1={134} y1={75} x2={136} y2={83} />
+              {/* A faint ecto rim light along the edge: a wide soft stroke under a thin one. No filter. */}
+              <g data-part="rim" fill="none" stroke="var(--color-ecto)" strokeLinejoin="round">
+                <path d={BODY} strokeOpacity={0.1} strokeWidth={6} />
+                <path d={BODY} strokeOpacity={0.3} strokeWidth={1.5} />
               </g>
-              <Bolt x={LEFT_BOLT.x} y={LEFT_BOLT.y} part="bolt-left" look={look} />
-              <Bolt x={RIGHT_BOLT.x} y={RIGHT_BOLT.y} part="bolt-right" look={look} />
+              <path data-part="hem" d={HEM} fill="none" stroke="var(--color-ghost-deep)" strokeOpacity={0.7} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+              <ellipse data-part="specular" cx={50} cy={92} rx={7} ry={15} transform="rotate(14 50 92)" fill="url(#franki-specular)" />
+              <path data-part="hair" d={HAIR} fill="url(#franki-hair)" stroke="var(--color-ecto)" strokeOpacity={0.14} strokeWidth={1.2} strokeLinejoin="round" />
+              <path data-part="hair-highlight" d={HAIR_HIGHLIGHT} fill="none" stroke="var(--color-ink-dim)" strokeOpacity={0.22} strokeWidth={3} strokeLinecap="round" />
+              <g data-part="scar" fill="none" stroke="var(--color-stitch)" strokeLinecap="round">
+                <path data-part="scar-seam" d={SCAR_PATH} strokeWidth={2} />
+                {SCAR_STITCHES.map((s, i) => (
+                  <line key={i} data-part="stitch" x1={s.x1.toFixed(2)} y1={s.y1.toFixed(2)} x2={s.x2.toFixed(2)} y2={s.y2.toFixed(2)} strokeWidth={1.8} />
+                ))}
+              </g>
             </g>
           </g>
           <g data-part="eyes" opacity={look.eyeOpacity} className={animClass(look, "blink", "glance")}>
