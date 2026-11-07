@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { LOOK_NAMES } from "../avatar/look";
 import type { LookName } from "../avatar/types";
 import { type SoundGate, type SoundTrack, initialSoundTrack, scheduleCues } from "./schedule";
+import { CUES, type Cue, scoreFor } from "./score";
 
 // Feature: lab-ui-foundation, Property 15: Sound plays only when allowed
 describe("Property 15: Sound plays only when allowed", () => {
@@ -43,6 +44,26 @@ describe("Property 15: Sound plays only when allowed", () => {
         }
       }),
       { numRuns: 300 },
+    );
+  });
+});
+
+// Feature: lab-ui-foundation, Property 16: Cue scores stay quiet and short
+describe("Property 16: Cue scores stay quiet and short", () => {
+  it("every note is audible but at most 0.25, with positive length and non-negative start; wake ends before 1.5 s", () => {
+    fc.assert(
+      fc.property(fc.constantFrom<Cue>(...CUES), (cue) => {
+        const notes = scoreFor(cue);
+        expect(notes.length).toBeGreaterThan(0);
+        for (const n of notes) {
+          expect(n.peakGain).toBeGreaterThan(0);
+          expect(n.peakGain).toBeLessThanOrEqual(0.25);
+          expect(n.durMs).toBeGreaterThan(0);
+          expect(n.startMs).toBeGreaterThanOrEqual(0);
+        }
+        if (cue === "wake") expect(Math.max(...notes.map((n) => n.startMs + n.durMs))).toBeLessThan(1500);
+      }),
+      { numRuns: 100 },
     );
   });
 });

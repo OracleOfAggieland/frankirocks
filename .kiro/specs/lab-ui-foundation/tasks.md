@@ -336,7 +336,8 @@ Rules for every task:
     - Depends on: 10.6.
     - Witness: `npx vitest run apps/web/src/ui/sound/sound.property.test.ts`.
     - **Validates: Requirements 19.2, 19.3, 19.4, 19.7, 19.8**
-  - [ ] 10.8 Write the property test for cue scores
+  - [x] 10.8 Write the property test for cue scores
+    - Actual time: 1 min
     - **Property 16: Cue scores stay quiet and short**
     - Same file as 10.7. At least 100 runs.
     - Depends on: 10.7.
