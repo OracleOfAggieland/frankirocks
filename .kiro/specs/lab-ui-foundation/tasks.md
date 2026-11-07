@@ -310,7 +310,8 @@ Rules for every task:
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/electricity.test.ts`.
     - _Requirements: 10.3_
-  - [ ] 10.4 Write the property test for bolt paths
+  - [x] 10.4 Write the property test for bolt paths
+    - Actual time: 2 min
     - **Property 19: Electricity paths are well formed**
     - In `apps/web/src/ui/electricity.property.test.ts`; depth 1 to 6. At least 100 runs.
     - Depends on: 10.3.
