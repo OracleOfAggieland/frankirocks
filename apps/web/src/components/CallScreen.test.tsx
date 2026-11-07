@@ -58,12 +58,28 @@ describe("call controls (R16.4–R16.6)", () => {
   });
 
   it("names the failed step inline and offers retry after 30 s of recovery", () => {
-    expect(screen(voice({ error: "open" }))).toContain(CALL_ERRORS.open);
-    expect(screen(voice({ error: "close" }))).toContain(CALL_ERRORS.close);
+    const escaped = (s: string) => s.replaceAll("'", "&#x27;");
+    expect(screen(voice({ error: "open" }))).toContain(escaped(CALL_ERRORS.open));
+    expect(screen(voice({ error: "close" }))).toContain(escaped(CALL_ERRORS.close));
     expect(screen(voice({ error: "open" }))).toContain('data-step="open"');
     const recovering = voice({ phase: "RECOVERY", recovery: { kind: "connection", since: 0, attempts: 3 } });
-    expect(screen(recovering)).not.toContain(">Retry<");
-    expect(screen({ ...recovering, retryVisible: true })).toContain(">Retry<");
+    expect(screen(recovering)).not.toContain(">Try again<");
+    expect(screen({ ...recovering, retryVisible: true })).toContain(">Try again<");
+  });
+
+  it("error and set-up copy is plain and short: no internals, no cause words", () => {
+    expect(CALL_ERRORS.open).toBe("Franki couldn't connect. Press call to try again.");
+    expect(CALL_ERRORS.close).toBe("You've hung up. The line will close on its own.");
+    for (const text of Object.values(CALL_ERRORS)) {
+      expect(text).not.toMatch(/session|server|seconds|expires|failed|because|caused|thanks to|led to|won back/i);
+      expect(text.length).toBeLessThanOrEqual(60);
+    }
+    const html = renderToStaticMarkup(
+      <CallScreen voice={base} enabled configMissing="TRANSCRIBE_MODEL" onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />,
+    );
+    expect(html).toContain("Calls aren&#x27;t set up here yet.");
+    expect(html).not.toContain("Missing:");
+    expect(html).toMatch(/data-form="start"[^>]*disabled=""/);
   });
 
   it("every control has a visible focus style", () => {

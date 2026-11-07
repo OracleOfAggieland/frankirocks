@@ -27,7 +27,9 @@ export const COPY = {
     yes: "Yes",
     notNow: "Not now",
     checkedFor: "Checked for",
-    remove: "Remove",
+    removeRule: "Remove rule",
+    /** The accessible name of a rule's remove control: which rule, for whom. */
+    removeRuleFor: (rule: string, person: string) => `Remove rule: ${rule} for ${person}`,
     sources: "Sources",
     ingredients: "Ingredients",
     lockedRule: "Locked rule",
@@ -52,7 +54,11 @@ export const COPY = {
     title: "Receipt",
     blocked: "Blocked now",
     cleaned: "Cleaned up",
-    kept: (n: number) => `Kept: ${n} safety ${n === 1 ? "rule" : "rules"}`,
+    done: "Done",
+    notYet: "Not yet",
+    kept: "Kept",
+    safetyRules: (n: number) => `${n} safety ${n === 1 ? "rule" : "rules"}`,
+    touched: "Touched",
   },
   time: { simulated: "Simulated:" },
   captions: { toggle: "Captions" },
@@ -65,7 +71,13 @@ export const COPY = {
     mute: "Mute microphone",
     unmute: "Unmute microphone",
     muted: "Your microphone is muted.",
-    retry: "Retry",
+    retry: "Try again",
+    /** Inline call errors, one per failed step; plain and short, no internals. */
+    errors: {
+      open: "Franki couldn't connect. Press call to try again.",
+      close: "You've hung up. The line will close on its own.",
+    },
+    notSetUp: "Calls aren't set up here yet.",
   },
   areas: ["Time and work", "Food and health", "Money", "People", "Goals"] as const,
 } as const;

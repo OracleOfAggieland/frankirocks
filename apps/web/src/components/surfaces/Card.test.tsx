@@ -128,7 +128,12 @@ describe("Card", () => {
     expect(onRemoveRule).toHaveBeenCalledWith("r1");
     const out = html(FOOD);
     expect(out).not.toMatch(/onSwipe|dismiss|draggable/i);
-    expect(html({ ...(FOOD as Extract<CardProps, { kind: "food" }>), onRemoveRule: undefined })).not.toContain(">Remove<");
+    expect(out).toContain(">Remove rule<");
+    expect(out).toContain('aria-label="Remove rule: No peanuts for Sam"');
+    const locked = html({ ...(FOOD as Extract<CardProps, { kind: "food" }>), onRemoveRule: undefined });
+    expect(locked).not.toContain("Remove");
+    expect(locked).not.toContain("<button");
+    expect(locked).toContain('aria-label="Locked rule"');
   });
 
   it("ask calls onAnswer with the option ID", () => {

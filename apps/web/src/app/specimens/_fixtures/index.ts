@@ -65,7 +65,6 @@ export const CARDS: CardProps[] = [
       { person: "Sam", rules: [{ id: "rule-peanut", person: "Sam", text: "No peanuts" }] },
       { person: "You", rules: [{ id: "rule-shellfish", person: "You", text: "No shellfish" }] },
     ],
-    onRemoveRule: noop,
   },
   {
     kind: "ask",

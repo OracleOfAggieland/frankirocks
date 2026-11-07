@@ -80,7 +80,7 @@ export function Jar({ motes, onOpen }: JarProps) {
   if (motes.length === 0) return null;
   const drawn = motes.slice(0, JAR_CAP);
   return (
-    <button type="button" aria-label={COPY.jar.open} data-jar="" onClick={onOpen} className={`${TARGET} ${FOCUS} rounded-control p-1`}>
+    <button type="button" aria-label={COPY.jar.open} data-jar="" onClick={onOpen} className={`${TARGET} ${FOCUS} rounded-control p-1 transition-transform duration-(--dur-quick) motion-safe:hover:-translate-y-0.5`}>
       <svg viewBox="0 0 96 128" className="h-32 w-24" aria-hidden="true" focusable="false">
         <defs>
           <clipPath id="franki-jar-glass">

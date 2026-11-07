@@ -10,12 +10,13 @@ import { COPY } from "../ui/copy";
 import { electricityBudget } from "../ui/electricity-budget";
 import { useReducedMotion } from "../ui/hooks/reduced-motion";
 import { SPRING } from "../ui/motion";
-import { FOCUS, QUIET_BUTTON, TARGET } from "./surfaces/classes";
+import { FOCUS, TARGET } from "./surfaces/classes";
 
-export const CALL_ERRORS: Record<NonNullable<VoiceState["error"]>, string> = {
-  open: "The call did not start: session open failed or did not answer within 5 seconds. Press call to try again.",
-  close: "Hung up here, but the server did not confirm closing the session. It closes on its own when it expires.",
-};
+/** A brass-outlined quiet control: something you can touch, secondary to the call button. */
+const RETRY_BUTTON = `${TARGET} ${FOCUS} inline-flex items-center justify-center rounded-control border border-brass px-4 text-base text-brass-hi transition-colors duration-(--dur-quick) hover:bg-brass/15`;
+
+/** The inline message for each failed step; the strings live in COPY.call.errors. */
+export const CALL_ERRORS: Record<NonNullable<VoiceState["error"]>, string> = COPY.call.errors;
 
 export interface CallScreenProps {
   voice: VoiceState;
@@ -116,7 +117,7 @@ export function CallScreen({ voice, enabled, configMissing = null, onCall, onHan
             onClick={onToggleMute}
             whileTap={{ y: 2 }}
             transition={{ type: "spring", ...SPRING.press }}
-            className={`${TARGET} ${FOCUS} inline-flex items-center justify-center rounded-control border border-brass ${voice.micMuted ? "bg-brass text-night-0" : "text-brass hover:bg-night-1"}`}
+            className={`${TARGET} ${FOCUS} inline-flex items-center justify-center rounded-control border border-brass transition-colors duration-(--dur-quick) ${voice.micMuted ? "bg-brass text-night-0 hover:bg-brass-hi" : "text-brass hover:bg-brass/15"}`}
           >
             <MicGlyph muted={voice.micMuted} />
           </motion.button>
@@ -128,16 +129,25 @@ export function CallScreen({ voice, enabled, configMissing = null, onCall, onHan
         </p>
       ) : null}
       {showRetry ? (
-        <button type="button" onClick={onRetry} className={`${QUIET_BUTTON} border-brass text-brass`}>
+        <button type="button" onClick={onRetry} className={RETRY_BUTTON}>
           {COPY.call.retry}
         </button>
       ) : null}
       {voice.error !== null ? (
-        <p role="alert" data-step={voice.error} className="max-w-[343px] text-sm text-ember">
+        // An unconfirmed close is information, not a failure: the call already ended for the user.
+        <p
+          role={voice.error === "close" ? "status" : "alert"}
+          data-step={voice.error}
+          className={`max-w-[343px] text-center text-sm ${voice.error === "close" ? "text-ink-dim" : "text-ember"}`}
+        >
           {CALL_ERRORS[voice.error]}
         </p>
       ) : null}
-      {configMissing !== null ? <p className="text-xs text-ink-dim">Calls are not configured. Missing: {configMissing}.</p> : null}
+      {configMissing !== null ? (
+        <p data-config-missing={configMissing} className="text-sm text-ink-dim">
+          {COPY.call.notSetUp}
+        </p>
+      ) : null}
     </section>
   );
 }

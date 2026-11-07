@@ -13,18 +13,27 @@ const full: ReceiptProps = {
 describe("Receipt", () => {
   it("shows the status lines, what was kept and counts by kind", () => {
     const html = renderToStaticMarkup(<Receipt {...full} />);
-    expect(html).toContain("Blocked now");
-    expect(html).toContain("Cleaned up");
-    expect(html).toContain("Kept: 1 safety rule");
+    expect(html).toMatch(/data-line="blocked"[^>]*><dt>Blocked now<\/dt><dd[^>]*><span data-status="done"/);
+    expect(html).toMatch(/data-line="cleaned"[^>]*><dt>Cleaned up<\/dt><dd[^>]*><span data-status="done"/);
+    expect(html).toMatch(/data-line="kept"[^>]*><dt>Kept<\/dt><dd[^>]*>1 safety rule</);
+    expect(html).toContain("Touched");
     expect(html).toMatch(/data-kind="conversation turns".*>3</);
     expect(html).toMatch(/data-kind="memories".*>2</);
-    expect(renderToStaticMarkup(<Receipt {...full} kept={[{ kind: "safety rule", count: 2 }]} />)).toContain("Kept: 2 safety rules");
+    expect(renderToStaticMarkup(<Receipt {...full} kept={[{ kind: "safety rule", count: 2 }]} />)).toContain(">2 safety rules<");
   });
 
-  it("shows only the lines that completed", () => {
+  it("marks a step that has not completed with a dash, never a tick", () => {
     const html = renderToStaticMarkup(<Receipt {...full} cleaned={false} />);
-    expect(html).toContain("Blocked now");
-    expect(html).not.toContain("Cleaned up");
+    expect(html).toMatch(/data-line="blocked".*?data-status="done"/);
+    expect(html).toMatch(/data-line="cleaned"[^>]*><dt>Cleaned up<\/dt><dd[^>]*><span data-status="not-yet"><span aria-hidden="true">—<\/span><span class="sr-only">Not yet</);
+    expect(html.match(/data-status="done"/g)).toHaveLength(1);
+  });
+
+  it("leaves out kept and touched rows with no count", () => {
+    const html = renderToStaticMarkup(<Receipt {...full} kept={[{ kind: "safety rule", count: 0 }]} touched={[{ kind: "sources", count: 0 }]} />);
+    expect(html).not.toContain('data-line="kept"');
+    expect(html).not.toContain("Touched");
+    expect(html).not.toContain("data-kind=");
   });
 
   it("renders nothing when nothing completed", () => {

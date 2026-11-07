@@ -27,6 +27,23 @@ describe("Captions", () => {
     expect(render({ on: true, line: null })).not.toContain("data-caption-line");
   });
 
+  it("the toggle looks different on and off, with aria-pressed as the state", () => {
+    const toggle = (html: string) => /<button[^>]*>/.exec(html)?.[0] ?? "";
+    const off = render({});
+    const on = render({ on: true });
+    expect(toggle(on)).toContain('aria-pressed="true"');
+    expect(toggle(on)).toContain("border-brass");
+    expect(toggle(on)).toContain("bg-brass/15");
+    expect(on).toContain('data-toggle-dot="on"');
+    expect(toggle(off)).toContain("border-ink-dim");
+    expect(toggle(off)).not.toContain("bg-brass");
+    expect(off).toContain('data-toggle-dot="off"');
+    for (const html of [on, off]) {
+      expect(toggle(html)).toContain("min-h-11");
+      expect(toggle(html)).toContain("focus-visible:outline-2");
+    }
+  });
+
   it("the toggle calls onToggle", () => {
     const onToggle = vi.fn();
     const tree = Captions({ on: false, line: null, onToggle }) as { props: { children: { props: { onClick: () => void } }[] } };
