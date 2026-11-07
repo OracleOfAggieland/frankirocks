@@ -478,11 +478,12 @@ Rules for every task:
     - Witness: `npx vitest run apps/web/src/components/surfaces/Wordmark.test.tsx`; `node scripts/token-check.mjs` exits 0.
     - _Requirements: 13.2, 16.11_
 
-- [ ] 15. Checkpoint: components
+- [x] 15. Checkpoint: components
   - Run `npm test`, `npm run typecheck` and `npm run lint`; all exit 0, including the token check and copy check over the new components. Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 16. Main screen
-  - [ ] 16.1 Write `apps/web/src/ui/turn-copies.ts` and `TypedTurns.dropTurnCopies()`
+  - [x] 16.1 Write `apps/web/src/ui/turn-copies.ts` and `TypedTurns.dropTurnCopies()`
+    - Actual time: 4 min
     - Pure `latestReply(entries)` and `clearTurnCopies(s)`. In `apps/web/src/client/typed-turns.ts`, add only `dropTurnCopies()`, which empties `entries` and `text`.
     - `turn-copies.test.ts`: examples for both functions and the method.
     - Depends on: 14.1.

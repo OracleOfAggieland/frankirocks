@@ -32,6 +32,7 @@ export const PURE_MODULES = [
   "format-time.ts",
   "debug-flag.ts",
   "receipt-from.ts",
+  "surface-props.ts",
 ].map((f) => UI + f);
 
 const BROWSER_WORDS = ["window", "document", "navigator", "localStorage", "fetch", "requestAnimationFrame", "AudioContext"];

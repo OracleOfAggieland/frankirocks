@@ -144,6 +144,11 @@ export class TypedTurns {
     });
   }
 
+  /** Drops every typed line and reply this client holds, after a completed forget (lab-ui-foundation R17.5). */
+  dropTurnCopies(): void {
+    this.set({ entries: [], text: "" });
+  }
+
   /** Forgets the typed Session without a request: a call open closes it on the server (KV09). */
   dropSession(): void {
     if (this.stamp === null) return;
