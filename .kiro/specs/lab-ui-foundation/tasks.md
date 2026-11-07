@@ -554,11 +554,12 @@ Rules for every task:
     - Witness: `npx vitest run apps/web/src/components`; `npm run build` exits 0.
     - _Requirements: 4.2, 4.6, 9.4, 10.7, 11.4, 11.7, 13.3, 14.1, 14.2, 17.5, 17.6, 18.5, 18.6, 18.7, 18.8, 19.2, 19.3, 19.4, 19.7, 21.1, 21.2, 21.3, 21.4, 23.4, 23.5_
 
-- [ ] 17. Checkpoint: main screen
+- [x] 17. Checkpoint: main screen
   - Run `npm test`, `npm run typecheck`, `npm run lint` and `npm run build`; all exit 0, including Properties 20 and 21. Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 18. Specimens page
-  - [ ] 18.1 Make `apps/web/next.config.ts` a function of phase
+  - [x] 18.1 Make `apps/web/next.config.ts` a function of phase
+    - Actual time: 4 min
     - Read `pageExtensions.md` and the "Phase" section of `next.config.js` docs under `node_modules/next/dist/docs/` first. `config(phase)` keeps every existing setting and sets `pageExtensions` to `["tsx", "ts", "jsx", "js"]`, adding `"dev.tsx"` only for `PHASE_DEVELOPMENT_SERVER`.
     - Write `apps/web/src/next-config.test.ts`: `dev.tsx` appears only for the development-server phase; existing settings kept for every phase.
     - Depends on: 16.10.
