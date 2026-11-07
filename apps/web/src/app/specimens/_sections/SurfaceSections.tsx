@@ -66,7 +66,16 @@ export function SurfaceSections() {
       <Section id="strip" title="Strip">
         {STRIP_FILLS.map((filled) => (
           <Tile key={filled} label={`filled ${filled}`} data-specimen="strip" data-fill={String(filled)}>
-            <Strip open filled={filled} resultLabel={STRIP_RESULT} />
+            <div className="w-xl max-w-full">
+              <Strip open filled={filled} resultLabel={STRIP_RESULT} />
+            </div>
+          </Tile>
+        ))}
+        {[2, 5].map((filled) => (
+          <Tile key={`narrow-${filled}`} label={`at 375 px (343 px content), filled ${filled}`} data-specimen="strip-375" data-fill={String(filled)}>
+            <div className="w-[343px] rounded-card border border-stitch">
+              <Strip open filled={filled as 2 | 5} resultLabel={STRIP_RESULT} />
+            </div>
           </Tile>
         ))}
       </Section>

@@ -52,6 +52,7 @@ describe("Specimens_Page (R20.1, R20.2)", () => {
   it("shows every Surface kind and state", () => {
     for (const kind of ["source", "approval", "food", "ask", "read"]) expect(html).toContain(`data-card="${kind}"`);
     for (const fill of [0, 1, 2, 3, 4, 5]) expect(html).toContain(`data-strip="" data-filled="${fill}"`);
+    expect(html).toContain('data-specimen="strip-375"');
     for (const marker of ["data-dock=", "data-jar=", "data-sheet=", "data-lab=", "data-receipt=", "data-time-badge=", "data-chips=", 'data-captions="on"', 'data-captions="off"', 'data-wordmark="header"', 'data-wordmark="signedOut"']) {
       expect(html, marker).toContain(marker);
     }
