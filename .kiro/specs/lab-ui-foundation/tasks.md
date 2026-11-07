@@ -329,7 +329,8 @@ Rules for every task:
     - Depends on: 6.1, 10.5.
     - Witness: `npx vitest run apps/web/src/ui/sound/schedule.test.ts`.
     - _Requirements: 19.2, 19.3, 19.4, 19.7, 19.8_
-  - [ ] 10.7 Write the property test for cue scheduling
+  - [x] 10.7 Write the property test for cue scheduling
+    - Actual time: 2 min
     - **Property 15: Sound plays only when allowed**
     - In `apps/web/src/ui/sound/sound.property.test.ts`; arrays of `{name, at}` with non-decreasing `at` and a random gate per step. At least 100 runs.
     - Depends on: 10.6.
