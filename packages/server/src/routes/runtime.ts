@@ -11,7 +11,7 @@ import type { Timers } from "../clock/timers";
 import type { Env } from "../config/env";
 import type { OpenAIPort } from "../openai/fake";
 import type { StorePort } from "../store/port";
-import { type RouteError, parseError, toRouteError } from "./errors";
+import { type RouteError, dependencyLogFields, parseError, toRouteError } from "./errors";
 
 /**
  * Hands work to the framework's post-response hook (`after` from next/server in the Web_App). The Server_Library
@@ -90,7 +90,7 @@ export async function runRoute<Req>(spec: RouteSpec<Req>, http: HttpInput, deps:
     return { status: 200, body: result };
   } catch (error) {
     const e: RouteError = toRouteError(error);
-    if (e.code === "DEPENDENCY") deps.log("route.dependency", { route: spec.name, error: error instanceof Error ? error.name : "unknown" });
+    if (e.code === "DEPENDENCY") deps.log("route.dependency", { route: spec.name, ...dependencyLogFields(error) });
     return { status: e.status, body: e.body };
   }
 }

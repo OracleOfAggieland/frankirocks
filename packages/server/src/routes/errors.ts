@@ -3,6 +3,7 @@
  * Error bodies are `{error, retryAfterMs}` only. They never carry Memory content (R28.1).
  */
 import type { ErrorCode, WireError } from "@franki/core";
+import { APIError as OpenAIAPIError } from "openai";
 import { ConfigError } from "../config/env";
 import { isStoreError } from "../store/errors";
 
@@ -61,4 +62,58 @@ export function toRouteError(error: unknown): RouteError {
     }
   }
   return dependencyError(1000);
+}
+
+/** How much of an infrastructure error's message the `route.dependency` log line keeps. */
+export const DEPENDENCY_MESSAGE_CAP = 200;
+
+/** gRPC status names by number. Firestore (google-gax) errors carry the number as `code`, such as 10 for ABORTED. */
+const GRPC_STATUS = [
+  "OK",
+  "CANCELLED",
+  "UNKNOWN",
+  "INVALID_ARGUMENT",
+  "DEADLINE_EXCEEDED",
+  "NOT_FOUND",
+  "ALREADY_EXISTS",
+  "PERMISSION_DENIED",
+  "RESOURCE_EXHAUSTED",
+  "FAILED_PRECONDITION",
+  "ABORTED",
+  "OUT_OF_RANGE",
+  "UNIMPLEMENTED",
+  "INTERNAL",
+  "UNAVAILABLE",
+  "DATA_LOSS",
+  "UNAUTHENTICATED",
+] as const;
+
+function errorCode(error: Error): string | null {
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === "number" && Number.isInteger(code)) return GRPC_STATUS[code] ?? String(code);
+  // String codes are identifiers (`auth/internal-error`, `rate_limit_exceeded`); anything else is dropped.
+  if (typeof code === "string" && /^[A-Za-z0-9_./-]{1,64}$/.test(code)) return code;
+  return null;
+}
+
+/**
+ * Error types whose message can hold user content, so only their `code` is logged:
+ * - OpenAI API errors: a 400 message can quote the rejected input value, which may be transcript or Memory text.
+ * - SyntaxError: Node's JSON.parse message quotes the start of the text it failed on, which may be model output.
+ */
+function messageMayHoldContent(error: Error): boolean {
+  return error instanceof OpenAIAPIError || error instanceof SyntaxError;
+}
+
+/**
+ * The fields of the `route.dependency` log line (IDs and times only, never content). Adds the error's `code`
+ * when it has one and the first 200 characters of its message, except for the types above.
+ */
+export function dependencyLogFields(error: unknown): Record<string, string> {
+  if (!(error instanceof Error)) return { error: "unknown" };
+  const fields: Record<string, string> = { error: error.name };
+  const code = errorCode(error);
+  if (code !== null) fields.code = code;
+  if (!messageMayHoldContent(error) && error.message !== "") fields.message = error.message.slice(0, DEPENDENCY_MESSAGE_CAP);
+  return fields;
 }
