@@ -9,7 +9,7 @@ import { checkImmutable, checkRecord, lineageFailures, throwOnLineage } from "./
 import { StoreError, isStoreError } from "./errors";
 import { checkQuerySpec } from "./memory-store";
 import { type ParsedPath, parseDocPath } from "./paths";
-import type { QuerySpec, StoredDoc, StorePort, Tx } from "./port";
+import type { QuerySpec, Reader, StoredDoc, StorePort, Tx } from "./port";
 
 type Data = Record<string, unknown>;
 
@@ -54,6 +54,28 @@ export class FirestoreStore implements StorePort {
   async query<T = Data>(uid: string, spec: QuerySpec): Promise<StoredDoc<T>[]> {
     const snap = await this.buildQuery(uid, spec).get();
     return snap.docs.map((d) => ({ path: d.ref.path, id: d.id, data: d.data() as T }));
+  }
+
+  /**
+   * A read-only transaction: every read sees one consistent point in time and no document is locked, so a
+   * concurrent read-write transaction neither waits for it nor aborts because of it.
+   */
+  async snapshot<R>(uid: string, fn: (reader: Reader) => Promise<R>): Promise<R> {
+    return this.db.runTransaction(
+      (t) =>
+        fn({
+          get: async <T>(path: string) => {
+            const p = parseDocPath(uid, path);
+            const snap = await t.get(this.db.doc(path));
+            return snap.exists ? { path, id: p.id, data: snap.data() as T } : null;
+          },
+          query: async <T>(spec: QuerySpec) => {
+            const snap = await t.get(this.buildQuery(uid, spec));
+            return snap.docs.map((d) => ({ path: d.ref.path, id: d.id, data: d.data() as T }));
+          },
+        }),
+      { readOnly: true },
+    );
   }
 
   async transaction<R>(uid: string, fn: (tx: Tx) => Promise<R>): Promise<R> {

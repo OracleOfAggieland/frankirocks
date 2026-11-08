@@ -137,6 +137,22 @@ export function storeConformance(name: string, setup: () => Promise<ConformanceC
       it("update of a missing record is stale", async () => {
         await expectStoreError(store.transaction(UID, async (tx) => tx.update(sessionPath("zz"), sampleSession(), 1)), "staleRevision");
       });
+
+      it("a snapshot reads committed records and holds no lock against a transaction that writes them", async () => {
+        await store.transaction(UID, async (tx) => tx.create(sessionPath("a"), sampleSession()));
+        const read = await store.snapshot!(UID, async (reader) => {
+          const doc = await reader.get<Session>(sessionPath("a"));
+          const rows = await reader.query<Session>({ collection: paths.collection(UID, "sessions"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: 10 });
+          // While the snapshot is open, a transaction updates the record it read, and commits.
+          await store.transaction(UID, async (tx) => {
+            const d = await tx.get<Session>(sessionPath("a"));
+            tx.update(sessionPath("a"), { ...d!.data, referenceCount: 7 });
+          });
+          return { rev: doc?.data.rev, ids: rows.map((r) => r.id) };
+        });
+        expect(read).toEqual({ rev: 1, ids: [testId("a")] });
+        expect((await store.get<Session>(UID, sessionPath("a")))?.data).toMatchObject({ rev: 2, referenceCount: 7 });
+      });
     });
 
     describe("validation", () => {

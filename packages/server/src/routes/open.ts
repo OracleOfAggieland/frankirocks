@@ -1,13 +1,21 @@
 /**
  * POST /api/session/open (R11; R26.10, R26.11; KV09; design "Session open").
  *   1. Guard (runRoute), core documents, idempotency, then the bounded Q13 expiry close from `tick`.
- *   2. The extract drain raced against 3,000 ms of opsClock; if the limit wins, open proceeds and the drain keeps
- *      running through `schedule`.
- *   3. One transaction: barrier check, Memories through Q28, compileHead, prior Session closing, core/bundle with
- *      bundleRev + 1, the new Session (minting, generation 1, stateAck), core/epoch.activeSessionId,
- *      core/state.currentZone and the request ledger entry. The Deck, StateAck and Session.stateAck carry the
- *      post-compile bundleRev. Any failure commits nothing, so core/bundle is unchanged.
- *   4. After commit, hang up the prior Session's calls and mark it closed (a failure also writes a hangup Job).
+ *   2. The extract drain raced against what is left of the open's 3,500 ms server budget after keeping 1,400 ms
+ *      for steps 3 and 4; if the limit wins, open proceeds and the drain keeps running through `schedule`.
+ *   3. One transaction: barrier check, compileHead over the Memories through Q28 (read from a lock-free snapshot,
+ *      see below), prior Session closing, core/bundle with bundleRev + 1, the new Session (minting, generation 1,
+ *      stateAck), core/epoch.activeSessionId, core/state.currentZone and the request ledger entry. The Deck,
+ *      StateAck and Session.stateAck carry the post-compile bundleRev. Any failure commits nothing, so core/bundle
+ *      is unchanged.
+ *   4. After commit, hang up the prior Session's calls within what is left of the budget and mark it closed (a
+ *      failure also writes a hangup Job, driven through `schedule`).
+ *
+ * The Memories and their Evidence are read through `readSnapshot`, not the transaction. An Extract_Job's commit
+ * reads core/epoch and writes Memories; this transaction writes core/epoch. When this transaction also held the
+ * Memories it read, the two waited on each other until one aborted (brief 005: on the emulator, a 2.2 s lock wait
+ * and then ABORTED, so the retry after a lost answer failed with STALE). A Memory committed after the snapshot
+ * reaches the Head at the next open, as one committed mid-call does.
  */
 import {
   type CoreBundle,
@@ -23,32 +31,103 @@ import {
 import { raceLimit } from "../clock/timers";
 import { ensureCoreDocs, ownerClock, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck } from "../deck";
-import { completeRequest } from "../ledger/request";
 import { buildHead } from "../head-build";
+import { completeRequest } from "../ledger/request";
 import { DECK_TTL_MS, afterClosed, beginCloseInTx, finishCloseInTx, newSession, stateAck } from "../sessions";
 import { paths } from "../store/paths";
+import { readSnapshot } from "../store/port";
 import { drainExtractJobs } from "../worker/drain";
-import { hangupAll } from "../worker/hangup";
+import { driveHangupJob, hangupAll, hangupJobId } from "../worker/hangup";
 import { startTick } from "../worker/tick";
 import { configError } from "./errors";
 import { mutation } from "./mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 
-export const OPEN_DRAIN_LIMIT_MS = 3_000;
+/**
+ * Server time for one open, from runRoute's first line to the answer. The browser gives the whole request 5 s
+ * (R16.6, `OPEN_TIMEOUT_MS`) from just after it reads the ID token; 1.5 s is left for the network, Next.js and a
+ * cold process's first token check and Firestore channel, which the live check showed are not small.
+ */
+export const OPEN_BUDGET_MS = 3_500;
+/**
+ * Kept back from the drain for the transaction and the prior Session's close. Measured on the emulator with 75 ms
+ * added per Firestore round trip (laptop to us-central1): transaction 520–650 ms, and the prior close's own
+ * transaction plus its Extract_Jobs 500–550 ms; the rest is margin for a slower machine.
+ */
+export const OPEN_TAIL_RESERVE_MS = 1_400;
+/** Kept back from the prior Session's hangups for its closing transaction and Extract_Jobs (500–550 ms measured). */
+export const PRIOR_CLOSE_RESERVE_MS = 700;
+/** The most the prior Session's hangups may wait, budget permitting. */
 export const PRIOR_HANGUP_BUDGET_MS = 1_000;
+
+/** The drain's share: what is left of the budget after keeping the tail reserve. Never negative. */
+export function openDrainLimit(elapsedMs: number): number {
+  return Math.max(0, OPEN_BUDGET_MS - OPEN_TAIL_RESERVE_MS - elapsedMs);
+}
+
+/** The prior Session's hangup wait: what is left after keeping the close reserve, at most 1,000 ms. */
+export function priorHangupBudget(elapsedMs: number): number {
+  return Math.max(0, Math.min(PRIOR_HANGUP_BUDGET_MS, OPEN_BUDGET_MS - PRIOR_CLOSE_RESERVE_MS - elapsedMs));
+}
 
 type OpenReq = Infer<typeof OpenRequest>;
 type OpenRes = Infer<typeof OpenResponse>;
 
+type Phase = "guardMs" | "coreMs" | "ledgerMs" | "tickMs" | "drainMs" | "txMs" | "priorMs";
+
+/** The `open.phases` log line: milliseconds per phase reached, the limits used, and the outcome. Times only. */
+interface OpenTimes {
+  lap(phase: Phase): void;
+  elapsed(): number;
+  note(field: "drainLimitMs" | "hangupBudgetMs", ms: number): void;
+  drainWon(won: boolean): void;
+}
+
 export async function openSession(ctx: RouteContext, req: OpenReq): Promise<OpenRes> {
   const { uid, deps } = ctx;
-  await ensureCoreDocs(uid, deps, req.clientZone);
+  const now = () => deps.clock.read().opsClock.now;
+  const start = ctx.startedOpsAt ?? now();
+  let mark = start;
+  const fields: Record<string, number | boolean | string> = {};
+  const times: OpenTimes = {
+    lap(phase) {
+      const t = now();
+      fields[phase] = t - mark;
+      mark = t;
+    },
+    elapsed: () => now() - start,
+    note: (field, ms) => (fields[field] = ms),
+    drainWon: (won) => (fields.drainWon = won),
+  };
+  let outcome = "error";
+  try {
+    times.lap("guardMs");
+    await ensureCoreDocs(uid, deps, req.clientZone);
+    times.lap("coreMs");
+    const response = await openInMutation(ctx, req, times);
+    outcome = response.state;
+    return response;
+  } finally {
+    // IDs and times only: no request body, no Head text.
+    deps.log("open.phases", { ...fields, totalMs: now() - start, outcome });
+  }
+}
+
+async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes): Promise<OpenRes> {
+  const { uid, deps } = ctx;
   return mutation(ctx, "open", req.requestId, req, async (key) => {
+    times.lap("ledgerMs");
     const expiry = startTick(ctx);
     if (expiry !== null) await expiry;
+    times.lap("tickMs");
 
+    const drainLimit = openDrainLimit(times.elapsed());
+    times.note("drainLimitMs", drainLimit);
     const drain = drainExtractJobs(uid, deps);
-    if (!(await raceLimit(drain, OPEN_DRAIN_LIMIT_MS, deps.timers))) ctx.schedule(() => drain);
+    const won = await raceLimit(drain, drainLimit, deps.timers);
+    times.drainWon(won);
+    if (!won) ctx.schedule(() => drain);
+    times.lap("drainMs");
 
     const sessionId = deps.hasher.id(idParts.session(uid, req.requestId));
     const { response, prior } = await deps.store.transaction(uid, async (tx) => {
@@ -62,7 +141,7 @@ export async function openSession(ctx: RouteContext, req: OpenReq): Promise<Open
 
       const state: CoreState = { ...core.state.data, currentZone: req.clientZone };
       const pair = ownerClock(state, deps.clock);
-      const compiled = await buildHead(tx, uid, { epoch: core.epoch.data, rules: core.rules.data }, pair, 1);
+      const compiled = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: core.epoch.data, rules: core.rules.data }, pair, 1));
       if (!compiled.ok) throw configError(500, "head fixed sections exceed the token cap");
       const head = compiled.head;
       const now = tsFromMs(ops);
@@ -94,15 +173,21 @@ export async function openSession(ctx: RouteContext, req: OpenReq): Promise<Open
       await completeRequest(tx, key, opened, ops);
       return { response: opened, prior: prior === null ? null : { id: priorId!, ...prior } };
     });
+    times.lap("txMs");
 
     if (prior !== null) {
       if (prior.closed) await afterClosed(ctx, prior.id);
       else {
-        const ok = await hangupAll(prior.callIds, deps, PRIOR_HANGUP_BUDGET_MS);
+        const budget = priorHangupBudget(times.elapsed());
+        times.note("hangupBudgetMs", budget);
+        const ok = await hangupAll(prior.callIds, deps, budget);
         const t = deps.clock.read().opsClock.now;
         await deps.store.transaction(uid, (tx) => finishCloseInTx(tx, uid, prior.id, ok, t, ctx, true));
+        // The hangups that did not answer in time keep running; the Job retries any that failed (R11.3).
+        if (!ok) ctx.schedule(() => driveHangupJob(uid, hangupJobId(prior.id, deps.hasher), deps));
         await afterClosed(ctx, prior.id);
       }
+      times.lap("priorMs");
     }
     return response;
   });

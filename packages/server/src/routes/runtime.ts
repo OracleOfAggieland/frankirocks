@@ -37,6 +37,8 @@ export interface RouteContext {
   uid: string;
   deps: RouteDeps;
   schedule: Schedule;
+  /** opsClock time when runRoute started, before the Route_Guard. Routes with a total budget count from it. */
+  startedOpsAt?: number;
 }
 
 export interface HttpInput {
@@ -69,6 +71,7 @@ export function parseWith<T>(schema: Schema<T>, value: unknown): T {
 }
 
 export async function runRoute<Req>(spec: RouteSpec<Req>, http: HttpInput, deps: RouteDeps, schedule: Schedule): Promise<HttpResult> {
+  const startedOpsAt = deps.clock.read().opsClock.now;
   try {
     const bodyText = http.method.toUpperCase() === "GET" ? "" : await http.text();
     const uid = await guardRequest(
@@ -86,7 +89,7 @@ export async function runRoute<Req>(spec: RouteSpec<Req>, http: HttpInput, deps:
       }
     }
     const req = spec.parse({ body, query: new URL(http.url).searchParams });
-    const result = await spec.run({ uid, deps, schedule }, req);
+    const result = await spec.run({ uid, deps, schedule, startedOpsAt }, req);
     return { status: 200, body: result };
   } catch (error) {
     const e: RouteError = toRouteError(error);

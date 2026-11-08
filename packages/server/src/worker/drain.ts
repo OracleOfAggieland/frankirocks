@@ -3,7 +3,8 @@
  * one after another (the sequential floor), using the Q17 shape filtered to `kind:"extract"`. It starts none while
  * one is leased elsewhere: it polls until that job finishes, or until its lease expires and it requeues it (Q18).
  * Polls start 100 ms apart and double to 1 s, and never wait past the earliest lease expiry.
- * It has no wait limit of its own: session open races it against 3,000 ms, and close and /api/turn schedule it.
+ * It has no wait limit of its own: session open races it against what is left of its budget, and close and
+ * /api/turn schedule it.
  */
 import { type Job, msFromTs, tsFromMs } from "@franki/core";
 import { liveTimers } from "../clock/timers";
@@ -13,7 +14,7 @@ import { paths } from "../store/paths";
 import { runExtractJob } from "./extract";
 import { dueJobs } from "./jobs";
 
-/** First wait for a job leased elsewhere, short so session open's 3,000 ms race sees a job that finishes soon. */
+/** First wait for a job leased elsewhere, short so session open's drain race sees a job that finishes soon. */
 export const DRAIN_POLL_MS = 100;
 /** Longest wait: a worker that died holding a 75 s extract lease costs one poll (3 queries) a second, not ten. */
 export const DRAIN_POLL_MAX_MS = 1_000;

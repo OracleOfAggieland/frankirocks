@@ -11,7 +11,7 @@ import { paths } from "../store/paths";
 import { commitUserTurnForTest } from "../testing/extract-fixtures";
 import { callRoute, runScheduled, testRig } from "../testing/fakes";
 import { openTestSession } from "../testing/session-fixtures";
-import { OPEN_DRAIN_LIMIT_MS, openRoute } from "./open";
+import { OPEN_BUDGET_MS, openDrainLimit, openRoute } from "./open";
 import { stateRoute } from "./state";
 
 const UID = "owner-1";
@@ -48,8 +48,9 @@ describe("route deadlines", () => {
     expect(open.status).toBe(200);
     expect(open.body.state).toBe("connecting");
     expect(open.elapsedMs).toBeLessThan(5_000);
-    // The drain lost the 3,000 ms race; the job is still running in the background.
-    expect(open.elapsedMs).toBeGreaterThanOrEqual(OPEN_DRAIN_LIMIT_MS);
+    expect(open.elapsedMs).toBeLessThan(OPEN_BUDGET_MS);
+    // The drain lost the race for what was left of the budget; the job is still running in the background.
+    expect(open.elapsedMs).toBeGreaterThanOrEqual(openDrainLimit(0));
     expect((await job()).status).toBe("leased");
     expect(rig.sched.pending).toBeGreaterThan(0);
   });

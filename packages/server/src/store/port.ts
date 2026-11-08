@@ -55,6 +55,20 @@ export interface StorePort {
   get<T = Record<string, unknown>>(uid: string, path: string): Promise<StoredDoc<T> | null>;
   query<T = Record<string, unknown>>(uid: string, spec: QuerySpec): Promise<StoredDoc<T>[]>;
   transaction<R>(uid: string, fn: (tx: Tx) => Promise<R>): Promise<R>;
+  /**
+   * Runs `fn` over one consistent read-only view that takes no locks, so it never makes a transaction wait or
+   * abort. Optional: a store without it (test wrappers) is read through plain `get` and `query`.
+   */
+  snapshot?<R>(uid: string, fn: (reader: Reader) => Promise<R>): Promise<R>;
+}
+
+/** The read half of a transaction. */
+export type Reader = Pick<Tx, "get" | "query">;
+
+/** `store.snapshot`, or plain reads when the store has none. */
+export function readSnapshot<R>(store: StorePort, uid: string, fn: (reader: Reader) => Promise<R>): Promise<R> {
+  if (store.snapshot !== undefined) return store.snapshot(uid, fn);
+  return fn({ get: <T>(path: string) => store.get<T>(uid, path), query: <T>(spec: QuerySpec) => store.query<T>(uid, spec) });
 }
 
 /** 512 KiB record cap (contracts §1 Cap512KiB; R4.7). */

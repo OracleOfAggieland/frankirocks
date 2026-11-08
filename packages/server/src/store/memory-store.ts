@@ -7,7 +7,7 @@ import { checkImmutable, checkRecord, lineageFailures, throwOnLineage } from "./
 import { StoreError } from "./errors";
 import { matchQueryShape } from "./indexes";
 import { type ParsedPath, parseCollectionPath, parseDocPath } from "./paths";
-import { type FieldValue, MAX_QUERY_LIMIT, type QuerySpec, type StoredDoc, type StorePort, type Tx } from "./port";
+import { type FieldValue, MAX_QUERY_LIMIT, type QuerySpec, type Reader, type StoredDoc, type StorePort, type Tx } from "./port";
 
 type Data = Record<string, unknown>;
 
@@ -78,6 +78,11 @@ export class MemoryStore implements StorePort {
 
   async query<T = Data>(uid: string, spec: QuerySpec): Promise<StoredDoc<T>[]> {
     return this.runQuery(uid, spec) as StoredDoc<T>[];
+  }
+
+  /** Plain reads: the Memory_Store holds no locks, so they never block a transaction either. */
+  async snapshot<R>(uid: string, fn: (reader: Reader) => Promise<R>): Promise<R> {
+    return fn({ get: <T>(path: string) => this.get<T>(uid, path), query: <T>(spec: QuerySpec) => this.query<T>(uid, spec) });
   }
 
   private runQuery(uid: string, spec: QuerySpec): StoredDoc[] {
