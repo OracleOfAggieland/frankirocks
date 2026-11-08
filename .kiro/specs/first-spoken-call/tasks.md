@@ -334,10 +334,10 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
   - Never run the deploy yourself. No commit unless the report changes.
   - **Done (Nov 3, 2026):** the owner approved the deploy and Claude ran it. All five indexes in `firestore.indexes.json` showed READY at 21:44:23 (Pacific) on Nov 3, 2026.
 
-- [ ] 35. STOP: paid live check after notice
+- [x] 35. STOP: paid live check after notice
   - Requirements: R31.10, R32.6
   - Depends on: 34
-  - Estimate: 1 h · Actual: —
+  - Estimate: 1 h · Actual: — (the owner ran it; time not recorded)
   - Witness: manual check. First tell the owner that a paid check is about to run and that it calls `FRANKI_VOICE_MODEL`, `FRANKI_TRANSCRIBE_MODEL`, `FRANKI_BRAIN_MODEL` and `FRANKI_BG_MODEL`; wait for the go-ahead. If `OPENAI_API_KEY` or `FRANKI_ID_HMAC_KEY` is missing, stop and ask, without opening `.env.local`. Steps on `http://localhost:3000`:
     1. Sign in. Press call. Say one fact about your life ("My dog is called Pip").
     2. Watch the Debug_Panel: the user Turn, its Evidence, the Extract_Job reaching `complete`, and the Memory with highlighted spans.
@@ -346,6 +346,13 @@ Typed turns, extraction and the Debug_Panel (tasks 1–28) are finished and test
     5. Interrupt Franki once to check barge-in; mute and unmute once.
   - Record the result in `docs/briefs/001-report.md`, then give the final message: local run commands from a fresh clone, owner actions, and which real OpenAI calls were made.
   - Commit: `docs: live check result`
+  - **Done (Nov 8, 2026):** the owner ran it in Chrome on Windows against `npm run dev`, with real OpenAI and real Firestore. The call needs microphone access, so use a browser that grants it.
+    - Steps 1, 3 and 4 passed: the owner told Franki "My dog is called Pip", hung up, called again and heard Franki answer "Pip".
+    - Step 5 passed: barge-in worked, and mute and unmute worked.
+    - Step 2 was not checked: nobody watched the Debug_Panel during the call. Recall across calls shows the Memory was written, but the panel itself was not looked at.
+    - The first open on a cold server timed out in the browser (the server answered 200 after 4.7 s, too late for the browser's 5 s limit), and the retry got a 503. Brief 005 items 1 and 2 cover that (design contract question 45).
+    - Real OpenAI calls: WebRTC calls through `/api/session/sdp` on `FRANKI_VOICE_MODEL` with transcription on `FRANKI_TRANSCRIBE_MODEL`; spoken turns through `/api/turn` on `FRANKI_BRAIN_MODEL`; extraction on `FRANKI_BG_MODEL`. Three calls connected, and two of them carried seven turns between them.
+    - The result, the observed server times and the final message are in `docs/briefs/001-report.md`.
 
 ---
 

@@ -1,6 +1,6 @@
 # Brief 001 report (draft): first spoken call
 
-Status: **draft, not complete.** Tasks 1–12, 14–24 and 26–32 are done and ticked. Task 25 (sign-in) and task 13 (save hook) stay open because their remaining checks need a person, and task 35 (paid live check) has not started. Task 34 (index deploy) is done. The typed path has run against real OpenAI and real Firestore on Nov 3, 2026: the two extract jobs completed on the first attempt, and one active Memory was written with lineage. No real WebRTC call has been made. This draft is written at task 33 on branch `build/first-spoken-call` and has not been pushed, so CI has not run on it.
+Status: **draft, not complete.** Tasks 1–12, 14–24, 26–32, 34 and 35 are done and ticked. Task 25 (sign-in) and task 13 (save hook) stay open until the owner finishes their browser and hook checks, and task 33 stays open until CI has run. The typed path ran against real OpenAI and real Firestore on Nov 3, 2026: the two extract jobs completed on the first attempt, and one active Memory was written with lineage. The first real WebRTC calls ran on Nov 8, 2026 (task 35, see [Live check](#live-check-task-35-nov-8-2026)): Franki was told "My dog is called Pip" in one call and answered "Pip" in the next. This draft was first written at task 33 on branch `build/first-spoken-call`, and CI has not run on it.
 
 The build was done with **Kiro**: the `.kiro/steering` files set the stack, structure, product and memory rules; the spec in `.kiro/specs/first-spoken-call` (requirements, design, tasks) drove every task; a Kiro PreToolUse hook (`.kiro/hooks/clock-guard.json`) blocks wall-clock reads outside the Clock_Port; every commit ends with `Built-with: Kiro`; and the web app shows a "Built with Kiro" footer on every page.
 
@@ -73,7 +73,7 @@ The build was done with **Kiro**: the `.kiro/steering` files set the stack, stru
 - **Hangup for an unstored call ID** (task 30): R12.4 asks for a `hangup` Job, but no Job field can hold a raw Realtime call ID. The route hangs up at once and retries in the background for 10 minutes, which does not survive a restart (contract question 32).
 - **Transcription model in the browser** (task 32): R13.1 puts the transcription model in the browser's `session.update`, and no route returns it. `next.config.ts` inlines `FRANKI_TRANSCRIBE_MODEL` from `apphosting.yaml` as `NEXT_PUBLIC_FRANKI_TRANSCRIBE_MODEL` at build time, using the `env` option that the Next 16 docs mark as legacy. A model change needs a rebuild.
 - **Recall asked test** (task 31): one-character tokens are not recall terms, so the "s" in "dog's" does not make every Turn count as asked.
-- **Realtime API shapes**: after the build, Claude compared the voice code with the types in the installed `openai` 7.45.1 SDK: the event names, `session.update`, `response.create`, `tracing`, and the multipart `sdp` and `session` fields of `/realtime/calls`. They match. Claude could not load OpenAI's docs, and the SDK types do not confirm the `Location` header, so task 35's live call is still the first real check.
+- **Realtime API shapes**: after the build, Claude compared the voice code with the types in the installed `openai` 7.45.1 SDK: the event names, `session.update`, `response.create`, `tracing`, and the multipart `sdp` and `session` fields of `/realtime/calls`. They match. Claude could not load OpenAI's docs, and the SDK types do not confirm the `Location` header. Task 35's live calls on Nov 8, 2026 connected and carried turns, so the shapes the voice path uses work against the live API.
 - **Test folder merge** (owner request): `test/setup.ts` and `test/setup.test.ts` moved to `tests/setup/`.
 
 ## Estimate against actual
@@ -117,7 +117,7 @@ Actual hours are the build's own working time per task.
 | 33 Checks and report draft | 1.5 | 0.4 |
 | **Total, tasks 1–33** | **85.5** | **14.9** |
 | 34 Index deploy approval (done Nov 3, 2026) | 0.25 | — |
-| 35 Paid live check (not started) | 1 | — |
+| 35 Paid live check (done Nov 8, 2026; owner's time not recorded) | 1 | — |
 
 ## Contract questions
 
@@ -162,10 +162,59 @@ From `.kiro/specs/first-spoken-call/design.md` "Contract questions". `docs/desig
 
 33. Real cost needs a dated price table. `costMicros` stays 0 until one exists; no prices were invented.
 
+## Live check (task 35, Nov 8, 2026)
+
+The owner ran task 35 in Chrome on Windows against `npm run dev`, with real OpenAI and real Firestore. The call needs microphone access, so use a browser that grants it.
+
+| Step | Result |
+|---|---|
+| 1, 3, 4: say a fact, hang up, call again, ask | Passed. The owner told Franki "My dog is called Pip", hung up, called again and heard Franki answer "Pip". |
+| 2: watch the Debug_Panel | Not checked. Nobody watched the Debug_Panel during the call. Recall across calls shows the Memory was written, but the panel itself was not looked at. |
+| 5: barge-in, mute and unmute | Passed. Barge-in worked, and mute and unmute worked. |
+
+**Before the first call connected.** The first open on a cold server answered 200 after 4.7 s of server time, too late for the browser's 5 s limit (R16.6), so the browser never learned about that Session. The retry, with a new `requestId`, got a 503 `DEPENDENCY` after 2.7 s. Brief 005 items 1 and 2 cover that: the `route.dependency` log line now names the error's code and message, and session open has one 3,500 ms server budget and reads the Head's Memories without locks (design contract question 45; `docs/briefs/005-report.md`).
+
+**Real OpenAI calls made.** WebRTC calls through `/api/session/sdp` on `FRANKI_VOICE_MODEL`, with transcription on `FRANKI_TRANSCRIBE_MODEL`; spoken turns through `/api/turn` on `FRANKI_BRAIN_MODEL`; extraction on `FRANKI_BG_MODEL`. Three calls connected, and two of them carried seven turns between them.
+
+**Server times seen while warm.** These are what the server log showed, not targets.
+
+| Route | Server time |
+|---|---|
+| `/api/session/open` | 2.0–3.3 s |
+| `/api/session/sdp` | 1.3–2.7 s |
+| `/api/turn` | 1.4–2.6 s |
+| `/api/receipt` (about three per turn) | 0.6–1.5 s |
+| `/api/session/state` | 0.6 s |
+| `/api/tool` (one recall) | 4.4 s |
+
+## Final message (task 35)
+
+**Run it locally from a fresh clone** (Node 24; on the owner's Windows PowerShell 5.1, run each line on its own):
+
+```bash
+git clone <this repository>
+cd frankirocks
+npm install
+npm run dev              # predev copies the plain values from apps/web/apphosting.yaml; then http://localhost:3000
+```
+
+Then sign in with Google in a browser that grants microphone access (the live check used Chrome), and press call. Checks: `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`, and `npm run test:emulator` with Java 21.
+
+**Owner actions** (from the design's "Owner actions"; the build makes none of these changes):
+
+1. `apps/web/.env.local` holds exactly `OPENAI_API_KEY` and `FRANKI_ID_HMAC_KEY` (a random value of at least 32 bytes, base64url).
+2. The public Firebase web config values are in `apphosting.yaml` (done).
+3. The five Firestore indexes are deployed (done Nov 3, 2026, task 34).
+4. On a fresh machine only: `gcloud auth application-default login` with an account that can reach `frankirocks`.
+5. Only to test the deployed app, where `devAdmit` refuses replies until F2: add `franki-web--frankirocks.us-central1.hosted.app` to the Firebase Authentication authorized domains, and put `FRANKI_ID_HMAC_KEY` in Secret Manager with access for backend `franki-web`.
+6. Still open: approve a push so CI runs (task 33), finish the task 25 browser checks, and confirm or drop the task 13 save hook.
+
+**Real OpenAI calls made:** listed under the live check above.
+
 ## Still needs a person or a push
 
 - **Push and CI** (owner approval): run the CI `verify` and emulator jobs on this branch.
 - **Task 25 browser checks** on `http://localhost:3000` (`npm run dev`): sign in with Google and see the email within 5 s; close the popup and see the "window was closed" message with the button enabled again; reload while signed in and stay signed in; see the "Built with Kiro" footer signed in and signed out.
 - **Task 13 save hook**: confirm in the Kiro IDE that saving a file under `packages/` runs `npm run test:fast` once, or decide to drop R3.4.
 - **Call screen look** (no paid call needed): signed out, the call button and typed input show disabled; signed in, the call button shows its start form and the closed avatar.
-- **Task 35** (paid, after notice): the live call on localhost, which is also the first real check of the Realtime API shapes listed under deviations.
+- **The Debug_Panel during a call** (task 35 step 2, not checked on Nov 8): the user Turn, its Evidence, the Extract_Job reaching `complete`, and the Memory with highlighted spans.
