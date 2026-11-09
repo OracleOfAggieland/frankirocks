@@ -49,10 +49,11 @@ Rules for every task:
   - Witness: `judge.test.ts` › `JUDGE_V2_INSTRUCTIONS` equals `judge_v1` with the one sentence on its own line after the `H:` line; `judgeCreate` picks the instructions by `contract` and writes it to `metadata.contract`; `JUDGE_CONTRACT_SETTINGS` is `{judge_v1, 16, minimal, 600}`; `APP_JUDGE_SETTINGS` is `{judge_v1, "inf", minimal, 1200}`. `scripts/probe-copy.test.ts` › no 4-word window of any `lines.json` line, nor any whole line under 4 words, appears in `JUDGE_V2_INSTRUCTIONS` (both rendered by `close-copy.mjs`). Existing harness tests still pass.
   - Commit: `feat(voice): judge settings and the judge_v2 candidate`
 
-- [ ] 4. Intents: request builder, response parser, priority
+- [x] 4. Intents: request builder, response parser, priority
   - Requirements: R10.1, R10.4–R10.7; Q69, Q71, Q72
   - Depends on: 2
-  - Estimate: 2.5 h · Actual:
+  - Estimate: 2.5 h · Actual: 0.6 h
+  - Notes: Contracts §5's order has no place for `alone` (R10.7 copied the gap). Put it directly after `quiet`; raised as design question 91 and R10.7 updated. Tests read the prefix and predicate literals from the contract text itself. `parse.ts` also holds `outcomeOf`, the parse as the Server_Rule reads it.
   - Files: `packages/core/src/intents/classes.ts` (new: the 13 classes, `PRIORITY`, `CANDIDATE_P`, the 14 predicate literals, `TURN_INTENTS_PREFIX`), `packages/core/src/intents/request.ts` (new), `packages/core/src/intents/parse.ts` (new), `packages/core/src/intents/request.test.ts`, `packages/core/src/intents/parse.test.ts`
   - Witness: `request.test.ts` › the prefix as one developer message and the user message layout of design §"The slow parse"; 14 predicates in C§5 order with the literal instructions; at most 22 questions; a turn over 2,400 code units is refused as `oversize`. `parse.test.ts` › answers matched by position and name; refusal, wrong type, missing or extra answer, name mismatch, NaN and out-of-range probabilities each give `failed: invalid`; `choose` follows `PRIORITY` with `why` before `food` and retains every candidate at ≥ 0.20; `isOrdinary` is controls < 0.20 and `uncertainSpeaker` < 0.10, with no regex input.
   - The type check against `DecisionCreateParams` and `Decision` is in task 29 (core may not import `openai`).

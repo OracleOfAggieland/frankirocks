@@ -216,7 +216,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 4. THE request builder SHALL send the developer prefix from contracts §5 once and each selected row as `{type:"predicate", name, instructions}` with the literal predicate instruction from contracts §5: the 14 fixed rows and at most 8 `opens_{topicId}` rows, at most 22 questions.
 5. IF the developer prefix, the utterance and the last question together exceed 2,400 UTF-16 code units, THEN THE Slow_Parse SHALL hold rather than truncate (contracts §5 "Over800: hold"), with no tokenizer dependency.
 6. THE response parser SHALL match answers to questions by position, map them to the 14 named probabilities and the `opens` list, and SHALL treat a refusal, a missing answer, an extra answer, a name that does not match, or a probability that is not finite in [0, 1] as a failure.
-7. THE priority function SHALL choose among candidates at or above 0.20 in this order: `forget` > `company` > `quiet` > `crisis` > `hardRule` > `correct` > `transition` > `why` > `food` > `action` > `answer` > `rushed` (contracts §5, with `why` placed directly before `food`), and SHALL retain every candidate.
+7. THE priority function SHALL choose among candidates at or above 0.20 in this order: `forget` > `company` > `quiet` > `alone` > `crisis` > `hardRule` > `correct` > `transition` > `why` > `food` > `action` > `answer` > `rushed` (contracts §5, with `why` placed directly before `food` and `alone` directly after `quiet`, design questions 69 and 91), and SHALL retain every candidate.
 8. THE request and response shapes SHALL be checked against the `openai` package's own `Decisions` types in `node_modules` (`DecisionCreateParams`, `Decision`).
 
 ### Requirement 11: The Slow_Parse on every transcript
