@@ -10,8 +10,8 @@ Behavior comes from `docs/design/memory-spec-v3.md`, cited as "spec §N". Fields
 
 ### Waves
 
-- **Wave A, admission:** brief scope items 1 to 4, 6 and 7, and the property guard (Requirements 1 to 13 and 16 to 19, and properties 1 to 9 and 11 of Requirement 20).
-- **Wave B, audience:** brief scope item 5 (Requirements 14 and 15, and property 10 of Requirement 20).
+- **Wave A, admission:** brief scope items 1 to 4, 6 and 7, the property guard, and the parse gap, the `unknown` audience and the parse repair (Requirements 1 to 13, 15.2 to 15.9 and 16 to 19, and properties 1 to 9 and 11 of Requirement 20).
+- **Wave B, audience:** brief scope item 5 (Requirements 14 and 15.1, and property 10 of Requirement 20).
 - Requirements 21 to 24 apply to both waves.
 
 ### Decisions this spec builds on
@@ -165,7 +165,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 2. WHEN a Deck or Stamp with a higher revision or generation arrives, THE Voice_Machine SHALL reject the older Deck and cancel and clear every reply built on it (KV05).
 3. WHEN the Voice_Machine starts any wait (item, Judge, transcript, server Permit, tool, state, swap), THE Voice_Machine SHALL arm an opsClock deadline for it (KV06).
 4. IF no final transcript has arrived by Commit + 1,500 ms and no reply is admitted, THEN THE Voice_Machine SHALL post the Turn as `missing` and play the Neutral_Line under `recoveryOnly`.
-5. IF the Turn is held with a final transcript and no server Permit has arrived by Commit + 2,500 ms, THEN THE Voice_Machine SHALL play the Neutral_Line under `recoveryOnly`.
+5. IF the Turn is held with a final transcript and no server Permit has arrived by Commit + 2,500 ms, THEN THE Voice_Machine SHALL enter `RECOVERY` and play nothing until a `recoveryOnly` Permit arrives; THE Server_Rule SHALL issue `recoveryOnly`, so that the Neutral_Line plays, for any Turn whose response it completes later than Commit + 2,300 ms.
 6. WHEN the final transcript is missing at Commit + 1,500 ms while a reply is already admitted under `fastO`, THE Voice_Machine SHALL let that reply play and post the Turn as `missing`.
 7. THE Voice_Machine SHALL read all times from the `now` argument (the browser opsClock), and the clock guard SHALL apply.
 
@@ -347,7 +347,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
    7. **`fastO` needs a fresh ack.** A `fastO` Permit is issued only with a matching four-revision StateAck under 2.5 s old, obtained after the last `/api/turn` response, with no Outstanding_Turn.
    8. **The seam is total and closed.** For every combination of Turn kind, transcript state, `judge` value, Slow_Parse result and Effective_Audience, the Server_Rule returns exactly one Permit kind or a hold, and never an S1+ note on a Turn the judge didn't mark `O`.
    9. **Priority is stable.** For any probability vector, the chosen class follows the order of Requirement 10.7, a retained `crisis` candidate always gets the care reply, and regex alone never selects a route.
-   10. **Narrowing needs a closed call** (wave B). After a `company` or `quiet` hit, no reply is audible on a call opened before the hit.
+   10. **Narrowing needs a closed call** (wave B). After a `company` or `quiet` hit, no reply is audible on a call opened before the hit, except the hit Turn's own crisis care reply (Requirement 14.7).
    11. **A repaired gap leaves no trace.** After a Parse_Repair that commits an Ordinary_Parse, the Session's state equals the state of a run in which the first parse had succeeded.
 2. Every property task SHALL be required, not optional.
 3. WHEN a property fails during the build, THE build SHALL put the seed and the shrunk failing sequence in the report before fixing the code, and SHALL never weaken a property to make it pass.
