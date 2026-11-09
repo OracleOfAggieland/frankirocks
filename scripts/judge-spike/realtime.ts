@@ -38,8 +38,12 @@ export function spikeSessionUpdate(transcribeModel: string): RealtimeClientEvent
   };
 }
 
-/** The reply after a completed `O`: out of band, this turn's audio only, audio out (spec §3 step 3). */
-export function spikeReplyCreate(lineId: string, itemIds: readonly string[]): RealtimeClientEvent {
+/**
+ * The reply: out of band, this turn's audio only, audio out (spec §3 step 3). `speech` is the sequential reply,
+ * sent after a completed `O`; `speculative` is the parallel one, sent beside the judge and kept muted until `O`
+ * (contracts §6 metadata purposes; brief 009).
+ */
+export function spikeReplyCreate(lineId: string, itemIds: readonly string[], purpose: "speech" | "speculative" = "speech"): RealtimeClientEvent {
   return {
     type: "response.create",
     response: {
@@ -47,7 +51,7 @@ export function spikeReplyCreate(lineId: string, itemIds: readonly string[]): Re
       output_modalities: ["audio"],
       instructions: SPIKE_REPLY_INSTRUCTIONS,
       tools: [],
-      metadata: { purpose: "speech", turnId: lineId, generation: "0" },
+      metadata: { purpose, turnId: lineId, generation: "0" },
       input: itemIds.map((id) => ({ type: "item_reference", id })),
     },
   };

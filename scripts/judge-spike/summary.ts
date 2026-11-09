@@ -6,7 +6,7 @@
  */
 import type { JudgeSettings, JudgeVerdict } from "@franki/core";
 import { CONTROL_CLASSES } from "./lines";
-import type { HarnessOutput, Row } from "./harness";
+import type { HarnessOutput, Row, RunSettings } from "./harness";
 import type { AudioSource } from "./paths";
 
 export const LATENCY_STOP_MS = 850;
@@ -33,10 +33,12 @@ export interface RunMeta {
   models: { voice: string; transcribe: string };
   /** The judge's output cap and reasoning effort for this run. */
   judge: JudgeSettings;
+  /** Sequential or parallel, and the stagger (brief 009). Absent in runs before it, which were all sequential. */
+  run?: RunSettings;
 }
 
 export interface RunFile extends RunMeta {
-  version: "judge-spike-run-3";
+  version: "judge-spike-run-4";
   /** The line-order seed, and the line IDs in the order they ran. */
   seed: number;
   order: string[];
@@ -48,7 +50,7 @@ export interface RunFile extends RunMeta {
 export function runFile(meta: RunMeta, out: HarnessOutput): RunFile {
   // No transcript of the owner's own takes leaves the machine in a committed file (brief 006 item 4).
   const rows = meta.source === "owner" ? out.rows.map((r) => ({ ...r, transcript: null })) : out.rows;
-  return { version: "judge-spike-run-3", ...meta, seed: out.seed, order: out.order, sessions: out.sessions, eventNames: out.eventNames, rows };
+  return { version: "judge-spike-run-4", ...meta, seed: out.seed, order: out.order, sessions: out.sessions, eventNames: out.eventNames, rows };
 }
 
 /** Nearest-rank percentile; null for an empty list. */

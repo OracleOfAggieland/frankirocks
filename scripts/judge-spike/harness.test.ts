@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { JUDGE_V1_INSTRUCTIONS, encodeWav } from "@franki/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { judgeSettings, main, seedOf } from "./cli";
-import { type FakeJudgeScript, fakeConnect, placeholderPcm } from "./fake-realtime";
-import { DEFAULT_SEED, MAX_RUN_LINES, NO_SPEECH, type Row, SESSION_LINES, SPIKE_JUDGE_SETTINGS, openSession, outputTokensOf, reasoningTokensOf, runHarness, runLine, shuffleLines, silentTakes } from "./harness";
+import { judgeSettings, main, runSettings, seedOf } from "./cli";
+import { FAKE_REFUSAL, type FakeJudgeScript, type FakeOptions, fakeConnect, placeholderPcm } from "./fake-realtime";
+import { DEFAULT_RUN, DEFAULT_SEED, MAX_RUN_LINES, NO_SPEECH, type Row, type RunSettings, SESSION_LINES, SPIKE_JUDGE_SETTINGS, openSession, outputTokensOf, reasoningTokensOf, runHarness, runLine, shuffleLines, silentTakes } from "./harness";
 import { type ProbeLine, LINES_URL, loadLines } from "./lines";
 import type { Connect } from "./realtime";
 import { COMMIT_TO_SEND_FLAG_MS, type RunFile, runFile, summarize, summaryMarkdown } from "./summary";
@@ -16,15 +16,17 @@ const lines = loadLines();
 const ordinary = lines.find((l) => l.id === "o-01")!;
 const control = lines.find((l) => l.id === "c-company-1")!;
 const MODELS = { voiceModel: "voice-from-config", transcribeModel: "transcribe-from-config", apiKey: "fake-key-for-tests" };
+const SEQUENTIAL: RunSettings = { mode: "sequential", staggerMs: 0 };
+const PARALLEL: RunSettings = DEFAULT_RUN;
 
 /** Runs one line on a fresh fake session and returns the row and everything the harness sent. */
-async function one(line: ProbeLine, script: FakeJudgeScript, pcm: Uint8Array = placeholderPcm(1200)) {
+async function one(line: ProbeLine, script: FakeJudgeScript, pcm: Uint8Array = placeholderPcm(1200), run: RunSettings = SEQUENTIAL, fakeOpts: Partial<FakeOptions> = {}) {
   const clock = new VirtualClock();
-  const fake = fakeConnect({ clock, judge: () => script });
+  const fake = fakeConnect({ clock, judge: () => script, ...fakeOpts });
   const row = await clock.run(
     (async () => {
       const s = await openSession(fake.connect, MODELS, clock, 0);
-      const r = await runLine(s, line, pcm, null);
+      const r = await runLine(s, line, pcm, null, SPIKE_JUDGE_SETTINGS, run);
       return { r, s };
     })(),
   );
@@ -59,8 +61,10 @@ describe("judge spike harness against the fake transport", () => {
     // Cancelled at its first audio delta.
     expect(sent.filter((e) => e.type === "response.cancel")).toEqual([{ type: "response.cancel", response_id: "resp_2" }]);
     expect(row).toMatchObject({ verdict: "O", valid: true, invalidReason: null, timedOut: false, decision: "reply", fragments: 1, judgeText: "O", transcript: "fake transcript", errors: [] });
-    for (const [k, v] of Object.entries(row.t)) expect(v, k).not.toBeNull();
+    const parallelOnly = new Set(["replyCreated", "replyCancelSent"]);
+    for (const [k, v] of Object.entries(row.t)) if (!parallelOnly.has(k)) expect(v, k).not.toBeNull();
     const t = row.t;
+    expect(t.audible).toBe(t.firstReplyAudio);
     expect(t.speechEnd! < t.commit! && t.commit! < t.itemAdded! && t.itemAdded! <= t.judgeSent! && t.judgeSent! < t.judgeDone!).toBe(true);
     expect(t.judgeDone! <= t.replySent! && t.replySent! < t.firstReplyAudio!).toBe(true);
     expect(row.derived.judgeMs).toBe(t.judgeDone! - t.commit!);
@@ -122,7 +126,7 @@ describe("judge spike harness against the fake transport", () => {
     const fake = fakeConnect({ clock, judge: () => ({ texts: ["H"] }) });
     const many = lines.slice(0, SESSION_LINES + 2);
     const audio = new Map(many.map((l) => [l.id, placeholderPcm(400)]));
-    const out = await clock.run(runHarness({ lines: many, audio, voices: new Map(), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS, seed: DEFAULT_SEED, apiKey: "k", connect: fake.connect, clock, log: () => {} }));
+    const out = await clock.run(runHarness({ lines: many, audio, voices: new Map(), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS, run: DEFAULT_RUN, seed: DEFAULT_SEED, apiKey: "k", connect: fake.connect, clock, log: () => {} }));
     expect(fake.log.connections).toBe(2);
     expect(fake.log.closed).toBe(2);
     expect(out.sessions.map((s) => s.length)).toEqual([SESSION_LINES, 2]);
@@ -144,7 +148,7 @@ describe("judge spike harness against the fake transport", () => {
   it("refuses more than 70 lines in one run", async () => {
     const tooMany = Array.from({ length: MAX_RUN_LINES + 1 }, (_, i) => ({ ...ordinary, id: `x${i}` }));
     const clock = new VirtualClock();
-    await expect(runHarness({ lines: tooMany, audio: new Map(), voices: new Map(), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS, seed: DEFAULT_SEED, apiKey: "k", connect: fakeConnect({ clock, judge: () => ({}) }).connect, clock, log: () => {} })).rejects.toThrow(/at most 70/);
+    await expect(runHarness({ lines: tooMany, audio: new Map(), voices: new Map(), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS, run: DEFAULT_RUN, seed: DEFAULT_SEED, apiKey: "k", connect: fakeConnect({ clock, judge: () => ({}) }).connect, clock, log: () => {} })).rejects.toThrow(/at most 70/);
   });
 
   it("witness: a take with a long silent tail streams to 100 ms after its last speech, and the judge goes out at the commit", async () => {
@@ -175,13 +179,72 @@ describe("judge spike harness against the fake transport", () => {
       [control.id, roomTone(2000, SPEECH_RMS_THRESHOLD)],
     ]);
     expect(silentTakes([ordinary, control], audio)).toEqual([control.id]);
-    await expect(clock.run(runHarness({ lines: [ordinary, control], audio, voices: new Map(), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS, seed: DEFAULT_SEED, apiKey: "k", connect: fake.connect, clock, log: () => {} }))).rejects.toThrow(`refusing takes with no speech (${NO_SPEECH}): ${control.id}`);
+    await expect(clock.run(runHarness({ lines: [ordinary, control], audio, voices: new Map(), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS, run: DEFAULT_RUN, seed: DEFAULT_SEED, apiKey: "k", connect: fake.connect, clock, log: () => {} }))).rejects.toThrow(`refusing takes with no speech (${NO_SPEECH}): ${control.id}`);
     expect(fake.log.connections).toBe(0);
     // runLine on its own records the refusal and streams nothing.
     const { row, sent } = await one(control, { texts: ["H"] }, new Uint8Array(1000 * 48));
     expect(row.errors).toEqual([NO_SPEECH]);
     expect(row).toMatchObject({ takeMs: 1000, audioMs: 0, decision: null });
     expect(sent.filter((e) => e.type === "input_audio_buffer.append")).toHaveLength(0);
+  });
+});
+
+describe("judge spike harness, parallel mode (brief 009)", () => {
+  const cancels = (sent: { type: string }[]) => sent.filter((e) => e.type === "response.cancel") as unknown as { type: string; response_id: string }[];
+
+  it("sends the judge and the speculative reply together, out of band on the same items, each with its purpose", async () => {
+    const { row, sent, creates } = await one(ordinary, { texts: ["O"], delayMs: 190 }, undefined, PARALLEL);
+    expect(purposes(creates)).toEqual(["judge", "speculative"]);
+    const ref = [{ type: "item_reference", id: "item_1" }];
+    expect((creates[0]!.input as unknown[]).slice(1)).toEqual(ref);
+    expect(creates[0]).toMatchObject({ conversation: "none" });
+    expect(creates[1]).toMatchObject({ conversation: "none", output_modalities: ["audio"], input: ref, metadata: { purpose: "speculative", turnId: ordinary.id } });
+    // The two creates go out back to back: the reply right after the judge.
+    const i = sent.findIndex((e) => e.type === "response.create");
+    expect(sent[i + 1]!.type).toBe("response.create");
+    expect(row.t.replySent).toBe(row.t.judgeSent);
+    expect(row).toMatchObject({ verdict: "O", valid: true, decision: "reply", concurrencyErrors: [], mutedReplyAudio: null, errors: [] });
+    expect(cancels(sent)).toEqual([{ type: "response.cancel", response_id: "resp_2" }]);
+  });
+
+  it("an H line cancels the reply at the verdict, before any audio, and has no audible time", async () => {
+    const { row, sent } = await one(control, { texts: ["H"], delayMs: 150 }, undefined, PARALLEL, { replyAudioDelayMs: 250 });
+    expect(row).toMatchObject({ verdict: "H", decision: "held", mutedReplyAudio: false });
+    expect(row.t.replyCancelSent).toBe(row.t.judgeDone);
+    expect(row.t.firstReplyAudio).toBeNull();
+    expect(row.t.audible).toBeNull();
+    expect(row.derived.ordinaryLatencyMs).toBeNull();
+    expect(cancels(sent)).toEqual([{ type: "response.cancel", response_id: "resp_2" }]);
+  });
+
+  it("an invalid answer holds and cancels the reply at once", async () => {
+    const { row, sent } = await one(ordinary, { texts: ["O."], delayMs: 150 }, undefined, PARALLEL);
+    expect(row).toMatchObject({ verdict: "U", invalidReason: "extraText", decision: "held" });
+    expect(row.t.replyCancelSent).toBe(row.t.judgeDone);
+    expect(cancels(sent)).toHaveLength(1);
+  });
+
+  it("a judge with no answer holds at 600 ms: the reply is cancelled then, the judge at 3 s", async () => {
+    const { row, sent } = await one(ordinary, { noDone: true }, undefined, PARALLEL);
+    expect(row).toMatchObject({ timedOut: true, decision: "held", verdict: null, mutedReplyAudio: true });
+    expect(row.t.replyCancelSent! - row.t.commit!).toBe(600);
+    expect(cancels(sent).map((e) => e.response_id)).toEqual(["resp_2", "resp_1"]);
+  });
+
+  it("a stagger sends the reply that much after the judge", async () => {
+    const { row } = await one(ordinary, { texts: ["O"], delayMs: 300 }, undefined, { mode: "parallel", staggerMs: 120 });
+    expect(row.t.replySent! - row.t.judgeSent!).toBe(120);
+    expect(row.decision).toBe("reply");
+  });
+
+  it("with a stagger, an early O sends the reply at once and an early H sends none (spec §3: min(O, t0 + stagger))", async () => {
+    const early = await one(ordinary, { texts: ["O"], delayMs: 60 }, undefined, { mode: "parallel", staggerMs: 120 });
+    expect(early.row.t.replySent).toBe(early.row.t.judgeDone);
+    expect(early.row.t.audible).toBe(early.row.t.firstReplyAudio);
+    const held = await one(control, { texts: ["H"], delayMs: 60 }, undefined, { mode: "parallel", staggerMs: 120 });
+    expect(purposes(held.creates)).toEqual(["judge"]);
+    expect(held.row).toMatchObject({ decision: "held", mutedReplyAudio: null });
+    expect(held.row.t.replySent).toBeNull();
   });
 });
 
@@ -417,6 +480,8 @@ describe("judge spike CLI", () => {
     const out = JSON.parse(readFileSync(join(d, "dist", "dry-run", files.find((f) => f.endsWith(".json"))!), "utf8")) as RunFile;
     expect(out.transport).toBe("fake");
     expect(out.judge).toEqual({ maxOutputTokens: "inf", effort: "minimal" });
+    expect(out.run).toEqual({ mode: "parallel", staggerMs: 0 });
+    expect(logs[3]).toMatch(/^harness: mode parallel, stagger 0 ms;/);
     expect(Object.fromEntries(out.rows.map((r) => [r.lineId, r.decision]))).toEqual({ "c-forget-1": "held", "o-01": "reply" });
   });
 
@@ -431,6 +496,23 @@ describe("judge spike CLI", () => {
     expect(judgeSettings({ "max-tokens": "inf" }).maxOutputTokens).toBe("inf");
     for (const bad of ["0", "-3", "1.5", "16x", "Infinity"]) expect(() => judgeSettings({ "max-tokens": bad })).toThrow(/--max-tokens/);
     expect(() => judgeSettings({ effort: "max" })).toThrow(/--effort/);
+  });
+
+  it("takes --mode and --stagger-ms, defaults to parallel with no stagger, and refuses bad values", async () => {
+    expect(runSettings({})).toEqual({ mode: "parallel", staggerMs: 0 });
+    expect(runSettings({ mode: "sequential" })).toEqual({ mode: "sequential", staggerMs: 0 });
+    expect(runSettings({ "stagger-ms": "120" })).toEqual({ mode: "parallel", staggerMs: 120 });
+    expect(() => runSettings({ mode: "both" })).toThrow(/--mode/);
+    for (const bad of ["-1", "1.5", "x", "601"]) expect(() => runSettings({ "stagger-ms": bad })).toThrow(/--stagger-ms/);
+    expect(() => runSettings({ mode: "sequential", "stagger-ms": "120" })).toThrow(/parallel only/);
+    const d = spikeDir();
+    const logs: string[] = [];
+    expect(await main(["harness", "--lines", "o-01,c-forget-1", "--mode", "sequential"], { spikeDir: d, env: {}, log: (l) => logs.push(l) })).toBe(0);
+    expect(logs[3]).toBe("harness: mode sequential; the reply goes out only after a valid O");
+    const file = readdirSync(join(d, "dist", "dry-run")).find((f) => f.endsWith(".json"))!;
+    const out = JSON.parse(readFileSync(join(d, "dist", "dry-run", file), "utf8")) as RunFile;
+    expect(out.run).toEqual({ mode: "sequential", staggerMs: 0 });
+    expect(out.rows.every((r) => r.t.replyCreated === null)).toBe(true);
   });
 
   it("refuses a live run without usable audio before connecting", async () => {
@@ -518,7 +600,7 @@ describe("judge spike CLI", () => {
     expect(logs[2]).toBe(`harness: 1.4 s of trailing silence trimmed from the takes (speech threshold RMS ${SPEECH_RMS_THRESHOLD}, 100 ms kept)`);
     const file = readdirSync(join(d, "dist", "dry-run")).find((f) => f.endsWith(".json"))!;
     const out = JSON.parse(readFileSync(join(d, "dist", "dry-run", file), "utf8")) as RunFile;
-    expect(out.version).toBe("judge-spike-run-3");
+    expect(out.version).toBe("judge-spike-run-4");
     expect(out.rows[0]).toMatchObject({ takeMs: 2500, trimmedMs: 1400, audioMs: 1100 });
   });
 

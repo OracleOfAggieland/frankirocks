@@ -4,11 +4,13 @@
  *
  *   synth [--live] [--lines id,id]    synthetic audio through text-to-speech
  *   harness [--source synthetic|owner] [--live] [--lines id,id] [--max-tokens n|inf] [--effort value] [--seed n]
+ *           [--mode sequential|parallel] [--stagger-ms n]
  *                                     the judge measurement; without --live it runs the whole flow against the
  *                                     fake transport. The judge defaults to no output cap and effort minimal; the
  *                                     lines run in a fixed seeded order (default seed 7), up to 30 per session.
  *                                     Each take's trailing silence is trimmed before it is streamed (trim.ts);
- *                                     a take with no speech is refused before connecting.
+ *                                     a take with no speech is refused before connecting. The mode defaults to
+ *                                     parallel (the reply goes out beside the judge, muted), stagger 0 ms.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -18,7 +20,7 @@ import { MODEL_VARS, requireModel } from "../../packages/server/src/config/model
 import { requireEnv } from "../../packages/server/src/config/env";
 import { type HarnessClock, liveClock, wallDateIso } from "./clock";
 import { fakeConnect, placeholderPcm } from "./fake-realtime";
-import { DEFAULT_SEED, MAX_RUN_LINES, NO_SPEECH, SPIKE_JUDGE_SETTINGS, runHarness, silentTakes } from "./harness";
+import { DEFAULT_RUN, DEFAULT_SEED, MAX_RUN_LINES, MAX_STAGGER_MS, NO_SPEECH, RUN_MODES, type RunMode, type RunSettings, SPIKE_JUDGE_SETTINGS, runHarness, silentTakes } from "./harness";
 import { type ProbeLine, lineSetHash, loadLines } from "./lines";
 import { AUDIO_SOURCES, type AudioSource, audioDir, linesFile, resultsDir, wavPath } from "./paths";
 import { type Connect, liveConnect } from "./realtime";
@@ -142,10 +144,28 @@ export function seedOf(values: Readonly<Record<string, string>>): number {
 
 const DRY_RUN_TONE_MS = 1_500;
 
+/**
+ * `--mode sequential|parallel` (default parallel) and `--stagger-ms <n>` (default 0, parallel only, at most
+ * MAX_STAGGER_MS). Brief 009.
+ */
+export function runSettings(values: Readonly<Record<string, string>>): RunSettings {
+  const mode = values.mode ?? DEFAULT_RUN.mode;
+  if (!(RUN_MODES as readonly string[]).includes(mode)) throw new Error(`--mode must be one of ${RUN_MODES.join(", ")}, not ${mode}`);
+  const raw = values["stagger-ms"];
+  let staggerMs = DEFAULT_RUN.staggerMs;
+  if (raw !== undefined) {
+    if (!/^\d+$/.test(raw) || Number(raw) > MAX_STAGGER_MS) throw new Error(`--stagger-ms must be an integer from 0 to ${MAX_STAGGER_MS}, not ${raw}`);
+    staggerMs = Number(raw);
+    if (mode === "sequential") throw new Error("--stagger-ms applies to --mode parallel only");
+  }
+  return { mode: mode as RunMode, staggerMs };
+}
+
 async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   const source = (flags.values.source ?? "synthetic") as AudioSource;
   if (!AUDIO_SOURCES.includes(source)) throw new Error(`--source must be one of ${AUDIO_SOURCES.join(", ")}`);
   const judge = judgeSettings(flags.values);
+  const runMode = runSettings(flags.values);
   const seed = seedOf(flags.values);
   const all = loadLines(linesFile(ctx.spikeDir));
   let lines = selectLines(all, flags.lines);
@@ -173,6 +193,11 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   ctx.log(`harness: ${lines.length} lines, ${seconds.toFixed(1)} s of audio, source ${source}, ${flags.live ? "LIVE Realtime session" : "fake transport"}`);
   ctx.log(`harness: judge max_output_tokens ${judge.maxOutputTokens}, effort ${judge.effort}; line order seed ${seed}`);
   ctx.log(`harness: ${trimmedSeconds.toFixed(1)} s of trailing silence trimmed from the takes (speech threshold RMS ${SPEECH_RMS_THRESHOLD}, ${KEEP_AFTER_MS} ms kept)`);
+  ctx.log(
+    runMode.mode === "parallel"
+      ? `harness: mode parallel, stagger ${runMode.staggerMs} ms; a speculative reply goes out on every line, held lines included, and is cancelled at the verdict`
+      : "harness: mode sequential; the reply goes out only after a valid O",
+  );
   if (lines.length === 0) {
     ctx.log("harness: no lines to run.");
     return 1;
@@ -223,10 +248,10 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   }
   if (source === "owner") for (const l of lines) voices.set(l.id, "owner");
 
-  const work = runHarness({ lines, audio, voices, models, judge, seed, apiKey, connect, clock, log: ctx.log });
+  const work = runHarness({ lines, audio, voices, models, judge, run: runMode, seed, apiKey, connect, clock, log: ctx.log });
   const out = virtual === null ? await work : await virtual.run(work);
   const date = wallDateIso();
-  const run = runFile({ date, source, transport: flags.live ? "live" : "fake", lineSetCommit: set.commit + (set.dirty ? " (dirty)" : ""), lineSetHash: lineSetHash(all), models, judge }, out);
+  const run = runFile({ date, source, transport: flags.live ? "live" : "fake", lineSetCommit: set.commit + (set.dirty ? " (dirty)" : ""), lineSetHash: lineSetHash(all), models, judge, run: runMode }, out);
   const dir = flags.live ? resultsDir(ctx.spikeDir) : join(ctx.spikeDir, "dist", "dry-run");
   mkdirSync(dir, { recursive: true });
   const base = join(dir, `${date.replace(/[:.]/g, "-")}-${source}`);
@@ -245,7 +270,7 @@ export async function main(argv: readonly string[], ctx: CliContext): Promise<nu
   const [name, ...rest] = argv;
   const command = name === undefined ? undefined : COMMANDS[name];
   if (command === undefined) {
-    ctx.log(`usage: node scripts/judge-spike/run.mjs <${Object.keys(COMMANDS).join("|")}> [--live] [--lines id,id] [--source synthetic|owner] [--max-tokens n|inf] [--effort value] [--seed n]`);
+    ctx.log(`usage: node scripts/judge-spike/run.mjs <${Object.keys(COMMANDS).join("|")}> [--live] [--lines id,id] [--source synthetic|owner] [--max-tokens n|inf] [--effort value] [--seed n] [--mode sequential|parallel] [--stagger-ms n]`);
     return 2;
   }
   return command(parseFlags(rest), ctx);

@@ -27,8 +27,24 @@ export interface FakeOptions {
   itemAddedDelayMs?: number;
   transcriptDelayMs?: number;
   replyAudioDelayMs?: number;
+  /** A reply that is not cancelled first finishes by itself (`completed`) this long after its response.create. */
+  replyDoneMs?: number;
+  /** Milliseconds from response.create to response.created, by purpose (default 5 for both). */
+  createdDelayMs?: { judge?: number; reply?: number };
+  /**
+   * `refuse`: a response.create while another response is in progress gets an `error` event and no response
+   * (brief 009: the S-Audio question whether two out-of-band responses can run at once). Default `allow`.
+   */
+  concurrent?: "allow" | "refuse";
   silenceMs?: number;
 }
+
+/** The error the fake sends when it refuses a second response. The real server's wording is not known. */
+export const FAKE_REFUSAL = {
+  type: "invalid_request_error",
+  code: "conversation_already_has_active_response",
+  message: "Conversation already has an active response in progress. Wait until the response is finished before creating a new one.",
+} as const;
 
 export interface FakeLog {
   sent: RealtimeClientEvent[];
@@ -57,14 +73,19 @@ export function fakeConnect(opts: FakeOptions): { connect: Connect; log: FakeLog
     const handlers: ((e: ServerEvent) => void)[] = [];
     const closers: ((r: string) => void)[] = [];
     let open = true;
-    const emit = (delayMs: number, event: ServerEvent) =>
+    const emit = (delayMs: number, event: ServerEvent, then?: () => void) =>
       opts.clock.setTimer(delayMs, () => {
-        if (open) for (const h of handlers) h(event);
+        if (!open) return;
+        then?.();
+        for (const h of handlers) h(event);
       });
     let audioMs = 0;
     let speech: { itemId: string; startMs: number } | null = null;
     let silenceFrom: number | null = null;
-    const replies = new Map<string, unknown>();
+    const replies = new Map<string, { metadata: unknown; timers: unknown[] }>();
+    /** Responses in progress: created and not yet done. */
+    const active = new Set<string>();
+    let eventCount = 0;
     const silenceMs = opts.silenceMs ?? 300;
 
     const transport: Transport = {
@@ -108,40 +129,60 @@ export function fakeConnect(opts: FakeOptions): { connect: Connect; log: FakeLog
           case "response.create": {
             const r = (event.response ?? {}) as Record<string, unknown>;
             const metadata = (r.metadata ?? {}) as Record<string, string>;
+            if (opts.concurrent === "refuse" && active.size > 0) {
+              emit(5, { type: "error", event_id: `event_${++eventCount}`, error: { ...FAKE_REFUSAL, param: null, event_id: null } });
+              return;
+            }
             const id = `resp_${++responseCount}`;
-            emit(5, { type: "response.created", response: { id, status: "in_progress", metadata } });
-            if (metadata.purpose === "judge") {
+            active.add(id);
+            const isJudge = metadata.purpose === "judge";
+            const createdMs = (isJudge ? opts.createdDelayMs?.judge : opts.createdDelayMs?.reply) ?? 5;
+            emit(createdMs, { type: "response.created", response: { id, status: "in_progress", metadata } });
+            if (isJudge) {
               const script = opts.judge(judgeCalls++, String(metadata.turnId ?? ""));
               const delay = script.delayMs ?? 180;
               const texts = script.texts === undefined ? ["O"] : script.texts;
               if (texts !== null && texts.length > 0 && !script.noDone) {
-                emit(Math.min(delay, 40), { type: "response.output_text.delta", response_id: id, delta: texts[0]!.slice(0, 1) });
+                emit(Math.max(createdMs, Math.min(delay, 40)), { type: "response.output_text.delta", response_id: id, delta: texts[0]!.slice(0, 1) });
               }
               if (!script.noDone) {
-                emit(delay, {
-                  type: "response.done",
-                  response: {
-                    id,
-                    status: script.status ?? "completed",
-                    metadata,
-                    output: texts === null ? [] : texts.map((text) => ({ type: "message", role: "assistant", content: [{ type: "output_text", text }] })),
-                    usage: script.usage ?? { total_tokens: 120, input_tokens: 119, output_tokens: 1, output_token_details: { text_tokens: 1, audio_tokens: 0 } },
+                emit(
+                  delay,
+                  {
+                    type: "response.done",
+                    response: {
+                      id,
+                      status: script.status ?? "completed",
+                      metadata,
+                      output: texts === null ? [] : texts.map((text) => ({ type: "message", role: "assistant", content: [{ type: "output_text", text }] })),
+                      usage: script.usage ?? { total_tokens: 120, input_tokens: 119, output_tokens: 1, output_token_details: { text_tokens: 1, audio_tokens: 0 } },
+                    },
                   },
-                });
+                  () => active.delete(id),
+                );
               }
             } else {
-              replies.set(id, metadata);
-              emit(opts.replyAudioDelayMs ?? 250, { type: "response.output_audio.delta", response_id: id, delta: "AAAA" });
+              const timers = [emit(Math.max(createdMs, opts.replyAudioDelayMs ?? 250), { type: "response.output_audio.delta", response_id: id, delta: "AAAA" })];
+              if (opts.replyDoneMs !== undefined) {
+                timers.push(
+                  emit(Math.max(createdMs, opts.replyDoneMs), { type: "response.done", response: { id, status: "completed", metadata, output: [] } }, () => {
+                    active.delete(id);
+                    replies.delete(id);
+                  }),
+                );
+              }
+              replies.set(id, { metadata, timers });
             }
             return;
           }
           case "response.cancel": {
             const id = String(event.response_id);
-            if (replies.has(id)) {
-              const metadata = replies.get(id);
+            const reply = replies.get(id);
+            if (reply !== undefined) {
               replies.delete(id);
-              emit(5, { type: "response.done", response: { id, status: "cancelled", metadata, output: [] } });
-            }
+              for (const timer of reply.timers) opts.clock.clearTimer(timer);
+              emit(5, { type: "response.done", response: { id, status: "cancelled", metadata: reply.metadata, output: [] } }, () => active.delete(id));
+            } else active.delete(id);
             return;
           }
         }
