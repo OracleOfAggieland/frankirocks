@@ -21,8 +21,8 @@ export interface FakeJudgeScript {
 
 export interface FakeOptions {
   clock: HarnessClock;
-  /** The script for judge call `i` (0-based, in the order the harness sends them). */
-  judge: (i: number) => FakeJudgeScript;
+  /** The script for judge call `i` (0-based, in the order the harness sends them), for the turn it names. */
+  judge: (i: number, turnId: string) => FakeJudgeScript;
   transcript?: (itemIndex: number) => string;
   itemAddedDelayMs?: number;
   transcriptDelayMs?: number;
@@ -111,7 +111,7 @@ export function fakeConnect(opts: FakeOptions): { connect: Connect; log: FakeLog
             const id = `resp_${++responseCount}`;
             emit(5, { type: "response.created", response: { id, status: "in_progress", metadata } });
             if (metadata.purpose === "judge") {
-              const script = opts.judge(judgeCalls++);
+              const script = opts.judge(judgeCalls++, String(metadata.turnId ?? ""));
               const delay = script.delayMs ?? 180;
               const texts = script.texts === undefined ? ["O"] : script.texts;
               if (texts !== null && texts.length > 0 && !script.noDone) {

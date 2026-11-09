@@ -32,6 +32,9 @@ export interface RunMeta {
 
 export interface RunFile extends RunMeta {
   version: "judge-spike-run-2";
+  /** The line-order seed, and the line IDs in the order they ran. */
+  seed: number;
+  order: string[];
   sessions: string[][];
   eventNames: string[];
   rows: Row[];
@@ -40,7 +43,7 @@ export interface RunFile extends RunMeta {
 export function runFile(meta: RunMeta, out: HarnessOutput): RunFile {
   // No transcript of the owner's own takes leaves the machine in a committed file (brief 006 item 4).
   const rows = meta.source === "owner" ? out.rows.map((r) => ({ ...r, transcript: null })) : out.rows;
-  return { version: "judge-spike-run-2", ...meta, sessions: out.sessions, eventNames: out.eventNames, rows };
+  return { version: "judge-spike-run-2", ...meta, seed: out.seed, order: out.order, sessions: out.sessions, eventNames: out.eventNames, rows };
 }
 
 /** Nearest-rank percentile; null for an empty list. */
@@ -121,7 +124,17 @@ export interface Summary {
   ordinaryLatencyMs: { p50: number | null; p95: number | null; n: number };
   asrMs: { p50: number | null; p95: number | null; n: number; withinFallback: number };
   probes: { p50: number | null; measured: number; total: number };
+  /** Per session: its lines by kind and its judge time, so a session effect shows. */
+  sessions: SessionStats[];
   stops: { verdict: StopState; latency: StopState; recall: StopState };
+}
+
+export interface SessionStats {
+  session: number;
+  lines: number;
+  control: number;
+  ordinary: number;
+  judgeMs: { p50: number | null; n: number };
 }
 
 function ratio(rows: readonly Row[], hit: (r: Row) => boolean): Ratio {
@@ -203,6 +216,19 @@ export function summarize(run: RunFile): Summary {
     ordinaryLatencyMs: dist(nums(rows, (r) => r.derived.ordinaryLatencyMs)),
     asrMs: { ...dist(asr), withinFallback: asr.filter((v) => v <= ASR_FALLBACK_MS).length },
     probes: { p50: percentile(probeLatencies, 50), measured: probeLatencies.length, total: probes.length },
+    sessions: [...new Set(rows.map((r) => r.session))]
+      .sort((a, b) => a - b)
+      .map((session) => {
+        const in_ = rows.filter((r) => r.session === session);
+        const judge = nums(in_, (r) => r.derived.judgeMs);
+        return {
+          session,
+          lines: in_.length,
+          control: in_.filter((r) => r.expect === "hold").length,
+          ordinary: in_.filter((r) => r.expect === "ordinary").length,
+          judgeMs: { p50: percentile(judge, 50), n: judge.length },
+        };
+      }),
     stops: { verdict, latency, recall: recallState },
   };
 }
@@ -265,6 +291,12 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   out.push(`Transcripts within ${ASR_FALLBACK_MS} ms of commit: ${s.asrMs.n === 0 ? "—" : `${s.asrMs.withinFallback} of ${s.asrMs.n}`}.`);
   out.push("");
   out.push("## Sessions");
+  out.push("");
+  out.push(`Lines ran in a seeded order (seed ${run.seed}), up to 30 per session.`);
+  out.push("");
+  out.push("| Session | Lines | Control | Ordinary | Judge p50 | n |");
+  out.push("|---|---|---|---|---|---|");
+  for (const x of s.sessions) out.push(`| ${x.session + 1} | ${x.lines} | ${x.control} | ${x.ordinary} | ${ms(x.judgeMs.p50)} | ${x.judgeMs.n} |`);
   out.push("");
   run.sessions.forEach((ids, i) => out.push(`- Session ${i + 1}: ${ids.join(", ")}`));
   out.push("");

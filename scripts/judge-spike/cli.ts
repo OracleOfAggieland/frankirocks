@@ -3,9 +3,10 @@
  * esbuild and calls `main`. Nothing here reaches the network without `--live`.
  *
  *   synth [--live] [--lines id,id]    synthetic audio through text-to-speech
- *   harness [--source synthetic|owner] [--live] [--lines id,id] [--max-tokens n|inf] [--effort value]
+ *   harness [--source synthetic|owner] [--live] [--lines id,id] [--max-tokens n|inf] [--effort value] [--seed n]
  *                                     the judge measurement; without --live it runs the whole flow against the
- *                                     fake transport. The judge defaults to no output cap and effort minimal.
+ *                                     fake transport. The judge defaults to no output cap and effort minimal; the
+ *                                     lines run in a fixed seeded order (default seed 7), up to 30 per session.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -15,7 +16,7 @@ import { MODEL_VARS, requireModel } from "../../packages/server/src/config/model
 import { requireEnv } from "../../packages/server/src/config/env";
 import { type HarnessClock, liveClock, wallDateIso } from "./clock";
 import { fakeConnect, placeholderPcm } from "./fake-realtime";
-import { MAX_RUN_LINES, SPIKE_JUDGE_SETTINGS, runHarness } from "./harness";
+import { DEFAULT_SEED, MAX_RUN_LINES, SPIKE_JUDGE_SETTINGS, runHarness } from "./harness";
 import { type ProbeLine, lineSetHash, loadLines } from "./lines";
 import { AUDIO_SOURCES, type AudioSource, audioDir, linesFile, resultsDir, wavPath } from "./paths";
 import { type Connect, liveConnect } from "./realtime";
@@ -127,12 +128,22 @@ export function judgeSettings(values: Readonly<Record<string, string>>): JudgeSe
   return { maxOutputTokens, effort };
 }
 
+/** `--seed <n>` for the line order, an integer from 0 to 2^32 - 1; DEFAULT_SEED when absent. */
+export function seedOf(values: Readonly<Record<string, string>>): number {
+  const raw = values.seed;
+  if (raw === undefined) return DEFAULT_SEED;
+  const n = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(n) || n > 0xffffffff) throw new Error(`--seed must be an integer from 0 to 4294967295, not ${raw}`);
+  return n;
+}
+
 const DRY_RUN_TONE_MS = 1_500;
 
 async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   const source = (flags.values.source ?? "synthetic") as AudioSource;
   if (!AUDIO_SOURCES.includes(source)) throw new Error(`--source must be one of ${AUDIO_SOURCES.join(", ")}`);
   const judge = judgeSettings(flags.values);
+  const seed = seedOf(flags.values);
   const all = loadLines(linesFile(ctx.spikeDir));
   let lines = selectLines(all, flags.lines);
   // The owner may record any subset: without --lines, the owner run takes the lines that have a take.
@@ -154,7 +165,7 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   // Cost guard: say what would be sent before connecting, and never more than MAX_RUN_LINES.
   const seconds = [...audio.values()].reduce((n, pcm) => n + pcm.byteLength / 48_000, 0);
   ctx.log(`harness: ${lines.length} lines, ${seconds.toFixed(1)} s of audio, source ${source}, ${flags.live ? "LIVE Realtime session" : "fake transport"}`);
-  ctx.log(`harness: judge max_output_tokens ${judge.maxOutputTokens}, effort ${judge.effort}`);
+  ctx.log(`harness: judge max_output_tokens ${judge.maxOutputTokens}, effort ${judge.effort}; line order seed ${seed}`);
   if (lines.length === 0) {
     ctx.log("harness: no lines to run.");
     return 1;
@@ -189,8 +200,8 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
     virtual = new VirtualClock();
     clock = virtual;
     models = { voice: ctx.env[MODEL_VARS.voice] ?? "unset", transcribe: ctx.env[MODEL_VARS.transcribe] ?? "unset" };
-    const expectOf = new Map(lines.map((l, i) => [i, l.expect]));
-    connect = fakeConnect({ clock, judge: (i) => ({ texts: [expectOf.get(i) === "hold" ? "H" : "O"] }) }).connect;
+    const expectOf = new Map(lines.map((l) => [l.id, l.expect]));
+    connect = fakeConnect({ clock, judge: (_i, turnId) => ({ texts: [expectOf.get(turnId) === "hold" ? "H" : "O"] }) }).connect;
   }
 
   const voices = new Map<string, string>();
@@ -200,7 +211,7 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   }
   if (source === "owner") for (const l of lines) voices.set(l.id, "owner");
 
-  const work = runHarness({ lines, audio, voices, models, judge, apiKey, connect, clock, log: ctx.log });
+  const work = runHarness({ lines, audio, voices, models, judge, seed, apiKey, connect, clock, log: ctx.log });
   const out = virtual === null ? await work : await virtual.run(work);
   const date = wallDateIso();
   const run = runFile({ date, source, transport: flags.live ? "live" : "fake", lineSetCommit: set.commit + (set.dirty ? " (dirty)" : ""), lineSetHash: lineSetHash(all), models, judge }, out);
@@ -222,7 +233,7 @@ export async function main(argv: readonly string[], ctx: CliContext): Promise<nu
   const [name, ...rest] = argv;
   const command = name === undefined ? undefined : COMMANDS[name];
   if (command === undefined) {
-    ctx.log(`usage: node scripts/judge-spike/run.mjs <${Object.keys(COMMANDS).join("|")}> [--live] [--lines id,id] [--source synthetic|owner] [--max-tokens n|inf] [--effort value]`);
+    ctx.log(`usage: node scripts/judge-spike/run.mjs <${Object.keys(COMMANDS).join("|")}> [--live] [--lines id,id] [--source synthetic|owner] [--max-tokens n|inf] [--effort value] [--seed n]`);
     return 2;
   }
   return command(parseFlags(rest), ctx);

@@ -1,7 +1,7 @@
 /**
- * The judge spike harness (brief 006 item 4). Runs probe lines one at a time through a Realtime session and
- * records, on one monotonic clock, every instant the spec's sequential floor depends on (spec §3, §13, §14 item 1;
- * contracts §5 judge_v1, §6 Realtime):
+ * The judge spike harness (brief 006 item 4). Runs probe lines one at a time, in a seeded order, through a
+ * Realtime session and records, on one monotonic clock, every instant the spec's sequential floor depends on (spec
+ * §3, §13, §14 item 1; contracts §5 judge_v1, §6 Realtime):
  *
  *   stream the WAV in 20 ms chunks at real time, then silence until the VAD commits;
  *   wait for `conversation.item.added`, send judge_v1 and parse its verdict with the core parser;
@@ -378,6 +378,8 @@ export interface HarnessInput {
   models: { voice: string; transcribe: string };
   /** The judge's output cap and effort for every line of the run. */
   judge: JudgeSettings;
+  /** The seed for the line order (`shuffleLines`). */
+  seed: number;
   apiKey: string;
   connect: Connect;
   clock: HarnessClock;
@@ -386,19 +388,53 @@ export interface HarnessInput {
 
 export interface HarnessOutput {
   rows: Row[];
+  /** The shuffle seed, and the line IDs in the order they ran. */
+  seed: number;
+  order: string[];
   /** Which lines shared each session, in order. */
   sessions: string[][];
   eventNames: string[];
 }
 
-/** Runs every line in order, a fresh session every SESSION_LINES lines. */
+/** The default `--seed`: fixed, so two runs on the same lines run them in the same order. */
+export const DEFAULT_SEED = 7;
+
+/** mulberry32: a small seeded generator, so the order depends only on the seed. Values in [0, 1). */
+function seededRandom(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * The lines in a fixed seeded order (Fisher-Yates), so control and ordinary lines share sessions and a session
+ * effect can be told apart from a class effect (brief 007 item 4).
+ */
+export function shuffleLines<T>(lines: readonly T[], seed: number): T[] {
+  if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffffffff) throw new RangeError("seed must be an integer from 0 to 4294967295");
+  const out = [...lines];
+  const random = seededRandom(seed);
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+/** Runs every line in the seeded order, a fresh session every SESSION_LINES lines. */
 export async function runHarness(input: HarnessInput): Promise<HarnessOutput> {
   if (input.lines.length > MAX_RUN_LINES) throw new Error(`refusing ${input.lines.length} lines: at most ${MAX_RUN_LINES} in one run`);
+  const ordered = shuffleLines(input.lines, input.seed);
   const rows: Row[] = [];
   const sessions: string[][] = [];
   const names = new Set<string>();
-  for (let i = 0; i < input.lines.length; i += SESSION_LINES) {
-    const group = input.lines.slice(i, i + SESSION_LINES);
+  for (let i = 0; i < ordered.length; i += SESSION_LINES) {
+    const group = ordered.slice(i, i + SESSION_LINES);
     const s = await openSession(input.connect, { voiceModel: input.models.voice, transcribeModel: input.models.transcribe, apiKey: input.apiKey }, input.clock, sessions.length);
     sessions.push(group.map((l) => l.id));
     try {
@@ -415,5 +451,5 @@ export async function runHarness(input: HarnessInput): Promise<HarnessOutput> {
       s.transport.close();
     }
   }
-  return { rows, sessions, eventNames: [...names].sort() };
+  return { rows, seed: input.seed, order: ordered.map((l) => l.id), sessions, eventNames: [...names].sort() };
 }
