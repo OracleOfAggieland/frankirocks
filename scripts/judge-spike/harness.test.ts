@@ -79,6 +79,18 @@ describe("judge spike harness against the fake transport", () => {
     expect(row.t.speechEnd).toBe(row.t.streamStart! + 1200);
   });
 
+  it("brief 009 item 3: takes the end of audible speech from the chunk holding the last loud frame", async () => {
+    // 1,200 ms of tone, then 1,000 ms of quiet; the last loud frame starts at 1,180 ms.
+    const take = concat(placeholderPcm(1200), new Uint8Array(1000 * 48));
+    for (const mode of [SEQUENTIAL, PARALLEL]) {
+      const { row } = await one(ordinary, { texts: ["O"] }, take, mode);
+      expect(row.t.lastLoudSent).toBe(row.t.streamStart! + 1180);
+      expect(row.derived.vadEndAfterLoudMs).toBe(row.t.speechEnd! - row.t.lastLoudSent!);
+      expect(row.derived.ordinaryLatencyFromLoudMs).toBe(row.t.audible! - row.t.lastLoudSent!);
+      expect(row.derived.ordinaryLatencyMs).toBe(row.t.audible! - row.t.speechEnd!);
+    }
+  });
+
   it("an H line sends no reply", async () => {
     const { row, creates } = await one(control, { texts: ["H"] });
     expect(purposes(creates)).toEqual(["judge"]);
@@ -302,7 +314,7 @@ function row(over: Partial<Row>): Row {
 const META = { date: "2026-11-09T00:00:00.000Z", source: "synthetic" as const, transport: "fake" as const, lineSetCommit: "abc", lineSetHash: "f".repeat(64), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS };
 const run = (rows: Row[], source: "synthetic" | "owner" = "synthetic"): RunFile => runFile({ ...META, source }, { rows, seed: DEFAULT_SEED, order: rows.map((r) => r.lineId), sessions: [rows.map((r) => r.lineId)], eventNames: [] });
 const probes = (n: number, latency: number | null) =>
-  Array.from({ length: n }, (_, i) => row({ lineId: `o-${i}`, probe: true, derived: { judgeMs: 200, ordinaryLatencyMs: latency, asrMs: 400, commitToJudgeSentMs: 30 }, decision: latency === null ? "held" : "reply" }));
+  Array.from({ length: n }, (_, i) => row({ lineId: `o-${i}`, probe: true, derived: { judgeMs: 200, ordinaryLatencyMs: latency, ordinaryLatencyFromLoudMs: latency, asrMs: 400, commitToJudgeSentMs: 30 }, decision: latency === null ? "held" : "reply" }));
 const controls = (held: number, of: number) =>
   Array.from({ length: of }, (_, i) => row({ lineId: `c-${i}`, class: "forget", expect: "hold", decision: i < held ? "held" : "reply", verdict: i < held ? "H" : "O" }));
 
@@ -434,6 +446,25 @@ describe("judge spike summary", () => {
   it("drops the transcripts of the owner's own takes", () => {
     expect(run([row({})], "owner").rows[0]!.transcript).toBeNull();
     expect(run([row({})], "synthetic").rows[0]!.transcript).toBe("hi");
+  });
+
+  it("brief 009 item 3: the stop rule reads latency from the last loud frame, and both measures print with their gap", () => {
+    // From the last loud frame 700 ms (within); from audio_end_ms 1,000 ms, which alone would be over the line.
+    const rows = Array.from({ length: 15 }, (_, i) => row({ lineId: `o-${i}`, probe: true, derived: { judgeMs: 200, ordinaryLatencyMs: 1000, ordinaryLatencyFromLoudMs: 700, vadEndAfterLoudMs: 290, asrMs: 400, commitToJudgeSentMs: 30 } }));
+    const s = summarize(run(rows));
+    expect(s.stops.latency).toBe("within");
+    expect(s.probes.p50).toBe(700);
+    expect(s.vadEndAfterLoudMs).toEqual({ p50: 290, p95: 290, n: 15 });
+    const md = summaryMarkdown(run(rows));
+    expect(md).toContain("| Ordinary latency from the last loud frame (end of audible speech to audible time; +60 ms playback in the browser) | 700 ms | 700 ms | 15 |");
+    expect(md).toContain("| Ordinary latency from the VAD's end of speech (`speech_stopped.audio_end_ms` to audible time) | 1000 ms | 1000 ms | 15 |");
+    expect(md).toContain("VAD end of speech (`audio_end_ms`) after the last loud frame: p50 290 ms, p95 290 ms, over 15 line(s).");
+    // A run from before brief 009 has no last-loud-frame time: the latency rule is not measured, and says so.
+    const before = JSON.parse(readFileSync(new URL("./results/2026-11-09T19-19-59-517Z-owner.json", import.meta.url), "utf8")) as RunFile;
+    const b = summarize(before);
+    expect(b.stops.latency).toBe("not measured");
+    expect(Math.round(b.ordinaryLatencyMs.p50!)).toBe(1325);
+    expect(summaryMarkdown(before)).toContain("VAD end of speech after the last loud frame: not measured (no row has both times).");
   });
 
   it("prints the judge settings at the top and the largest and p50 token counts", () => {

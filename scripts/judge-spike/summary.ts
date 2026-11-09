@@ -128,7 +128,12 @@ export interface Summary {
   reasoningTokens: TokenStats;
   outputTokens: TokenStats;
   judgeMs: { p50: number | null; p95: number | null; n: number };
+  /** From the VAD's end of speech (`speech_stopped.audio_end_ms`) to audible time. */
   ordinaryLatencyMs: { p50: number | null; p95: number | null; n: number };
+  /** From the end of audible speech (the take's last loud frame) to audible time; the stop rule reads this. */
+  ordinaryLatencyFromLoudMs: { p50: number | null; p95: number | null; n: number };
+  /** The VAD's end of speech minus the last loud frame's send time (brief 009 item 3). */
+  vadEndAfterLoudMs: { p50: number | null; p95: number | null; n: number };
   asrMs: { p50: number | null; p95: number | null; n: number; withinFallback: number };
   /** Commit to judge sent: p50, largest, and the lines over COMMIT_TO_SEND_FLAG_MS with their gap. */
   commitToSendMs: { p50: number | null; max: number | null; n: number; flagged: { lineId: string; ms: number }[] };
@@ -175,7 +180,7 @@ export function summarize(run: RunFile): Summary {
   for (const r of rows) if (r.invalidReason !== null) invalidReasons[r.invalidReason] = (invalidReasons[r.invalidReason] ?? 0) + 1;
   const reasoning = nums(rows, (r) => r.reasoningTokens);
   const asr = nums(rows, (r) => r.derived.asrMs);
-  const probeLatencies = nums(probes, (r) => r.derived.ordinaryLatencyMs);
+  const probeLatencies = nums(probes, (r) => r.derived.ordinaryLatencyFromLoudMs ?? null);
   // From the two instants, so run files from before brief 008 (no commitToJudgeSentMs) read the same way.
   const gapOf = (r: Row) => (r.t.commit === null || r.t.judgeSent === null ? null : Math.round((r.t.judgeSent - r.t.commit) * 10) / 10);
   const gaps = nums(rows, gapOf);
@@ -201,7 +206,9 @@ export function summarize(run: RunFile): Summary {
   // Best case counts every line never judged as valid.
   const verdict = shareRule(validVerdicts.deadline, (x) => x < VALID_VERDICT_STOP);
 
-  // Rule 2: sequential p50 over the 15 probes above 850 ms. A held probe has no reply latency, so it is missing.
+  // Rule 2: p50 over the 15 probes above 850 ms, from the end of audible speech (spec §13), which is the take's
+  // last loud frame (brief 009 item 3). A held probe has no reply latency, so it is missing. Runs before brief 009
+  // have no last-loud-frame time, so the rule reads not measured on them.
   let latency: StopState = "not measured";
   if (probes.length === PROBE_COUNT && probeLatencies.length === PROBE_COUNT) {
     latency = percentile(probeLatencies, 50)! > LATENCY_STOP_MS ? "over the line" : "within";
@@ -226,6 +233,8 @@ export function summarize(run: RunFile): Summary {
     outputTokens: tokenStats(nums(rows, (r) => r.outputTokens)),
     judgeMs: dist(nums(rows, (r) => r.derived.judgeMs)),
     ordinaryLatencyMs: dist(nums(rows, (r) => r.derived.ordinaryLatencyMs)),
+    ordinaryLatencyFromLoudMs: dist(nums(rows, (r) => r.derived.ordinaryLatencyFromLoudMs ?? null)),
+    vadEndAfterLoudMs: dist(nums(rows, (r) => r.derived.vadEndAfterLoudMs ?? null)),
     asrMs: { ...dist(asr), withinFallback: asr.filter((v) => v <= ASR_FALLBACK_MS).length },
     commitToSendMs: {
       p50: percentile(gaps, 50),
@@ -276,7 +285,7 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   out.push("");
   const vd = s.validVerdicts.deadline;
   out.push(`- No valid verdict on real audio (fewer than 90% of lines with one): **${s.stops.verdict}** (${vd.n} of ${vd.of + vd.missing} lines had a valid verdict within 600 ms${vd.missing > 0 ? `; ${vd.missing} never judged` : ""})`);
-  out.push(`- Sequential p50 over 850 ms on 15 probes: **${s.stops.latency}** (p50 ${ms(s.probes.p50)} over ${s.probes.measured} of ${s.probes.total} probes; browser playback adds about ${PLAYBACK_MS} ms)`);
+  out.push(`- Sequential p50 over 850 ms on 15 probes: **${s.stops.latency}** (p50 ${ms(s.probes.p50)} over ${s.probes.measured} of ${s.probes.total} probes, from the end of audible speech (the take's last loud frame) to audible time; browser playback adds about ${PLAYBACK_MS} ms)`);
   out.push(`- Control recall under 90%: **${s.stops.recall}** (judge H or U within 600 ms: ${pct(s.views.judgeDeadline.recall)})`);
   out.push("");
   out.push("## Recall and false holds");
@@ -306,8 +315,16 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   out.push("| Measure | p50 | p95 | n |");
   out.push("|---|---|---|---|");
   out.push(`| Judge (commit to judge done) | ${ms(s.judgeMs.p50)} | ${ms(s.judgeMs.p95)} | ${s.judgeMs.n} |`);
-  out.push(`| Ordinary latency (end of speech to first reply audio; +${PLAYBACK_MS} ms playback in the browser) | ${ms(s.ordinaryLatencyMs.p50)} | ${ms(s.ordinaryLatencyMs.p95)} | ${s.ordinaryLatencyMs.n} |`);
+  out.push(`| Ordinary latency from the last loud frame (end of audible speech to audible time; +${PLAYBACK_MS} ms playback in the browser) | ${ms(s.ordinaryLatencyFromLoudMs.p50)} | ${ms(s.ordinaryLatencyFromLoudMs.p95)} | ${s.ordinaryLatencyFromLoudMs.n} |`);
+  out.push(`| Ordinary latency from the VAD's end of speech (\`speech_stopped.audio_end_ms\` to audible time) | ${ms(s.ordinaryLatencyMs.p50)} | ${ms(s.ordinaryLatencyMs.p95)} | ${s.ordinaryLatencyMs.n} |`);
   out.push(`| ASR (commit to transcription done) | ${ms(s.asrMs.p50)} | ${ms(s.asrMs.p95)} | ${s.asrMs.n} |`);
+  out.push("");
+  const gap = s.vadEndAfterLoudMs;
+  out.push(
+    gap.n === 0
+      ? "VAD end of speech after the last loud frame: not measured (no row has both times)."
+      : `VAD end of speech (\`audio_end_ms\`) after the last loud frame: p50 ${ms(gap.p50)}, p95 ${ms(gap.p95)}, over ${gap.n} line(s). Near 300 ms means \`audio_end_ms\` includes the VAD's 300 ms of silence; near 0 means it marks the end of speech.`,
+  );
   out.push("");
   out.push(`Transcripts within ${ASR_FALLBACK_MS} ms of commit: ${s.asrMs.n === 0 ? "—" : `${s.asrMs.withinFallback} of ${s.asrMs.n}`}.`);
   out.push("");

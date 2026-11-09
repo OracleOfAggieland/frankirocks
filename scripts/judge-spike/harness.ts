@@ -74,8 +74,16 @@ export const MAX_STAGGER_MS = JUDGE_DEADLINE_MS;
 
 export interface Times {
   streamStart: number | null;
-  /** The send time of the chunk holding the sample at `speech_stopped.audio_end_ms`: the end of audible speech. */
+  /**
+   * The send time of the chunk holding the sample at `speech_stopped.audio_end_ms`: the VAD's end of speech. The
+   * Nov 9 run suggests `audio_end_ms` already includes the VAD's 300 ms of silence (brief 009 item 3).
+   */
   speechEnd: number | null;
+  /**
+   * The send time of the chunk holding the take's last frame above the trim threshold (`trimTail`): the end of
+   * audible speech, which spec §13 measures latency from. Absent in runs before brief 009.
+   */
+  lastLoudSent?: number | null;
   commit: number | null;
   itemAdded: number | null;
   judgeSent: number | null;
@@ -137,8 +145,20 @@ export interface Row {
    */
   concurrencyErrors?: unknown[];
   transcript: string | null;
-  /** `commitToJudgeSentMs` is the harness's own wait; judge time is fair only when it is near zero. */
-  derived: { judgeMs: number | null; ordinaryLatencyMs: number | null; asrMs: number | null; commitToJudgeSentMs: number | null };
+  /**
+   * `commitToJudgeSentMs` is the harness's own wait; judge time is fair only when it is near zero.
+   * `ordinaryLatencyMs` runs from the VAD's end of speech (`speechEnd`) to audible time;
+   * `ordinaryLatencyFromLoudMs` from the last loud frame (`lastLoudSent`), which the stop rule reads; and
+   * `vadEndAfterLoudMs` is the gap between the two ends of speech. The last two are absent before brief 009.
+   */
+  derived: {
+    judgeMs: number | null;
+    ordinaryLatencyMs: number | null;
+    ordinaryLatencyFromLoudMs?: number | null;
+    vadEndAfterLoudMs?: number | null;
+    asrMs: number | null;
+    commitToJudgeSentMs: number | null;
+  };
   errors: string[];
 }
 
@@ -265,6 +285,7 @@ function emptyRow(line: ProbeLine, session: number, voice: string | null, take: 
     t: {
       streamStart: null,
       speechEnd: null,
+      lastLoudSent: null,
       commit: null,
       itemAdded: null,
       judgeSent: null,
@@ -292,7 +313,7 @@ function emptyRow(line: ProbeLine, session: number, voice: string | null, take: 
     mutedReplyAudio: null,
     concurrencyErrors: [],
     transcript: null,
-    derived: { judgeMs: null, ordinaryLatencyMs: null, asrMs: null, commitToJudgeSentMs: null },
+    derived: { judgeMs: null, ordinaryLatencyMs: null, ordinaryLatencyFromLoudMs: null, vadEndAfterLoudMs: null, asrMs: null, commitToJudgeSentMs: null },
     errors: [],
   };
 }
@@ -323,6 +344,7 @@ export async function runLine(
   const clock = s.clock;
 
   // 1. Stream the trimmed line at real time, then silence until the VAD has committed everything it heard.
+  const lineAudioStart = s.audioMs;
   const start = clock.now();
   t.streamStart = start;
   let k = 0;
@@ -330,6 +352,7 @@ export async function runLine(
     await s.sleepUntil(start + k * CHUNK_MS);
     s.append(pcm.subarray(at, Math.min(at + CHUNK_BYTES, pcm.byteLength)));
   }
+  t.lastLoudSent = s.sentAtAudioMs(lineAudioStart + trimmed.lastLoudStartMs);
   const silence = new Uint8Array(CHUNK_BYTES);
   const settled = () => {
     const evs = s.events.slice(from);
@@ -585,6 +608,8 @@ async function finishTranscript(s: SpikeSession, row: Row, from: number, ids: st
   row.derived = {
     judgeMs: diff(t.commit, t.judgeDone),
     ordinaryLatencyMs: diff(t.speechEnd, t.audible ?? null),
+    ordinaryLatencyFromLoudMs: diff(t.lastLoudSent ?? null, t.audible ?? null),
+    vadEndAfterLoudMs: diff(t.lastLoudSent ?? null, t.speechEnd),
     asrMs: diff(t.commit, t.transcriptionDone),
     commitToJudgeSentMs: diff(t.commit, t.judgeSent),
   };
@@ -668,7 +693,7 @@ export async function runHarness(input: HarnessInput): Promise<HarnessOutput> {
         if (pcm === undefined) throw new Error(`no audio for ${line.id}`);
         const row = await runLine(s, line, pcm, input.voices.get(line.id) ?? null, input.judge, input.run);
         rows.push(row);
-        input.log(`${row.lineId}: ${row.verdict ?? "-"}${row.invalidReason ? ` (${row.invalidReason})` : ""}${row.timedOut ? " timeout" : ""} judge ${row.derived.judgeMs ?? "-"} ms, commit to send ${row.derived.commitToJudgeSentMs ?? "-"} ms, latency ${row.derived.ordinaryLatencyMs ?? "-"} ms${row.concurrencyErrors!.length > 0 ? `, ${row.concurrencyErrors!.length} error event(s)` : ""}`);
+        input.log(`${row.lineId}: ${row.verdict ?? "-"}${row.invalidReason ? ` (${row.invalidReason})` : ""}${row.timedOut ? " timeout" : ""} judge ${row.derived.judgeMs ?? "-"} ms, commit to send ${row.derived.commitToJudgeSentMs ?? "-"} ms, latency ${row.derived.ordinaryLatencyFromLoudMs ?? "-"} ms from the last loud frame (${row.derived.ordinaryLatencyMs ?? "-"} ms from audio_end_ms)${row.concurrencyErrors!.length > 0 ? `, ${row.concurrencyErrors!.length} error event(s)` : ""}`);
         if (s.closed !== null) throw new Error(`session closed: ${s.closed}`);
       }
     } finally {

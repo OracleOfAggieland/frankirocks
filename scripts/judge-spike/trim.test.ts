@@ -27,7 +27,7 @@ describe("trimTail (brief 008)", () => {
   it("witness: a long silent tail is cut to 100 ms after the last loud frame", () => {
     const take = concat(placeholderPcm(1200), level(2500, 150));
     const t = trimTail(take)!;
-    expect(t).toMatchObject({ takeMs: 3700, trimmedMs: 2400 });
+    expect(t).toMatchObject({ takeMs: 3700, trimmedMs: 2400, lastLoudStartMs: 1180 });
     expect(t.pcm.byteLength).toBe((1200 + KEEP_AFTER_MS) * MS);
     expect(same(t.pcm, take.subarray(0, (1200 + KEEP_AFTER_MS) * MS))).toBe(true);
   });
@@ -36,7 +36,7 @@ describe("trimTail (brief 008)", () => {
     const take = concat(silence(400), placeholderPcm(600), silence(900), placeholderPcm(600), silence(1500));
     const t = trimTail(take)!;
     const kept = 400 + 600 + 900 + 600 + KEEP_AFTER_MS;
-    expect(t).toMatchObject({ takeMs: 4000, trimmedMs: 4000 - kept });
+    expect(t).toMatchObject({ takeMs: 4000, trimmedMs: 4000 - kept, lastLoudStartMs: kept - KEEP_AFTER_MS - 20 });
     expect(same(t.pcm, take.subarray(0, kept * MS))).toBe(true);
   });
 

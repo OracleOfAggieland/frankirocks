@@ -39,6 +39,11 @@ export interface TrimmedTake {
   takeMs: number;
   /** Milliseconds dropped from the end. */
   trimmedMs: number;
+  /**
+   * Where the last 20 ms frame above the threshold starts, in milliseconds from the start of the take (brief 009:
+   * the end of audible speech, which spec §13 measures latency from).
+   */
+  lastLoudStartMs: number;
 }
 
 /** RMS of one frame of 16-bit little-endian PCM. */
@@ -57,11 +62,15 @@ export function frameRms(bytes: Uint8Array): number {
 export function trimTail(pcm: Uint8Array): TrimmedTake | null {
   const takeMs = pcm.byteLength / BYTES_PER_MS;
   let lastLoudEnd = -1;
+  let lastLoudStart = -1;
   for (let at = 0; at < pcm.byteLength; at += FRAME_BYTES) {
     const end = Math.min(at + FRAME_BYTES, pcm.byteLength);
-    if (frameRms(pcm.subarray(at, end)) > SPEECH_RMS_THRESHOLD) lastLoudEnd = end;
+    if (frameRms(pcm.subarray(at, end)) > SPEECH_RMS_THRESHOLD) {
+      lastLoudStart = at;
+      lastLoudEnd = end;
+    }
   }
   if (lastLoudEnd < 0) return null;
   const keep = Math.min(pcm.byteLength, lastLoudEnd + KEEP_AFTER_MS * BYTES_PER_MS);
-  return { pcm: pcm.subarray(0, keep), takeMs, trimmedMs: (pcm.byteLength - keep) / BYTES_PER_MS };
+  return { pcm: pcm.subarray(0, keep), takeMs, trimmedMs: (pcm.byteLength - keep) / BYTES_PER_MS, lastLoudStartMs: lastLoudStart / BYTES_PER_MS };
 }
