@@ -260,6 +260,116 @@ describe("judge spike harness, parallel mode (brief 009)", () => {
   });
 });
 
+describe("judge spike parallel summary, witnesses on the fake transport (brief 009 item 4)", () => {
+  const parallelRun = (rows: Row[]) => runFile({ ...META, run: PARALLEL }, { rows, seed: DEFAULT_SEED, order: rows.map((r) => r.lineId), sessions: [rows.map((r) => r.lineId)], eventNames: [] });
+
+  it("witness: an O line where the reply's audio comes first is audible at the verdict", async () => {
+    const { row } = await one(ordinary, { texts: ["O"], delayMs: 300 }, undefined, PARALLEL, { replyAudioDelayMs: 100 });
+    expect(row.t.firstReplyAudio! < row.t.judgeDone!).toBe(true);
+    expect(row.t.audible).toBe(row.t.judgeDone);
+    expect(row.t.replyCancelSent).toBe(row.t.judgeDone);
+    const p = summarize(parallelRun([row])).parallel!;
+    expect(p.audioBeforeVerdict).toEqual({ n: 1, of: 1 });
+    expect(p.judgeFromSendMs.p50).toBe(300);
+    expect(p.replyFromSendMs.p50).toBe(100);
+  });
+
+  it("witness: an O line where the verdict comes first is audible at the first reply audio", async () => {
+    const { row } = await one(ordinary, { texts: ["O"], delayMs: 150 }, undefined, PARALLEL, { replyAudioDelayMs: 250 });
+    expect(row.t.judgeDone! < row.t.firstReplyAudio!).toBe(true);
+    expect(row.t.audible).toBe(row.t.firstReplyAudio);
+    expect(row.t.replyCancelSent).toBe(row.t.firstReplyAudio);
+    expect(row.decision).toBe("reply");
+    expect(summarize(parallelRun([row])).parallel!.audioBeforeVerdict).toEqual({ n: 0, of: 1 });
+  });
+
+  it("witness: an H line whose reply is cancelled after some audio arrived counts as muted", async () => {
+    const { row, sent } = await one(control, { texts: ["H"], delayMs: 300 }, undefined, PARALLEL, { replyAudioDelayMs: 100 });
+    expect(row).toMatchObject({ verdict: "H", decision: "held", mutedReplyAudio: true });
+    expect(row.t.firstReplyAudio! < row.t.replyCancelSent!).toBe(true);
+    expect(row.t.replyCancelSent).toBe(row.t.judgeDone);
+    expect(row.t.audible).toBeNull();
+    expect(sent.filter((e) => e.type === "response.cancel")).toEqual([{ type: "response.cancel", response_id: "resp_2" }]);
+    const s = summarize(parallelRun([row]));
+    expect(s.parallel!.mutedOnHeld).toEqual({ n: 1, of: 1 });
+    expect(summaryMarkdown(parallelRun([row]))).toContain("- Reply audio received on held lines, kept muted: 1 of 1 held lines whose reply went out");
+  });
+
+  it("witness: a refused second response is recorded in full, holds the line, and is not retried in sequence", async () => {
+    const { row, creates, sent } = await one(ordinary, { texts: ["O"], delayMs: 180 }, undefined, PARALLEL, { concurrent: "refuse" });
+    expect(purposes(creates)).toEqual(["judge", "speculative"]);
+    expect(row.concurrencyErrors).toHaveLength(1);
+    expect(row.concurrencyErrors![0]).toEqual({ type: "error", event_id: "event_1", error: { ...FAKE_REFUSAL, param: null, event_id: null } });
+    // The judge's own verdict is still kept; the line is held, and no reply ever went out after it.
+    expect(row).toMatchObject({ verdict: "O", valid: true, decision: "held" });
+    expect(row.t.replyCreated).toBeNull();
+    expect(row.t.audible).toBeNull();
+    expect(sent.filter((e) => e.type === "response.create")).toHaveLength(2);
+    const p = summarize(parallelRun([row])).parallel!;
+    expect(p.errorLines).toEqual([{ lineId: ordinary.id, count: 1, first: `${FAKE_REFUSAL.code}: ${FAKE_REFUSAL.message}` }]);
+    expect(p).toMatchObject({ overlapped: 1, ranAtOnce: 0 });
+    const md = summaryMarkdown(parallelRun([row]));
+    expect(md).toContain("- Lines with an error event: 1, all held (the full events are in the run file)");
+    expect(md).toContain(`  - ${ordinary.id}: ${FAKE_REFUSAL.code}: ${FAKE_REFUSAL.message}`);
+    expect(md).toContain("**Two out-of-band responses ran at once: no.**");
+  });
+
+  it("witness: events from the two responses interleave and are matched by response ID, not by order", async () => {
+    // The reply's response.created comes first, its audio before the judge's text, and its own response.done
+    // (completed) before the judge's. Matching by arrival order would take the reply's done for the verdict.
+    const { row, session, sent } = await one(ordinary, { texts: ["O"], delayMs: 200 }, undefined, PARALLEL, {
+      createdDelayMs: { judge: 20, reply: 2 },
+      replyAudioDelayMs: 10,
+      replyDoneMs: 60,
+    });
+    const order = session.events
+      .filter((r) => r.at >= row.t.judgeSent! && r.event.type.startsWith("response."))
+      .map((r) => `${r.event.type}:${String((r.event.response as { id?: string } | undefined)?.id ?? r.event.response_id)}`);
+    expect(order).toEqual([
+      "response.created:resp_2",
+      "response.output_audio.delta:resp_2",
+      "response.created:resp_1",
+      "response.output_text.delta:resp_1",
+      "response.done:resp_2",
+      "response.done:resp_1",
+    ]);
+    expect(row).toMatchObject({ verdict: "O", valid: true, judgeText: "O", decision: "reply", concurrencyErrors: [], errors: [] });
+    expect(row.t.judgeDone! - row.t.judgeSent!).toBe(200);
+    expect(row.t.judgeFirstDelta! - row.t.judgeSent!).toBe(40);
+    expect(row.t.firstReplyAudio! - row.t.replySent!).toBe(10);
+    expect(row.t.replyCreated! - row.t.replySent!).toBe(2);
+    expect(row.t.audible).toBe(row.t.judgeDone);
+    // The reply had finished by itself, so nothing was cancelled.
+    expect(sent.filter((e) => e.type === "response.cancel")).toHaveLength(0);
+    const md = summaryMarkdown(parallelRun([row]));
+    expect(md).toContain("**Two out-of-band responses ran at once: yes.** On all 1 lines");
+  });
+
+  it("prints the mode and stagger at the top, and the parallel section only for a parallel run", () => {
+    const top = (r: RunFile) => summaryMarkdown(r).split("\n").slice(0, 6).join("\n");
+    expect(top(parallelRun([row({})]))).toContain("- Mode: parallel, stagger 0 ms");
+    expect(top(runFile({ ...META, run: { mode: "parallel", staggerMs: 120 } }, { rows: [], seed: 0, order: [], sessions: [], eventNames: [] }))).toContain("- Mode: parallel, stagger 120 ms");
+    expect(top(runFile({ ...META, run: SEQUENTIAL }, { rows: [], seed: 0, order: [], sessions: [], eventNames: [] }))).toContain("- Mode: sequential (the reply goes out after a valid O)");
+    expect(top(run([]))).toContain("- Mode: sequential (a run from before brief 009");
+    expect(summaryMarkdown(run([row({})]))).not.toContain("## Parallel");
+    expect(summaryMarkdown(parallelRun([row({})]))).toContain("## Parallel");
+    expect(summaryMarkdown(parallelRun([...probes(15, 700)]))).toContain("- Parallel p50 over 850 ms on 15 probes: **within**");
+  });
+
+  it("a whole parallel dry run: control lines held with muted audio counted, ordinary lines audible", async () => {
+    const clock = new VirtualClock();
+    const some = [ordinary, control, lines.find((l) => l.id === "o-02")!, lines.find((l) => l.id === "c-forget-1")!];
+    const expectOf = new Map(some.map((l) => [l.id, l.expect]));
+    const fake = fakeConnect({ clock, judge: (_i, turnId) => ({ texts: [expectOf.get(turnId) === "hold" ? "H" : "O"], delayMs: 300 }), replyAudioDelayMs: 200 });
+    const audio = new Map(some.map((l) => [l.id, placeholderPcm(800)]));
+    const out = await clock.run(runHarness({ lines: some, audio, voices: new Map(), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS, run: PARALLEL, seed: DEFAULT_SEED, apiKey: "k", connect: fake.connect, clock, log: () => {} }));
+    const s = summarize(runFile({ ...META, run: PARALLEL }, out));
+    // Every line's reply audio (200 ms) beat its verdict (300 ms), held lines included.
+    expect(s.parallel).toMatchObject({ audioBeforeVerdict: { n: 4, of: 4 }, mutedOnHeld: { n: 2, of: 2 }, overlapped: 4, ranAtOnce: 4, errorLines: [] });
+    expect(out.rows.filter((r) => r.expect === "ordinary").every((r) => r.decision === "reply" && r.t.audible === r.t.judgeDone)).toBe(true);
+  });
+});
+
 /** Byte-joins PCM parts. */
 function concat(...parts: Uint8Array[]): Uint8Array {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0));

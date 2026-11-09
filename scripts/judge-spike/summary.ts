@@ -138,9 +138,58 @@ export interface Summary {
   /** Commit to judge sent: p50, largest, and the lines over COMMIT_TO_SEND_FLAG_MS with their gap. */
   commitToSendMs: { p50: number | null; max: number | null; n: number; flagged: { lineId: string; ms: number }[] };
   probes: { p50: number | null; measured: number; total: number };
+  /** Parallel runs only (brief 009 item 4); null for a sequential run. */
+  parallel: ParallelStats | null;
   /** Per session: its lines by kind and its judge time, so a session effect shows. */
   sessions: SessionStats[];
   stops: { verdict: StopState; latency: StopState; recall: StopState };
+}
+
+export interface ParallelStats {
+  /** Judge sent to judge done. */
+  judgeFromSendMs: { p50: number | null; p95: number | null; n: number };
+  /** Reply sent to its first audio delta. */
+  replyFromSendMs: { p50: number | null; p95: number | null; n: number };
+  /** Lines with both a verdict and reply audio, and how many had the audio first. */
+  audioBeforeVerdict: { n: number; of: number };
+  /** Held lines whose reply went out, and how many of them got reply audio before the cancel (kept muted). */
+  mutedOnHeld: { n: number; of: number };
+  /** Lines whose reply went out while their judge was still running. */
+  overlapped: number;
+  /** Of those, the lines where both responses were created and no error event came. */
+  ranAtOnce: number;
+  /** Lines with an error event (or a failed reply), with the first error's code or type and message. */
+  errorLines: { lineId: string; count: number; first: string }[];
+}
+
+/** The run's mode; a run file from before brief 009 has none and was sequential. */
+export const runModeOf = (run: RunFile): RunSettings => run.run ?? { mode: "sequential", staggerMs: 0 };
+
+const errorText = (e: unknown): string => {
+  const ev = typeof e === "object" && e !== null ? (e as Record<string, unknown>) : {};
+  const inner = (typeof ev.error === "object" && ev.error !== null ? ev.error : typeof ev.response === "object" && ev.response !== null ? (ev.response as Record<string, unknown>).status_details : ev) as Record<string, unknown> | null;
+  const i = inner ?? {};
+  const head = [i.code, i.type].find((v) => typeof v === "string") ?? String(ev.type ?? "unknown");
+  const reason = typeof i.message === "string" ? i.message : typeof i.reason === "string" ? i.reason : "";
+  return reason === "" ? String(head) : `${String(head)}: ${reason}`;
+};
+
+function parallelStats(rows: readonly Row[]): ParallelStats {
+  const t = (r: Row) => r.t;
+  const has = (v: number | null | undefined): v is number => typeof v === "number";
+  const both = rows.filter((r) => has(t(r).judgeDone) && has(t(r).firstReplyAudio));
+  const heldSent = rows.filter((r) => r.decision === "held" && has(t(r).replySent));
+  const overlapped = rows.filter((r) => has(t(r).replySent) && (!has(t(r).judgeDone) || t(r).replySent! < t(r).judgeDone!));
+  const clean = (r: Row) => (r.concurrencyErrors ?? []).length === 0;
+  return {
+    judgeFromSendMs: dist(nums(rows, (r) => (has(t(r).judgeSent) && has(t(r).judgeDone) ? t(r).judgeDone! - t(r).judgeSent! : null))),
+    replyFromSendMs: dist(nums(rows, (r) => (has(t(r).replySent) && has(t(r).firstReplyAudio) ? t(r).firstReplyAudio! - t(r).replySent! : null))),
+    audioBeforeVerdict: { n: both.filter((r) => t(r).firstReplyAudio! < t(r).judgeDone!).length, of: both.length },
+    mutedOnHeld: { n: heldSent.filter((r) => r.mutedReplyAudio === true).length, of: heldSent.length },
+    overlapped: overlapped.length,
+    ranAtOnce: overlapped.filter((r) => has(t(r).replyCreated) && clean(r)).length,
+    errorLines: rows.filter((r) => !clean(r)).map((r) => ({ lineId: r.lineId, count: r.concurrencyErrors!.length, first: errorText(r.concurrencyErrors![0]) })),
+  };
 }
 
 export interface SessionStats {
@@ -246,6 +295,7 @@ export function summarize(run: RunFile): Summary {
       }),
     },
     probes: { p50: percentile(probeLatencies, 50), measured: probeLatencies.length, total: probes.length },
+    parallel: runModeOf(run).mode === "parallel" ? parallelStats(rows) : null,
     sessions: [...new Set(rows.map((r) => r.session))]
       .sort((a, b) => a - b)
       .map((session) => {
@@ -273,6 +323,16 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   out.push(`# Judge spike run, ${run.date}`);
   out.push("");
   if (run.transport === "fake") out.push("**Fake transport: these numbers come from the scripted fake server, not from OpenAI. They measure nothing.**", "");
+  const mode = runModeOf(run);
+  out.push(
+    `- Mode: ${
+      run.run === undefined
+        ? "sequential (a run from before brief 009, which added the mode)"
+        : mode.mode === "parallel"
+          ? `parallel, stagger ${mode.staggerMs} ms (the reply goes out beside the judge, muted until a valid O)`
+          : "sequential (the reply goes out after a valid O)"
+    }`,
+  );
   out.push(`- Judge: max_output_tokens ${cap(run.judge)}, reasoning effort ${run.judge.effort}`);
   out.push(`- Audio: ${run.source}${run.source === "synthetic" ? " (text-to-speech, not a person's voice)" : " (the owner's own takes)"}`);
   out.push(`- Line set: commit ${run.lineSetCommit}, hash ${run.lineSetHash.slice(0, 12)}`);
@@ -285,7 +345,7 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   out.push("");
   const vd = s.validVerdicts.deadline;
   out.push(`- No valid verdict on real audio (fewer than 90% of lines with one): **${s.stops.verdict}** (${vd.n} of ${vd.of + vd.missing} lines had a valid verdict within 600 ms${vd.missing > 0 ? `; ${vd.missing} never judged` : ""})`);
-  out.push(`- Sequential p50 over 850 ms on 15 probes: **${s.stops.latency}** (p50 ${ms(s.probes.p50)} over ${s.probes.measured} of ${s.probes.total} probes, from the end of audible speech (the take's last loud frame) to audible time; browser playback adds about ${PLAYBACK_MS} ms)`);
+  out.push(`- ${mode.mode === "parallel" ? "Parallel" : "Sequential"} p50 over 850 ms on 15 probes: **${s.stops.latency}** (p50 ${ms(s.probes.p50)} over ${s.probes.measured} of ${s.probes.total} probes, from the end of audible speech (the take's last loud frame) to audible time; browser playback adds about ${PLAYBACK_MS} ms)`);
   out.push(`- Control recall under 90%: **${s.stops.recall}** (judge H or U within 600 ms: ${pct(s.views.judgeDeadline.recall)})`);
   out.push("");
   out.push("## Recall and false holds");
@@ -334,6 +394,7 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   if (g.flagged.length === 0) out.push(`No line waited over ${COMMIT_TO_SEND_FLAG_MS} ms from commit to judge sent.`);
   else out.push(`**Over ${COMMIT_TO_SEND_FLAG_MS} ms from commit to judge sent on ${g.flagged.length} line(s); their judge time includes the harness's wait:** ${g.flagged.map((f) => `${f.lineId} (${Math.round(f.ms)} ms)`).join(", ")}`);
   out.push("");
+  if (s.parallel !== null) out.push(...parallelMarkdown(s.parallel, mode.staggerMs));
   out.push("## Sessions");
   out.push("");
   out.push(`Lines ran in a seeded order (seed ${run.seed}), up to 30 per session.`);
@@ -345,4 +406,29 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   run.sessions.forEach((ids, i) => out.push(`- Session ${i + 1}: ${ids.join(", ")}`));
   out.push("");
   return out.join("\n");
+}
+
+/** The parallel section (brief 009 item 4). */
+function parallelMarkdown(p: ParallelStats, staggerMs: number): string[] {
+  const out: string[] = [];
+  out.push("## Parallel");
+  out.push("");
+  out.push(`The judge and the speculative reply went out ${staggerMs === 0 ? "together" : `${staggerMs} ms apart (or at a valid O, if sooner)`}. Audible time is the later of the judge's valid O and the reply's first audio delta, when the browser would unmute.`);
+  out.push("");
+  out.push("| Measure | p50 | p95 | n |");
+  out.push("|---|---|---|---|");
+  out.push(`| Judge (judge sent to judge done) | ${ms(p.judgeFromSendMs.p50)} | ${ms(p.judgeFromSendMs.p95)} | ${p.judgeFromSendMs.n} |`);
+  out.push(`| Reply (reply sent to first reply audio) | ${ms(p.replyFromSendMs.p50)} | ${ms(p.replyFromSendMs.p95)} | ${p.replyFromSendMs.n} |`);
+  out.push("");
+  out.push(`- Reply audio before the verdict: ${p.audioBeforeVerdict.of === 0 ? "—" : `${p.audioBeforeVerdict.n} of ${p.audioBeforeVerdict.of} lines with both`} (on those, audible time is the verdict)`);
+  out.push(`- Reply audio received on held lines, kept muted: ${p.mutedOnHeld.of === 0 ? "— (no held line sent a reply)" : `${p.mutedOnHeld.n} of ${p.mutedOnHeld.of} held lines whose reply went out`}`);
+  out.push(`- Lines with an error event: ${p.errorLines.length === 0 ? "none" : `${p.errorLines.length}, all held (the full events are in the run file)`}`);
+  for (const e of p.errorLines) out.push(`  - ${e.lineId}: ${e.first}${e.count > 1 ? ` (and ${e.count - 1} more)` : ""}`);
+  out.push("");
+  if (p.overlapped === 0) out.push("**Whether two out-of-band responses can run at once: not measured.** No reply went out while its judge was still running.");
+  else if (p.ranAtOnce === p.overlapped) out.push(`**Two out-of-band responses ran at once: yes.** On all ${p.overlapped} lines where the reply went out while the judge was still running, the server created both and sent no error event.`);
+  else if (p.ranAtOnce === 0) out.push(`**Two out-of-band responses ran at once: no.** On none of the ${p.overlapped} lines where the reply went out while the judge was still running did the server create both without an error event.`);
+  else out.push(`**Two out-of-band responses ran at once: not always.** The server created both with no error event on ${p.ranAtOnce} of the ${p.overlapped} lines where the reply went out while the judge was still running.`);
+  out.push("");
+  return out;
 }
