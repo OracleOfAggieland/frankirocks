@@ -145,3 +145,65 @@ The harness has not changed here, so the next live run will repeat the problem. 
 ### Checks at the last commit
 
 `npm test` (132 files, 1,277 tests), `npm run lint`, `npm run typecheck` and `npm run build` exit 0. The dry runs on synthetic and owner audio both finish and write their files to `scripts/judge-spike/dist/dry-run/`.
+
+## Brief 008: the harness's own wait
+
+The brief and the change went in as one commit, `spike: trim take tails so the judge is sent at the commit`, and this section as a second. No command called OpenAI or any other network service, and nothing ran with `--live`. I set `TURBO_TELEMETRY_DISABLED=1` and `NEXT_TELEMETRY_DISABLED=1` for every command that ran turbo or Next.
+
+### What changed
+
+| Where | What |
+|---|---|
+| `scripts/judge-spike/trim.ts` | `trimTail` finds the last 20 ms frame whose RMS is above `SPEECH_RMS_THRESHOLD` (400), keeps 100 ms after it and drops the rest. Leading silence and pauses inside the line are untouched. A take with no frame above 400 gives `null`. The comment above the constant gives the measurements behind 400. |
+| `scripts/judge-spike/harness.ts` | `runLine` streams the trimmed take, then silence until the commit, as before. `runHarness` refuses the run before opening any session if a take has no speech (`silentTakes`). Each row now has `takeMs` (the length before the trim), `trimmedMs`, and `derived.commitToJudgeSentMs`. `audioMs` is the streamed length. The run file version is `judge-spike-run-3`. |
+| `scripts/judge-spike/cli.ts` | The cost guard prints the trimmed audio seconds and how much tail was cut. A silent take is refused before connecting, on a dry run and a live run alike. |
+| `scripts/judge-spike/summary.ts` | The Times section prints the p50 and largest commit-to-judge-sent gap and names every line over 50 ms. It reads the gap from the two instants, so older run files get the same line. On the Nov 9 run it reports a largest gap of 1,281 ms (`c-forget-2`) and 34 lines over 300 ms, which a test pins. |
+| `trim.test.ts`, `harness.test.ts` | The witnesses: a 2 s tail is cut to 100 ms after the last loud frame, and the judge goes out at the commit; a pause inside the line is streamed as recorded (two fragments); an all-silent take is refused with no session opened, both in `runHarness` and in the CLI; the summary flags a gap over 50 ms. There is also a fast-check property over random loud and quiet runs. |
+
+### Why 400
+
+All audio is 24 kHz mono 16-bit, the owner's takes and the synthetic files alike. On the owner's 60 takes, measured locally from the WAV files:
+
+- Room tone after the last word stays under 250. The noisiest rooms, `o-29` and `o-30`, sit at 50 to 180.
+- Words reach 1,000 and more on every take.
+- `c-crisis-1`, `-2` and `-5` end with a small click (323 to 367) after 0.7 to 1.4 s of quiet. At 400 the click goes with the tail. At 300 it would stay, and so would the quiet before it, which is the wait this change removes. In the Nov 9 run, `c-crisis-2` and `-5` waited 832 ms and 504 ms.
+- The cost: the quietest take, `c-crisis-4`, loses the last 100 ms of its final word's fade (RMS 180 to 340).
+
+No synthetic takes exist on this machine, so 400 is not measured on text-to-speech audio. I expect its silence to be near zero.
+
+### Trimmed tails on your takes
+
+Over the 60 takes, the trim cuts 0 to 1,640 ms, 35.6 s in total, with a p50 of 700 ms. All 30 ordinary takes and all 5 crisis takes lose 260 to 1,640 ms. The other 25 control takes (company, correction, forget, hardRule and quiet) lose 0 to 20 ms.
+
+Those 25 takes end with a click: 40 to 100 ms of sound after 0.6 to 1.6 s of quiet, peaking at RMS 580 to 1,800. It is probably the Stop press. Its level overlaps quiet speech (`c-company-5`'s last word is about 1,250), so no fixed threshold can drop it without cutting words, and the trim keeps it as the brief specifies. In the Nov 9 run, the server VAD heard most of these clicks as a separate fragment and committed after them, so the wait was short. Where it didn't hear the click, the wait was long: `c-forget-1`, `c-forget-2`, `c-forget-3`, `c-hardrule-3` and `c-quiet-1` waited 518 to 1,281 ms. **The trim does not fix those lines.** They will likely show up again in the summary's over-50 ms list. Two options, your call:
+
+- Re-record those 25 takes and trim or avoid the Stop click.
+- Add a rule that drops a short burst after a long quiet at the very end of a take. That goes beyond what brief 008 specifies.
+
+On the fake transport, the owner dry run now has 60 of 60 valid verdicts within 600 ms (28 of 60 before), with a commit-to-send gap of 30 ms on every line. The fake VAD is a plain energy gate, so this checks the flow and not the server's VAD.
+
+### The live run on your takes
+
+From the repo root, one per line. Dry run first:
+
+```powershell
+node scripts/judge-spike/run.mjs harness --source owner
+```
+
+Live, every line you recorded, uncapped, effort `minimal`, seed 7:
+
+```powershell
+node --env-file=apps/web/.env.development.local --env-file=apps/web/.env.local scripts/judge-spike/run.mjs harness --source owner --live --max-tokens inf --effort minimal --seed 7
+```
+
+Before connecting, it prints the trimmed audio seconds (223.3 s) and the tail it cut (35.6 s). In the summary, read "Commit to judge sent" first. The judge times are fair only for lines that are not named there.
+
+### What I couldn't check
+
+- **The server VAD on trimmed audio.** I expect the commit about 300 ms after the last speech, but only a live run shows it.
+- **Synthetic audio.** There are no synthetic takes here, so the threshold is untested on them.
+- **`npm run test:emulator`.** I didn't run it, for the same reason as in brief 006. No Firestore code changed.
+
+### Checks at the last commit
+
+`npm test` (133 files, 1,290 tests), `npm run lint`, `npm run typecheck` and `npm run build` exit 0. Turbo served lint and build from its cache, since no workspace package changed. Dry runs on both sources finish and write to `scripts/judge-spike/dist/dry-run/`.
