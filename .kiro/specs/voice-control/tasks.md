@@ -19,10 +19,11 @@ Rules for every task:
 
 ### Group A1: steering and the guard (serial)
 
-- [ ] 1. Steering: `voice-control.md` and `memory-rules.md`
+- [x] 1. Steering: `voice-control.md` and `memory-rules.md`
   - Requirements: R1.1–R1.4; Q78
   - Depends on: none
-  - Estimate: 1 h · Actual:
+  - Estimate: 1 h · Actual: 0.3 h
+  - Notes: `fileMatchPattern` is one brace glob over the six files (machine, fast-o, core admission, server admission/**, turn route, voice client), since `ui-design.md` uses the single-string form. 44 lines. `fast-o.ts` does not exist yet; the pattern names it ahead of task 9.
   - Files: `.kiro/steering/voice-control.md` (new), `.kiro/steering/memory-rules.md`
   - Witness: manual check. Steps: `voice-control.md` has `inclusion: fileMatch` with patterns matching `packages/core/src/voice/machine.ts`, `packages/core/src/voice/fast-o.ts`, `apps/web/src/client/voice-client.ts`, `packages/core/src/admission.ts`, `packages/server/src/admission/*`, `packages/server/src/routes/turn.ts`; `(Get-Content .kiro/steering/voice-control.md).Count` is under 80; each rule of R1.2 is present with its contract section; `memory-rules.md` no longer names `devAdmit`, says every server Permit comes from the Admission_Seam and `fastO` only from the FastO_Rule, and sends contract questions to the `design.md` of the spec being built.
   - Commit: `chore(kiro): voice-control steering`
