@@ -207,3 +207,71 @@ Before connecting, it prints the trimmed audio seconds (223.3 s) and the tail it
 ### Checks at the last commit
 
 `npm test` (133 files, 1,290 tests), `npm run lint`, `npm run typecheck` and `npm run build` exit 0. Turbo served lint and build from its cache, since no workspace package changed. Dry runs on both sources finish and write to `scripts/judge-spike/dist/dry-run/`.
+
+## Brief 009: the judge and the reply in parallel
+
+The brief went in on its own commit, then items 1 to 4 one commit each, and this section as item 5. No command called OpenAI or any other network service, and nothing ran with `--live`. I set `TURBO_TELEMETRY_DISABLED=1` and `NEXT_TELEMETRY_DISABLED=1` for every command that ran turbo or Next.
+
+### What changed
+
+| Item | Where | What |
+|---|---|---|
+| 1 | `scripts/judge-spike/results/2026-11-09T19-19-59-517Z-owner.*` | The uncapped run on your 60 takes, committed unedited. |
+| 2 | `harness.ts`, `realtime.ts`, `fake-realtime.ts`, `cli.ts`, `summary.ts` | `--mode sequential\|parallel`, default `parallel`, and `--stagger-ms <n>` (default 0, at most 600, parallel only). The sequential path is unchanged; it moved its judge parsing into a shared helper and nothing else. Parallel mode is described below. The run file records the mode and stagger under `run`, and its version is now `judge-spike-run-4`. |
+| 3 | `trim.ts`, `harness.ts`, `summary.ts` | `trimTail` also returns where the last loud frame starts. Each row has `t.lastLoudSent`, the send time of the chunk holding that frame. Ordinary latency is reported two ways, labeled: from the last loud frame and from `speech_stopped.audio_end_ms`. The latency stop rule reads the last-loud-frame measure. The summary prints the p50 and p95 of `audio_end_ms`'s end of speech minus the last loud frame, which answers whether `audio_end_ms` includes the VAD's 300 ms of silence. |
+| 4 | `summary.ts`, `harness.test.ts` | The mode and stagger are on the summary's first lines, and the latency rule is labeled with the mode. A parallel run gets a "Parallel" section, described below. The witnesses are listed below. |
+
+### Parallel mode, per line
+
+- At `conversation.item.added` for the last committed fragment, the harness sends the judge. It sends the reply (`purpose: "speculative"`) right after, or `--stagger-ms` later. Both are `conversation:"none"` and reference the same audio items.
+- I read the stagger as spec §3 writes it, `min(verdict O, t0 + stagger)`, with t0 the judge's send. A valid `O` before the stagger ends sends the reply at once. A hold before it ends means no reply is sent. At stagger 0 none of this applies.
+- The harness reads server events one at a time, in arrival order, and matches each one to a response by its response ID. It learns the two IDs from the `response.created` events by their metadata (`purpose` and `turnId`).
+- On a valid `O` within 600 ms of commit, the reply is cancelled once both the verdict and its first audio delta are in. Audible time is the later of the two.
+- On `H`, `U` or an invalid answer, the reply is cancelled when the verdict arrives. A judge with no `response.done` by commit + 600 ms holds the line, and its reply is cancelled at that moment. The judge itself is still waited for up to 3 s, as before. `mutedReplyAudio` records whether any reply audio had arrived first.
+- Every `error` event from the judge's send to the end of both responses is kept in full in `concurrencyErrors`, and so is a reply `response.done` with status `failed`. Any entry holds the line. Nothing is retried in sequence.
+
+### The Parallel section of the summary
+
+- Judge time (judge sent to judge done) and reply time (reply sent to first reply audio), as p50, p95 and n.
+- How many lines had reply audio before the verdict. Held lines count too.
+- How many held lines whose reply went out got audio before the cancel. That audio would have stayed muted.
+- Each line with an error event, with the error's code and message.
+- One bold line on whether two out-of-band responses ran at once: **yes**, **no**, **not always**, or **not measured**. It counts the lines where the reply went out while the judge was still running, and whether the server created both with no error event.
+
+### Witnesses on the fake transport
+
+- An `O` line where the reply's audio comes first: audible time is the verdict.
+- An `O` line where the verdict comes first: audible time is the first audio delta.
+- An `H` line whose reply is cancelled after audio arrived: counted as muted.
+- A refused second response (`concurrent: "refuse"` on the fake): the error event is kept in full, the line is held, only two `response.create` events go out, and the summary says **no**.
+- Interleaved events: the reply's `response.created` arrives before the judge's, its audio before the judge's text, and its own `response.done` before the judge's. The verdict, the judge's times and the reply's times all come from the right response.
+- The fake transport gained three options for these: `concurrent`, `createdDelayMs` per purpose, and `replyDoneMs` (a reply that finishes by itself).
+
+### The live parallel run on your takes
+
+From the repo root, one per line. Dry run first:
+
+```powershell
+node scripts/judge-spike/run.mjs harness --source owner
+```
+
+Live, every line you recorded, parallel, no stagger, uncapped, effort `minimal`, seed 7. These are the defaults, written out:
+
+```powershell
+node --env-file=apps/web/.env.development.local --env-file=apps/web/.env.local scripts/judge-spike/run.mjs harness --source owner --live --mode parallel --stagger-ms 0 --max-tokens inf --effort minimal --seed 7
+```
+
+For the spec §3 stagger, run it again with `--stagger-ms 120`. A parallel run costs more than a sequential one, because every line sends a speculative reply, control lines included. Each reply is cancelled at the verdict or at its first audio, and the CLI says so before it connects. In the summary, read the bold "ran at once" line in the Parallel section first. If it does not say **yes**, the latency numbers are not the parallel path.
+
+### What I couldn't check
+
+- **Whether the Realtime API allows two out-of-band responses at once.** This is the `S-Audio` question, and only the live run answers it. The fake's refusal (`FAKE_REFUSAL`, code `conversation_already_has_active_response`) is my guess at the shape of the error. The harness records whatever the server sends in full.
+- **A cancel race.** If a reply finishes by itself just before the harness cancels it, the server may answer the cancel with an error event, and that event would hold the line. I expect this to be rare, since the reply is cancelled at its first audio or at the verdict. Lines it affects would show up in the error list.
+- **Older run files.** They have no last-loud-frame time, so their latency rule now reads `not measured`. The uncapped Nov 9 run was `over the line` before. Its ordinary latency from `audio_end_ms` still prints (p50 1,325 ms), and a test pins it.
+- **The `audio_end_ms` question on real audio.** On the fake transport the gap is 20 ms, because the fake VAD reports the end of speech exactly. Only the live run measures the server's gap.
+- **Lint on the spike.** `npm run lint` runs ESLint on `apps/web` only, so it doesn't cover `scripts/judge-spike`. That was already the case before this brief. `npm run typecheck` does check the spike.
+- **`npm run test:emulator`.** I didn't run it, for the same reason as in brief 006. No Firestore code changed.
+
+### Checks at the last commit
+
+`npm test` (133 files, 1,306 tests), `npm run lint`, `npm run typecheck` and `npm run build` exit 0. Turbo served lint, build and the workspace typechecks from its cache, since no workspace package changed. The owner dry run finishes in parallel mode and writes to `scripts/judge-spike/dist/dry-run/`.
