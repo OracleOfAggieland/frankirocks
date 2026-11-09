@@ -2,19 +2,20 @@
  * The judge spike's command line (brief 006 items 3 and 4). Run through run.mjs, which bundles this file with
  * esbuild and calls `main`. Nothing here reaches the network without `--live`.
  *
- *   synth [--live] [--lines id,id]                               synthetic audio through text-to-speech
- *   harness [--source synthetic|owner] [--live] [--lines id,id]  the judge measurement; without --live it runs
- *                                                                 the whole flow against the fake transport
+ *   synth [--live] [--lines id,id]    synthetic audio through text-to-speech
+ *   harness [--source synthetic|owner] [--live] [--lines id,id] [--max-tokens n|inf] [--effort value]
+ *                                     the judge measurement; without --live it runs the whole flow against the
+ *                                     fake transport. The judge defaults to no output cap and effort minimal.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { isSpikeFormat, parseWav } from "@franki/core";
+import { JUDGE_EFFORTS, type JudgeOutputCap, type JudgeSettings, isJudgeEffort, isJudgeOutputCap, isSpikeFormat, parseWav } from "@franki/core";
 import { MODEL_VARS, requireModel } from "../../packages/server/src/config/models";
 import { requireEnv } from "../../packages/server/src/config/env";
 import { type HarnessClock, liveClock, wallDateIso } from "./clock";
 import { fakeConnect, placeholderPcm } from "./fake-realtime";
-import { MAX_RUN_LINES, runHarness } from "./harness";
+import { MAX_RUN_LINES, SPIKE_JUDGE_SETTINGS, runHarness } from "./harness";
 import { type ProbeLine, lineSetHash, loadLines } from "./lines";
 import { AUDIO_SOURCES, type AudioSource, audioDir, linesFile, resultsDir, wavPath } from "./paths";
 import { type Connect, liveConnect } from "./realtime";
@@ -112,11 +113,26 @@ function readTake(path: string): Uint8Array | string {
   return w.pcm;
 }
 
+/** `--max-tokens <n|inf>` and `--effort <value>`; the spike's defaults are no cap and `minimal`. */
+export function judgeSettings(values: Readonly<Record<string, string>>): JudgeSettings {
+  const rawCap = values["max-tokens"];
+  let maxOutputTokens: JudgeOutputCap = SPIKE_JUDGE_SETTINGS.maxOutputTokens;
+  if (rawCap !== undefined) {
+    if (rawCap === "inf") maxOutputTokens = "inf";
+    else if (/^[1-9]\d*$/.test(rawCap) && isJudgeOutputCap(Number(rawCap))) maxOutputTokens = Number(rawCap);
+    else throw new Error(`--max-tokens must be a positive integer or inf, not ${rawCap}`);
+  }
+  const effort = values.effort ?? SPIKE_JUDGE_SETTINGS.effort;
+  if (!isJudgeEffort(effort)) throw new Error(`--effort must be one of ${JUDGE_EFFORTS.join(", ")}, not ${effort}`);
+  return { maxOutputTokens, effort };
+}
+
 const DRY_RUN_TONE_MS = 1_500;
 
 async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   const source = (flags.values.source ?? "synthetic") as AudioSource;
   if (!AUDIO_SOURCES.includes(source)) throw new Error(`--source must be one of ${AUDIO_SOURCES.join(", ")}`);
+  const judge = judgeSettings(flags.values);
   const all = loadLines(linesFile(ctx.spikeDir));
   let lines = selectLines(all, flags.lines);
   // The owner may record any subset: without --lines, the owner run takes the lines that have a take.
@@ -138,6 +154,7 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   // Cost guard: say what would be sent before connecting, and never more than MAX_RUN_LINES.
   const seconds = [...audio.values()].reduce((n, pcm) => n + pcm.byteLength / 48_000, 0);
   ctx.log(`harness: ${lines.length} lines, ${seconds.toFixed(1)} s of audio, source ${source}, ${flags.live ? "LIVE Realtime session" : "fake transport"}`);
+  ctx.log(`harness: judge max_output_tokens ${judge.maxOutputTokens}, effort ${judge.effort}`);
   if (lines.length === 0) {
     ctx.log("harness: no lines to run.");
     return 1;
@@ -183,10 +200,10 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   }
   if (source === "owner") for (const l of lines) voices.set(l.id, "owner");
 
-  const work = runHarness({ lines, audio, voices, models, apiKey, connect, clock, log: ctx.log });
+  const work = runHarness({ lines, audio, voices, models, judge, apiKey, connect, clock, log: ctx.log });
   const out = virtual === null ? await work : await virtual.run(work);
   const date = wallDateIso();
-  const run = runFile({ date, source, transport: flags.live ? "live" : "fake", lineSetCommit: set.commit + (set.dirty ? " (dirty)" : ""), lineSetHash: lineSetHash(all), models }, out);
+  const run = runFile({ date, source, transport: flags.live ? "live" : "fake", lineSetCommit: set.commit + (set.dirty ? " (dirty)" : ""), lineSetHash: lineSetHash(all), models, judge }, out);
   const dir = flags.live ? resultsDir(ctx.spikeDir) : join(ctx.spikeDir, "dist", "dry-run");
   mkdirSync(dir, { recursive: true });
   const base = join(dir, `${date.replace(/[:.]/g, "-")}-${source}`);
@@ -205,7 +222,7 @@ export async function main(argv: readonly string[], ctx: CliContext): Promise<nu
   const [name, ...rest] = argv;
   const command = name === undefined ? undefined : COMMANDS[name];
   if (command === undefined) {
-    ctx.log(`usage: node scripts/judge-spike/run.mjs <${Object.keys(COMMANDS).join("|")}> [--live] [--lines id,id]`);
+    ctx.log(`usage: node scripts/judge-spike/run.mjs <${Object.keys(COMMANDS).join("|")}> [--live] [--lines id,id] [--source synthetic|owner] [--max-tokens n|inf] [--effort value]`);
     return 2;
   }
   return command(parseFlags(rest), ctx);

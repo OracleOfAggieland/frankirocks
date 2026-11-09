@@ -3,6 +3,7 @@
  * `within` only when every number it needs was measured; a missing number gives `not measured`, or `over the
  * line` when the rule fails even if every missing number had come out at its best.
  */
+import type { JudgeSettings } from "@franki/core";
 import { CONTROL_CLASSES } from "./lines";
 import type { HarnessOutput, Row } from "./harness";
 import type { AudioSource } from "./paths";
@@ -22,10 +23,12 @@ export interface RunMeta {
   lineSetCommit: string;
   lineSetHash: string;
   models: { voice: string; transcribe: string };
+  /** The judge's output cap and reasoning effort for this run. */
+  judge: JudgeSettings;
 }
 
 export interface RunFile extends RunMeta {
-  version: "judge-spike-run-1";
+  version: "judge-spike-run-2";
   sessions: string[][];
   eventNames: string[];
   rows: Row[];
@@ -34,7 +37,7 @@ export interface RunFile extends RunMeta {
 export function runFile(meta: RunMeta, out: HarnessOutput): RunFile {
   // No transcript of the owner's own takes leaves the machine in a committed file (brief 006 item 4).
   const rows = meta.source === "owner" ? out.rows.map((r) => ({ ...r, transcript: null })) : out.rows;
-  return { version: "judge-spike-run-1", ...meta, sessions: out.sessions, eventNames: out.eventNames, rows };
+  return { version: "judge-spike-run-2", ...meta, sessions: out.sessions, eventNames: out.eventNames, rows };
 }
 
 /** Nearest-rank percentile; null for an empty list. */
@@ -57,6 +60,15 @@ const held = (r: Row) => r.decision === "held";
 const judged = (r: Row) => r.decision !== null;
 const share = (x: Ratio) => (x.of === 0 ? null : x.n / x.of);
 
+export interface TokenStats {
+  /** Judge responses whose usage reported the count. */
+  n: number;
+  p50: number | null;
+  max: number | null;
+}
+
+const tokenStats = (values: number[]): TokenStats => ({ n: values.length, p50: percentile(values, 50), max: values.length === 0 ? null : Math.max(...values) });
+
 export interface Summary {
   lines: number;
   judged: number;
@@ -66,7 +78,8 @@ export interface Summary {
   falseHolds: Ratio;
   timeouts: number;
   invalidReasons: Record<string, number>;
-  reasoningTokens: { reported: number; values: number[] };
+  reasoningTokens: TokenStats;
+  outputTokens: TokenStats;
   judgeMs: { p50: number | null; p95: number | null; n: number };
   ordinaryLatencyMs: { p50: number | null; p95: number | null; n: number };
   asrMs: { p50: number | null; p95: number | null; n: number; withinFallback: number };
@@ -127,7 +140,8 @@ export function summarize(run: RunFile): Summary {
     falseHolds: ratio(ordinary, held),
     timeouts: rows.filter((r) => r.timedOut).length,
     invalidReasons,
-    reasoningTokens: { reported: reasoning.length, values: [...new Set(reasoning)].sort((a, b) => a - b) },
+    reasoningTokens: tokenStats(reasoning),
+    outputTokens: tokenStats(nums(rows, (r) => r.outputTokens)),
     judgeMs: dist(nums(rows, (r) => r.derived.judgeMs)),
     ordinaryLatencyMs: dist(nums(rows, (r) => r.derived.ordinaryLatencyMs)),
     asrMs: { ...dist(asr), withinFallback: asr.filter((v) => v <= ASR_FALLBACK_MS).length },
@@ -138,12 +152,15 @@ export function summarize(run: RunFile): Summary {
 
 const ms = (v: number | null) => (v === null ? "—" : `${Math.round(v)} ms`);
 const pct = (x: Ratio) => (x.of === 0 ? "—" : `${((x.n / x.of) * 100).toFixed(1)}% (${x.n} of ${x.of}${x.missing > 0 ? `, ${x.missing} not measured` : ""})`);
+const tokens = (t: TokenStats) => (t.n === 0 ? "not reported in any usage object" : `largest ${t.max}, p50 ${t.p50}, over ${t.n} response(s)`);
+const cap = (j: JudgeSettings) => (j.maxOutputTokens === "inf" ? "inf (no cap)" : String(j.maxOutputTokens));
 
 export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): string {
   const out: string[] = [];
   out.push(`# Judge spike run, ${run.date}`);
   out.push("");
   if (run.transport === "fake") out.push("**Fake transport: these numbers come from the scripted fake server, not from OpenAI. They measure nothing.**", "");
+  out.push(`- Judge: max_output_tokens ${cap(run.judge)}, reasoning effort ${run.judge.effort}`);
   out.push(`- Audio: ${run.source}${run.source === "synthetic" ? " (text-to-speech, not a person's voice)" : " (the owner's own takes)"}`);
   out.push(`- Line set: commit ${run.lineSetCommit}, hash ${run.lineSetHash.slice(0, 12)}`);
   out.push(`- Models: voice ${run.models.voice}, transcription ${run.models.transcribe}`);
@@ -164,9 +181,8 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   out.push(`- Timeouts (no response.done within 600 ms of commit): ${s.timeouts}`);
   const reasons = Object.entries(s.invalidReasons);
   out.push(`- Invalid-verdict reasons: ${reasons.length === 0 ? "none" : reasons.map(([k, v]) => `${k} ${v}`).join(", ")}${s.invalidReasons.extraText ? " (extraText includes any preamble)" : ""}`);
-  out.push(
-    `- Reasoning tokens in judge usage: ${s.reasoningTokens.reported === 0 ? "not reported in any usage object" : `reported on ${s.reasoningTokens.reported} line(s), values ${s.reasoningTokens.values.join(", ")}`}`,
-  );
+  out.push(`- Output tokens per judge response (reasoning included): ${tokens(s.outputTokens)}`);
+  out.push(`- Reasoning tokens per judge response: ${tokens(s.reasoningTokens)}`);
   out.push("");
   out.push("## Times");
   out.push("");

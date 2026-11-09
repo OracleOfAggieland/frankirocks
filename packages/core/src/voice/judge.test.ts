@@ -2,11 +2,14 @@ import { readFileSync } from "node:fs";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  JUDGE_CONTRACT_SETTINGS,
   JUDGE_MAX_FRAGMENTS,
   JUDGE_V1_INSTRUCTIONS,
   type JudgeRequest,
   judgeContextText,
   judgeCreate,
+  isJudgeEffort,
+  isJudgeOutputCap,
   parseJudgeDone,
 } from "./judge";
 
@@ -89,6 +92,27 @@ describe("judgeCreate", () => {
         expect(input.slice(1).map((i) => i.id)).toEqual([...seqs].sort((a, b) => a - b).map((s) => `i${s}`));
       }),
     );
+  });
+
+  it("takes the output cap and effort as settings, contracts §5's by default", () => {
+    expect(JUDGE_CONTRACT_SETTINGS).toEqual({ maxOutputTokens: 16, effort: "minimal" });
+    const uncapped = judgeCreate(REQ, { maxOutputTokens: "inf", effort: "minimal" }).response as Record<string, unknown>;
+    expect(uncapped.max_output_tokens).toBe("inf");
+    expect(uncapped.reasoning).toEqual({ effort: "minimal" });
+    const low = judgeCreate(REQ, { maxOutputTokens: 64, effort: "low" }).response as Record<string, unknown>;
+    expect(low).toMatchObject({ max_output_tokens: 64, reasoning: { effort: "low" } });
+    const { max_output_tokens: _a, reasoning: _b, ...rest } = low;
+    const { max_output_tokens: _c, reasoning: _d, ...contract } = judgeCreate(REQ).response as Record<string, unknown>;
+    expect(rest).toEqual(contract);
+  });
+
+  it("refuses a cap that is not a positive integer or inf, and an unknown effort", () => {
+    for (const cap of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "16", "INF"]) {
+      expect(() => judgeCreate(REQ, { maxOutputTokens: cap as never, effort: "minimal" })).toThrow(RangeError);
+    }
+    expect(() => judgeCreate(REQ, { maxOutputTokens: 16, effort: "max" as never })).toThrow(RangeError);
+    expect(isJudgeOutputCap(1)).toBe(true);
+    expect(isJudgeEffort("none")).toBe(true);
   });
 
   it("refuses rather than truncates", () => {

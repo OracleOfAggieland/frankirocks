@@ -22,8 +22,27 @@ export const JUDGE_V1_INSTRUCTIONS = [
 export const JUDGE_MAX_SAFE_TURNS = 4;
 export const JUDGE_MAX_FRAGMENTS = 8;
 export const JUDGE_MAX_OUTPUT_TOKENS = 16;
+/** Contracts §5 model table, judge_v1 row: R at effort `minimal`. */
+export const JUDGE_REASONING_EFFORT = "minimal";
 /** No `response.done` by commit + 600 ms: the turn is held (contracts §5 table; §6 States, JUDGING). */
 export const JUDGE_DEADLINE_MS = 600;
+
+/** Reasoning effort values the judge accepts. */
+export const JUDGE_EFFORTS = ["none", "minimal", "low", "medium", "high"] as const;
+export type JudgeEffort = (typeof JUDGE_EFFORTS)[number];
+/** A positive integer, or `"inf"`, the Realtime API's value for no cap. */
+export type JudgeOutputCap = number | "inf";
+
+export interface JudgeSettings {
+  maxOutputTokens: JudgeOutputCap;
+  effort: JudgeEffort;
+}
+
+/** Contracts §5's values. The 16-token cap counts reasoning tokens too (design contract question 50). */
+export const JUDGE_CONTRACT_SETTINGS: JudgeSettings = { maxOutputTokens: JUDGE_MAX_OUTPUT_TOKENS, effort: JUDGE_REASONING_EFFORT };
+
+export const isJudgeOutputCap = (v: unknown): v is JudgeOutputCap => v === "inf" || (typeof v === "number" && Number.isSafeInteger(v) && v > 0);
+export const isJudgeEffort = (v: unknown): v is JudgeEffort => typeof v === "string" && (JUDGE_EFFORTS as readonly string[]).includes(v);
 
 export type JudgeVerdict = "O" | "H" | "U";
 
@@ -53,9 +72,12 @@ export function judgeContextText(safeTurns: JudgeRequest["safeTurns"], pendingQu
 
 /**
  * The judge's `response.create` (contracts §5). Throws RangeError rather than truncate: contracts §5 allow no
- * control truncation, so a turn that does not fit is the caller's to hold.
+ * control truncation, so a turn that does not fit is the caller's to hold. `settings` defaults to contracts §5's
+ * cap and effort; the judge spike passes its own.
  */
-export function judgeCreate(req: JudgeRequest): RealtimeClientEvent {
+export function judgeCreate(req: JudgeRequest, settings: JudgeSettings = JUDGE_CONTRACT_SETTINGS): RealtimeClientEvent {
+  if (!isJudgeOutputCap(settings.maxOutputTokens)) throw new RangeError('the judge output cap must be a positive integer or "inf"');
+  if (!isJudgeEffort(settings.effort)) throw new RangeError(`the judge effort must be one of ${JUDGE_EFFORTS.join(", ")}`);
   if (req.safeTurns.length > JUDGE_MAX_SAFE_TURNS) throw new RangeError(`judge_v1 takes at most ${JUDGE_MAX_SAFE_TURNS} safe turns`);
   if (req.fragments.length === 0) throw new RangeError("judge_v1 needs at least one committed audio fragment");
   if (req.fragments.length > JUDGE_MAX_FRAGMENTS) throw new RangeError(`judge_v1 takes at most ${JUDGE_MAX_FRAGMENTS} audio fragments`);
@@ -71,8 +93,8 @@ export function judgeCreate(req: JudgeRequest): RealtimeClientEvent {
       output_modalities: ["text"],
       tools: [],
       instructions: JUDGE_V1_INSTRUCTIONS,
-      reasoning: { effort: "minimal" },
-      max_output_tokens: JUDGE_MAX_OUTPUT_TOKENS,
+      reasoning: { effort: settings.effort },
+      max_output_tokens: settings.maxOutputTokens,
       metadata: { purpose: "judge", contract: "judge_v1", turnId: req.turnId, generation: String(req.generation) },
       input: [
         { type: "message", role: "user", content: [{ type: "input_text", text: judgeContextText(req.safeTurns, req.pendingQuestion) }] },

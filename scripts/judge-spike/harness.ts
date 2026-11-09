@@ -11,7 +11,14 @@
  * The transport and the clock are injected. The CLI passes the live WebSocket only with `--live`; otherwise it
  * passes the fake transport on a virtual clock.
  */
-import { JUDGE_DEADLINE_MS, type JudgeInvalidReason, type JudgeVerdict, judgeCreate, parseJudgeDone } from "@franki/core";
+import {
+  JUDGE_DEADLINE_MS,
+  type JudgeInvalidReason,
+  type JudgeSettings,
+  type JudgeVerdict,
+  judgeCreate,
+  parseJudgeDone,
+} from "@franki/core";
 import type { HarnessClock } from "./clock";
 import type { ProbeLine } from "./lines";
 import { type Connect, EVENT, type ServerEvent, type Transport, base64, spikeReplyCreate, spikeSessionUpdate } from "./realtime";
@@ -29,6 +36,11 @@ export const SESSION_WAIT_MS = 5_000;
 export const SESSION_LINES = 30;
 /** The cost guard: never more lines than this in one run. */
 export const MAX_RUN_LINES = 70;
+/**
+ * The spike's judge settings unless the CLI says otherwise (brief 007 item 2): no output cap, by the owner's
+ * ruling, because reasoning tokens count against contracts §5's 16 and the first live run never got a letter.
+ */
+export const SPIKE_JUDGE_SETTINGS: JudgeSettings = { maxOutputTokens: "inf", effort: "minimal" };
 
 export interface Times {
   streamStart: number | null;
@@ -62,6 +74,8 @@ export interface Row {
   judgeStatusDetails: unknown;
   judgeText: string | null;
   judgeUsage: unknown;
+  /** `usage.output_tokens` of the judge response, reasoning included; null when absent. */
+  outputTokens: number | null;
   reasoningTokens: number | null;
   judgeOtherItems: string[];
   /** No response.done within 600 ms of commit. */
@@ -92,6 +106,12 @@ export function reasoningTokensOf(usage: unknown): number | null {
     if (inner !== null) return inner;
   }
   return null;
+}
+
+/** `output_tokens` at the top of a usage object; null when absent. */
+export function outputTokensOf(usage: unknown): number | null {
+  const v = rec(usage).output_tokens;
+  return typeof v === "number" ? v : null;
 }
 
 /** One Realtime session: every server event with its receipt time, and the audio sent so far. */
@@ -204,6 +224,7 @@ function emptyRow(line: ProbeLine, session: number, voice: string | null, audioM
     judgeStatusDetails: null,
     judgeText: null,
     judgeUsage: null,
+    outputTokens: null,
     reasoningTokens: null,
     judgeOtherItems: [],
     timedOut: false,
@@ -217,7 +238,7 @@ function emptyRow(line: ProbeLine, session: number, voice: string | null, audioM
 const diff = (a: number | null, b: number | null): number | null => (a === null || b === null ? null : Math.round((b - a) * 10) / 10);
 
 /** Runs one line through the session. Never throws for a line-level failure; it is recorded in `errors`. */
-export async function runLine(s: SpikeSession, line: ProbeLine, pcm: Uint8Array, voice: string | null): Promise<Row> {
+export async function runLine(s: SpikeSession, line: ProbeLine, pcm: Uint8Array, voice: string | null, judge: JudgeSettings = SPIKE_JUDGE_SETTINGS): Promise<Row> {
   const row = emptyRow(line, s.index, voice, (pcm.byteLength / 48) | 0);
   const from = s.events.length;
   const t = row.t;
@@ -270,7 +291,7 @@ export async function runLine(s: SpikeSession, line: ProbeLine, pcm: Uint8Array,
 
   // 3. The judge.
   const judgeFrom = s.events.length;
-  s.transport.send(judgeCreate({ turnId: line.id, generation: 0, safeTurns: [], pendingQuestion: null, fragments: ids.map((itemId, i) => ({ itemId, commitSeq: i + 1 })) }));
+  s.transport.send(judgeCreate({ turnId: line.id, generation: 0, safeTurns: [], pendingQuestion: null, fragments: ids.map((itemId, i) => ({ itemId, commitSeq: i + 1 })) }, judge));
   t.judgeSent = clock.now();
   const isJudge = (e: ServerEvent) => rec(responseOf(e).metadata).purpose === "judge" && rec(responseOf(e).metadata).turnId === line.id;
   const created = await s.waitFor(judgeFrom, (e) => e.type === "response.created" && isJudge(e), t.commit + JUDGE_WAIT_MS - clock.now());
@@ -295,6 +316,7 @@ export async function runLine(s: SpikeSession, line: ProbeLine, pcm: Uint8Array,
     row.judgeText = parsed.rawText;
     row.judgeOtherItems = parsed.otherItems;
     row.judgeUsage = responseOf(done.event).usage ?? null;
+    row.outputTokens = outputTokensOf(row.judgeUsage);
     row.reasoningTokens = reasoningTokensOf(row.judgeUsage);
     row.timedOut = done.at - t.commit > JUDGE_DEADLINE_MS;
   }
@@ -354,6 +376,8 @@ export interface HarnessInput {
   audio: ReadonlyMap<string, Uint8Array>;
   voices: ReadonlyMap<string, string>;
   models: { voice: string; transcribe: string };
+  /** The judge's output cap and effort for every line of the run. */
+  judge: JudgeSettings;
   apiKey: string;
   connect: Connect;
   clock: HarnessClock;
@@ -381,7 +405,7 @@ export async function runHarness(input: HarnessInput): Promise<HarnessOutput> {
       for (const line of group) {
         const pcm = input.audio.get(line.id);
         if (pcm === undefined) throw new Error(`no audio for ${line.id}`);
-        const row = await runLine(s, line, pcm, input.voices.get(line.id) ?? null);
+        const row = await runLine(s, line, pcm, input.voices.get(line.id) ?? null, input.judge);
         rows.push(row);
         input.log(`${row.lineId}: ${row.verdict ?? "-"}${row.invalidReason ? ` (${row.invalidReason})` : ""}${row.timedOut ? " timeout" : ""} judge ${row.derived.judgeMs ?? "-"} ms, latency ${row.derived.ordinaryLatencyMs ?? "-"} ms`);
         if (s.closed !== null) throw new Error(`session closed: ${s.closed}`);

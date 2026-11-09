@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { JUDGE_V1_INSTRUCTIONS } from "@franki/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { main } from "./cli";
+import { judgeSettings, main } from "./cli";
 import { type FakeJudgeScript, fakeConnect, placeholderPcm } from "./fake-realtime";
-import { MAX_RUN_LINES, type Row, SESSION_LINES, openSession, reasoningTokensOf, runHarness, runLine } from "./harness";
+import { MAX_RUN_LINES, type Row, SESSION_LINES, SPIKE_JUDGE_SETTINGS, openSession, outputTokensOf, reasoningTokensOf, runHarness, runLine } from "./harness";
 import { type ProbeLine, LINES_URL, loadLines } from "./lines";
 import type { Connect } from "./realtime";
 import { type RunFile, runFile, summarize, summaryMarkdown } from "./summary";
@@ -51,7 +51,8 @@ describe("judge spike harness against the fake transport", () => {
     expect(purposes(creates)).toEqual(["judge", "speech"]);
     const judge = creates[0]!;
     expect(judge.instructions).toBe(JUDGE_V1_INSTRUCTIONS);
-    expect(judge.max_output_tokens).toBe(16);
+    expect(judge.max_output_tokens).toBe("inf");
+    expect(judge.reasoning).toEqual({ effort: "minimal" });
     expect((judge.input as { type: string }[]).map((i) => i.type)).toEqual(["message", "item_reference"]);
     expect(creates[1]).toMatchObject({ conversation: "none", output_modalities: ["audio"], input: [{ type: "item_reference", id: "item_1" }] });
     // Cancelled at its first audio delta.
@@ -107,10 +108,12 @@ describe("judge spike harness against the fake transport", () => {
     expect(purposes(creates)).toEqual(["judge"]);
   });
 
-  it("records reasoning tokens wherever usage reports them", async () => {
+  it("records output and reasoning tokens wherever usage reports them", async () => {
     const { row } = await one(ordinary, { texts: ["O"], usage: { output_tokens: 9, output_token_details: { text_tokens: 1, reasoning_tokens: 8 } } });
     expect(row.reasoningTokens).toBe(8);
+    expect(row.outputTokens).toBe(9);
     expect(reasoningTokensOf({ output_tokens: 1 })).toBeNull();
+    expect(outputTokensOf({ input_tokens: 3 })).toBeNull();
   });
 
   it("opens a fresh session every 30 lines and records which lines shared one", async () => {
@@ -118,7 +121,7 @@ describe("judge spike harness against the fake transport", () => {
     const fake = fakeConnect({ clock, judge: () => ({ texts: ["H"] }) });
     const many = lines.slice(0, SESSION_LINES + 2);
     const audio = new Map(many.map((l) => [l.id, placeholderPcm(400)]));
-    const out = await clock.run(runHarness({ lines: many, audio, voices: new Map(), models: { voice: "v", transcribe: "t" }, apiKey: "k", connect: fake.connect, clock, log: () => {} }));
+    const out = await clock.run(runHarness({ lines: many, audio, voices: new Map(), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS, apiKey: "k", connect: fake.connect, clock, log: () => {} }));
     expect(fake.log.connections).toBe(2);
     expect(fake.log.closed).toBe(2);
     expect(out.sessions.map((s) => s.length)).toEqual([SESSION_LINES, 2]);
@@ -129,7 +132,7 @@ describe("judge spike harness against the fake transport", () => {
   it("refuses more than 70 lines in one run", async () => {
     const tooMany = Array.from({ length: MAX_RUN_LINES + 1 }, (_, i) => ({ ...ordinary, id: `x${i}` }));
     const clock = new VirtualClock();
-    await expect(runHarness({ lines: tooMany, audio: new Map(), voices: new Map(), models: { voice: "v", transcribe: "t" }, apiKey: "k", connect: fakeConnect({ clock, judge: () => ({}) }).connect, clock, log: () => {} })).rejects.toThrow(/at most 70/);
+    await expect(runHarness({ lines: tooMany, audio: new Map(), voices: new Map(), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS, apiKey: "k", connect: fakeConnect({ clock, judge: () => ({}) }).connect, clock, log: () => {} })).rejects.toThrow(/at most 70/);
   });
 });
 
@@ -151,6 +154,7 @@ function row(over: Partial<Row>): Row {
     judgeStatusDetails: null,
     judgeText: "O",
     judgeUsage: null,
+    outputTokens: null,
     reasoningTokens: null,
     judgeOtherItems: [],
     timedOut: false,
@@ -162,7 +166,7 @@ function row(over: Partial<Row>): Row {
   };
 }
 
-const META = { date: "2026-11-09T00:00:00.000Z", source: "synthetic" as const, transport: "fake" as const, lineSetCommit: "abc", lineSetHash: "f".repeat(64), models: { voice: "v", transcribe: "t" } };
+const META = { date: "2026-11-09T00:00:00.000Z", source: "synthetic" as const, transport: "fake" as const, lineSetCommit: "abc", lineSetHash: "f".repeat(64), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS };
 const run = (rows: Row[], source: "synthetic" | "owner" = "synthetic"): RunFile => runFile({ ...META, source }, { rows, sessions: [rows.map((r) => r.lineId)], eventNames: [] });
 const probes = (n: number, latency: number | null) =>
   Array.from({ length: n }, (_, i) => row({ lineId: `o-${i}`, probe: true, derived: { judgeMs: 200, ordinaryLatencyMs: latency, asrMs: 400 }, decision: latency === null ? "held" : "reply" }));
@@ -210,6 +214,19 @@ describe("judge spike summary", () => {
     expect(run([row({})], "owner").rows[0]!.transcript).toBeNull();
     expect(run([row({})], "synthetic").rows[0]!.transcript).toBe("hi");
   });
+
+  it("prints the judge settings at the top and the largest and p50 token counts", () => {
+    const rows = [10, 12, 19].map((n, i) => row({ lineId: `o-${i}`, outputTokens: n + 1, reasoningTokens: n }));
+    const s = summarize(run(rows));
+    expect(s.reasoningTokens).toEqual({ n: 3, p50: 12, max: 19 });
+    expect(s.outputTokens).toEqual({ n: 3, p50: 13, max: 20 });
+    const md = summaryMarkdown(run(rows));
+    expect(md.split("\n").slice(0, 6).join("\n")).toContain("- Judge: max_output_tokens inf (no cap), reasoning effort minimal");
+    expect(md).toContain("Output tokens per judge response (reasoning included): largest 20, p50 13, over 3 response(s)");
+    expect(md).toContain("Reasoning tokens per judge response: largest 19, p50 12, over 3 response(s)");
+    expect(summaryMarkdown(runFile({ ...META, judge: { maxOutputTokens: 16, effort: "low" } }, { rows, sessions: [], eventNames: [] }))).toContain("max_output_tokens 16, reasoning effort low");
+    expect(summaryMarkdown(run([]))).toContain("Reasoning tokens per judge response: not reported in any usage object");
+  });
 });
 
 describe("judge spike CLI", () => {
@@ -241,7 +258,21 @@ describe("judge spike CLI", () => {
     expect(files.filter((f) => f.endsWith(".json"))).toHaveLength(1);
     const out = JSON.parse(readFileSync(join(d, "dist", "dry-run", files.find((f) => f.endsWith(".json"))!), "utf8")) as RunFile;
     expect(out.transport).toBe("fake");
+    expect(out.judge).toEqual({ maxOutputTokens: "inf", effort: "minimal" });
     expect(out.rows.map((r) => r.decision)).toEqual(["held", "reply"]);
+  });
+
+  it("passes --max-tokens and --effort to the judge and the run file, and refuses bad values", async () => {
+    const d = spikeDir();
+    const logs: string[] = [];
+    expect(await main(["harness", "--lines", "o-01", "--max-tokens", "64", "--effort", "low"], { spikeDir: d, env: {}, log: (l) => logs.push(l) })).toBe(0);
+    expect(logs[1]).toBe("harness: judge max_output_tokens 64, effort low");
+    const file = readdirSync(join(d, "dist", "dry-run")).find((f) => f.endsWith(".json"))!;
+    expect((JSON.parse(readFileSync(join(d, "dist", "dry-run", file), "utf8")) as RunFile).judge).toEqual({ maxOutputTokens: 64, effort: "low" });
+    expect(judgeSettings({})).toEqual(SPIKE_JUDGE_SETTINGS);
+    expect(judgeSettings({ "max-tokens": "inf" }).maxOutputTokens).toBe("inf");
+    for (const bad of ["0", "-3", "1.5", "16x", "Infinity"]) expect(() => judgeSettings({ "max-tokens": bad })).toThrow(/--max-tokens/);
+    expect(() => judgeSettings({ effort: "max" })).toThrow(/--effort/);
   });
 
   it("refuses a live run without usable audio before connecting", async () => {
