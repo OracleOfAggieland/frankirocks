@@ -203,11 +203,62 @@ describe("judge spike summary", () => {
       row({ lineId: "o-b" }),
     ];
     const s = summarize(run(rows));
-    expect(s.recallByClass.forget).toEqual({ n: 4, of: 5, missing: 0 });
-    expect(s.falseHolds).toEqual({ n: 1, of: 2, missing: 0 });
+    expect(s.views.judgeDeadline.recallByClass.forget).toEqual({ n: 4, of: 5, missing: 0 });
+    expect(s.views.judgeDeadline.falseHolds).toEqual({ n: 1, of: 2, missing: 0 });
     expect(s.invalidReasons).toEqual({ extraText: 1 });
     expect(s.asrMs.withinFallback).toBe(rows.length - 1);
     expect(summaryMarkdown(run(rows))).toContain("Fake transport");
+  });
+
+  it("witness: every answer invalid reads over the line and 0% judge recall, while the app view still holds", () => {
+    const invalid = { valid: false, verdict: "U" as const, invalidReason: "incomplete" as const, judgeStatus: "incomplete", decision: "held" as const, derived: { judgeMs: 450, ordinaryLatencyMs: null, asrMs: 400 } };
+    const rows = [
+      ...controls(30, 30).map((r) => ({ ...r, ...invalid })),
+      ...Array.from({ length: 30 }, (_, i) => row({ lineId: `o-${i}`, probe: i < 15, ...invalid })),
+    ];
+    const s = summarize(run(rows));
+    expect(s.stops.verdict).toBe("over the line");
+    expect(s.stops.recall).toBe("over the line");
+    expect(s.validVerdicts.deadline).toEqual({ n: 0, of: 60, missing: 0 });
+    expect(s.views.judgeDeadline.recall).toEqual({ n: 0, of: 30, missing: 0 });
+    expect(s.views.judgeUntimed.recall.n).toBe(0);
+    expect(s.views.appDeadline.recall).toEqual({ n: 30, of: 30, missing: 0 });
+    expect(s.views.judgeDeadline.falseHolds).toEqual({ n: 30, of: 30, missing: 0 });
+    const md = summaryMarkdown(run(rows));
+    expect(md).toContain("No valid verdict on real audio (fewer than 90% of lines with one): **over the line** (0 of 60 lines had a valid verdict within 600 ms)");
+    expect(md).toContain("Control recall under 90%: **over the line** (judge H or U within 600 ms: 0.0% (0 of 30))");
+    expect(md).toContain("| As the app would act, within 600 ms | 100.0% (30 of 30) |");
+    expect(md).not.toContain("**within**");
+  });
+
+  it("witness: a valid late H counts in the untimed view only", () => {
+    const late = row({ lineId: "c-late", class: "forget", expect: "hold", verdict: "H", valid: true, timedOut: true, decision: "held", t: { ...row({}).t, judgeDone: 2100 }, derived: { judgeMs: 800, ordinaryLatencyMs: null, asrMs: 400 } });
+    const s = summarize(run([late]));
+    expect(s.views.judgeDeadline.recall).toEqual({ n: 0, of: 1, missing: 0 });
+    expect(s.views.judgeUntimed.recall).toEqual({ n: 1, of: 1, missing: 0 });
+    expect(s.views.appDeadline.recall.n).toBe(1);
+    expect(s.validVerdicts).toEqual({ deadline: { n: 0, of: 1, missing: 0 }, untimed: { n: 1, of: 1, missing: 0 } });
+    expect(s.stops.verdict).toBe("over the line");
+    // A late O is a false hold within 600 ms and passes at any time.
+    const lateO = row({ timedOut: true, decision: "held", t: { ...row({}).t, judgeDone: 2100 } });
+    const o = summarize(run([lateO]));
+    expect(o.views.judgeDeadline.falseHolds.n).toBe(1);
+    expect(o.views.judgeUntimed.falseHolds.n).toBe(0);
+    // A timeout with no response.done has no verdict in any view.
+    const hung = row({ lineId: "c-hung", class: "forget", expect: "hold", verdict: null, valid: null, timedOut: true, decision: "held", t: { ...row({}).t, judgeDone: null } });
+    expect(summarize(run([hung])).views.judgeUntimed.recall.n).toBe(0);
+    expect(summarize(run([hung])).views.appUntimed.recall.n).toBe(1);
+  });
+
+  it("witness: the first live run (Nov 9, at the 16-token cap) now reads over the line", () => {
+    const file = new URL("./results/2026-11-09T18-41-59-158Z-owner.json", import.meta.url);
+    const first = JSON.parse(readFileSync(file, "utf8")) as RunFile;
+    const s = summarize(first);
+    expect(s.stops.verdict).toBe("over the line");
+    expect(s.stops.recall).toBe("over the line");
+    expect(s.views.judgeDeadline.recall.n).toBe(0);
+    expect(s.validVerdicts.untimed.n).toBe(2);
+    expect(s.reasoningTokens.max).toBe(19);
   });
 
   it("drops the transcripts of the owner's own takes", () => {

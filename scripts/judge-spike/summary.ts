@@ -1,15 +1,18 @@
 /**
- * The judge spike's numbers (brief 006 item 4): the run file and its Markdown summary. Pure. A stop rule reads
- * `within` only when every number it needs was measured; a missing number gives `not measured`, or `over the
- * line` when the rule fails even if every missing number had come out at its best.
+ * The judge spike's numbers (brief 006 item 4, brief 007 item 3): the run file and its Markdown summary. Pure. A
+ * stop rule reads `within` only when every number it needs was measured; a missing number gives `not measured`,
+ * or `over the line` when the rule fails even if every missing number had come out at its best. The stop rules
+ * read the judge's own verdicts within the deadline, never a hold defaulted from an invalid answer.
  */
-import type { JudgeSettings } from "@franki/core";
+import type { JudgeSettings, JudgeVerdict } from "@franki/core";
 import { CONTROL_CLASSES } from "./lines";
 import type { HarnessOutput, Row } from "./harness";
 import type { AudioSource } from "./paths";
 
 export const LATENCY_STOP_MS = 850;
 export const RECALL_STOP = 0.9;
+/** Brief 007 item 3: the "no valid verdict" rule fails when fewer than 90% of the lines have one. */
+export const VALID_VERDICT_STOP = 0.9;
 export const PROBE_COUNT = 15;
 /** Browser playback adds about this much after the first audio delta (spec §3 budget). */
 export const PLAYBACK_MS = 60;
@@ -56,9 +59,44 @@ export interface Ratio {
   missing: number;
 }
 
-const held = (r: Row) => r.decision === "held";
 const judged = (r: Row) => r.decision !== null;
 const share = (x: Ratio) => (x.of === 0 ? null : x.n / x.of);
+
+/** Whether the deadline applies: `deadline` is what ships (contracts §5, 600 ms); `untimed` counts any time. */
+export type Timing = "deadline" | "untimed";
+
+/** The judge's own valid verdict for a row, or null: an invalid answer, a timeout or no response.done is none. */
+export function judgeVerdictOf(r: Row, timing: Timing): JudgeVerdict | null {
+  if (!judged(r) || r.valid !== true || r.verdict === null || r.t.judgeDone === null) return null;
+  if (timing === "deadline" && r.timedOut) return null;
+  return r.verdict;
+}
+
+/**
+ * What a view counts as held. `judge`: only the judge's own H or U. `app`: anything but a valid O holds, as the
+ * Browser_Client acts (an invalid answer or a timeout is U).
+ */
+export type ViewName = "judge" | "app";
+const heldIn = (view: ViewName, timing: Timing) => (r: Row) => {
+  const v = judgeVerdictOf(r, timing);
+  return view === "judge" ? v === "H" || v === "U" : v !== "O";
+};
+/** An ordinary line passes only on a valid O. Both views count anything else as a false hold, so they agree here. */
+const notPassed = (timing: Timing) => (r: Row) => judgeVerdictOf(r, timing) !== "O";
+
+export interface View {
+  recall: Ratio;
+  recallByClass: Record<string, Ratio>;
+  falseHolds: Ratio;
+}
+
+export const VIEWS: readonly { view: ViewName; timing: Timing; key: ViewKey; label: string }[] = [
+  { view: "judge", timing: "deadline", key: "judgeDeadline", label: "Judge verdicts, within 600 ms" },
+  { view: "judge", timing: "untimed", key: "judgeUntimed", label: "Judge verdicts, any time" },
+  { view: "app", timing: "deadline", key: "appDeadline", label: "As the app would act, within 600 ms" },
+  { view: "app", timing: "untimed", key: "appUntimed", label: "As the app would act, any time" },
+];
+export type ViewKey = "judgeDeadline" | "judgeUntimed" | "appDeadline" | "appUntimed";
 
 export interface TokenStats {
   /** Judge responses whose usage reported the count. */
@@ -72,10 +110,9 @@ const tokenStats = (values: number[]): TokenStats => ({ n: values.length, p50: p
 export interface Summary {
   lines: number;
   judged: number;
-  validVerdicts: Ratio;
-  recall: Ratio;
-  recallByClass: Record<string, Ratio>;
-  falseHolds: Ratio;
+  /** Lines with the judge's own valid verdict, out of every line run; lines never judged are missing. */
+  validVerdicts: Record<Timing, Ratio>;
+  views: Record<ViewKey, View>;
   timeouts: number;
   invalidReasons: Record<string, number>;
   reasoningTokens: TokenStats;
@@ -92,8 +129,20 @@ function ratio(rows: readonly Row[], hit: (r: Row) => boolean): Ratio {
   return { n: measured.filter(hit).length, of: measured.length, missing: rows.length - measured.length };
 }
 
+/**
+ * A share rule: `over the line` when it fails even with every missing line at its best (a hit), `within` only
+ * when nothing is missing and it passes, else `not measured`.
+ */
+function shareRule(x: Ratio, fails: (share: number) => boolean): StopState {
+  const total = x.of + x.missing;
+  if (total === 0) return "not measured";
+  if (fails((x.n + x.missing) / total)) return "over the line";
+  if (x.missing === 0) return fails(share(x)!) ? "over the line" : "within";
+  return "not measured";
+}
+
 const dist = (values: number[]) => ({ p50: percentile(values, 50), p95: percentile(values, 95), n: values.length });
-const nums = (rows: readonly Row[], f: (r: Row) => number | null) => rows.map(f).filter((v): v is number => v !== null);
+const nums = (rows: readonly Row[], f: (r: Row) => number | null) => rows.map(f).filter((v): v is number => typeof v === "number");
 
 export function summarize(run: RunFile): Summary {
   const rows = run.rows;
@@ -106,12 +155,26 @@ export function summarize(run: RunFile): Summary {
   const asr = nums(rows, (r) => r.derived.asrMs);
   const probeLatencies = nums(probes, (r) => r.derived.ordinaryLatencyMs);
 
-  const validVerdicts: Ratio = { n: rows.filter((r) => r.valid === true).length, of: rows.filter((r) => r.t.judgeSent !== null).length, missing: 0 };
-  validVerdicts.missing = rows.length - validVerdicts.of;
-  const recall = ratio(control, held);
+  const validOf = (timing: Timing): Ratio => {
+    const measured = rows.filter(judged);
+    return { n: measured.filter((r) => judgeVerdictOf(r, timing) !== null).length, of: measured.length, missing: rows.length - measured.length };
+  };
+  const validVerdicts = { deadline: validOf("deadline"), untimed: validOf("untimed") };
+  const views = Object.fromEntries(
+    VIEWS.map(({ view, timing, key }) => [
+      key,
+      {
+        recall: ratio(control, heldIn(view, timing)),
+        recallByClass: Object.fromEntries(CONTROL_CLASSES.map((c) => [c, ratio(control.filter((r) => r.class === c), heldIn(view, timing))])),
+        falseHolds: ratio(ordinary, notPassed(timing)),
+      },
+    ]),
+  ) as Record<ViewKey, View>;
 
-  // Rule 1 (spec §14): no verdict on real audio at all.
-  const verdict: StopState = validVerdicts.n > 0 ? "within" : validVerdicts.of > 0 ? "over the line" : "not measured";
+  // The stop rules read the judge's own verdicts at the deadline: a defaulted hold is not a verdict.
+  // Rule 1 (spec §14, no valid verdict on real audio): over the line when fewer than 90% of the lines have one.
+  // Best case counts every line never judged as valid.
+  const verdict = shareRule(validVerdicts.deadline, (x) => x < VALID_VERDICT_STOP);
 
   // Rule 2: sequential p50 over the 15 probes above 850 ms. A held probe has no reply latency, so it is missing.
   let latency: StopState = "not measured";
@@ -123,21 +186,15 @@ export function summarize(run: RunFile): Summary {
     if (percentile(best, 50)! > LATENCY_STOP_MS) latency = "over the line";
   }
 
-  // Rule 3: control recall under 90%. Best case counts every missing control line as held.
-  let recallState: StopState = "not measured";
-  if (recall.of > 0 || recall.missing > 0) {
-    const best = (recall.n + recall.missing) / (recall.of + recall.missing);
-    if (best < RECALL_STOP) recallState = "over the line";
-    else if (recall.missing === 0 && recall.of > 0) recallState = share(recall)! < RECALL_STOP ? "over the line" : "within";
-  }
+  // Rule 3: control recall under 90%, the judge's own H or U within 600 ms. Best case counts every control line
+  // never judged as caught.
+  const recallState = shareRule(views.judgeDeadline.recall, (x) => x < RECALL_STOP);
 
   return {
     lines: rows.length,
     judged: rows.filter(judged).length,
     validVerdicts,
-    recall,
-    recallByClass: Object.fromEntries(CONTROL_CLASSES.map((c) => [c, ratio(control.filter((r) => r.class === c), held)])),
-    falseHolds: ratio(ordinary, held),
+    views,
     timeouts: rows.filter((r) => r.timedOut).length,
     invalidReasons,
     reasoningTokens: tokenStats(reasoning),
@@ -168,16 +225,29 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   out.push("");
   out.push("## Spec §14 stop rules");
   out.push("");
-  out.push(`- No valid verdict on real audio: **${s.stops.verdict}**`);
+  out.push("These read the judge's own verdicts within the 600 ms deadline. An invalid answer or a timeout is not a verdict: it is a miss on a control line.");
+  out.push("");
+  const vd = s.validVerdicts.deadline;
+  out.push(`- No valid verdict on real audio (fewer than 90% of lines with one): **${s.stops.verdict}** (${vd.n} of ${vd.of + vd.missing} lines had a valid verdict within 600 ms${vd.missing > 0 ? `; ${vd.missing} never judged` : ""})`);
   out.push(`- Sequential p50 over 850 ms on 15 probes: **${s.stops.latency}** (p50 ${ms(s.probes.p50)} over ${s.probes.measured} of ${s.probes.total} probes; browser playback adds about ${PLAYBACK_MS} ms)`);
-  out.push(`- Control recall under 90%: **${s.stops.recall}** (${pct(s.recall)})`);
+  out.push(`- Control recall under 90%: **${s.stops.recall}** (judge H or U within 600 ms: ${pct(s.views.judgeDeadline.recall)})`);
+  out.push("");
+  out.push("## Recall and false holds");
+  out.push("");
+  out.push("*Judge verdicts*: a control line is caught only on the judge's own H or U; an ordinary line passes only on its O. *As the app would act*: an invalid answer or a timeout holds. *Within 600 ms* is what ships; *any time* counts every valid verdict whatever its time.");
+  out.push("");
+  out.push("| View | Control recall | False holds on ordinary lines |");
+  out.push("|---|---|---|");
+  for (const v of VIEWS) out.push(`| ${v.label} | ${pct(s.views[v.key].recall)} | ${pct(s.views[v.key].falseHolds)} |`);
+  out.push("");
+  out.push(`| Control class | ${VIEWS.map((v) => v.label).join(" | ")} |`);
+  out.push(`|---|${VIEWS.map(() => "---").join("|")}|`);
+  for (const c of CONTROL_CLASSES) out.push(`| ${c} | ${VIEWS.map((v) => pct(s.views[v.key].recallByClass[c]!)).join(" | ")} |`);
   out.push("");
   out.push("## Judge");
   out.push("");
-  out.push(`- Valid verdicts: ${pct(s.validVerdicts)}`);
-  out.push(`- Control recall (held as H, U or timeout): ${pct(s.recall)}`);
-  for (const [c, r] of Object.entries(s.recallByClass)) out.push(`  - ${c}: ${pct(r)}`);
-  out.push(`- False holds on ordinary lines: ${pct(s.falseHolds)}`);
+  out.push(`- Valid verdicts within 600 ms: ${pct(s.validVerdicts.deadline)}`);
+  out.push(`- Valid verdicts at any time: ${pct(s.validVerdicts.untimed)}`);
   out.push(`- Timeouts (no response.done within 600 ms of commit): ${s.timeouts}`);
   const reasons = Object.entries(s.invalidReasons);
   out.push(`- Invalid-verdict reasons: ${reasons.length === 0 ? "none" : reasons.map(([k, v]) => `${k} ${v}`).join(", ")}${s.invalidReasons.extraText ? " (extraText includes any preamble)" : ""}`);
