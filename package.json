@@ -20,6 +20,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "vitest run",
+    "test:fast": "vitest run packages/core/src/schema packages/core/src/lineage packages/core/src/slices packages/server/src/store packages/server/src/worker/extract.lineage",
     "test:emulator": "npx -y firebase-tools@15.34.2 emulators:exec --only firestore --project demo-franki \"vitest run --config vitest.emulator.config.ts\"",
     "smoke": "node tests/smoke.mjs",
     "deploy": "npx -y firebase-tools@15.34.2 deploy --only firestore,functions,apphosting"
@@ -33,6 +34,7 @@
     "turbo": "2.11.10",
     "typescript": "6.0.3",
     "vite": "8.3.5",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "yaml": "2.9.1"
   }
 }

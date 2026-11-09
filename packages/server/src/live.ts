@@ -1,19 +1,19 @@
 import { SMOKE } from "@franki/core";
-import { getApps, initializeApp } from "firebase-admin/app";
-import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import OpenAI from "openai";
+import { liveClock } from "./clock/live-clock";
+import { adminFirestore } from "./config/admin";
 import type { HealthDeps } from "./health";
 
 /** Health dependencies backed by the real Firestore and OpenAI. Server-only. */
 export function createLiveHealthDeps(apiKey: string | undefined = process.env.OPENAI_API_KEY): HealthDeps {
-  // With no arguments, the Admin SDK picks up the project and credentials App Hosting provides.
-  if (getApps().length === 0) initializeApp();
-  const db = getFirestore();
+  // The Admin app uses the explicit FRANKI_FIREBASE_PROJECT_ID (R30.11); credentials still come from ADC.
+  const db = adminFirestore();
   const openai = new OpenAI({ apiKey });
   const smoke = db.collection(SMOKE.collection);
 
   return {
-    now: () => Date.now(),
+    now: () => liveClock().opsClock.now,
 
     async firestoreRoundTrip() {
       const ref = smoke.doc(SMOKE.webDoc);

@@ -20,5 +20,6 @@ ui-debug.log*
 
 # misc
 *.log
+.kiro/agents/*.json.bak
 .DS_Store
 *.pem

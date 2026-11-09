@@ -1,4 +1,4 @@
-import { createLiveHealthDeps, isSmokeAuthorized, runDeepHealth } from "@franki/server";
+import { configuredModels, createLiveHealthDeps, healthModels, isSmokeAuthorized, runDeepHealth } from "@franki/server";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +11,7 @@ export function GET() {
     configured: {
       openaiKey: Boolean(process.env.OPENAI_API_KEY),
       smokeToken: Boolean(process.env.SMOKE_TOKEN),
-      brainModel: process.env.FRANKI_BRAIN_MODEL ?? null,
-      voiceModel: process.env.FRANKI_VOICE_MODEL ?? null,
+      ...configuredModels(),
     },
   });
 }
@@ -22,9 +21,6 @@ export async function POST(request: Request) {
   if (!isSmokeAuthorized(request.headers.get("authorization"), process.env.SMOKE_TOKEN)) {
     return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
-  const report = await runDeepHealth(createLiveHealthDeps(), {
-    brainModel: process.env.FRANKI_BRAIN_MODEL ?? "gpt-6.1-terra",
-    voiceModel: process.env.FRANKI_VOICE_MODEL ?? "gpt-realtime-2.1",
-  });
+  const report = await runDeepHealth(createLiveHealthDeps(), healthModels());
   return Response.json(report, { status: report.ok ? 200 : 503 });
 }

@@ -23,7 +23,7 @@ apps/web          Next.js app (the App Hosting root directory)
 packages/core     Pure TypeScript shared by everything, with property tests
 packages/server   Server-only logic (Firestore, OpenAI), independent of the web framework
 functions         Scheduled jobs, Pub/Sub and webhooks, bundled with esbuild
-tests             Deploy smoke test and Firestore rules tests
+tests             Deploy smoke test, no-network Vitest setup (tests/setup) and Firestore emulator tests (tests/firestore)
 ```
 
 ## Develop

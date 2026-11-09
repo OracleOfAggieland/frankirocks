@@ -6,8 +6,10 @@
     "node": "24.x"
   },
   "scripts": {
+    "predev": "node ../../scripts/sync-local-env.mjs",
     "dev": "next dev",
     "build": "next build",
+    "postbuild": "node ../../scripts/specimens-absent.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit"
@@ -15,6 +17,8 @@
   "dependencies": {
     "@franki/core": "*",
     "@franki/server": "*",
+    "firebase": "13.1.0",
+    "motion": "14.9.1",
     "next": "16.4.3",
     "react": "19.3.1",
     "react-dom": "19.3.1"

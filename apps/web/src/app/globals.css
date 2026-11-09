@@ -1,26 +1,229 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+ * Token_Source (lab-ui-foundation R2). These custom properties are the authoritative token values.
+ * apps/web/src/ui/motion.ts mirrors them by hand for JavaScript; scripts/token-sync.test.ts keeps the
+ * two equal. Values come from docs/design/ui-direction.md. `static` emits every variable, including
+ * the ones only JavaScript or inline SVG styles read.
+ */
+@theme static {
+  /* Colour */
+  --color-night-0: #060A09;
+  --color-night-1: #0B1311;
+  --color-night-2: #13201C;
+  --color-ink: #E8F4EC;
+  --color-ink-dim: #9DB3A8;
+  --color-ghost: #CDF3D3;
+  --color-ghost-deep: #93DDA2;
+  --color-ecto: #7CFFB2;
+  --color-brass: #D9A441;
+  --color-brass-hi: #F3CF7A;
+  --color-gold: #FFD24D;
+  --color-spark: #FFF6D8;
+  --color-stitch: #3B4C45;
+  --color-ember: #FF6A4D;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  /* Type */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 20px;
+  --text-2xl: 28px;
+  --text-display: 44px;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Radius */
+  --radius-card: 18px;
+  --radius-chip: 999px;
+  --radius-control: 12px;
+
+  /* Shadow: layered low-opacity glows built from the colour tokens */
+  --shadow-ecto-glow:
+    0 0 12px color-mix(in srgb, var(--color-ecto) 22%, transparent),
+    0 0 40px color-mix(in srgb, var(--color-ecto) 12%, transparent);
+  --shadow-brass-glow:
+    0 0 8px color-mix(in srgb, var(--color-brass) 28%, transparent),
+    0 0 24px color-mix(in srgb, var(--color-brass) 12%, transparent);
+  --shadow-card:
+    0 1px 0 color-mix(in srgb, var(--color-ink) 6%, transparent) inset,
+    0 12px 32px color-mix(in srgb, var(--color-night-0) 70%, transparent);
+
+  /* Easing */
+  --ease-ecto: cubic-bezier(.22, 1, .36, 1);
+
+  /* Motion: springs, durations and stagger have no Tailwind namespace */
+  --spring-float-stiffness: 60;
+  --spring-float-damping: 12;
+  --spring-settle-stiffness: 170;
+  --spring-settle-damping: 22;
+  --spring-press-stiffness: 420;
+  --spring-press-damping: 30;
+  --dur-quick: 160ms;
+  --dur-base: 320ms;
+  --dur-ritual: 1200ms;
+  --stagger: 40ms;
+  /* The idle float period (UI direction "Motion": ±6 px on a 4 s sine). CSS-only. */
+  --dur-float: 4000ms;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-night-0);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
 }
+
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Avatar loops (lab-ui-foundation R6.13, R9.1, R9.3, R10.5, R10.7). Only transform and opacity animate.
+ * Loops run only under `prefers-reduced-motion: no-preference`, are switched off by
+ * [data-reduced="true"] (a forced specimen), and pause under [data-paused="true"] (hidden tab).
+ * The idle float is UI direction's ±6 px on a 4 s sine.
+ */
+.franki-ghost g,
+.franki-ghost ellipse {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes franki-float {
+  0%, 100% { transform: translateY(6px); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes franki-floor {
+  0%, 100% { transform: scaleX(1); opacity: 0.4; }
+  50% { transform: scaleX(0.82); opacity: 0.28; }
+}
+@keyframes franki-halo {
+  0%, 100% { transform: translateY(6px); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes franki-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.015, 0.985); }
+}
+@keyframes franki-blink {
+  0%, 46%, 50%, 88%, 92%, 100% { transform: scaleY(1); }
+  48%, 90% { transform: scaleY(0.1); }
+}
+@keyframes franki-strike {
+  0% { opacity: 0; }
+  10%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes franki-rise {
+  0% { transform: translateY(14px); }
+  100% { transform: translateY(0); }
+}
+@keyframes franki-flicker {
+  0%, 100% { opacity: 0.25; }
+  30% { opacity: 0.6; }
+  55% { opacity: 0.15; }
+  80% { opacity: 0.5; }
+}
+@keyframes franki-arc {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+@keyframes franki-glance {
+  0%, 100% { transform: translate(0, 0); }
+  30%, 70% { transform: translate(3px, -2px); }
+}
+@keyframes franki-wobble {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-3deg); }
+  75% { transform: rotate(3deg); }
+}
+@keyframes franki-fizzle {
+  0%, 40% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes franki-nod {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(4px); }
+}
+@keyframes franki-sparks {
+  0% { opacity: 0; transform: translateY(4px); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+@keyframes franki-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* A brief flicker in a bolt's blooms each time the bolt regenerates (Brief 004 item 5). Ends at the
+   blooms' resting opacity, the 0.8 on [data-bolt-glow]. A small step on thin lines: a flicker, not a
+   strobe (WCAG 2.3.1). */
+@keyframes franki-bolt-flash {
+  from { opacity: 1; }
+  to { opacity: 0.8; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .franki-float { animation: franki-float var(--dur-float) ease-in-out infinite; }
+  .franki-floor { animation: franki-floor var(--dur-float) ease-in-out infinite; }
+  .franki-halo { animation: franki-halo var(--dur-float) ease-in-out infinite; }
+  .franki-breathe { animation: franki-breathe calc(var(--dur-float) * 1.5) ease-in-out infinite; }
+  .franki-blink { animation: franki-blink calc(var(--dur-ritual) * 4.5) linear infinite; }
+  .franki-strike { animation: franki-strike var(--dur-ritual) var(--ease-ecto) 1 both; }
+  .franki-rise { animation: franki-rise var(--dur-ritual) var(--ease-ecto) 1 both; }
+  .franki-flicker { animation: franki-flicker calc(var(--dur-base) * 2) steps(4, end) infinite; }
+  .franki-arc { animation: franki-arc var(--dur-base) linear infinite; }
+  .franki-glance { animation: franki-glance calc(var(--dur-base) * 2.5) var(--ease-ecto) 1; }
+  .franki-wobble { animation: franki-wobble calc(var(--dur-base) * 1.5) ease-in-out 2; }
+  .franki-fizzle { animation: franki-fizzle var(--dur-ritual) var(--ease-ecto) 1 both; }
+  .franki-nod { animation: franki-nod calc(var(--dur-ritual) * 1.5) ease-in-out infinite; }
+  .franki-sparks { animation: franki-sparks var(--dur-ritual) var(--ease-ecto) 1 both; }
+  .franki-fade { animation: franki-fade var(--dur-base) var(--ease-ecto) 1 both; }
+  .franki-bolt-flash { animation: franki-bolt-flash calc(var(--dur-quick) / 3) var(--ease-ecto) 1 both; }
+}
+
+/* A forced reduced specimen gets fades only, like the media query. */
+[data-reduced="true"] .franki-anim:not(.franki-fade) {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .franki-fade { animation: franki-fade var(--dur-base) linear 1 both; }
+}
+[data-reduced="true"] .franki-fade {
+  animation: franki-fade var(--dur-base) linear 1 both;
+}
+
+[data-paused="true"] .franki-anim {
+  animation-play-state: paused !important;
+}
+
+/* The signed-out Wordmark (R13.2): K-I-R-O light gold once and stay gold; a plain fade under reduced motion. */
+@keyframes franki-kiro-light {
+  0% { color: var(--color-ink); transform: translateY(0); }
+  50% { color: var(--color-gold); transform: translateY(-2px); }
+  100% { color: var(--color-gold); transform: translateY(0); }
+}
+@keyframes franki-kiro-fade {
+  from { color: var(--color-ink); }
+  to { color: var(--color-gold); }
+}
+.franki-kiro {
+  display: inline-block;
+  animation: franki-kiro-fade var(--dur-ritual) linear 1 both;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .franki-kiro { animation: franki-kiro-light var(--dur-ritual) var(--ease-ecto) 1 both; }
+}
+[data-reduced="true"] .franki-kiro {
+  animation: franki-kiro-fade var(--dur-ritual) linear 1 both;
+}
+
+/* The call button's ring spark (R10.4): one turn around the ring on press; never under reduced motion. */
+@keyframes franki-ring-spark {
+  from { transform: rotate(0deg); opacity: 1; }
+  to { transform: rotate(360deg); opacity: 0; }
+}
+.franki-ring-spark { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .franki-ring-spark { animation: franki-ring-spark calc(var(--dur-base) * 2) var(--ease-ecto) 1 both; }
+}
+[data-reduced="true"] .franki-ring-spark { animation: none; opacity: 0; }

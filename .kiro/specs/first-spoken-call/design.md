@@ -1,0 +1,547 @@
+# Design Document: first-spoken-call
+
+## Overview
+
+This design builds Brief 001 as specified in `requirements.md`, with the fixes from `docs/briefs/001-review-requirements.md` and `docs/briefs/001-review-design.md`. Requirement numbers are cited as R*n.m*. Contract sections are cited as "C§n" (`docs/design/memory-contracts-v2.md`) and "MS§n" (`docs/design/memory-spec-v3.md`). `docs/design/` is read-only. Every conflict found is listed under [Contract questions](#contract-questions).
+
+The slice is the F0 and F1 floors plus the parts of F3 and F5 needed to prove memory. The demo path is: sign in, call, speak, hang up, call again, hear the memory, and see it in the Debug_Panel.
+
+Decisions from the review that shape the design:
+
+- **Voice admission waits for the transcript.** There is no judge until F2, so ASR admits the turn (the MS§3 fallback "ASR plus Decisions can admit instead"). The browser posts `/api/turn` once the final transcript arrives, with `judge:"timeout"` and `transcriptState:"final"`. Replies start about 1.1 to 1.6 s after speech ends until F2.
+- **KV13's ack-age check applies to `fastO` only.** This slice issues no `fastO` Permits. No reply is ever built from an expired Deck, and every 45 s refresh re-issues the Deck.
+- **The Extractor is an in-process server worker** in `packages/server`. `jobWake` is not used in this slice.
+- **Debug data comes from a separate route, `GET /api/debug/memory`,** which refuses in production. The contract's `/api/memory` is not built here.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Browser
+    UI[Call screen + Stand_In_Avatar] --> VC[Voice_Client]
+    UI --> TI[Typed input]
+    UI --> DP[Debug_Panel]
+    VC -- WebRTC audio + oai-events --> RT[(OpenAI Realtime)]
+  end
+  subgraph "apps/web (Next.js route adapters)"
+    RG[Route_Guard]
+  end
+  subgraph "packages/server"
+    RL[Route logic] --> AS[Admission_Seam: devAdmit]
+    RL --> HC[Head build]
+    RL --> EW[Extract worker]
+    RL --> FS[(Firestore_Store)]
+    EW --> OA[(OpenAI Responses)]
+    RL --> OA
+    RL -- SDP proxy, hangup --> RT
+  end
+  subgraph "packages/core (pure)"
+    T[Types + validators] --- E[eligible / spokenGrade]
+    E --- H[compileHead]
+    H --- L[lineage resolver]
+    L --- M[voice machine reducer]
+  end
+  VC & TI & DP -- "Bearer ID token" --> RG --> RL
+  RL -.uses.-> T
+```
+
+- **Audio** goes directly between the browser and OpenAI over WebRTC. The server sees only the SDP exchange (R12) and the hangup calls (R14).
+- **The browser never reads Firestore.** The rules are deny-all (R8), and every read and write goes through a route.
+- **Background work** runs in the Next.js server process. A route adapter schedules it with Next's post-response hook (`after` from `next/server`; read `node_modules/next/dist/docs/` before using it). The Server_Library cannot import `next` (R5.3), so each adapter passes a `schedule(fn)` function into the Server_Library call; tests pass one that records the work and runs it on demand. Session open and session close also drain the Owner's remaining jobs (see [Extraction worker](#extraction-worker)). `functions/` keeps only its existing heartbeat in this slice.
+- **No route awaits background work it doesn't own.** `/api/session/state` and `/api/receipt` only `schedule` the `tick` work and never await it. Session open races its drain against what is left of its 3,500 ms budget (brief 005). No OpenAI deadline can extend a route's own limit (R13.6, R11.2).
+- **Nothing recompiles the Head during a call.** A Memory written mid-call reaches the Head at the next session open and reaches the call only through `recall`. Extraction does not change `epoch`, `policyRev`, `bundleRev` or `rulesRev`, so a mid-call `seen` mismatch cannot come from extraction.
+- **Time** comes only from the Clock_Port (R6). The browser has its own opsClock, built from a server offset plus a monotonic read, as an allow-listed Clock_Port file.
+
+## Module layout
+
+```
+packages/core/src/
+  schema/        closed validators: primitives (sN, i, Signed, ID, Hash, TS), records (C§1), wire (C§6), debug wire
+  types/         generated from schema (one source of truth)
+  clock.ts       ClockPair type, no reads
+  ids.ts         canonicalJSON, id input builders (hashing injected)
+  text.ts        LF normalization, UTF-16 offsets, surrogate checks, token split (NFKC, lowercase, letter/digit runs)
+  lexicon.ts     code Sensitivity floor and gravity floor (closed word lists)
+  slices.ts      turn slice classification (U/T, sens), slice hash input
+  eligible.ts    eligible(x,c,s) (C§4)
+  spoken.ts      spokenGrade (C§2, C§4)
+  head.ts        compileHead (C§7), token estimator
+  lineage.ts     resolveLineage (R24.4)
+  extract.ts     ExtractV1 packet build + output validation + item→memory plan (pure)
+  admission.ts   payloadHash input, devPermitKind (pure parts of devAdmit)
+  voice/machine.ts  browser call-state reducer (pure; effects returned as commands)
+  recall.ts      recall line build, explicitRequest test, note citation filter
+packages/server/src/
+  config/models.ts   the only module that reads Model_Config; holds the /api/health fallbacks
+  config/env.ts      OPENAI_API_KEY, FRANKI_ID_HMAC_KEY, FRANKI_FIREBASE_PROJECT_ID, NODE_ENV readers (names only in errors)
+  config/admin.ts    initializeApp({ projectId: FRANKI_FIREBASE_PROJECT_ID }) once; shared by live.ts and the Firestore_Store
+  clock/live-clock.ts   Clock_Port live implementation (allow-listed); live.ts's `now` calls it
+  store/port.ts, store/memory-store.ts, store/firestore-store.ts, store/conformance.ts
+  crypto.ts      sha256, hmacId (node:crypto)
+  auth/guard.ts  token verify (revocation), origin check, body caps
+  ledger/request.ts  idempotency (lease 15 s, TTL 24 h)
+  core-docs.ts   ensureCoreDocs (R10.13, new)
+  routes/{open,sdp,state,close,turn,tool,receipt,debug-memory}.ts
+  admission/seam.ts, admission/dev-admit.ts
+  openai/{realtime-calls,responses}.ts + openai/fake.ts (Fake_OpenAI)
+  worker/{extract,hangup,tick}.ts
+  health.ts, live.ts (existing)
+apps/web/src/
+  app/api/**/route.ts   thin adapters (R5.4)
+  client/clock.ts       browser Clock_Port (allow-listed)
+  client/auth.ts, client/api.ts, client/voice-client.ts, client/hash.ts (crypto.subtle)
+  app/page.tsx, components/{CallScreen,StandInAvatar,TypedInput,DebugPanel}.tsx
+.kiro/steering/{product,tech,structure,memory-rules}.md
+.kiro/hooks/clock-guard.json, .kiro/hooks/invariants-on-save.json
+functions/src/clock.ts   one-function ops clock for the heartbeat (allow-listed)
+scripts/clock-allowlist.json, scripts/clock-guard.mjs
+scripts/sync-local-env.mjs   apphosting.yaml plain values → apps/web/.env.development.local (R30.10)
+```
+
+**Clock allow-list (R2.1).** `scripts/clock-allowlist.json` holds three files: `packages/server/src/clock/live-clock.ts`, `apps/web/src/client/clock.ts` and `functions/src/clock.ts`. Two existing reads move behind them before the static check is turned on:
+
+- `packages/server/src/live.ts:16` (`now: () => Date.now()`) becomes `now: () => liveClock().opsClock.now`.
+- `functions/src/index.ts:50` (the KMS heartbeat plaintext) calls `opsNowMs()` from `functions/src/clock.ts`. `functions` does not import `packages/server`, so it gets its own one-line clock file.
+
+`packages/server/src/health.ts:73` calls `new Date(deps.now())` with an argument. That only formats a supplied time. The static check matches `new Date()` with an empty argument list only (regex `new\s+Date\s*\(\s*\)`), so it passes; a test case pins this. The check builds its search patterns from string pieces, so its own source does not trip it.
+
+**Local config (R30.10).** `next dev` does not read `apphosting.yaml`. `apps/web/package.json` gets `"predev": "node ../../scripts/sync-local-env.mjs"`. The script:
+
+- parses the `env:` list in `apps/web/apphosting.yaml` with the `yaml` package;
+- writes every entry that has `value:` (and no `secret:`) as `NAME=value` lines into `apps/web/.env.development.local`, with a generated-file header;
+- skips every `secret:` entry;
+- prints only `synced N plain values`, never a name's value.
+
+Next loads `.env.development.local` and `.env.local` together in development, so the two secrets stay in `.env.local` and everything else comes from `apphosting.yaml`. The existing `apps/web/.gitignore` pattern `.env*` must cover the generated file; the task checks `git check-ignore` and adds a pattern only if needed. The parser is a pure function `parsePlainEnv(yamlText)` with a unit test (plain copied, secret skipped, unknown keys ignored, output has no values).
+
+**Admin SDK project (fix 5).** `FRANKI_FIREBASE_PROJECT_ID` is a plain value, `frankirocks`, added to `apphosting.yaml`. `config/admin.ts` initializes `firebase-admin` with it explicitly, because Application Default Credentials from a user account do not reliably supply a project ID. Missing → `CONFIG` naming the variable (R30.11).
+
+Core does no hashing, because Node's `crypto` is unavailable in the browser bundle. It builds canonical byte inputs. The server hashes with `node:crypto`, and the browser hashes with `crypto.subtle`.
+
+## Data model notes
+
+All stored shapes are C§1 exactly. These are this slice's choices within them.
+
+**IDs.** `ID = base64url(HMAC-SHA256(FRANKI_ID_HMAC_KEY, canonicalJSON(parts)))`, which is 43 characters. The server derives these IDs:
+
+| ID | Parts |
+|---|---|
+| sessionId | `["session", uid, requestId]` |
+| user turnId | client-supplied (see contract question 23) |
+| assistant turnId | `["aturn", sessionId, responseId]` |
+| evidence logicalId / eid | `["ev", turnId]` / `[logicalId, version]` |
+| memory id | `["mem", jobId, itemIndex]` (C§1 "memory ID=assertion") |
+| jobId | `["job", "extract", eid]`, `["job", "hangup", sessionId]` |
+| permitId | `["permit", stamp, kind, approvedPayloadHash]` |
+| ledger request key | `["req", uid, route, requestId]` |
+
+**Hashes.** `Hash` is lowercase hex SHA-256. A Slice `contentHash` is the hash of the UTF-8 encoding of the LF-normalized substring `[start, end)`. Ranges that split a surrogate pair are rejected before hashing. A root key is `H(canonicalJSON(slice))`.
+
+**`rev`.** A record is created with `rev: 1`, and each committed write sets `rev` to the prior value plus 1. Compare-and-set compares the `rev` read inside the transaction (R7.4, R7.5; contract question 21).
+
+**Core documents (R10.13, new).** `ensureCoreDocs(uid, clock)` runs at the start of every authenticated route except `/api/debug/memory`, which only reads. It runs one transaction: if `core/epoch` exists it does nothing; otherwise it creates all five documents:
+
+| Doc | Initial values (plus C fields: `v:1, rev:1, epoch:1, policyRev:1`, empty lineage arrays, `dirty:false, dependenciesComplete:true`) |
+|---|---|
+| epoch | `epoch:1, policyRev:1, barrier:null, activeSessionId:null, activeCallId:null, activeLeaseToken:null, leaseUntil:null` |
+| state | `audience:"private", audienceSessionId:null, currentZone/homeZone:` request `clientZone` if present else `"UTC"`, `holidayLocale:"US", memoryOn:true, isolatedInputProven:false, careSubjectIds:[], lastInteractionAt:null, modifiers:{rushed:null,crisis:null}, clockMode:"live", worldClock:null, nextNightAt:` ops now + 24 h (placeholder, nightly is L), `projectionDirty:false, coverage:{state:"unknown",from:null,to:null,missingRanges:[],generation:0}, fixtureNamespace:null, visitId:null` |
+| counters | `day:` civil date in `currentZone`, all micros 0, `heavy:0, senderAsks:[], counts:[], connectorOffers:[], warmth:{sessionId:null,turnsWithoutReference:0}` |
+| rules | `rulesRev:1, allergies:[], standing:[], rulePages:0, gazetteerVersion:"none", noneConfirmed:[]` |
+| bundle | `state:"dirty", bundleRev:0, rulesRev:1, head:null, headHash:null, selectedRefs:[], compiledAt:null, expiresAt:null` |
+
+**Zone.** `worldClock.zone` is `core/state.currentZone`. Each session open sets `currentZone` to the request's `clientZone` in the open transaction and leaves `homeZone` unchanged (contract question 15).
+
+**Session timing.** `expiresAt` is ops now + 10 min (C§6 idle expiry). It is pushed forward on every turn, state and receipt call. `generation` stays 1 for the life of a Session in this slice. Reconnect after a failure (R15.8) opens a new Session, and the server closes the old one (KV09).
+
+**Turn evidence.** One Evidence per committed user Turn with a final transcript: `kind:"turn"`, `source:"voice"` (also used for ordinary typed turns) or `"pasted"`, `text` holding the whole transcript, `transcriptState:"complete"`, `transcriptDeadline:null`, `occurredAt` and `assertedAt` from worldClock, `receivedAt` from opsClock. `fieldSlices` is one Slice over the whole `text`, with class U, or T for pasted text, and `sens` set to the lexicon floor of the text (R20.3, R20.4). Every other content field is `null` or `[]` (R4.8).
+
+**Indexes (R7.8, KS08).** `firestore.indexes.json` declares exactly these:
+
+| Query | Collection | Fields | Used by |
+|---|---|---|---|
+| Q03 | memories | key A, status A, validFromKey D | single-valued supersede lookup (R23.5) |
+| Q13 | sessions (collection scope) | status A, expiresAt A | expiry close in `tick` (R14.4) |
+| Q17 | jobs (collection scope) | status A, nextAttemptAt A | job drain and redrive |
+| Q18 | jobs (collection scope) | status A, leaseUntil A | expired-lease requeue |
+| Q33 | ledger | kind A, at D | Debug_Panel admission entries (R29.6) |
+
+Q14 (turns by `seq`) uses the single-field index. Q28 (paged `__name__ > cursor`) is built in. Head build, recall lines and debug pages read through Q28.
+
+## Data flow
+
+### Session open (R11, R26, KV09, Q13, Q28)
+
+1. The Route_Guard runs, then `ensureCoreDocs`, idempotency (R10.8), and the Q13 expiry close from `tick` (bounded: Firestore writes only, hangups scheduled). The rest of `tick` is scheduled, not awaited.
+2. **Drain (fix 3; budget from brief 005).** Start `drainExtractJobs(uid)` and race it against what is left of the open's server budget: `OPEN_BUDGET_MS` (3,500 ms, counted from the first line of `runRoute`) minus the time used so far minus `OPEN_TAIL_RESERVE_MS` (1,400 ms, kept for steps 3 and 4), never below 0 (`openDrainLimit`). The drain claims every due `queued` or `retry` Extract_Job and waits on jobs leased elsewhere. If the timer wins, open proceeds at once; the drain keeps running through `schedule`, and the unfinished jobs stay visible in the Debug_Panel (R29.6). A job's Extract deadline never extends the wait.
+3. **One transaction** (fix 6):
+   1. Read `core/epoch`, `state`, `rules` and `bundle` inside the transaction. Read all Memories through Q28 pages, and the Evidence they depend on, through `readSnapshot`: a read-only Firestore transaction that sees one point in time and takes no locks (contract question 45). If `barrier` is set, return `blocked` (R11.6).
+   2. Compile the Head with `compileHead`.
+   3. Close the prior Session (it becomes `closing`; hangups run after commit, see step 4).
+   4. Write `core/bundle` with `bundleRev + 1`, the Head, `headHash`, `selectedRefs`, `state:"clean"`, `compiledAt` and `expiresAt = compiledAt + 60 s`.
+   5. Create the Session (`minting`, `generation:1`, `stateAck`), set `core/epoch.activeSessionId`, set `core/state.currentZone`, and write the request ledger entry.
+
+   The Deck, the returned StateAck and `Session.stateAck` all carry the post-compile `bundleRev`.
+4. After commit, hang up the prior Session's calls, waiting at most `PRIOR_HANGUP_BUDGET_MS` (1,000 ms) and never past the budget less `PRIOR_CLOSE_RESERVE_MS` (700 ms, kept for the closing transaction and its Extract_Jobs; `priorHangupBudget`). Any failure, including a hangup still running at that limit, becomes a `hangup` Job (R11.3, R14.3), and the Job is driven through `schedule` as close drives it.
+
+If any step fails, nothing commits and `core/bundle` is unchanged (R26.11). The browser gives the whole request 5 s from just after it reads the ID token (R11.2, R16.6), covering the network, Next.js and a cold process's first token check and Firestore channel; the 3,500 ms server budget leaves 1.5 s of that. Steps 1 and 3 are not cut short by the budget, so a very slow Firestore can still overrun it. Each open logs one `open.phases` line with the milliseconds of each phase (`guardMs`, `coreMs`, `ledgerMs`, `tickMs`, `drainMs`, `txMs`, `priorMs`), the limits used (`drainLimitMs`, `hangupBudgetMs`), `drainWon`, `totalMs` and the outcome; IDs and times only. The browser's 5 s `CONNECTING` limit starts only when this response arrives (fix 2), so a slow drain cannot push a re-call into `RECOVERY`.
+
+### Call setup (R12, R13)
+
+`CONNECTING`: the browser creates the peer connection and data channel, then posts `/api/session/sdp`. The server proxies to `/v1/realtime/calls` with `FRANKI_VOICE_MODEL`, persists the call ID from `Location`, and only then returns the answer. On a write failure it hangs up the call and returns `DEPENDENCY`.
+
+`CONFIGURING`: once the data channel is open, the browser sends one `session.update` with `instructions = Head.text`, `tools = [recall]`, transcription model `FRANKI_TRANSCRIBE_MODEL`, and the C§6 `turn_detection`. It then calls `/api/session/state`. A matching StateAck within 1.5 s moves the call to `LISTENING`; otherwise it closes with `error` and enters `RECOVERY` (R13.9).
+
+**Refresh (fix 2).** Every 45 s, `/api/session/state` returns a fresh StateAck and a re-issued Deck. The re-issued Deck has new `issuedAt` and `expiresAt` (+60 s) and is built from the stored `core/bundle`. If any revision in `seen` changed, the Deck carries the new Head, and the browser sends `session.update` only when `Head.text` differs (R13.5). A failed refresh never extends the ack or the Deck (R13.8). If the Deck expires anyway, the Voice_Client builds no reply until a refresh succeeds.
+
+Re-issue depends only on the stored `core/bundle.head` and the current four revisions. It ignores `core/bundle.expiresAt`, which is written once at open and not used again in this slice. Since nothing recompiles the Head during a call, the re-issued Head equals the one sent at open unless another session open (another device) raised `bundleRev`, and that case closes this Session first (KV09).
+
+The state route does its own work (read Session and core docs, write `Session.stateAck` and `expiresAt`) and schedules `tick`. It never awaits extraction or hangups, so it meets 1.5 s (R13.6) even when OpenAI never answers.
+
+### One voice turn (R15, R17, R19, R20, R22; KV02, KV04, KV12)
+
+```mermaid
+sequenceDiagram
+  participant RT as Realtime
+  participant VC as Voice_Client
+  participant API as /api/turn
+  participant W as Extract worker
+  RT->>VC: input_audio_buffer.committed (t_end = opsClock now)
+  RT->>VC: conversation.item.added (same item id) → record commitSeq
+  Note over VC: HELD (muted, avatar "thinking")
+  RT->>VC: input_audio_transcription.completed (item id)
+  VC->>API: TurnRequest{source:"asr", judge:"timeout", transcriptState:"final", items, clientSeq}
+  API->>API: tx: CAS nextClientSeq; Turn + Evidence + Extract_Job + request ledger
+  API->>API: devAdmit → Permit slowOrdinary + ledger decision
+  API-->>VC: TurnResponse{status:"ordinary", permit, deck}
+  API-)W: after(): run Extract_Job
+  VC->>VC: verify Permit (stamp, generation, payload hash, expiry)
+  VC->>RT: response.create{conversation:"none", instructions, input: safe turns + item refs, metadata}
+  VC->>VC: re-check Permit, unmute → SPEAKING
+  VC->>API: /api/receipt playbackStarted / transcript / playbackEnded
+```
+
+Details:
+
+- **End of speech** (`t_end`) is the Voice_Client's opsClock time at `input_audio_buffer.committed` (C§6 "t0=committed").
+- **Turn grouping.** A Turn holds every item committed since the last TurnRequest was posted, from 1 to 8 items. If speech starts again before the transcript arrives, the next item joins the same Turn and `t_end` resets. The transcript is the item transcripts joined by a single space in `commitSeq` order.
+- **Transcript wait.** A Turn is admitted only when **all** of its items have a final transcript. If the matching `item.added` or **any** item's final transcript is missing at `t_end + 1.5 s`, or a `...transcription.failed` event arrives, the Voice_Client posts the TurnRequest with `transcriptState:"missing"` or `"failed"` and an empty `transcript`. The server commits the Turn with state `transcriptMissing` or `failed` and advances `nextClientSeq`, but writes no Evidence and no Extract_Job (contract question 20). `devAdmit` returns a `recoveryOnly` Permit for the fixed neutral line "Sorry, say that again?". The browser goes to `RECOVERY`, plays only that line through the Permit check, and returns to `LISTENING`. A transcript that arrives later is dropped for this Turn. No audio ever plays without a Permit.
+- **Missing item.** If `committed` has no matching `item.added` within 600 ms, the Turn goes to `HELD` (R15.10), and the same 1.5 s rule decides whether it is admitted or sent to recovery.
+- **Reply input.** The Deck's `turns` holds up to 4 SafeTurns from the Session's earlier Turns that pass Spoken_Grade's sensitivity rule. `TurnResponse.deck` returns the updated set. The current Turn is sent as item references, not text.
+- **Barge-in** (R15.4): on `speech_started` while speaking or in flight, mute first, cancel every recorded response ID, send `output_audio_buffer.clear`, and return to `LISTENING`. Permits for older Turns are discarded.
+
+### One typed turn (R18; C§6 "Typed/chip")
+
+1. **Classification.** The server classifies the text: pasted/T if it is over 280 code units, contains CR or LF, `From:` or `Subject:`, or a URL; otherwise ordinary/U.
+2. **Session.** A typed turn needs a Stamp. With no call open, the Browser_Client opens a Session and never sends SDP. This is the C§6 `/api/control` "open session without SDP" pattern. The Session closes on sign-out, on the next call open (KV09), or on expiry.
+3. **Commit.** One transaction writes the Turn (`source:"typed"`), the Evidence (`source:"voice"` for U or `"pasted"` for T), the request ledger entry and, for U only, the Extract_Job (R22.1). `devAdmit` issues `slowOrdinary` for U, or `postCommitControl` with scope `reply` and no S1+ notes for T.
+4. **Reply in a call.** The browser sends `response.create` with the typed text as a user text input after the safe turns, then follows the voice path.
+5. **Reply with no call** (contract question 24). The server makes one Responses call (`FRANKI_BRAIN_MODEL`, effort `low`, `store:false`, `tools:[]`, Head text as instructions, the typed text and safe turns as input, 4 s deadline). It returns the reply as one `W` note with `kind:"result"`, `unprompted:false`, the Head's `selectedRefs` roots as `rootKeys` and `dependsOn`, and `sens` equal to the highest sensitivity of the Head lines. The browser shows it as text and plays no audio.
+6. **Extraction.** After the TurnResponse is sent, `schedule` (backed by `after()`) starts the Extract_Job (R18.4, R22.12).
+
+### Tool turn (R27, F5 floor)
+
+1. The Realtime model calls `recall`. The browser enters `TOOL_WAIT` and posts `/api/tool`.
+2. The server checks the Stamp (`stale` if it does not match) and waits for **parse committed**, meaning the current user Turn and Evidence transaction has committed (fix 7). That transaction normally committed before the reply was created, so the wait is usually zero. The cap is 1.5 s, after which the status is `hold`.
+3. **Asked test.** `explicitRequest` is true only if the Turn's text contains a query term, using the same tokenizer as chunking. The signed-in Owner's turn counts as a certain speaker; a speaker model replaces this later (fix 8). If the test fails, the server returns `ready` with empty notes.
+4. **Read.** The server reads lines through Q28 pages: eligible, Spoken_Grade, at most 200 lines, each at most 160 characters, each the `[ref]` and the Memory's stored line. It packs as many as fit in 8,000 tokens and runs one `RecallAllV1` call (`FRANKI_BG_MODEL`, which is L in C§5; 768 output tokens; effort `none` and a 2.5 s deadline, contract question 36).
+5. **Notes.** Statements without a supplied citation are dropped. Each note carries the cited rows' `rootKeys` and `dependsOn`. A failed or late read returns code-ranked excerpts of the same lines with coverage `partial`, and empty notes with `unknown` only when none match (contract question 36).
+6. **Admission.** In the same response, `devAdmit` issues a new `slowOrdinary` Permit for the tool continuation. The payload hash includes the tool output. The browser sends `function_call_output` and then `response.create` (C§6 Tools).
+
+### Close (R14, KS07, Q13)
+
+1. The browser stops the microphone, closes the channel and peer connection, then posts `close`.
+2. One transaction sets the Session to `closing`, writes its `hangup` Job and records the answer `closing`. After the response, the Job hangs up each registered call ID and sets `closed` with `closedAt`. A Session with no registered call answers `closed` at once (contract question 34).
+3. On `closed`, the server makes sure an Extract_Job exists for each committed user Turn with Evidence (R14.5). It then hands a drain to `schedule` and does not await it.
+
+The `hangup` Job retries with backoff of 1, 2, 5, 10 s and then every 60 s. It never completes until OpenAI confirms the hangup or reports the call already gone (KS07).
+
+### Tick (`tick`, C§9)
+
+At most once per ops minute per Owner, on open and on state, `tick` runs:
+
+- Q13: close expired Sessions (at most 100 per run).
+- Q17: run due `queued` and `retry` jobs.
+- Q18: requeue jobs whose lease expired.
+
+`tick(uid, deps)` returns a promise that the caller hands to `schedule`. The state and receipt routes never await it. Session open awaits only the Q13 part (Firestore writes, hangups scheduled) and races the drain as above. The once-per-minute gate is a compare-and-set on `core/state` so two concurrent routes don't both run it.
+
+## Browser state machine
+
+`packages/core/src/voice/machine.ts` is a pure reducer: `(state, event, now) → (state, commands[])`. Events are Realtime events, route results, timers and button presses. Commands are things like `mute`, `cancel(ids)`, `clear`, `post(route, body)` and `armTimer`. The Voice_Client runs the commands. The machine uses this subset of C§6 States:
+
+| State | Entered on | Leaves to | Avatar |
+|---|---|---|---|
+| CLOSED | start, or close done | CONNECTING on press | closed |
+| CONNECTING | open sent | CONFIGURING when the channel opens; CLOSED with an error if open fails or takes over 5 s (R16.6); RECOVERY if SDP and channel take over 5 s **counted from the open response** (R15.8) | connecting |
+| CONFIGURING | `session.update` sent | LISTENING on a matching ack; close + RECOVERY after 1.5 s | connecting |
+| LISTENING | ack, end of speech, or barge-in | WAIT_ITEM on commit; HELD on typed send | listening |
+| WAIT_ITEM | `committed` | HELD on matching `item.added`, or after 600 ms | thinking |
+| HELD | item recorded, or typed send | SPEAKING on a valid Permit and first audio; RECOVERY on missing/failed ASR at t_end + 1.5 s, or `hold` past 2.5 s | thinking |
+| SPEAKING | first permitted audio | LISTENING when done or on barge-in; TOOL_WAIT on a function call; HELD on a higher revision (KV05) | speaking |
+| TOOL_WAIT | `recall` call | HELD with the new Permit; LISTENING after 6 s with no result (`TOOL_LIMIT_MS`, contract question 36) | thinking |
+| RECOVERY | failure or missing ASR | LISTENING after the neutral line, if the call is live; reconnect after 1, 2, 5 s; retry button at 30 s | recovery |
+
+JUDGING, SPECULATING (F2), QUARANTINED and CLEAN_READY (F4) are not built.
+
+Rules that apply in every state:
+
+- The output `audioElement` is muted unless the state is SPEAKING with a Permit that passes its check.
+- Events whose metadata `generation` is not the local generation are dropped (R15.7).
+- A higher stamp cancels and clears all output (KV05).
+- Mute affects only the microphone track (R15.6).
+
+## Admission seam (R17; KV02, KV03)
+
+`admit(ctx): Permit | Hold` in `admission/seam.ts` is the only function that creates a Permit. `seam.ts` calls `devAdmit`, which throws `CONFIG` before doing any work when `NODE_ENV === "production"`. The route returns `CONFIG` with no Permit and writes no ledger entry (R17.5).
+
+`devPermitKind` (pure):
+
+| Turn | Kind | Scope |
+|---|---|---|
+| voice, transcript final | `slowOrdinary` (deviation: C§6 requires judge `O` for audio; F2 restores it) | reply |
+| voice, missing or failed | `recoveryOnly` | reply |
+| typed U | `slowOrdinary` | reply |
+| typed T (pasted) | `postCommitControl`, no S1+ notes | reply |
+| tool continuation | `slowOrdinary` | reply |
+
+Every Permit has `expiresAt = opsNow + 10,000 ms`, `momentIds:[]` and `noteIds:[]`. `approvedPayloadHash = SHA256(canonicalJSON({stamp, head, notes, turns, audioIds, toolOutput, candidates:[], attendees:[]}))` (C§6 Hash). The browser recomputes the hash and re-checks the Permit at unmute.
+
+**Ledger.** Each outcome writes one `ledger` entry, kind `decision`, before returning. A Permit's entry is keyed by `permitId`, with `state:"complete"`. A hold's entry is keyed by `H("hold", stamp, requestId)`, with `state:"blocked"`. The payload is `{purpose:"answer", acceptedRefs:[turnRef], heldRefs:[] or [turnRef], reasonCodes:[], audience:"private"}`. The closed payload has no field for the issuer or the Permit kind, so `/api/debug/memory` reports `issuer:"devAdmit"` (the active seam implementation) and the kind from `devPermitKind` on the stored Turn (contract questions 16 and 17).
+
+## Extraction worker
+
+`worker/extract.ts` exposes `runExtractJob(uid, jobId, deps)` and `drainExtractJobs(uid, deps)`. The drain has no wait limit of its own; callers bound it. Session open races it against what is left of its budget (see [Session open](#session-open-r11-r26-kv09-q13-q28)), and close and `/api/turn` only `schedule` it.
+
+1. **Claim.** A transaction checks that the job is `queued` or `retry` and due, then sets `leased`, a new `leaseToken`, `leaseUntil = now + 75 s` (`EXTRACT_LEASE_MS`, contract question 35) and `generation + 1`.
+2. **Packet.** Build the packet from that Turn's Evidence (R22.2): `sourceClass:"U"`, `fields` from that Turn only, `open` and `lastTurns` only when the turn needs them, and no global roster (contract question 42). `lastTurns` carries up to 4 of the Owner's own earlier turns in the Session (user role, Source_Class U) for a reply of four words or fewer, a turn that opens by pointing back ("Yes", "That", "She", "Not"), one with a third-person pronoun, or one with a cue that something said before changed or was wrong ("actually", "anymore", "moved", "instead"). Plain negations count only as openers, so "I'm not a fan of olives" stands alone. `open` carries the Owner's active U Memories below S2 that share a content word with the turn or those earlier turns, newest first, at most 40, for a turn that says something was wrong or changed, or a short reply. Both are context for short replies and named targets; Spans quote `fields` only, and no pronoun antecedent is recorded. Each written Memory names every input in `contextIds` and `dependsOn`, and earlier Evidence in `packetEids`.
+3. **Call.** Responses API with `FRANKI_BRAIN_MODEL`, effort `low`, `store:false`, `tools:[]`, strict schema, PREFIX plus the ExtractV1 literal, 12,000/4,096 tokens and a 30 s deadline (contract question 35). On invalid output, refusal, incomplete output or timeout, make one repair call. If that also fails, set the job to `retry` with `error`, `attempts + 1` and `nextAttemptAt = now + 60 s`. After 3 attempts the job becomes `failed` (contract question 25).
+4. **Validate items** (pure, `core/extract.ts`):
+   - Check spans (R22.5, R24.7), predicate and args (R23.8), and the kind map (R23.9).
+   - Apply act and target rules (R22.6, R23.10).
+   - Hold allergy, rule and `hard_rule` items, each with a ledger `decision` (R23.3). Corrections and transitions are written (contract question 42).
+   - Set Authority: U only if every span sits in a U Slice (R23.1, R23.2). T and M never become `active` (R23.11, R23.12).
+   - Apply the floors: sensitivity, gravity and `flow` can only tighten (R22.11).
+   - Compute `key = H(subject, predicate, scope)` (KC05). An event's scope includes its day (contract question 40).
+5. **Commit.** One transaction:
+   1. Compare the lease token, job generation, captured `epoch` and captured `policyRev` with stored values (KS06). On mismatch, requeue the job, or mark it `failed` if `epoch` or `policyRev` changed.
+   2. Write the Memories, with lineage per R24.1 and R24.2: one root Slice per span, `rootKeys = H(slice)`, `dependsOn = ["e:<eid>"]`, `packetEids = [eid]`, and `supportingIds` = an evidence Ref with its `rev`.
+   3. Supersede single-valued keys through a Q03 read (R23.5). A correction marks what it replaces `wrong`, and a transition or update marks it `history`; only targets named from `open` count (contract question 42).
+   4. Set the job to `complete` with `resultRefs`.
+   5. Write a ledger `usage` entry.
+
+   The Store_Port runs the W-LINEAGE check on every Memory write (R24.3).
+
+**Placeholders (R4.8).** Memory fields with no behavior yet get placeholder values: `endWhen:{kind:"standing"}`, `nextReviewAt = assertedAt + 365 days` on worldClock, `when:{kind:"none"}`, `time:null`, `validFrom = assertedAt`, `validFromKey = assertedAt`, `validFromKnown:true`, `scheduleRev:0`, `gravity` from the floor, and empty arrays or `null` for everything else (contract question 7).
+
+**Draining.** Drain uses Q17 and Q18 shapes filtered to `kind:"extract"`. It runs jobs one after another, which the sequential floor requires, and starts none while another drain's job is leased (question 44). While waiting on jobs leased elsewhere, it polls from 100 ms, doubling to 1 s, until they finish or their lease expires (then Q18 requeues them).
+
+**Runtime caveat.** Post-response work on App Hosting (Cloud Run) may be CPU-throttled. Session open's drain covers this, because it runs inside a request.
+
+## Eligibility (R25; KC06)
+
+`eligible` covers every clause of the C§4 pseudocode:
+
+| # | Clause | Status | Reason |
+|---|---|---|---|
+| 1 | tenant match | implemented | `tenant` |
+| 1b | snapshot complete | implemented | `freshness` |
+| 2 | barrier, non-maintenance | implemented | `barrier` |
+| 3 | barrier maintenance: allow only matching-op resolve/sanitize/purge; never speech or tool | partial: speech and toolReturn are denied; all other maintenance reads are denied until F4 | `barrier` |
+| 4 | purge removal-only allow | unimplemented, F4 | — |
+| 5 | current epoch and policyRev | implemented | `freshness` |
+| 6 | browser `generation == localGeneration` | implemented | `freshness` |
+| 7 | foreground `generation >= session.generation` | implemented | `freshness` |
+| 8 | worker lease token and job generation | implemented | `freshness` |
+| 9 | readable revision, `dependenciesComplete`, not dirty | implemented | `dirty` |
+| 10 | row blocked or purged | implemented | `blocked` |
+| 11 | dependency missing, blocked, purged, dirty, wrong or retracted (an older `@rev` alone is allowed) | implemented | `blocked`, or `dirty` for a dirty dependency |
+| 12 | root/provider/semantic/topic blocks | unimplemented, F4 (no `blocks` rows exist) | — |
+| 13 | `validForPurpose` | partial: `validFrom <= worldNow < validTo`; `asOf` and `queryTargetTime` in F6 | `time` |
+| 14 | authority | partial: speech and project stages need class U, C or O; full Power table in F3 and F11 | `authority` |
+| 15 | `freshEnough(opsNow)` | unimplemented, F6 | — |
+| 16 | silent use, or Policy plus quiet | unimplemented, F4 (quiet) and F11 (Policy verbs) | — |
+| 17 | allow | implemented | `ok` |
+
+A missing or invalid input returns `{allow:false, reason:"ineligible"}` and never throws.
+
+**`spokenGrade`.** It requires all of the following: `eligible` at stage `project`; status `active`; no review; `flow:"open"`; no posture (no effects exist in this slice); `sens` of S0 or S1; class U, C or O (C§2).
+
+## Head compiler (R26)
+
+`compileHead(memories, core, clock)` sorts its input by `(section, predicate, key, id)` so output does not depend on input order.
+
+| Section | Content |
+|---|---|
+| persona | Fixed core text |
+| policy | Fixed core text |
+| rules | Standing rules (empty, so it shows the line "No hard rules recorded.") |
+| now | `YYYY-MM-DD`, weekday and IANA zone from worldClock, with no relative words |
+| style | Fixed default |
+| people | `person.*` lines, at most 40 |
+| next72 | Empty (F6) |
+| apply | S0–S1 `preference.*` and `handling` lines |
+| know | Every other eligible line, under "background; don't raise; answer if asked", at most 450 tokens |
+| openers | Empty (F11) |
+
+Tokens are estimated as `ceil(utf16Length / 4)` per line. This is deterministic and needs no tokenizer dependency. The drop order follows R26.4. `selectedRefs` holds the refs of every line that remains. `headHash = SHA256(Head.text)`, computed by the server.
+
+## Routes and error handling
+
+Every route adapter does the same steps: parse, guard, call one Server_Library function, return (R5.4).
+
+**Guard.**
+
+- Verify the ID token with `checkRevoked: true`.
+- For non-GET requests, the `Origin` header must exactly match `http://localhost:3000` or `https://franki-web--frankirocks.us-central1.hosted.app`. With bearer tokens and no cookies, this check is the CSRF check; no token or cookie mechanism is added.
+- Enforce body caps: 128 KiB, or 256 KiB for SDP.
+
+**Idempotency** (R10.8–12) uses ledger `request` entries keyed by `H(uid, route, requestId)`. Each entry holds a 15 s processing lease and is kept for 24 h (`retainUntil`).
+
+| ErrorCode | HTTP | Used for |
+|---|---|---|
+| AUTH | 401 (token) / 403 (origin) | R10.2, R10.4 |
+| PARSE | 400 | Closed schema failure |
+| SCOPE | 404 | ID not in the tenant |
+| STALE | 409 | Stamp, generation or Session status mismatch |
+| HASH | 409 | Same `requestId`, different request hash (contract question 13) |
+| LIMIT | 413 (oversize, `retryAfterMs:0`), 429 (in-flight duplicate, `retryAfterMs:1000`), 409 (4 call IDs) | R10.7, R10.11, R12.9 |
+| BARRIER | 423 | Barrier set (normally unreachable in this slice) |
+| DEPENDENCY | 503 | OpenAI or Firestore failure or timeout, `retryAfterMs` 1–5000 |
+| CONFIG | 500, or 404 for the debug route in production | Missing env var (named, no value), `devAdmit` in production |
+
+Kernel errors (`staleRevision`, `invalidInput`, `oversize`, `unsupported`, tenant mismatch) are thrown inside the Server_Library and mapped to the codes above at the route edge. Error bodies never carry Memory content (R28.1).
+
+**`GET /api/debug/memory`** takes `?section=turns|evidence|memories|jobs|ledger|head` with an optional `sessionId` and `cursor`. It returns a closed `DebugPage` type defined in core: 50 items per page, Q28 cursors, and `coverage`. Memory items include fields, lineage, spans and a mismatch flag from `resolveLineage`. When `NODE_ENV === "production"` it returns 404 `CONFIG` before any read.
+
+S2 content is allowed here as a development-only owner-inspection path. It is not the logged `inspect` carve-out (KC09). Each response that reveals S2 content writes one structured server log line with `uid`, the Memory IDs and the ops time, and no content (R28.4).
+
+**Browser rendering.** All stored text is rendered as React text nodes. There is no `dangerouslySetInnerHTML` (R29.10).
+
+## Testing strategy
+
+All tests use Vitest 5 and fast-check. `npm test` runs with no network, no `OPENAI_API_KEY` and no Java (R31.1, R31.6). A setup file replaces `fetch`, `http(s).request` and `net.connect` with throwing stubs, and the clock guard catches wall-clock reads (R31.2).
+
+| Layer | What | Where |
+|---|---|---|
+| **Lineage property, written first and run red** (R24.5, R24.6, R31.3) | 1–50 ops of commits, job runs, retries and bad Fake_OpenAI spans; every Memory resolves with zero failed links; 1,000 runs | `packages/server/src/worker/extract.lineage.property.test.ts` |
+| Other properties (≥100 runs) | serialization (R19.7), slice hash (R20.7), T/M authority (R23.11), Head determinism (R26.12), Head lineage (R26.13), schema round trip (R31.4), spoken grade on the wire (R28.6) | next to each module |
+| Unit | validators (R4); `eligible` per deny reason (R25.7); `devPermitKind` and production refusal (R17); guard and idempotency (R10); Head drop order (R26.4); recall citation filter (R27.6) | core and server |
+| Voice machine | scripted Realtime event sequences: barge-in, 600 ms HELD, t_end + 1.5 s recovery, KV05 higher stamp, generation drop, Permit mismatch | `core/voice/machine.test.ts` |
+| Store conformance | one suite against the Memory_Store (`npm test`) and the Firestore_Store (emulator) | `store/conformance.ts` |
+| Static checks | clock (R2.7), import boundaries (R5.7), model-ID literals (R30.2; exempts `config/models.ts`) | `scripts/*.test.ts` |
+| Emulator (`npm run test:emulator`, CI Java 21, `demo-franki`) | rules deny-all (R8); Firestore_Store conformance | `firestore/*.test.ts` |
+| Route tests | each route handler with the Memory_Store, fake clock, Fake_OpenAI and a fake token verifier; R22.12 end-to-end: commit, extract, close, open, Memory in the Head | `server/routes/*.test.ts` |
+| Route deadlines (fix 3) | Fake_OpenAI that never answers, with a queued Extract_Job: `/api/session/state` returns within 1.5 s and `/api/session/open` within 5 s and within its 3,500 ms budget (drain loses its race for what is left of the budget), both measured on the fake opsClock with the scheduled work still pending | `server/routes/deadlines.test.ts` |
+| Open after a lost answer (brief 005) | emulator, live timers, 75 ms added per round trip: the first open's answer is lost with its Extract_Job still running, a retry with a new `requestId` answers 200 within 3,500 ms, closes the first Session and leaves one live Session, including when the Extract_Job commits inside the retry's transaction | `firestore/open-retry.test.ts` |
+| Local env sync | `parsePlainEnv`: plain values copied, `secret:` entries skipped, output text contains no values | `scripts/sync-local-env.test.ts` |
+| Clock check cases | `Date.now()` in a non-allow-listed file fails; `new Date(x)` (as in `health.ts:73`) passes; allow-listed files pass | `scripts/clock-guard.test.ts` |
+| Manual / live (once, at the end, after notice; R31.10) | real call on localhost: speak, hang up, call again, hear it; Debug_Panel check | steps in `tasks.md` |
+
+The save hook runs `npm run test:fast`, which covers lineage, closed schemas and Store invariants on the Memory_Store only, within 30 s (R3).
+
+## Traceability (R32.1)
+
+| Component | Contract rows | Queries |
+|---|---|---|
+| Schemas and validators | KC01, KC02 | — |
+| Store_Port | KC01, KC02, KS06 | Q03, Q13, Q14, Q17, Q18, Q28, Q33 |
+| Route_Guard and idempotency | KV10 | — |
+| Session open, close, tick | KV09, KS07 | Q13, Q17, Q18, Q28 |
+| `/api/turn` | KV12, KC01 | Q14 |
+| Admission seam and Voice_Client | KV02, KV03, KV04, KV05, KV06, KV13 (fastO only, not issued) | — |
+| Extract worker | KS01, KS06, KC03, KC04, KC05 | Q03, Q17, Q18 |
+| `eligible` / `spokenGrade` | KC06, KC09 | — |
+| Head compiler | KC06, KC09 | Q28 |
+| Recall tool | KC06, KC09, KS01 | Q28 |
+| Debug route | KC03, KC09 | Q14, Q28, Q33 |
+| `firestore.indexes.json` | KS08 | Q03, Q13, Q17, Q18, Q33 |
+
+## Contract questions
+
+**Answered by the owner** (from the review; not reopened):
+
+| # | Answer |
+|---|---|
+| 1 | Secret `FRANKI_ID_HMAC_KEY`, read locally from `apps/web/.env.local`. Tests use a fixed fake key. |
+| 2, 3 | Voice turns post after the final transcript with `judge:"timeout"` and `transcriptState:"final"`, and `devAdmit` issues `slowOrdinary`. **Deviation:** C§6 requires judge `O` for `slowOrdinary` audio; F2 restores it. |
+| 4 | Hold allergies and hard rules; F3 adds FastSlots. |
+| 5 | Development-only `GET /api/debug/memory`, same auth, refused in production. The contract's `/api/memory` views are untouched. This is the development carve-out from R28.4, not `inspect`. |
+| 6 | In-process server worker, started after each `/api/turn` response; drained at close (scheduled) and at open (raced against 3,000 ms; since brief 005, against what is left of the open's budget, question 45). |
+| 9 | `/api/health` behavior is unchanged. Its fallbacks move into `packages/server/src/config/models.ts`, the only module allowed to hold model literals. |
+| 10 | `FRANKI_TRANSCRIBE_MODEL`. |
+| 11 | The exact `Origin` check is the CSRF check. |
+| 12 | Ordinary typed turns store Evidence `source:"voice"`, class U, with `Turn.source:"typed"`. **Deviation**, recorded here. |
+
+**Proposed in this design:**
+
+7. **Placeholder fields:** `endWhen:{kind:"standing"}`, `nextReviewAt = assertedAt + 365 d`, `when:{kind:"none"}`. Placeholders until F6 `derive`.
+8. **Recall source:** the Owner's own Memories through Q28, at most 200 lines. The seed is F8.
+13. **Hash mismatch:** C§6 already has `HASH`. A hash mismatch returns 409 `HASH`. An in-flight duplicate returns 429 `LIMIT` with `retryAfterMs:1000`.
+14. **Oversize:** `LIMIT` returns 413.
+15. **Zone:** `worldClock.zone = core/state.currentZone`. Each open sets it from `clientZone`; `homeZone` is left alone.
+16. **Issuer:** no stored field carries it. `devAdmit` is the only seam implementation, the admission ledger entry is keyed by `permitId`, and the debug route reports `issuer:"devAdmit"`. If F2 needs a stored issuer, contracts v3 should add one.
+17. **Ledger payloads:** `delivery` requires a non-null `momentId` and `decision` has no `permitKind`. Admission therefore writes `decision` (purpose `answer`), and the kind is derived by `devPermitKind` from the stored Turn. Proposal for contracts v3: add `permitKind` to `decision`, or make `delivery.momentId` nullable.
+18. **Franki's authorship:** the enum has no Franki value. Assistant Evidence uses `authorship:"unknown"`, `authorId:null` and a Slice with class M. The Turn's `role:"assistant"` marks the author, and assistant Evidence is never extracted (R21.4). Proposal: add `franki` in v3.
+19. **Barge-in receipt:** `playbackEnded` when audio that already started stops for any reason, including barge-in. `cancelled` when a permitted response is cancelled before its first audio.
+20. **Failed or missing transcripts:** the Turn commits with state `failed` or `transcriptMissing` and consumes its `clientSeq`. `nextClientSeq` and `committedParseSeq` advance, with no Evidence and no job. This is how this design reads "Failedsequence advances processing only".
+21. **`rev`:** confirmed. Records are created with `rev: 1`, and each commit adds 1 with compare-and-set.
+22. **Act `rule`:** it is an ExtractV1 act (C§5 `Item.act`). Holding it with `hard_rule` is correct, because standing rules need the F3 rule path.
+23. **User `turnId` origin (new):** the Stamp includes `turnId`, which the browser must send before the server has made any ID. The browser generates a random 32-byte base64url ID (43 characters, shape-checked). The server binds `(sessionId, clientSeq)` to that ID at commit, and a replay with a different ID returns `HASH`. `requestId` is generated the same way.
+24. **Typed reply with no call (new):** `TurnResponse` has no reply-text field. The design returns the text as one `W` note with `kind:"result"` from a Responses call. Proposal for v3: a `replyText` field, or define typed-without-call.
+25. **Job "pending" (new):** R22.4 and C§5 say "pending", but the job status union has no `pending`. This design maps it to `retry` with `error` set, then `failed` after 3 attempts. "Done" maps to `complete`.
+26. **Deck re-issue (new):** C§6 Deck lasts 60 s and refreshes every 45 s, and the contract route returns `deck` as optional. Every state response now re-issues the Deck from the stored Head and current revisions, ignoring `core/bundle.expiresAt` (R13.3 as amended).
+27. **Generation (new):** the C§6 note "Speech/control increments generation" belongs to F2. Here `generation` stays 1 per Session, and reconnects open a new Session.
+28. **TS representation (new, task 7):** C§1 allows "Firestore Timestamp/RFC3339UTC". Both stores keep `TS` as the fixed-width RFC3339 UTC string `YYYY-MM-DDTHH:mm:ss.sssZ`, so a record reads back byte-identical from either store and string order equals time order for range queries (Q13, Q17, Q18, Q03). The Clock_Port's integer milliseconds convert through `tsFromMs`. Proposal for v3: name one stored form.
+29. **Snapshot refs and rows (new, task 16):** C§4 gives `Snapshot.refs:DocRef[]` and `rows:Row[]` without saying how they relate. This slice reads them as parallel arrays: `refs[i]` is the DocRef of `rows[i]`, and both have the same length (a Snapshot that breaks this is `ineligible`). A `dependsOn` entry `e:<eid>` or `m:<mid>`, with an optional `@<rev>`, is found by collection and ID. Clause 3 (barrier maintenance) denies every read while a barrier is set, because no maintenance task exists until F4. Proposal for v3: define Snapshot rows as `Dependent[]`.
+30. **Mentions without entities (new, task 22):** ExtractV1 Items name subjects and entity arguments by mention token, but this slice writes no `entities` rows and sends an empty roster. "self" resolves to the Owner; any other token resolves to the code-derived ID `H("mention", type, normalized observedName)`, used as `subjectId` and inside `args`. The ID is stable for the same name and type, so keys stay consistent, but nothing yet links it to an entity record. Proposal: the entity feature backfills these IDs as entity IDs.
+31. **Tick gate (new, task 18):** the design gates `tick` with a compare-and-set on `core/state`, which has no field for it. The gate is in-process per Store_Port and Owner; duplicate runs across processes are harmless. Proposal for v3: add `core/state.lastTickOpsAt`.
+32. **Hangup Job for an unstored call ID (new, task 30):** R12.4 asks for a `hangup` Job for a call whose ID could not be written to the Session. The closed Job schema has no field for a raw Realtime call ID (`sourceIds`, `targets`, `inputRevs` and the job ID are 43-character IDs), and the Session `hangup` Job hangs up `registeredCallIds`, which lacks this call. This slice hangs the call up at once and retries in the background through `schedule` for 10 minutes; the retry does not survive a restart. Proposal for v3: add `callIds: s128[0..4]` to the `hangup` work payload.
+33. **Cost in usage entries (new, Brief 002):** `costMicros` is written as a hard-coded 0 in `worker/extract.ts`, while token counts are correct. Real cost needs a dated price table (price per token by model and date). None exists in the contracts, and none was invented. Proposal: a dated price table owned by the contracts, read by the worker.
+34. **Close answers `closing` and hangs up after the response (new, Nov 6):** R14.2 has the route hang up every registered call and answer `closed` within 1.5 s. By then the browser has closed its peer connection (R14.1), so OpenAI has already ended the call, and a hangup for a call that has just ended answers 404 "No session found" only after about 5.2 s (a live call answers in about 0.1 s, and so does one that ended minutes earlier). Every close ran out of budget, and the browser said the server had not confirmed. Now one transaction moves the Session to `closing`, writes its `hangup` Job and records the answer `closing`. The Job runs after the response with its 1, 2, 5, 10 s backoff, counts a 404 as gone, and sets `closed` with `closedAt`; tick's Q17 retries it after that. A Session with no registered call still answers `closed` at once. One hangup request may take 10 s (`HANGUP_CALL_DEADLINE_MS`). An attempt hangs up every registered call at once under that one deadline, so it ends well inside its 30 s lease, and an attempt that lost its lease commits nothing. A second close makes a waiting Job due now and requeues a lease that expired with its runner. Measured: close answered in 757 to 832 ms, and the Session was `closed` about 5.7 s after the press, on the Job's first attempt. The work after the response is in-process, so if the instance stops first, the Job waits for tick, which runs only on the Owner's next request. **Deviation from R14.2.** Proposal for v3: close answers `closing` whenever a call is registered, and a scheduled job drains `hangup` Jobs.
+35. **ExtractV1 deadline and lease (new, Nov 6):** R22.3 and contracts §5 give ExtractV1 10 s. The brain model writes about 80 output tokens a second, and a turn with three facts ("My sister Ana lives in Denver, and my dog is called Pip.") needs about 1,000: 11.7 to 12.7 s, measured. The call and its repair both timed out on every attempt, so the turn was never saved. The deadline is now 30 s (`EXTRACT_DEADLINE_MS`), about 2,300 output tokens or seven items. Extract Jobs take a 75 s lease (`EXTRACT_LEASE_MS`, two deadlines plus 15 s), so a call and its repair never outlive the lease; other Jobs keep 30 s. **Deviation from R22.3 and R22.4.** Proposal for v3: a deadline sized to the output cap, or fewer items per call.
+36. **Recall timing and the failed-read answer (new, Nov 6):** contracts §5 give RecallAllV1 1.5 s (marked as a reviewer assumption), §6 gives the `/api/tool` result 3 s, and R27.4 and R27.5 repeat both. Measured on the background model with 14 lines: effort `low` p50 2.6 s, effort `none` p50 1.7 s, so most reads timed out. Reading the lines and their Evidence from a laptop to us-central1 also took most of 3 s before the read began, and the browser machine stopped waiting at 3 s, so Franki went quiet after "let me check". Now the read runs at effort `none` for up to 2.5 s (`RECALL_DEADLINE_MS`), the route answers within 4.5 s (`TOOL_RESULT_LIMIT_MS`), and the browser waits 6 s in TOOL_WAIT (`TOOL_LIMIT_MS`; a test keeps it at least 1 s above the route). R27.7 answers a failed read with empty notes, which Franki spoke as "nothing saved". A failed, refused or late read now returns code-ranked excerpts of the same supplied lines with coverage `partial`, the fallback contracts §5 name for RecallAllV1 ("excerpts/card"); empty notes with `unknown` remain only when no line matches. Measured: two recalls took 3.9 and 4.2 s and their answers were dropped at the old 3 s wait; after the change a recall answered in 2,984 ms and its reply played. **Deviation from R27.4, R27.5 and R27.7.** Proposal for v3: measured deadlines, and excerpts as the one failed-read answer.
+37. **Span offsets moved onto their quote (new, Nov 6):** R22.5 rejects an Item whose Span quote differs from the Evidence text at `[start, end)`. The brain model sometimes miscounts offsets by a unit or two while quoting the Owner's words exactly (one quote ran one character past its `end`), and the whole Item was lost. Before verification, `anchorSpan` moves such a Span onto its quote, but only when the stated range is a valid range of that field and the exact quote occurs within 3 UTF-16 units of the stated start (`SPAN_ANCHOR_SLACK`); the nearest occurrence wins. Every other R22.5 rejection stands: an unsupplied `eid` or field, a range outside the text, an empty range, a split surrogate pair, a quote that is not there. The quote is still the Owner's exact text, so Lineage is unchanged. **Deviation from R22.5.** Proposal for v3: name this repair, or take quotes only and compute offsets in code.
+38. **Sensitivity floors cover the whole turn and the stored line (new, Nov 6; revised after review):** contracts §2 give `Sens=max(slice,…)` without saying which words set a Slice's `sens`. A first fix gave each root Slice the floor of its own quoted words, so one sensitive word elsewhere in a turn no longer made every Memory from it S2. Review reverted that, because a quote's own words can miss what it points back at ("She starts treatment Monday" after "My mom has cancer" in the same turn). Each root Slice now takes the higher of two floors: the Evidence Slice it lies in, which covers the whole turn, and its own words. The stored line and the value's words get the floor too, since a line can say more than its quote ("Chemo appointment" quoting "an appointment"). A Memory's Sensitivity is the highest of the model's proposal and all these floors (R22.11). The cost: any S2 word in a turn keeps every Memory from it out of speech, including false hits in the closed list such as "passed", "balance" and "owe". "My husband Dave is a nurse at St. Luke's Hospital" keeps Dave unspoken. Proposal for v3: say which words set a Slice's `sens`, and allow multi-word entries in the S2 list ("passed away").
+39. **Spoken time resolved in code (new, Nov 6):** memory-spec §5 has a pure resolver, never a model, set dates. `core/dates.ts` resolves the words the model copied into `when.spoken`, for `occurrence` and `due` only, against the instant and zone they were said in, with the social day starting at 4 AM. It names one day for today, tonight, this morning, tomorrow, the day after tomorrow, "in N days" or weeks, a weekday (the next one; today's weekday only with "this" or "today") and a month and day, plus a clock time when one was said. It names none for words it cannot be sure of: "next Friday", "next week", seasons, weekends, "sometime", either-or, past words, plural weekdays ("on Fridays" is a habit), two different days or two clock times. A resolved time adds its label to the stored line ("Dentist appointment (Thursday, Nov 5 at 2 PM)"). Unresolved words keep the day they were said ("Run a half marathon next spring (said on Tuesday, Nov 3)"), so they are never read against a later week. Words that name no time ("in college") get no note. The Memory keeps the words in `when` (`kind:"spoken"`) and, when a day was named, its start in `time` (no end, no recurrence), in place of question 7's `when` and `time` placeholders; `derive` is still F6. Review tightened the resolver:
+    - **Zone and episodes:** the zone is the one the Evidence recorded, not the Owner's current one. An episode is never resolved: it already happened, and the resolver reads forward.
+    - **Clock times:** a time that DST skips or repeats names nothing. So do midnight, a bare 12 at night and an AM time at night. After 5 PM the evening default doesn't apply to morning or lunch words.
+    - **Days:** before 4 AM, "today", "tonight" and "this morning" name nothing. So does a month and day without a year more than 270 days out, a day counted from another day, and a weekday pinned to a date or named for a holiday ("Black Friday").
+    - **Weekday with a date:** the date wins when they agree ("Friday, November 13"), and nothing resolves when they don't.
+    - **Slash dates:** they resolve only in `America/` zones, and "1/2 hour" is no date.
+40. **An event's or commitment's key includes its day (new, Nov 6):** contracts §3 scope an event by its occasion ("occasion ID/N"), and this slice has no occasion records, so an event was keyed by its text alone. "My dentist appointment is Tuesday at 2", said after Friday's, got Friday's key and value and was dropped as the same fact said again. An event's or commitment's scope now hashes its name (`scope`, else its text) with its day: the resolved civil date, or the unresolved words plus the date they were said. The same appointment said again still writes nothing, and two on different days are two Memories. A repeat must also match the time, so "Friday at 4" after "Friday at 3" is a second Memory, not a repeat. Proposal for v3: define the occasion scope for an event with no occasion record.
+41. **One transcript receipt per response (new, Nov 6):** a gpt-realtime-2.1 response can speak a short `commentary` message ("Let me quickly check…") before its `final_answer`, and each message has its own final transcript. R21.1 sends a receipt per final transcript and R21.3 keeps the first per `responseId`, so the answer itself was never saved as a Turn. The browser machine now collects a response's final transcripts and sends one receipt at `response.done`, joined in order. A final transcript that arrives after `response.done` is sent alone, and is saved only when nothing was sent at `response.done`. Held parts are also sent when a response is pushed out of the four kept, and on hang-up and a lost connection, when no `response.done` will come. **Deviation from R21.1.** Proposal for v3: one transcript receipt per response.
+42. **Corrections and transitions are written (new, Nov 6; revised after review):** R22.2 sends `open:[]` and `lastTurns:[]`, and R23.4 holds every correction and transition, so a fixed name or a change ("I'm not vegetarian anymore") left the old value active and spoken in the next call. Memory-spec §4 keeps the packet small ("Packet size is a forgetting decision"), so the packet carries context only when the turn needs it (see the packet step):
+    - **`lastTurns`:** up to 4 of the Owner's own earlier turns in the Session, never Franki's replies.
+    - **`open`:** related active U Memories below S2.
+
+    The live eval widened the `lastTurns` gate to change cues: "Actually it got moved to Thursday at 2." and "Not anymore, I eat fish now." carried no earlier turn, so `open` was chosen from their own words, missed the appointment and the diet, and both stayed active. Both are context only, and Spans still quote `fields`. Every input is recorded: in `contextIds`, in `dependsOn` (`e:<eid>`, `m:<id>@<rev>`), and earlier Evidence in `packetEids`. When the commit re-reads a target, it must be in `open`, have the Item's predicate, and still be active at the revision `open` showed. A rule or an allergy is never closed (memory-spec §8), and a single-valued Item whose key one holds is held. An event or commitment change that names no target moves the one in `open` with the same subject and words.
+
+    A correction marks its targets `wrong`, never `history` (memory-spec §4). That includes an earlier value in the same output, and a correction of a single-valued key marks the old value `wrong` even without a target. A transition or update marks its targets `history`. A Memory the commit closes is dropped from the `dependsOn` of everything the same packet writes, since a `wrong` dependency would deny them all, the correction included (eligibility clause 11). `contextIds` still names it, and the replacing Memory names it in `replacesIds`.
+
+    A Memory written with an `open` Memory that a later turn corrects is denied, and nothing re-derives it yet. A turn that only repeats a saved fact writes nothing. An Item rooted in T or M closes nothing, because only an active U Memory replaces another. Allergies and rules stay held (R23.3, question 4), and F3's bitemporal repair is still to come. **Deviation from R22.2 and R23.4.** Proposal for v3: the gated `open` and `lastTurns` in the floor packet, and a ruling on whether a context Memory a later turn corrects should deny what it informed.
+43. **A copied id one or two characters off is restored (new, Nov 6):** the live eval caught the model copying an `open` id with its final "g" written as "ɡ" (U+0261). The strict schema leaves string patterns to the validator, so nothing stopped it, and the Item was rejected. The change was lost, and "vegetarian" stayed active beside the new "eats fish" fact. Before an Item is checked, a `memoryId` or `targetMid` that is not an `open` id, or a Span `eid` that is not a packet eid, becomes the one such id within two edits of it. With none, or more than one, it stays as given and fails as before. Random 43-character ids are never that close by chance, the restored id gets every later check, and the worker logs `extract.idRestored` with the paths. This is the same narrow repair as moving a miscounted Span onto its quote. Proposal for v3: say in C§5 that ids are matched against the packet this way, or send id patterns in the strict schema.
+44. **One Extract_Job at a time per Owner (new, Nov 6):** each turn schedules its own drain. A second drain ran a correction's job while the fact's job was still running, so the correction's packet had nothing in `open` to correct. "My cat is called Miso." then "No, it's Mochi." left both names active. A drain now starts no Extract_Job while another is leased and unexpired. It waits as it already did for a job leased elsewhere, so jobs run in turn order across drains. The cost is that one stuck lease holds the Owner's later jobs until it expires (75 s), and session open's drain race then compiles without them, as it already did for a stuck job. Proposal for v3: say in the design that extraction is serial per Owner.
+45. **Session open's budget, and the Head read outside the open transaction (new, brief 005, Nov 8):** the live check's first open on a cold server used 4.6 s of server time and answered 200 after the browser had given up at 5 s (R16.6); the retry, with a new `requestId`, failed 503 `DEPENDENCY` after 2.7 s. Two changes:
+    - **Budget.** The fixed 3,000 ms drain race (`OPEN_DRAIN_LIMIT_MS`) sat on top of guard, core documents, tick, the transaction and the prior close, so it could not fit in 5 s. `OPEN_DRAIN_LIMIT_MS` is gone. Open now has one 3,500 ms server budget from the first line of `runRoute`; the drain gets what is left after keeping 1,400 ms, and the prior Session's hangups get what is left after keeping 700 ms, at most 1,000 ms. Measured on the emulator with 75 ms added per Firestore round trip: core documents and the ledger entry about 400 ms, the expiry tick about 410 ms in the minute it runs, transaction 520–650 ms, the prior close's own transaction and Extract_Jobs 500–550 ms. Every open in `tests/firestore/open-retry.test.ts` answered in 0.36–3.35 s. A prior Session whose hangups don't answer in time is still marked `closed` with a `hangup` Job (R11.3), and the Job is now driven through `schedule`. The browser's 5 s is unchanged.
+    - **Head read.** Reproduced on the emulator: when the Extract_Job left running by the first open committed while the retry's transaction was open, the two transactions waited on each other. The commit had read `core/epoch` and was creating a Memory inside the range the open had read; the open was writing `core/epoch`. After a 2.2 s lock wait the emulator aborted the open (`10 ABORTED: Transaction lock timeout`, mapped to 409 `STALE`). The open now reads the Memories and their Evidence through a read-only snapshot transaction, which holds no locks, so the commit goes through and the open writes after it. Fix 6's one write transaction is unchanged, and so is R26.11. A Memory that commits after the snapshot reaches the Head at the next open, as a Memory written mid-call already does. The live 503 itself was `DEPENDENCY`, not `STALE`, so its cause is not proven to be this; the `route.dependency` line now carries the error's code and message, and the next one will name it. **Deviation from fix 6** (Memories read inside the transaction). Proposal for v3: say that a Head build may read Memories from a consistent snapshot taken inside the open.
+
+## Owner actions
+
+The build changes none of these settings itself (R9.3, R30.6).
+
+Already done: Google sign-in is enabled, `localhost` is an authorized domain (Nov 3, 2026), and Application Default Credentials exist on this machine.
+
+Required for the local demo:
+
+1. **`apps/web/.env.local`** holds exactly `OPENAI_API_KEY` and `FRANKI_ID_HMAC_KEY` (a random value of at least 32 bytes, base64url). Everything else reaches localhost from `apphosting.yaml` through `predev` (R30.10).
+2. **Firebase web config.** The owner's operator supplies the public `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID` and `NEXT_PUBLIC_FIREBASE_APP_ID` values for `apphosting.yaml` (plain, BUILD and RUNTIME).
+3. **Firestore index deploy, before the first live call.** Approve `firebase deploy --only firestore:indexes` for `firestore.indexes.json`. Job draining (Q17, Q18), supersede lookups (Q03), the expiry close (Q13) and the debug ledger view (Q33) depend on these indexes. The build stops at a task and asks; it never runs the deploy.
+
+Only for testing the deployed app (where `devAdmit` refuses replies until F2):
+
+4. **Authorized domain.** Firebase console → project `frankirocks` → Authentication → Settings → Authorized domains → add `franki-web--frankirocks.us-central1.hosted.app`.
+5. **`FRANKI_ID_HMAC_KEY` in Secret Manager** on `frankirocks`, with access granted to backend `franki-web` (`firebase apphosting:secrets:grantaccess FRANKI_ID_HMAC_KEY --backend franki-web`). The build adds the matching RUNTIME `secret:` entry to `apphosting.yaml`.
+
+On a fresh machine only: run `gcloud auth application-default login` with an account that can reach `frankirocks`.
+
+Plain values the build adds to `apphosting.yaml`: `FRANKI_TRANSCRIBE_MODEL` (the transcription model ID that C§6 names; this file is the only place the ID is written) and `FRANKI_FIREBASE_PROJECT_ID: frankirocks`. Neither is a secret.
