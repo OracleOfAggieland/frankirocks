@@ -38,6 +38,8 @@ npm run test:emulator    # Firestore rules against the emulator
 npm run lint && npm run typecheck && npm run build
 ```
 
+Under `npm run dev`, `http://localhost:3000/recorder` records your own takes of the judge spike's probe lines into the gitignored `scripts/judge-spike/audio/owner/` (development only; production builds have no such page or route). See `docs/briefs/006-report.md`.
+
 ## Deploy
 
 Two secrets live in Secret Manager, and `apps/web/apphosting.yaml` already lists both. Set each one once, and say yes when the CLI offers to grant the `franki-web` backend access:
