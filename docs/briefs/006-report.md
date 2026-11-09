@@ -98,3 +98,50 @@ These are added to `.kiro/specs/first-spoken-call/design.md` under "Contract que
 ## Checks at the last commit
 
 `npm test` (132 files, 1,267 tests), `npm run lint`, `npm run typecheck` and `npm run build` exit 0. The post-build check prints "no Specimens_Page, recorder page or /api/dev route in the build." `npm run test:emulator` was not run (see above).
+
+## Brief 007: the judge without a token cap
+
+Items 1 to 5 are done, one commit each, after the brief's own commit. No command called OpenAI, and nothing ran with `--live`. The network did not stay fully clean, though: see "What I couldn't check".
+
+### What changed
+
+| Item | Where | What |
+|---|---|---|
+| 1 | `scripts/judge-spike/results/2026-11-09T18-41-59-158Z-owner.*` | The Nov 9 run on your 60 takes, committed unedited. It hit the token cap. |
+| 2 | `packages/core/src/voice/judge.ts`, `scripts/judge-spike/harness.ts`, `cli.ts`, `summary.ts`, design question 50 | `judgeCreate(req, settings)` takes the output cap (a positive integer or `"inf"`) and the reasoning effort (`none`, `minimal`, `low`, `medium` or `high`). Contracts §5's values stay the defaults in core as `JUDGE_CONTRACT_SETTINGS` (16, `minimal`), so a call without settings builds the same event as before. The harness takes `--max-tokens <n\|inf>` and `--effort <value>`, defaulting to `inf` and `minimal` (`SPIKE_JUDGE_SETTINGS`). Both go into the run file and onto the summary's first lines. Each row now has `outputTokens` (`usage.output_tokens`, reasoning included) next to `reasoningTokens`, and the summary prints the largest and p50 values of each. The run file version is now `judge-spike-run-2`. |
+| 3 | `scripts/judge-spike/summary.ts` | Recall and false holds in two views. In the *judge verdicts* view, a control line is caught only by the judge's own valid `H` or `U`, and an ordinary line passes only on its `O`. In the *as the app would act* view, an invalid answer or a timeout holds. Each view is printed within 600 ms and again at any time, with recall per control class. False holds are the same in both views, because an ordinary line passes only on a valid `O` either way. The stop rules read the judge-verdict view at the deadline. The valid-verdict rule is `over the line` when fewer than 90% of the lines have a valid verdict within 600 ms, and it prints the count. A test checks that the committed Nov 9 run now reads `over the line` on the valid-verdict and recall rules. |
+| 4 | `scripts/judge-spike/harness.ts`, `cli.ts`, `fake-realtime.ts`, `summary.ts` | The lines run in a fixed seeded shuffle (`shuffleLines`, mulberry32 with Fisher-Yates), up to 30 per session. `--seed <n>` picks the order (default 7, which puts 15 control and 15 ordinary lines in each session of the full set). The run file records `seed` and `order`. The summary has a per-session table with the line mix and the judge p50. The fake transport's judge script now gets the turn ID, so a dry run still answers each line by its own label. |
+| 5 | This section | |
+
+### The next live run on your takes
+
+Run these from the repo root, one per line. Dry run first, on the fake transport:
+
+```powershell
+node scripts/judge-spike/run.mjs harness --source owner
+```
+
+Live, every line you recorded, uncapped, effort `minimal`, seed 7. These are the defaults, written out here so the command says what it does:
+
+```powershell
+node --env-file=apps/web/.env.development.local --env-file=apps/web/.env.local scripts/judge-spike/run.mjs harness --source owner --live --max-tokens inf --effort minimal --seed 7
+```
+
+The run prints the judge settings and the seed before it connects. It writes `<date>-owner.json` and `.md` to `scripts/judge-spike/results/`. To pick a cap afterwards, read "Output tokens per judge response" in the summary.
+
+### A timing problem to fix before that run
+
+In the Nov 9 run, the judge time is inflated by the harness itself, not by the judge. The harness sends the judge only after the whole WAV has streamed. Many of your takes end with more than 300 ms of silence, so the server VAD commits while the tail is still streaming. Time from commit to judge send was over 300 ms on 34 of 60 lines, and up to 1,281 ms (`c-forget-2`). Measured from the send, the judge took a p50 of 431 ms in session 1 and 455 ms in session 2. Measured from the commit, as the summary does, the p50s were 474 ms and 1,088 ms. Most of the "session effect" in brief 007 is this wait: the takes in session 2 had longer tails.
+
+The harness has not changed here, so the next live run will repeat the problem. Many lines will time out at 600 ms because of the harness's own wait. The owner dry run already shows it on the fake transport: 28 of 60 lines have a valid verdict within 600 ms, though the fake judge answers in 180 ms. A fix would be to send the judge at the commit, as the Browser_Client would, and keep streaming the tail. Another would be to trim each take's trailing silence before streaming. I haven't made either change, because the brief ends at item 5. I'd make one before the live run.
+
+### What I couldn't check
+
+- **Whether the Realtime API accepts the new settings.** I haven't checked that an out-of-band `response.create` takes `max_output_tokens:"inf"`, or any effort other than `minimal`. The first live run will show it in `status` and `status_details`. The Nov 9 usage objects also reported up to 19 output tokens with the cap at 16, so the reported count can exceed the cap.
+- **Build-tool telemetry. My commands may have reached the network.** In this brief I ran `npm run lint`, `npm run typecheck` and `npm run build` (Turborepo, and `next build` for `apps/web`) without setting `TURBO_TELEMETRY_DISABLED` and `NEXT_TELEMETRY_DISABLED`, as I had from brief 006 item 4 on. Turborepo's local config on this machine has `telemetry_enabled: true`. So these runs may have sent anonymous usage data to Vercel, and `next/font/google` may have fetched fonts if they weren't cached. Neither was a call to OpenAI. After I noticed, I set both variables for every command that ran turbo or Next.
+- **`npm run test:emulator`.** I didn't run it, for the same reason as in brief 006. No Firestore code changed.
+- **The judge itself.** No live run, so no numbers on uncapped output sizes, recall or time.
+
+### Checks at the last commit
+
+`npm test` (132 files, 1,277 tests), `npm run lint`, `npm run typecheck` and `npm run build` exit 0. The dry runs on synthetic and owner audio both finish and write their files to `scripts/judge-spike/dist/dry-run/`.
