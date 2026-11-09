@@ -9,7 +9,7 @@ const yaml = readFileSync(join(REPO_ROOT, "apps", "web", "apphosting.yaml"), "ut
 describe("model-ID literal check", () => {
   it("reads every Model_Config value from apphosting.yaml", () => {
     const values = modelConfigValues(yaml);
-    expect(values).toHaveLength(6);
+    expect(values).toHaveLength(7);
     expect(values).not.toContain("frankirocks");
   });
 

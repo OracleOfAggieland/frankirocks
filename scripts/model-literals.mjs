@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { REPO_ROOT, toRepoPath } from "./clock-check.mjs";
 
-export const MODEL_SCAN_ROOTS = ["apps/web/src", "packages/core", "packages/server", "functions/src"];
+export const MODEL_SCAN_ROOTS = ["apps/web/src", "packages/core", "packages/server", "functions/src", "scripts/judge-spike"];
 export const MODEL_CONFIG_MODULE = "packages/server/src/config/models.ts";
 const PREFIXES = ["gpt-", "text-embedding-", "whisper-"];
 const EXTENSIONS = [".ts", ".tsx", ".js", ".mjs", ".cjs"];

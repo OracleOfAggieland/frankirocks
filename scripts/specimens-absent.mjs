@@ -1,7 +1,8 @@
-// Post-build proof that the Specimens_Page did not ship (lab-ui-foundation R20.3, R20.4). Runs as the
-// `postbuild` script of apps/web, so a failure makes `npm run build` exit non-zero.
-//   1. No route manifest key under .next names `specimens`.
-//   2. No file under .next/server or .next/static holds the Fixture sentinel.
+// Post-build proof that the development-only pages and routes did not ship (lab-ui-foundation R20.3, R20.4;
+// brief 006 item 3). Runs as the `postbuild` script of apps/web, so a failure makes `npm run build` exit non-zero.
+//   1. No route manifest key under .next names `specimens`, `recorder` or `api/dev` (the Specimens_Page, the
+//      judge spike recorder page and its /api/dev/takes route).
+//   2. No file under .next/server or .next/static holds the Fixture sentinel or the recorder sentinel.
 // Usage: node scripts/specimens-absent.mjs [path/to/.next]
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -10,6 +11,17 @@ import { REPO_ROOT, toRepoPath } from "./clock-check.mjs";
 
 /** Built from pieces so this file never holds the sentinel itself. */
 export const SENTINEL = ["SPECIMENS", "SENTINEL", "9c41"].join("_");
+/** Exported by apps/web/src/app/recorder/_recorder/Recorder.tsx. */
+export const RECORDER_SENTINEL = ["RECORDER", "SENTINEL", "5e2d"].join("_");
+const SENTINELS = [
+  [SENTINEL, "Fixture sentinel"],
+  [RECORDER_SENTINEL, "Recorder sentinel"],
+];
+
+/** Route manifest keys that only development may have. */
+const DEV_ROUTE_KEY = [/specimens/i, /(^|\/)recorder(\/|$)/i, /(^|\/)api\/dev(\/|$)/i];
+/** The same, for any string in the optional manifests. */
+const DEV_ROUTE_STRING = [/(^|\/)specimens(\/|$|\b)/i, /(^|\/)recorder(\/|$|\b)/i, /(^|\/)api\/dev(\/|$|\b)/i];
 
 /** The Next 16.4.3 route manifests, relative to .next. */
 export const ROUTE_MANIFESTS = ["app-path-routes-manifest.json", "server/app-paths-manifest.json"];
@@ -53,14 +65,14 @@ export function checkBuild(nextDir) {
       continue;
     }
     for (const key of Object.keys(JSON.parse(readFileSync(file, "utf8")))) {
-      if (key.toLowerCase().includes("specimens")) problems.push(`${rel}: route ${key}`);
+      if (DEV_ROUTE_KEY.some((p) => p.test(key))) problems.push(`${rel}: route ${key}`);
     }
   }
   for (const rel of OPTIONAL_MANIFESTS) {
     const file = join(nextDir, rel);
     if (!existsSync(file)) continue;
     for (const s of strings(JSON.parse(readFileSync(file, "utf8")))) {
-      if (/(^|\/)specimens(\/|$|\b)/i.test(s)) {
+      if (DEV_ROUTE_STRING.some((p) => p.test(s))) {
         problems.push(`${rel}: ${s}`);
         break;
       }
@@ -68,7 +80,8 @@ export function checkBuild(nextDir) {
   }
   for (const dir of ["server", "static"]) {
     for (const file of walk(join(nextDir, dir))) {
-      if (readFileSync(file, "latin1").includes(SENTINEL)) problems.push(`${toRepoPath(file)}: Fixture sentinel`);
+      const text = readFileSync(file, "latin1");
+      for (const [sentinel, name] of SENTINELS) if (text.includes(sentinel)) problems.push(`${toRepoPath(file)}: ${name}`);
     }
   }
   return problems;
@@ -79,8 +92,8 @@ if (isMain) {
   const nextDir = process.argv[2] ? resolve(process.argv[2]) : join(REPO_ROOT, "apps/web/.next");
   const problems = checkBuild(nextDir);
   if (problems.length > 0) {
-    process.stderr.write(`specimens-absent: the production build includes the Specimens_Page:\n${problems.join("\n")}\n`);
+    process.stderr.write(`specimens-absent: the production build includes a development-only page or route:\n${problems.join("\n")}\n`);
     process.exit(1);
   }
-  process.stdout.write("specimens-absent: no Specimens_Page in the build.\n");
+  process.stdout.write("specimens-absent: no Specimens_Page, recorder page or /api/dev route in the build.\n");
 }

@@ -23,3 +23,6 @@ ui-debug.log*
 .kiro/agents/*.json.bak
 .DS_Store
 *.pem
+
+# judge spike audio (brief 006): synthetic speech and the owner's own takes never go in git
+scripts/judge-spike/audio/

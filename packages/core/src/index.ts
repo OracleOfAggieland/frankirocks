@@ -22,5 +22,6 @@ export * from "./schema/json-schema";
 export * from "./extract";
 export * from "./voice/machine";
 export * from "./voice/judge";
+export * from "./audio/wav";
 export * from "./recall";
 export * from "./memory-text";

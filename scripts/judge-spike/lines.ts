@@ -57,8 +57,8 @@ export function parseLines(text: string): ProbeLine[] {
   return lines;
 }
 
-export function loadLines(url: URL = LINES_URL): ProbeLine[] {
-  return parseLines(readFileSync(url, "utf8"));
+export function loadLines(file: string | URL = LINES_URL): ProbeLine[] {
+  return parseLines(readFileSync(file, "utf8"));
 }
 
 /** SHA-256 over every line's labelled fields, in file order. Notes are excluded. */
