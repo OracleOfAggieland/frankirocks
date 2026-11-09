@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DATE_NOW_TEXT, containsDateNow, loadAllowList, toRepoPath } from "./clock-check.mjs";
 
-const PATH_KEYS = ["path", "file_path", "filePath", "targetFile", "target_file"];
+export const PATH_KEYS = ["path", "file_path", "filePath", "targetFile", "target_file"];
 const CONTENT_KEYS = ["text", "newStr", "new_str", "content", "contents", "new_string", "newString"];
 const INPUT_KEYS = ["tool_input", "toolInput", "input", "arguments", "args", "parameters"];
 

@@ -28,10 +28,11 @@ Rules for every task:
   - Witness: manual check. Steps: `voice-control.md` has `inclusion: fileMatch` with patterns matching `packages/core/src/voice/machine.ts`, `packages/core/src/voice/fast-o.ts`, `apps/web/src/client/voice-client.ts`, `packages/core/src/admission.ts`, `packages/server/src/admission/*`, `packages/server/src/routes/turn.ts`; `(Get-Content .kiro/steering/voice-control.md).Count` is under 80; each rule of R1.2 is present with its contract section; `memory-rules.md` no longer names `devAdmit`, says every server Permit comes from the Admission_Seam and `fastO` only from the FastO_Rule, and sends contract questions to the `design.md` of the spec being built.
   - Commit: `chore(kiro): voice-control steering`
 
-- [ ] 2. Property_Guard
+- [x] 2. Property_Guard
   - Requirements: R1.5–R1.8
   - Depends on: 1
-  - Estimate: 1.5 h · Actual:
+  - Estimate: 1.5 h · Actual: 0.4 h
+  - Notes: `decide(rawStdin, isTracked)` is pure; `gitTracks` runs `git ls-files --error-unmatch` (status 0 tracked, 1 not, anything else throws and the hook exits 2). A `delete_file` on a tracked property file is blocked too, since its `targetFile` is one of the path keys. To reuse the path keys, `scripts/clock-guard.mjs` now exports `PATH_KEYS` (one word added; outside this task's file list). No file in `.kiro/hooks/` was written: the reviewer adds the hook (suggested matcher `^(fs_write|str_replace|fs_append|delete_file)$`, command `node scripts/property-guard.mjs`). 9 tests; `npm test` 134 files, 1,315 tests green.
   - Files: `scripts/property-guard.mjs` (new), `scripts/property-guard.test.ts` (new)
   - Witness: `scripts/property-guard.test.ts` › exit 2 for a tracked `*.property.test.ts` target with the "add the new property in a new file, or stop and report" message; exit 0 for an untracked one; exit 0 for any other path; exit 2 on bad JSON and on a missing target path; `decide` takes the tracked check injected, so the tests need no git state; one end-to-end run against a real tracked file (`packages/core/src/head.property.test.ts`).
   - Reuse `toolInputOf` and the path keys of `clock-guard.mjs`. Do not write to `.kiro/hooks/`: note in the commit body that the reviewer adds the hook file (R1.7).
