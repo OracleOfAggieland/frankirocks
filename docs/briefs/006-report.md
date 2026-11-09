@@ -275,3 +275,13 @@ For the spec §3 stagger, run it again with `--stagger-ms 120`. A parallel run c
 ### Checks at the last commit
 
 `npm test` (133 files, 1,306 tests), `npm run lint`, `npm run typecheck` and `npm run build` exit 0. Turbo served lint, build and the workspace typechecks from its cache, since no workspace package changed. The owner dry run finishes in parallel mode and writes to `scripts/judge-spike/dist/dry-run/`.
+
+## Decision
+
+The owner decided on Nov 9, from the three live runs below. The decision is contract question 51 in `.kiro/specs/first-spoken-call/design.md`: the judge runs in parallel with the speculative reply, uncapped at effort `minimal`, with a 1,200 ms deadline from the commit; the ordinary latency target is about 1.3 s p50 and the stop line a p50 over 1.5 s; the company miss stays open. Questions 48 and 50 are answered by it. Question 47 (which VAD) stays open.
+
+| Run | Mode and cap | What it showed |
+|---|---|---|
+| `2026-11-09T18-41-59-158Z-owner` | Sequential, cap 16 | Reasoning counts against the cap: 58 of 60 judge answers were cut off before the letter. |
+| `2026-11-09T19-19-59-517Z-owner` | Sequential, uncapped | 60 of 60 valid verdicts. Judge p50 571 ms from send, reply p50 731 ms to first audio. |
+| `2026-11-09T19-44-20-895Z-owner` | Parallel, uncapped | Two out-of-band responses ran at once on all 58 overlapping lines, no errors. The judge added no audible delay on any ordinary `O` line. End of audible speech (last loud frame) to audible time: p50 1,317 ms, about 485 ms of it the VAD and about 800 ms the reply. Judge p50 718 ms, p95 1,103 ms, so 16 of 60 verdicts beat 600 ms. Recall: forget, quiet, hard rule and crisis 5 of 5 each, correction 4 of 5, company 1 of 5. False holds 1 of 30. |
