@@ -18,6 +18,11 @@ export const PROBE_COUNT = 15;
 export const PLAYBACK_MS = 60;
 /** The slow gate falls back to the transcript after this (brief 006 "What is being measured"). */
 export const ASR_FALLBACK_MS = 600;
+/**
+ * Brief 008: a line whose commit-to-judge-sent gap is over this is flagged. That gap is the harness's own wait, so
+ * the judge time measured from commit is fair only when it is near zero.
+ */
+export const COMMIT_TO_SEND_FLAG_MS = 50;
 
 export interface RunMeta {
   date: string;
@@ -31,7 +36,7 @@ export interface RunMeta {
 }
 
 export interface RunFile extends RunMeta {
-  version: "judge-spike-run-2";
+  version: "judge-spike-run-3";
   /** The line-order seed, and the line IDs in the order they ran. */
   seed: number;
   order: string[];
@@ -43,7 +48,7 @@ export interface RunFile extends RunMeta {
 export function runFile(meta: RunMeta, out: HarnessOutput): RunFile {
   // No transcript of the owner's own takes leaves the machine in a committed file (brief 006 item 4).
   const rows = meta.source === "owner" ? out.rows.map((r) => ({ ...r, transcript: null })) : out.rows;
-  return { version: "judge-spike-run-2", ...meta, seed: out.seed, order: out.order, sessions: out.sessions, eventNames: out.eventNames, rows };
+  return { version: "judge-spike-run-3", ...meta, seed: out.seed, order: out.order, sessions: out.sessions, eventNames: out.eventNames, rows };
 }
 
 /** Nearest-rank percentile; null for an empty list. */
@@ -123,6 +128,8 @@ export interface Summary {
   judgeMs: { p50: number | null; p95: number | null; n: number };
   ordinaryLatencyMs: { p50: number | null; p95: number | null; n: number };
   asrMs: { p50: number | null; p95: number | null; n: number; withinFallback: number };
+  /** Commit to judge sent: p50, largest, and the lines over COMMIT_TO_SEND_FLAG_MS with their gap. */
+  commitToSendMs: { p50: number | null; max: number | null; n: number; flagged: { lineId: string; ms: number }[] };
   probes: { p50: number | null; measured: number; total: number };
   /** Per session: its lines by kind and its judge time, so a session effect shows. */
   sessions: SessionStats[];
@@ -167,6 +174,9 @@ export function summarize(run: RunFile): Summary {
   const reasoning = nums(rows, (r) => r.reasoningTokens);
   const asr = nums(rows, (r) => r.derived.asrMs);
   const probeLatencies = nums(probes, (r) => r.derived.ordinaryLatencyMs);
+  // From the two instants, so run files from before brief 008 (no commitToJudgeSentMs) read the same way.
+  const gapOf = (r: Row) => (r.t.commit === null || r.t.judgeSent === null ? null : Math.round((r.t.judgeSent - r.t.commit) * 10) / 10);
+  const gaps = nums(rows, gapOf);
 
   const validOf = (timing: Timing): Ratio => {
     const measured = rows.filter(judged);
@@ -215,6 +225,15 @@ export function summarize(run: RunFile): Summary {
     judgeMs: dist(nums(rows, (r) => r.derived.judgeMs)),
     ordinaryLatencyMs: dist(nums(rows, (r) => r.derived.ordinaryLatencyMs)),
     asrMs: { ...dist(asr), withinFallback: asr.filter((v) => v <= ASR_FALLBACK_MS).length },
+    commitToSendMs: {
+      p50: percentile(gaps, 50),
+      max: gaps.length === 0 ? null : Math.max(...gaps),
+      n: gaps.length,
+      flagged: rows.flatMap((r) => {
+        const ms = gapOf(r);
+        return ms !== null && ms > COMMIT_TO_SEND_FLAG_MS ? [{ lineId: r.lineId, ms }] : [];
+      }),
+    },
     probes: { p50: percentile(probeLatencies, 50), measured: probeLatencies.length, total: probes.length },
     sessions: [...new Set(rows.map((r) => r.session))]
       .sort((a, b) => a - b)
@@ -289,6 +308,12 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   out.push(`| ASR (commit to transcription done) | ${ms(s.asrMs.p50)} | ${ms(s.asrMs.p95)} | ${s.asrMs.n} |`);
   out.push("");
   out.push(`Transcripts within ${ASR_FALLBACK_MS} ms of commit: ${s.asrMs.n === 0 ? "—" : `${s.asrMs.withinFallback} of ${s.asrMs.n}`}.`);
+  out.push("");
+  const g = s.commitToSendMs;
+  out.push(`Commit to judge sent (the harness's own wait; judge time is fair only when this is near zero): p50 ${ms(g.p50)}, largest ${ms(g.max)}, over ${g.n} line(s).`);
+  out.push("");
+  if (g.flagged.length === 0) out.push(`No line waited over ${COMMIT_TO_SEND_FLAG_MS} ms from commit to judge sent.`);
+  else out.push(`**Over ${COMMIT_TO_SEND_FLAG_MS} ms from commit to judge sent on ${g.flagged.length} line(s); their judge time includes the harness's wait:** ${g.flagged.map((f) => `${f.lineId} (${Math.round(f.ms)} ms)`).join(", ")}`);
   out.push("");
   out.push("## Sessions");
   out.push("");

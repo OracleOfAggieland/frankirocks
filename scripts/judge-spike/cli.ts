@@ -7,6 +7,8 @@
  *                                     the judge measurement; without --live it runs the whole flow against the
  *                                     fake transport. The judge defaults to no output cap and effort minimal; the
  *                                     lines run in a fixed seeded order (default seed 7), up to 30 per session.
+ *                                     Each take's trailing silence is trimmed before it is streamed (trim.ts);
+ *                                     a take with no speech is refused before connecting.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -16,12 +18,13 @@ import { MODEL_VARS, requireModel } from "../../packages/server/src/config/model
 import { requireEnv } from "../../packages/server/src/config/env";
 import { type HarnessClock, liveClock, wallDateIso } from "./clock";
 import { fakeConnect, placeholderPcm } from "./fake-realtime";
-import { DEFAULT_SEED, MAX_RUN_LINES, SPIKE_JUDGE_SETTINGS, runHarness } from "./harness";
+import { DEFAULT_SEED, MAX_RUN_LINES, NO_SPEECH, SPIKE_JUDGE_SETTINGS, runHarness, silentTakes } from "./harness";
 import { type ProbeLine, lineSetHash, loadLines } from "./lines";
 import { AUDIO_SOURCES, type AudioSource, audioDir, linesFile, resultsDir, wavPath } from "./paths";
 import { type Connect, liveConnect } from "./realtime";
 import { runFile, summaryMarkdown } from "./summary";
 import { manifestText, synthPlan, synthesize } from "./synth";
+import { KEEP_AFTER_MS, SPEECH_RMS_THRESHOLD, trimTail } from "./trim";
 import { VirtualClock } from "./virtual-clock";
 
 export interface CliContext {
@@ -162,10 +165,14 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
     }
   }
 
-  // Cost guard: say what would be sent before connecting, and never more than MAX_RUN_LINES.
-  const seconds = [...audio.values()].reduce((n, pcm) => n + pcm.byteLength / 48_000, 0);
+  // Cost guard: say what would be sent before connecting, and never more than MAX_RUN_LINES. What is sent is each
+  // take with its trailing silence trimmed (brief 008).
+  const trims = [...audio.values()].map((pcm) => trimTail(pcm));
+  const seconds = trims.reduce((n, t) => n + (t === null ? 0 : t.pcm.byteLength / 48_000), 0);
+  const trimmedSeconds = trims.reduce((n, t) => n + (t === null ? 0 : t.trimmedMs / 1000), 0);
   ctx.log(`harness: ${lines.length} lines, ${seconds.toFixed(1)} s of audio, source ${source}, ${flags.live ? "LIVE Realtime session" : "fake transport"}`);
   ctx.log(`harness: judge max_output_tokens ${judge.maxOutputTokens}, effort ${judge.effort}; line order seed ${seed}`);
+  ctx.log(`harness: ${trimmedSeconds.toFixed(1)} s of trailing silence trimmed from the takes (speech threshold RMS ${SPEECH_RMS_THRESHOLD}, ${KEEP_AFTER_MS} ms kept)`);
   if (lines.length === 0) {
     ctx.log("harness: no lines to run.");
     return 1;
@@ -176,6 +183,11 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   }
   if (problems.length > 0) {
     ctx.log(`harness: refusing a live run with unusable audio:\n  ${problems.join("\n  ")}`);
+    return 1;
+  }
+  const silent = silentTakes(lines, audio);
+  if (silent.length > 0) {
+    ctx.log(`harness: refusing takes with no speech (${NO_SPEECH}):\n  ${silent.join("\n  ")}`);
     return 1;
   }
 

@@ -1,14 +1,15 @@
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { JUDGE_V1_INSTRUCTIONS } from "@franki/core";
+import { JUDGE_V1_INSTRUCTIONS, encodeWav } from "@franki/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { judgeSettings, main, seedOf } from "./cli";
 import { type FakeJudgeScript, fakeConnect, placeholderPcm } from "./fake-realtime";
-import { DEFAULT_SEED, MAX_RUN_LINES, type Row, SESSION_LINES, SPIKE_JUDGE_SETTINGS, openSession, outputTokensOf, reasoningTokensOf, runHarness, runLine, shuffleLines } from "./harness";
+import { DEFAULT_SEED, MAX_RUN_LINES, NO_SPEECH, type Row, SESSION_LINES, SPIKE_JUDGE_SETTINGS, openSession, outputTokensOf, reasoningTokensOf, runHarness, runLine, shuffleLines, silentTakes } from "./harness";
 import { type ProbeLine, LINES_URL, loadLines } from "./lines";
 import type { Connect } from "./realtime";
-import { type RunFile, runFile, summarize, summaryMarkdown } from "./summary";
+import { COMMIT_TO_SEND_FLAG_MS, type RunFile, runFile, summarize, summaryMarkdown } from "./summary";
+import { SPEECH_RMS_THRESHOLD } from "./trim";
 import { VirtualClock } from "./virtual-clock";
 
 const lines = loadLines();
@@ -17,13 +18,13 @@ const control = lines.find((l) => l.id === "c-company-1")!;
 const MODELS = { voiceModel: "voice-from-config", transcribeModel: "transcribe-from-config", apiKey: "fake-key-for-tests" };
 
 /** Runs one line on a fresh fake session and returns the row and everything the harness sent. */
-async function one(line: ProbeLine, script: FakeJudgeScript) {
+async function one(line: ProbeLine, script: FakeJudgeScript, pcm: Uint8Array = placeholderPcm(1200)) {
   const clock = new VirtualClock();
   const fake = fakeConnect({ clock, judge: () => script });
   const row = await clock.run(
     (async () => {
       const s = await openSession(fake.connect, MODELS, clock, 0);
-      const r = await runLine(s, line, placeholderPcm(1200), null);
+      const r = await runLine(s, line, pcm, null);
       return { r, s };
     })(),
   );
@@ -145,7 +146,63 @@ describe("judge spike harness against the fake transport", () => {
     const clock = new VirtualClock();
     await expect(runHarness({ lines: tooMany, audio: new Map(), voices: new Map(), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS, seed: DEFAULT_SEED, apiKey: "k", connect: fakeConnect({ clock, judge: () => ({}) }).connect, clock, log: () => {} })).rejects.toThrow(/at most 70/);
   });
+
+  it("witness: a take with a long silent tail streams to 100 ms after its last speech, and the judge goes out at the commit", async () => {
+    const take = concat(placeholderPcm(1200), roomTone(2000, 150));
+    const { row, sent } = await one(ordinary, { texts: ["O"] }, take);
+    expect(row).toMatchObject({ takeMs: 3200, trimmedMs: 1900, audioMs: 1300, fragments: 1, errors: [] });
+    // Only the trimmed take went out before the silence the harness adds.
+    const appended = sent.filter((e) => e.type === "input_audio_buffer.append").map((e) => Buffer.from(String(e.audio), "base64"));
+    expect(Buffer.concat(appended).subarray(0, 1300 * 48).equals(Buffer.from(take.subarray(0, 1300 * 48)))).toBe(true);
+    expect(row.derived.commitToJudgeSentMs).toBe(row.t.judgeSent! - row.t.commit!);
+    expect(row.derived.commitToJudgeSentMs!).toBeLessThanOrEqual(COMMIT_TO_SEND_FLAG_MS);
+    // The commit lands about 300 ms after the last loud frame, not after the 2 s tail.
+    expect(row.t.commit! - row.t.streamStart!).toBeLessThan(1200 + 400);
+  });
+
+  it("witness: a pause inside the line is streamed as recorded", async () => {
+    const take = concat(placeholderPcm(600), new Uint8Array(800 * 48), placeholderPcm(600), new Uint8Array(1500 * 48));
+    const { row } = await one(ordinary, { texts: ["O"] }, take);
+    expect(row).toMatchObject({ takeMs: 3500, trimmedMs: 1400, audioMs: 2100, fragments: 2 });
+    expect(row.derived.commitToJudgeSentMs!).toBeLessThanOrEqual(COMMIT_TO_SEND_FLAG_MS);
+  });
+
+  it("witness: an all-silent take is refused before any session opens", async () => {
+    const clock = new VirtualClock();
+    const fake = fakeConnect({ clock, judge: () => ({}) });
+    const audio = new Map([
+      [ordinary.id, placeholderPcm(1000)],
+      [control.id, roomTone(2000, SPEECH_RMS_THRESHOLD)],
+    ]);
+    expect(silentTakes([ordinary, control], audio)).toEqual([control.id]);
+    await expect(clock.run(runHarness({ lines: [ordinary, control], audio, voices: new Map(), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS, seed: DEFAULT_SEED, apiKey: "k", connect: fake.connect, clock, log: () => {} }))).rejects.toThrow(`refusing takes with no speech (${NO_SPEECH}): ${control.id}`);
+    expect(fake.log.connections).toBe(0);
+    // runLine on its own records the refusal and streams nothing.
+    const { row, sent } = await one(control, { texts: ["H"] }, new Uint8Array(1000 * 48));
+    expect(row.errors).toEqual([NO_SPEECH]);
+    expect(row).toMatchObject({ takeMs: 1000, audioMs: 0, decision: null });
+    expect(sent.filter((e) => e.type === "input_audio_buffer.append")).toHaveLength(0);
+  });
 });
+
+/** Byte-joins PCM parts. */
+function concat(...parts: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0));
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.byteLength;
+  }
+  return out;
+}
+
+/** Room tone at an exact RMS: a square wave of ±level. */
+function roomTone(ms: number, level: number): Uint8Array {
+  const out = new Uint8Array(ms * 48);
+  const v = new DataView(out.buffer);
+  for (let i = 0; i < out.byteLength / 2; i++) v.setInt16(i * 2, i % 2 === 0 ? level : -level, true);
+  return out;
+}
 
 function row(over: Partial<Row>): Row {
   return {
@@ -156,6 +213,8 @@ function row(over: Partial<Row>): Row {
     session: 0,
     voice: null,
     audioMs: 1000,
+    takeMs: 1000,
+    trimmedMs: 0,
     fragments: 1,
     t: { streamStart: 0, speechEnd: 1000, commit: 1300, itemAdded: 1330, judgeSent: 1330, judgeFirstDelta: 1400, judgeDone: 1500, replySent: 1500, firstReplyAudio: 1800, transcriptionDone: 1700 },
     verdict: "O",
@@ -171,7 +230,7 @@ function row(over: Partial<Row>): Row {
     timedOut: false,
     decision: "reply",
     transcript: "hi",
-    derived: { judgeMs: 200, ordinaryLatencyMs: 800, asrMs: 400 },
+    derived: { judgeMs: 200, ordinaryLatencyMs: 800, asrMs: 400, commitToJudgeSentMs: 30 },
     errors: [],
     ...over,
   };
@@ -180,7 +239,7 @@ function row(over: Partial<Row>): Row {
 const META = { date: "2026-11-09T00:00:00.000Z", source: "synthetic" as const, transport: "fake" as const, lineSetCommit: "abc", lineSetHash: "f".repeat(64), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS };
 const run = (rows: Row[], source: "synthetic" | "owner" = "synthetic"): RunFile => runFile({ ...META, source }, { rows, seed: DEFAULT_SEED, order: rows.map((r) => r.lineId), sessions: [rows.map((r) => r.lineId)], eventNames: [] });
 const probes = (n: number, latency: number | null) =>
-  Array.from({ length: n }, (_, i) => row({ lineId: `o-${i}`, probe: true, derived: { judgeMs: 200, ordinaryLatencyMs: latency, asrMs: 400 }, decision: latency === null ? "held" : "reply" }));
+  Array.from({ length: n }, (_, i) => row({ lineId: `o-${i}`, probe: true, derived: { judgeMs: 200, ordinaryLatencyMs: latency, asrMs: 400, commitToJudgeSentMs: 30 }, decision: latency === null ? "held" : "reply" }));
 const controls = (held: number, of: number) =>
   Array.from({ length: of }, (_, i) => row({ lineId: `c-${i}`, class: "forget", expect: "hold", decision: i < held ? "held" : "reply", verdict: i < held ? "H" : "O" }));
 
@@ -210,7 +269,7 @@ describe("judge spike summary", () => {
   it("counts recall per class, false holds, invalid reasons and the ASR fallback", () => {
     const rows = [
       ...controls(4, 5),
-      row({ lineId: "o-a", decision: "held", verdict: "U", valid: false, invalidReason: "extraText", derived: { judgeMs: 200, ordinaryLatencyMs: null, asrMs: 700 } }),
+      row({ lineId: "o-a", decision: "held", verdict: "U", valid: false, invalidReason: "extraText", derived: { judgeMs: 200, ordinaryLatencyMs: null, asrMs: 700, commitToJudgeSentMs: 30 } }),
       row({ lineId: "o-b" }),
     ];
     const s = summarize(run(rows));
@@ -222,7 +281,7 @@ describe("judge spike summary", () => {
   });
 
   it("witness: every answer invalid reads over the line and 0% judge recall, while the app view still holds", () => {
-    const invalid = { valid: false, verdict: "U" as const, invalidReason: "incomplete" as const, judgeStatus: "incomplete", decision: "held" as const, derived: { judgeMs: 450, ordinaryLatencyMs: null, asrMs: 400 } };
+    const invalid = { valid: false, verdict: "U" as const, invalidReason: "incomplete" as const, judgeStatus: "incomplete", decision: "held" as const, derived: { judgeMs: 450, ordinaryLatencyMs: null, asrMs: 400, commitToJudgeSentMs: 30 } };
     const rows = [
       ...controls(30, 30).map((r) => ({ ...r, ...invalid })),
       ...Array.from({ length: 30 }, (_, i) => row({ lineId: `o-${i}`, probe: i < 15, ...invalid })),
@@ -243,7 +302,7 @@ describe("judge spike summary", () => {
   });
 
   it("witness: a valid late H counts in the untimed view only", () => {
-    const late = row({ lineId: "c-late", class: "forget", expect: "hold", verdict: "H", valid: true, timedOut: true, decision: "held", t: { ...row({}).t, judgeDone: 2100 }, derived: { judgeMs: 800, ordinaryLatencyMs: null, asrMs: 400 } });
+    const late = row({ lineId: "c-late", class: "forget", expect: "hold", verdict: "H", valid: true, timedOut: true, decision: "held", t: { ...row({}).t, judgeDone: 2100 }, derived: { judgeMs: 800, ordinaryLatencyMs: null, asrMs: 400, commitToJudgeSentMs: 30 } });
     const s = summarize(run([late]));
     expect(s.views.judgeDeadline.recall).toEqual({ n: 0, of: 1, missing: 0 });
     expect(s.views.judgeUntimed.recall).toEqual({ n: 1, of: 1, missing: 0 });
@@ -274,9 +333,9 @@ describe("judge spike summary", () => {
 
   it("prints per-session judge p50 with the session's mix of lines", () => {
     const rows = [
-      row({ lineId: "o-a", session: 0, derived: { judgeMs: 400, ordinaryLatencyMs: 800, asrMs: 400 } }),
-      row({ lineId: "c-a", session: 0, expect: "hold", class: "forget", verdict: "H", decision: "held", derived: { judgeMs: 500, ordinaryLatencyMs: null, asrMs: 400 } }),
-      row({ lineId: "o-b", session: 1, derived: { judgeMs: 1100, ordinaryLatencyMs: 900, asrMs: 400 } }),
+      row({ lineId: "o-a", session: 0, derived: { judgeMs: 400, ordinaryLatencyMs: 800, asrMs: 400, commitToJudgeSentMs: 30 } }),
+      row({ lineId: "c-a", session: 0, expect: "hold", class: "forget", verdict: "H", decision: "held", derived: { judgeMs: 500, ordinaryLatencyMs: null, asrMs: 400, commitToJudgeSentMs: 30 } }),
+      row({ lineId: "o-b", session: 1, derived: { judgeMs: 1100, ordinaryLatencyMs: 900, asrMs: 400, commitToJudgeSentMs: 30 } }),
     ];
     const s = summarize(run(rows));
     expect(s.sessions).toEqual([
@@ -287,6 +346,26 @@ describe("judge spike summary", () => {
     expect(md).toContain(`Lines ran in a seeded order (seed ${DEFAULT_SEED}), up to 30 per session.`);
     expect(md).toContain("| 1 | 2 | 1 | 1 | 400 ms | 2 |");
     expect(md).toContain("| 2 | 1 | 0 | 1 | 1100 ms | 1 |");
+  });
+
+  it("witness: flags a commit-to-judge-sent gap over 50 ms, with the p50 and the largest gap", () => {
+    const at = (lineId: string, gap: number) => row({ lineId, t: { ...row({}).t, judgeSent: 1300 + gap } });
+    const fair = summaryMarkdown(run([at("o-a", 20), at("o-b", 50)]));
+    expect(fair).toContain("Commit to judge sent (the harness's own wait; judge time is fair only when this is near zero): p50 20 ms, largest 50 ms, over 2 line(s).");
+    expect(fair).toContain("No line waited over 50 ms from commit to judge sent.");
+    const rows = [at("o-a", 20), at("o-b", 30), at("o-slow", 120)];
+    const s = summarize(run(rows));
+    expect(s.commitToSendMs).toEqual({ p50: 30, max: 120, n: 3, flagged: [{ lineId: "o-slow", ms: 120 }] });
+    expect(summaryMarkdown(run(rows))).toContain("**Over 50 ms from commit to judge sent on 1 line(s); their judge time includes the harness's wait:** o-slow (120 ms)");
+  });
+
+  it("witness: the Nov 9 run's commit-to-send gaps are over 300 ms on 34 lines, up to 1,281 ms", () => {
+    const first = JSON.parse(readFileSync(new URL("./results/2026-11-09T18-41-59-158Z-owner.json", import.meta.url), "utf8")) as RunFile;
+    const g = summarize(first).commitToSendMs;
+    expect(g.n).toBe(60);
+    expect(Math.round(g.max!)).toBe(1281);
+    expect(g.flagged.filter((f) => f.ms > 300)).toHaveLength(34);
+    expect(g.flagged.find((f) => f.ms === g.max)!.lineId).toBe("c-forget-2");
   });
 
   it("drops the transcripts of the owner's own takes", () => {
@@ -404,6 +483,43 @@ describe("judge spike CLI", () => {
     expect(seedOf({})).toBe(DEFAULT_SEED);
     expect(seedOf({ seed: "0" })).toBe(0);
     for (const bad of ["-1", "1.5", "x", "4294967296"]) expect(() => seedOf({ seed: bad })).toThrow(/--seed/);
+  });
+
+  it("refuses an all-silent take before connecting, live or dry", async () => {
+    const d = spikeDir();
+    mkdirSync(join(d, "audio", "owner"), { recursive: true });
+    writeFileSync(join(d, "audio", "owner", "o-01.wav"), encodeWav(new Uint8Array(2000 * 48)));
+    for (const live of [false, true]) {
+      let liveCalls = 0;
+      const logs: string[] = [];
+      const code = await main(["harness", "--source", "owner", "--lines", "o-01", ...(live ? ["--live"] : [])], {
+        spikeDir: d,
+        env: { OPENAI_API_KEY: "fake-key-for-tests" },
+        log: (l) => logs.push(l),
+        liveConnect: async () => {
+          liveCalls++;
+          throw new Error("must not connect");
+        },
+      });
+      expect(code).toBe(1);
+      expect(liveCalls).toBe(0);
+      expect(logs.join("\n")).toContain(`refusing takes with no speech (${NO_SPEECH}):\n  o-01`);
+      expect(existsSync(join(d, "dist"))).toBe(false);
+    }
+  });
+
+  it("logs how much trailing silence it trimmed", async () => {
+    const d = spikeDir();
+    mkdirSync(join(d, "audio", "owner"), { recursive: true });
+    writeFileSync(join(d, "audio", "owner", "o-01.wav"), encodeWav(concat(placeholderPcm(1000), new Uint8Array(1500 * 48))));
+    const logs: string[] = [];
+    expect(await main(["harness", "--source", "owner", "--lines", "o-01"], { spikeDir: d, env: {}, log: (l) => logs.push(l) })).toBe(0);
+    expect(logs[0]).toBe("harness: 1 lines, 1.1 s of audio, source owner, fake transport");
+    expect(logs[2]).toBe(`harness: 1.4 s of trailing silence trimmed from the takes (speech threshold RMS ${SPEECH_RMS_THRESHOLD}, 100 ms kept)`);
+    const file = readdirSync(join(d, "dist", "dry-run")).find((f) => f.endsWith(".json"))!;
+    const out = JSON.parse(readFileSync(join(d, "dist", "dry-run", file), "utf8")) as RunFile;
+    expect(out.version).toBe("judge-spike-run-3");
+    expect(out.rows[0]).toMatchObject({ takeMs: 2500, trimmedMs: 1400, audioMs: 1100 });
   });
 
   it("keeps the synth command dry without --live", async () => {

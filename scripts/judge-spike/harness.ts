@@ -3,7 +3,8 @@
  * Realtime session and records, on one monotonic clock, every instant the spec's sequential floor depends on (spec
  * §3, §13, §14 item 1; contracts §5 judge_v1, §6 Realtime):
  *
- *   stream the WAV in 20 ms chunks at real time, then silence until the VAD commits;
+ *   trim the take's trailing silence (brief 008), so the commit lands about 300 ms after the last speech;
+ *   stream it in 20 ms chunks at real time, then silence until the VAD commits;
  *   wait for `conversation.item.added`, send judge_v1 and parse its verdict with the core parser;
  *   on a completed `O` within 600 ms of commit, send the reply and cancel it at its first audio delta;
  *   on `H`, `U` or a timeout, send no reply; wait for the transcription, then go to the next line.
@@ -22,6 +23,17 @@ import {
 import type { HarnessClock } from "./clock";
 import type { ProbeLine } from "./lines";
 import { type Connect, EVENT, type ServerEvent, type Transport, base64, spikeReplyCreate, spikeSessionUpdate } from "./realtime";
+import { SPEECH_RMS_THRESHOLD, type TrimmedTake, trimTail } from "./trim";
+
+export const NO_SPEECH = `no 20 ms frame above RMS ${SPEECH_RMS_THRESHOLD}: no speech to stream`;
+
+/** The lines whose take has no speech above the trim threshold (brief 008); they are refused before connecting. */
+export function silentTakes(lines: readonly ProbeLine[], audio: ReadonlyMap<string, Uint8Array>): string[] {
+  return lines.filter((l) => {
+    const pcm = audio.get(l.id);
+    return pcm !== undefined && trimTail(pcm) === null;
+  }).map((l) => l.id);
+}
 
 export const CHUNK_MS = 20;
 export const CHUNK_BYTES = 960; // 20 ms of 24 kHz 16-bit mono
@@ -63,7 +75,12 @@ export interface Row {
   probe: boolean;
   session: number;
   voice: string | null;
+  /** The streamed audio, after the tail trim (brief 008). */
   audioMs: number;
+  /** The take's length before the trim. */
+  takeMs: number;
+  /** Milliseconds of trailing silence trimmed from the take. */
+  trimmedMs: number;
   /** Committed audio items for this line, in commit order. More than one means the VAD split the line. */
   fragments: number;
   t: Times;
@@ -83,7 +100,8 @@ export interface Row {
   /** `reply` only for a valid `O` within the deadline. */
   decision: "reply" | "held" | null;
   transcript: string | null;
-  derived: { judgeMs: number | null; ordinaryLatencyMs: number | null; asrMs: number | null };
+  /** `commitToJudgeSentMs` is the harness's own wait; judge time is fair only when it is near zero. */
+  derived: { judgeMs: number | null; ordinaryLatencyMs: number | null; asrMs: number | null; commitToJudgeSentMs: number | null };
   errors: string[];
 }
 
@@ -195,7 +213,7 @@ export async function openSession(connect: Connect, opts: { voiceModel: string; 
   return s;
 }
 
-function emptyRow(line: ProbeLine, session: number, voice: string | null, audioMs: number): Row {
+function emptyRow(line: ProbeLine, session: number, voice: string | null, take: TrimmedTake | null, pcmMs: number): Row {
   return {
     lineId: line.id,
     class: line.class,
@@ -203,7 +221,9 @@ function emptyRow(line: ProbeLine, session: number, voice: string | null, audioM
     probe: line.probe,
     session,
     voice,
-    audioMs,
+    audioMs: take === null ? 0 : (take.pcm.byteLength / 48) | 0,
+    takeMs: take === null ? pcmMs : take.takeMs,
+    trimmedMs: take === null ? 0 : take.trimmedMs,
     fragments: 0,
     t: {
       streamStart: null,
@@ -230,21 +250,30 @@ function emptyRow(line: ProbeLine, session: number, voice: string | null, audioM
     timedOut: false,
     decision: null,
     transcript: null,
-    derived: { judgeMs: null, ordinaryLatencyMs: null, asrMs: null },
+    derived: { judgeMs: null, ordinaryLatencyMs: null, asrMs: null, commitToJudgeSentMs: null },
     errors: [],
   };
 }
 
 const diff = (a: number | null, b: number | null): number | null => (a === null || b === null ? null : Math.round((b - a) * 10) / 10);
 
-/** Runs one line through the session. Never throws for a line-level failure; it is recorded in `errors`. */
-export async function runLine(s: SpikeSession, line: ProbeLine, pcm: Uint8Array, voice: string | null, judge: JudgeSettings = SPIKE_JUDGE_SETTINGS): Promise<Row> {
-  const row = emptyRow(line, s.index, voice, (pcm.byteLength / 48) | 0);
+/**
+ * Runs one line through the session. Never throws for a line-level failure; it is recorded in `errors`. The take's
+ * trailing silence is trimmed first (`trimTail`); a take with no speech is not streamed.
+ */
+export async function runLine(s: SpikeSession, line: ProbeLine, take: Uint8Array, voice: string | null, judge: JudgeSettings = SPIKE_JUDGE_SETTINGS): Promise<Row> {
+  const trimmed = trimTail(take);
+  const row = emptyRow(line, s.index, voice, trimmed, (take.byteLength / 48) | 0);
+  if (trimmed === null) {
+    row.errors.push(NO_SPEECH);
+    return row;
+  }
+  const pcm = trimmed.pcm;
   const from = s.events.length;
   const t = row.t;
   const clock = s.clock;
 
-  // 1. Stream the line at real time, then silence until the VAD has committed everything it heard.
+  // 1. Stream the trimmed line at real time, then silence until the VAD has committed everything it heard.
   const start = clock.now();
   t.streamStart = start;
   let k = 0;
@@ -366,6 +395,7 @@ async function finishTranscript(s: SpikeSession, row: Row, from: number, ids: st
     judgeMs: diff(t.commit, t.judgeDone),
     ordinaryLatencyMs: diff(t.speechEnd, t.firstReplyAudio),
     asrMs: diff(t.commit, t.transcriptionDone),
+    commitToJudgeSentMs: diff(t.commit, t.judgeSent),
   };
   return row;
 }
@@ -429,6 +459,8 @@ export function shuffleLines<T>(lines: readonly T[], seed: number): T[] {
 /** Runs every line in the seeded order, a fresh session every SESSION_LINES lines. */
 export async function runHarness(input: HarnessInput): Promise<HarnessOutput> {
   if (input.lines.length > MAX_RUN_LINES) throw new Error(`refusing ${input.lines.length} lines: at most ${MAX_RUN_LINES} in one run`);
+  const silent = silentTakes(input.lines, input.audio);
+  if (silent.length > 0) throw new Error(`refusing takes with no speech (${NO_SPEECH}): ${silent.join(", ")}`);
   const ordered = shuffleLines(input.lines, input.seed);
   const rows: Row[] = [];
   const sessions: string[][] = [];
@@ -443,7 +475,7 @@ export async function runHarness(input: HarnessInput): Promise<HarnessOutput> {
         if (pcm === undefined) throw new Error(`no audio for ${line.id}`);
         const row = await runLine(s, line, pcm, input.voices.get(line.id) ?? null, input.judge);
         rows.push(row);
-        input.log(`${row.lineId}: ${row.verdict ?? "-"}${row.invalidReason ? ` (${row.invalidReason})` : ""}${row.timedOut ? " timeout" : ""} judge ${row.derived.judgeMs ?? "-"} ms, latency ${row.derived.ordinaryLatencyMs ?? "-"} ms`);
+        input.log(`${row.lineId}: ${row.verdict ?? "-"}${row.invalidReason ? ` (${row.invalidReason})` : ""}${row.timedOut ? " timeout" : ""} judge ${row.derived.judgeMs ?? "-"} ms, commit to send ${row.derived.commitToJudgeSentMs ?? "-"} ms, latency ${row.derived.ordinaryLatencyMs ?? "-"} ms`);
         if (s.closed !== null) throw new Error(`session closed: ${s.closed}`);
       }
     } finally {
