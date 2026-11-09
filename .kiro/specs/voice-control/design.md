@@ -2,9 +2,9 @@
 
 ## Overview
 
-This design builds `requirements.md` (cited as R*n.m*) for Brief 011 and its review (`docs/briefs/011-review-requirements.md`). Contract sections are cited as "C§n" (`docs/design/memory-contracts-v2.md`) and "MS§n" (`docs/design/memory-spec-v3.md`); earlier contract questions as "Q*n*" (`.kiro/specs/first-spoken-call/design.md`). `docs/design/` is read-only. Every departure from, or gap-fill in, the contracts is listed under [Contract questions](#contract-questions), numbered from 52.
+This design builds `requirements.md` (cited as R*n.m*) for Brief 011 and its reviews (`docs/briefs/011-review-requirements.md`, `docs/briefs/011-review-design.md`). Contract sections are cited as "C§n" (`docs/design/memory-contracts-v2.md`) and "MS§n" (`docs/design/memory-spec-v3.md`); earlier contract questions as "Q*n*" (`.kiro/specs/first-spoken-call/design.md`). `docs/design/` is read-only. Every departure from, or gap-fill in, the contracts is listed under [Contract questions](#contract-questions), numbered from 52.
 
-The change in one paragraph. At each commit the Browser_Client sends two out-of-band responses on the data channel: the judge and a muted speculative reply. A valid `O` plus a fresh StateAck lets the browser issue a `fastO` Permit itself and unmute. Anything else holds the turn, and the server decides from the transcript: every final transcript (and every typed U line) runs the slow parse (a hold-only regex table, then one Decisions call), and a pure `serverRule` in `packages/core` maps the turn to exactly one Permit kind or a hold. A control hit that arrives while a `fastO` reply is playing cuts it. The Admission_Seam stays the only server code that creates a Permit and writes one ledger decision per admission, and it also records the browser's `fastO` from the `admitted` receipt. In wave B, company and quiet hang up and reopen with a narrower Head, and alone widens it again without a hang-up.
+The change in one paragraph. At each commit the Browser_Client sends two out-of-band responses on the data channel: the judge and a muted speculative reply. A valid `O` plus a fresh StateAck lets the browser issue a `fastO` Permit itself and unmute. Anything else holds the turn, and the server decides from the transcript: every final transcript (and every typed U line) runs the slow parse (a regex table that decides only when the parse fails, then one Decisions call), and a pure `serverRule` in `packages/core` maps the turn to exactly one Permit kind or a hold. A control hit that arrives while a `fastO` reply is playing cuts it. The Admission_Seam stays the only server code that creates a Permit and writes one ledger decision per admission, and it also records the browser's `fastO` from the `admitted` receipt. In wave B, company and quiet hang up and reopen with a narrower Head, and alone widens it again without a hang-up.
 
 What stays: the reducer is still pure (`step(state, event, now)`), the payload hash is still `admissionPayload` (C§6 Hash), the generation stays 1 per Session (R21.3, Q27), and every route keeps its auth and idempotency.
 
@@ -43,8 +43,10 @@ packages/core/src/
   voice/fast-o.ts         FastO_Rule: fastOProblem, issueFastO (pure)
   voice/lines.ts          every Fixed_Line, RECOVERY_LINE moves here (re-exported from admission.ts)
   voice/vad.ts            SEMANTIC_VAD settings as named constants
-  voice/latency.ts        LatencyRow, path, p50/p95
-  intents/regex.ts        Regex_Table and regexHold
+  voice/latency.ts        LatencyRow, path, refused, late, p50/p95
+  voice/testing/          arbCall and every machine generator and trace helper (plain modules, not guarded)
+  intents/testing/        probability-vector and RuleInput generators
+  intents/regex.ts        Regex_Table and regexMatch
   intents/request.ts      TurnIntents request builder (Decisions body)
   intents/parse.ts        response parser, normalize, CANDIDATE_P, isOrdinary, choose (priority)
 packages/server/src/
@@ -53,7 +55,7 @@ packages/server/src/
   intents/slow-parse.ts   runSlowParse: regex, then Decisions_Port with the 350 ms deadline
   intents/repair.ts       Parse_Repair after the response, 2 s deadline
   openai/*                new endpoint "decisions.create" (POST /v1/decisions) in the port, live and fake
-  routes/turn.ts          parse before the transaction, serverRule through the seam, status mapping, audience
+  routes/turn.ts          parse before the transaction, serverRule through the seam, status mapping, audience, Superseding_Post
   routes/receipt.ts       admitted + fastO -> recordFastO
   routes/state.ts         ack:null rule; Session write at most every 30 s
   routes/tool.ts          serverRule row for tool continuations
@@ -78,7 +80,8 @@ Import rules hold: `intents/*` in core are pure and import nothing from the serv
 | `judge` | `{turnId, responseId: string\|null, eventId, sentAt, deadline, verdict: JudgeVerdict\|null, valid: boolean}\|null` | The current turn's judge. |
 | `spec` | `{turnId, responseId\|null, eventId, payload: PayloadInput, hash: string\|null, mutedStarted: boolean, heldCall: ToolCallItem\|null}\|null` | The speculative reply and the payload it was created from. |
 | `unadmitted` | `{itemId, commitSeq}[]` (≤ 8 used) | Unadmitted_Fragments of this generation. Cleared up to a turn's last `commitSeq` when a reply of that turn is admitted. |
-| `outstanding` | `{turnId, deadline}[]` | Outstanding_Turns. An entry leaves on its `turnOk`, `turnFailed` or deadline. |
+| `outstanding` | `{turnId, deadline}[]` | Outstanding_Turns. An entry leaves on its `turnOk`, `turnFailed` or deadline (post + `TURN_RESPONSE_LIMIT_MS`). |
+| `missing` | `{turnId, clientSeq, requestId, body: TurnBody, items: VoiceItem[]}[]` (≤ 2) | Turns posted `missing` whose transcripts may still arrive (R7.8). An entry leaves when its Superseding_Post is sent, or 10,000 ms after its post. |
 | `lastTurnResponseAt` | `number\|null` | opsClock time the last `/api/turn` response arrived. |
 | `stateSentAt` | `number\|null` | When the in-flight `/api/session/state` went out; at most one in flight. |
 | `admittedTurnId` | `string\|null` | The turn whose reply is admitted (R3.8). |
@@ -86,6 +89,19 @@ Import rules hold: `intents/*` in core are pure and import nothing from the serv
 | `latency` | `{current: LatencyRow\|null, rows: LatencyRow[] (≤ 50)}` | Latency_Clock. |
 
 `TimerName` gains `judge`, `poll` and `swap`. `VoicePhase` gains `JUDGING`, `SPECULATING` and, in wave B, `SWAPPING` (local names; see question 86).
+
+**Wait limits** (R7.9), named constants in `voice/machine.ts`, all counted on the browser opsClock:
+
+| Constant | Value | From | Then |
+|---|---|---|---|
+| `JUDGE_LIMIT_MS` (= `APP_JUDGE_SETTINGS.deadlineMs`) | 1,200 | t0 | cancel judge and spec; slow path |
+| `HELD_TRANSCRIPT_LIMIT_MS` | 2,500 | t0 | post `missing`; the server answers `recoveryOnly`; the Neutral_Line plays |
+| `ADMITTED_TRANSCRIPT_LIMIT_MS` | 5,000 | t0 | post `missing`; the admitted reply is untouched |
+| `TURN_RESPONSE_LIMIT_MS` | 5,000 | the post | RECOVERY with nothing to play, as a failed request does today |
+| `LATE_TURN_MS` | 2,500 | t0 | not a cut-off: a Permit arriving later marks the LatencyRow `late` |
+| `MISSING_WINDOW_MS` | 10,000 | the `missing` post | the turn leaves `missing`; a later transcript is dropped |
+
+The Voice_Client's `TURN_TIMEOUT_MS` drops from 10,000 to 5,000, and its transient retries stop when that time is used up, so the request's own timeout and the machine's `permit` timer end together.
 
 ### New and changed events and commands
 
@@ -101,7 +117,7 @@ Times are browser opsClock milliseconds. `t0` is the turn's Commit (`turn.tEnd`)
 
 | State | Event | Guard | Next state | Commands |
 |---|---|---|---|---|
-| LISTENING, WAIT_ITEM, HELD | `committed` | phase admits a commit (as today) | WAIT_ITEM | add item, `tEnd=now`; record `latency.commit=now`, `lastLoud`; arm `item` t0+600, `transcript` t0+1,500 |
+| LISTENING, WAIT_ITEM, HELD | `committed` | phase admits a commit (as today) | WAIT_ITEM | add item, `tEnd=now`; record `latency.commit=now`, `lastLoud`; arm `item` t0+600, `transcript` t0+2,500 |
 | WAIT_ITEM | `item.added` | all items have `commitSeq`; `noteWaiting` false; `judgeCreate` accepts; a Deck is held | SPECULATING | `send(judgeCreate(APP_JUDGE_SETTINGS))`; `send(specCreate)`; `hashPayload(spec)`; mute; arm `judge` t0+1,200; disarm `item`; record `judgeSent` |
 | WAIT_ITEM | `item.added` | as above but `noteWaiting` true | JUDGING | `send(judge)` only; arm `judge` t0+1,200 |
 | WAIT_ITEM | `item.added` | `judgeCreate` throws (more than 8 fragments or 4 safe turns) | HELD | nothing sent; the slow path decides (R2.7) |
@@ -111,28 +127,29 @@ Times are browser opsClock milliseconds. `t0` is the turn's Commit (`turn.tEnd`)
 | SPECULATING | `function_call_arguments.done` | the spec response | same | `spec.heldCall=call`; no `/api/tool` (R6.3) |
 | SPECULATING | judge `response.done` | `parseJudgeDone` valid `O`; `now < t0+1,200`; `fastOProblem` is null; `spec.hash` known | SPECULATING (admitting) | build the `fastO` Permit; `verifyPermit(permit, replyPayload(st))` |
 | SPECULATING | judge `response.done` | valid `O` but `spec.hash` not yet known | same | keep the verdict; act on `specHashed` |
-| SPECULATING | `permitChecked` | the `fastO` Permit; hash equal; no problem | SPEAKING if `spec.mutedStarted` is false and audio then starts; see next rows | `admittedTurnId=turn`; clear `unadmitted` to the turn; `receipt admitted (fastO)`; if `spec.heldCall` then `/api/tool` and TOOL_WAIT |
+| SPECULATING | `permitChecked` | the `fastO` Permit; hash equal; no problem | SPEAKING if `spec.mutedStarted` is false and audio then starts; see next rows | `admittedTurnId=turn`; clear `unadmitted` to the turn; `receipt admitted (fastO)`; re-arm `transcript` t0+5,000; if `spec.heldCall` then `/api/tool` and TOOL_WAIT |
 | SPECULATING | (admitted) | `spec.mutedStarted` false | waits for audio | on spec `output_audio_buffer.started`: `unmuteOutput`, SPEAKING, `receipt playbackStarted`, `latency.audible=now`, path `fastO` |
 | SPECULATING | (admitted) | `spec.mutedStarted` true | HELD with `active` | cancel spec; clear; `send(replyCreate(fastO))`; on its started: unmute, SPEAKING, path `regenerated` (R3.2) |
-| SPECULATING | judge `response.done` | valid `O` and `fastOProblem` not null | HELD | cancel spec; clear (R3.6) |
+| SPECULATING | judge `response.done` | valid `O` and `fastOProblem` not null | HELD | cancel spec; clear; `latency.refused` = the problem (R3.6, R18.6) |
 | SPECULATING, JUDGING | judge `response.done` | `H`, `U` or invalid | HELD | cancel spec; clear; drop `heldCall`; `judge.verdict` kept for the post (R3.3) |
 | SPECULATING, JUDGING | judge `error` | `event_id` is this judge's | HELD | as `U` |
 | SPECULATING | spec `error` | `event_id` is this spec's | same | `spec=null`; a later valid `O` creates the reply fresh under `fastO` (the sequential fallback) |
 | SPECULATING, JUDGING | `timer judge` | no verdict | HELD | cancel judge and spec; clear (R3.5) |
-| SPECULATING, JUDGING, HELD | all transcripts in | — | same | `postTurn(final)` with `judge` = verdict or `timeout` (R3.9); drop `ack`; add to `outstanding` (deadline t0+2,500); arm `permit` t0+2,500 |
+| SPECULATING, JUDGING, HELD | all transcripts in | — | same | `postTurn(final)` with `judge` = verdict or `timeout` (R3.9); drop `ack`; add to `outstanding`; arm `permit` post+5,000 |
 | SPECULATING | `turnOk` | `ordinary` + `slowOrdinary`, no notes, hash equals `spec.hash` | as for a checked `fastO`, kind `slowOrdinary` | cancel judge; admit the spec response (unmute at its start, or regenerate if `mutedStarted`) |
 | SPECULATING | `turnOk` | `ready` + `postCommitControl` | HELD | cancel judge and spec; clear; `requestVerify` (control reply) |
 | HELD | judge `response.done` | — | HELD | ignored (R3.4) |
-| HELD | `turnOk` | `ordinary` + `slowOrdinary` | HELD then SPEAKING | `requestVerify`; reply with Head and plain notes (false hold or judge timeout) |
-| HELD | `turnOk` | `ready` + `postCommitControl` | HELD then SPEAKING | `requestVerify`; `replyCreate` with `tools:[]`; an `ack` note is spoken verbatim (R12.4) |
-| HELD | `turnOk` | `hold` + `recoveryOnly` | RECOVERY | play the Neutral_Line |
+| HELD | `turnOk` | `ordinary` + `slowOrdinary` | HELD then SPEAKING | `requestVerify`; reply with Head and plain notes (false hold or judge timeout); `late` if now > t0+2,500 |
+| HELD | `turnOk` | `ready` + `postCommitControl` | HELD then SPEAKING | `requestVerify`; `replyCreate` with tools by scope (below); an `ack` note is spoken verbatim (R12.4, R12.6, R12.7); `late` if now > t0+2,500 |
+| HELD | `turnOk` | `hold` or `clarify` + `recoveryOnly` | RECOVERY | play the Neutral_Line |
 | HELD | `turnOk` | `blocked` (wave B) | SWAPPING | see SWAPPING |
-| HELD | `timer permit` | no reply admitted | RECOVERY | nothing plays until a `recoveryOnly` Permit arrives (R7.5) |
-| SPEAKING, TOOL_WAIT | `turnOk` | turn is `admittedTurnId`; status `ready`, `blocked` or `clarify` | HELD (or SWAPPING) | mute first; cancel active; clear; then as the HELD row for that status (R11.6) |
+| HELD | `timer permit` | no reply admitted (post + 5,000) | RECOVERY | nothing plays; a `turnOk` after this only adopts its Deck (R7.5) |
+| SPEAKING, TOOL_WAIT | `turnOk` | turn is `admittedTurnId`; status `ready`, `blocked` or `clarify` | HELD, RECOVERY or SWAPPING | mute first; cancel active; clear; then as the HELD row for that status (R11.6, R10.2) |
 | SPEAKING, TOOL_WAIT | `turnOk` | turn is `admittedTurnId`; status `ordinary` or `hold` | same | permit ignored (R3.8, R11.4, R11.7); adopt Deck; leave `outstanding` |
 | any in call | `turnOk` | turn is not the current turn | same | adopt Deck (KV05); leave `outstanding`; `lastTurnResponseAt=now`; permit ignored |
-| SPEAKING, SPECULATING | `timer transcript` | a reply of this turn is admitted under `fastO` | same | `postTurn(missing)`; the reply plays on (R7.6) |
-| SPECULATING, JUDGING, HELD | `timer transcript` | nothing admitted | RECOVERY | `postTurn(missing)`; cancel judge and spec; clear (R7.4) |
+| SPEAKING, SPECULATING | `timer transcript` | a reply of this turn is admitted (t0+5,000) | same | `postTurn(missing)`; add to `missing`; the reply plays on (R7.6) |
+| SPECULATING, JUDGING, HELD | `timer transcript` | nothing admitted (t0+2,500) | HELD | `postTurn(missing)`; add to `missing`; cancel judge and spec; clear; the `recoveryOnly` answer plays the Neutral_Line (R7.4) |
+| any in call | `transcription.completed` | its item belongs to a `missing` entry, and every item of the entry now has a transcript | same | send the Superseding_Post: the entry's body with `transcriptState:"final"`, the joined transcript, items `final:true`, a new `requestId`, `supersedesRequestId` = the entry's `requestId`, the current revisions; remove the entry; no reply follows (R7.8) |
 | any in call | `speech_started` | busy, or judge/spec in flight | LISTENING | mute; cancel judge, spec and active; clear; drop pending Permits (KV04, R2.6); an unposted turn is kept, so the next commit judges all of it |
 | any in call | `stateOk` | `sentAt > lastTurnResponseAt` | same | adopt Deck; `ack` = response ack (may be null) |
 | any in call | `stateOk` | `sentAt <= lastTurnResponseAt` | same | adopt Deck; `ack=null` (R4.4) |
@@ -155,13 +172,16 @@ When the spec response is admitted under a server Permit or `fastO`, the machine
 
 ### The FastO_Rule
 
-`fastOProblem(st, now)` returns the first failing condition, or null (R4.1, KV13):
+`fastOProblem(st, now)` returns the first failing condition by name, or null (R4.1, KV13, R18.6). The names are the LatencyRow's `refused` values:
 
-1. `judge.valid && judge.verdict === "O"` for `st.turn` and the session generation, and `now < judge.sentAt`'s `t0 + 1,200`.
-2. `st.ack !== null`, its four revisions equal the Deck's, `ack.stamp.generation <= session.generation`, and `now - issuedOpsAt < 2,500`.
-3. `st.outstanding` is empty.
-4. The ack came from a state request sent after `lastTurnResponseAt` (enforced when the ack is adopted).
-5. `st.deck.noteWaiting` is false.
+1. `verdict`: not `judge.valid && judge.verdict === "O"` for `st.turn` and the session generation, or `now ≥ t0 + 1,200`.
+2. `ack`: `st.ack` is null, its four revisions differ from the Deck's, `ack.stamp.generation > session.generation`, or `now - issuedOpsAt ≥ 2,500`.
+3. `outstanding`: `st.outstanding` is not empty.
+4. `staleAck`: the held ack came from a state request sent at or before `lastTurnResponseAt`. (Such an ack is dropped when it is adopted, so this shows as `staleAck` only when the last ack the machine saw was refused for this reason; the machine keeps `ackDroppedStale: boolean` to tell it from `ack`.)
+5. `noteWaiting`: `st.deck.noteWaiting` is true.
+6. `hash`: the `verifyPermit` answer differs from `spec.hash` (set on `permitChecked`, not by `fastOProblem`).
+
+`ack:null` from the server (S2 among the last four, a Parse_Gap or `unknown`) shows as `ack`; the Debug_Panel adds "fastO off: parse gap" from the server's Session view when a gap exists (R13.5).
 
 `issueFastO(st, now, permitId)` returns `{permitId, stamp: localStamp(st), kind:"fastO", scope:"reply", approvedPayloadHash: spec.hash, noteIds:[], momentIds:[], expiresAt: now+10,000}` (R4.6). `permitId` is the `freshId` of the judge's `response.done` event (a 43-character random ID from `randomId`). The checked hash is the hash of `replyPayload(st)` at the verdict, so a Deck or turn change between the commit and the verdict fails the check with `hash`.
 
@@ -170,15 +190,15 @@ The S2-among-the-last-four rule, the Parse_Gap rule and the `unknown` rule reach
 ### Replies the code words
 
 - **`ack` notes.** A Permit whose notes include a `W` of kind `ack` is created as `{conversation:"none", instructions:'Say exactly this and nothing else: "<text>"', input:[], tools:[]}`, as `recoveryOnly` is today. Its `noteIds` name the note, and the payload hash covers it (R12.4).
-- **`postCommitControl` replies** are created with `tools:[]` in this spec (question 87). The crisis care reply needs nothing else: the Head's persona section already holds the crisis instruction (`packages/core/src/head.ts`), and the reply hears the turn's audio.
+- **Tools by scope** (R12.6, R12.7, question 87). The browser can't see the parse, so the Permit's `scope` tells it: `replyCreate` installs `tools:[]` when the Permit's kind is `recoveryOnly` or its `scope` is `ack`, and the speech tools (`recall`, `tool_choice:"auto"`) otherwise. The Server_Rule gives scope `ack` to the crisis care reply and to every Fixed_Line, and scope `reply` to every other control reply (question 88). The crisis care reply needs nothing else: the Head's persona section already holds the crisis instruction (`packages/core/src/head.ts`), and the reply hears the turn's audio.
 
 ### The Latency_Clock
 
-`LatencyRow = {turnId, lastLoud, commit, judgeSent, verdict, verdictAt, firstMuted, audible, path, commitDelayMs, endToAudibleMs}`, all browser opsClock milliseconds or null. `path` is `fastO` (admitted, unmuted at the spec's own start), `regenerated` (admitted after muted audio began, or the sequential fallback), `slow` (`slowOrdinary` or `postCommitControl` from the server) or `recovery`. `commitDelayMs = commit - lastLoud`; `endToAudibleMs = audible - lastLoud` (R18.1, R18.3).
+`LatencyRow = {turnId, lastLoud, commit, judgeSent, verdict, verdictAt, firstMuted, permitAt, audible, path, refused, late, commitDelayMs, endToAudibleMs}`, times in browser opsClock milliseconds or null. `path` is `fastO` (admitted, unmuted at the spec's own start), `regenerated` (admitted after muted audio began, or the sequential fallback), `slow` (`slowOrdinary` or `postCommitControl` from the server) or `recovery`. `refused` is the `fastOProblem` name of a turn that had a verdict but didn't take `fastO`, null otherwise. `late` is true when `permitAt > commit + LATE_TURN_MS` (R18.7). `commitDelayMs = commit - lastLoud`; `endToAudibleMs = audible - lastLoud` (R18.1, R18.3).
 
 - **Last loud frame.** The Voice_Client samples the mic analyser every 20 ms while in a call (`LATENCY_SAMPLE_MS = 20`) and keeps the last opsClock time whose unsmoothed `rawLevel` was at least `LOUD_LEVEL = 0.05`. That is the spike's `SPEECH_RMS_THRESHOLD` (400 of 32,767, an RMS of 0.0122) times the Level_Meter's `LEVEL_GAIN` of 4. Three differences make the numbers comparable only roughly: the analyser reads 8-bit samples (one step is 0.0078, so the threshold sits at about 1.6 steps); the browser mic has echo cancellation and noise suppression on, and the spike's WAVs did not; and the 512-sample window is read every 20 ms, so the last loud frame is late by up to 20 ms (R18.5).
 - **Audible start** is `max(unmute time, output_audio_buffer.started of the admitted response)`. The spike measured the first `response.output_audio.delta` over its WebSocket; WebRTC gives no deltas, and `started` marks the start of playout to the peer, so the app's number includes the WebRTC jitter buffer. Read the app's p50 against the 1.3 s target, not against the spike's 1,317 ms.
-- `latency.ts` holds `percentile(values, p)` (nearest rank) and `summarize(rows)` → `{byPath: {path, n, p50, p95}[]}`. The Debug_Panel shows the last row and the summary (R18.2). No number goes on the wire (R18.4).
+- `latency.ts` holds `percentile(values, p)` (nearest rank) and `summarize(rows)` → `{byPath: {path, n, p50, p95}[], refused: {reason, n}[], late: n}`. The Debug_Panel shows the last row and the summary (R18.2, R18.6, R18.7). No number goes on the wire (R18.4).
 
 ### VAD
 
@@ -246,16 +266,16 @@ sequenceDiagram
   B->>R: judge + speculative at t0
   R-->>B: judge "H"
   B->>R: cancel spec, clear
-  B->>B: HELD, arm permit t0+2,500
+  B->>B: HELD, arm permit (post + 5,000)
   R-->>B: transcript
   B->>S: /api/turn (judge "H")
   par
-    S->>S: regex: RX1 holds
+    S->>S: regex: RX1 matches (recorded; decides only if the parse fails)
   and
     S->>D: TurnIntents (350 ms)
     D-->>S: forget 0.94
   end
-  S->>S: serverRule: postCommitControl + ack note "I can't forget things yet."
+  S->>S: serverRule: postCommitControl, scope ack, note "I can't forget things yet."
   S-->>B: status ready, permit, notes [ack]
   B->>B: verify hash
   B->>R: response.create "Say exactly this…" tools []
@@ -292,11 +312,32 @@ sequenceDiagram
   B->>B: fastO, SPEAKING
   B->>S: /api/turn
   S->>S: slow parse: company 0.81 (wave A route)
-  S-->>B: status ready, postCommitControl
+  S-->>B: status ready, postCommitControl, scope reply
   B->>B: mute first
   B->>R: response.cancel (active), output_audio_buffer.clear
   B->>B: HELD, verify new permit
-  B->>R: response.create (tools [], no S1+ note)
+  B->>R: response.create (speech tools, no S1+ note)
+```
+
+A parse that **fails** with a Regex_Match answers `clarify` with `recoveryOnly` and cuts the same way, then plays the Neutral_Line. A parse that fails with no Regex_Match answers `hold` with `recoveryOnly`, and a playing `fastO` reply finishes (R10.2, R11.7).
+
+### A transcript after the turn was posted `missing`
+
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant R as Realtime
+  participant S as Server
+  Note over B: t0+2,500, no transcript, nothing admitted
+  B->>S: /api/turn (missing, requestId r1)
+  S->>S: Turn transcriptMissing; parseLease (window 10 s); Effective_Audience unknown
+  S-->>B: hold, recoveryOnly
+  B->>R: Neutral_Line
+  R-->>B: transcription.completed at t0+3,100
+  B->>S: /api/turn (final, same turnId and clientSeq, supersedesRequestId r1)
+  S->>S: slow parse ordinary: Turn committed, Evidence, Extract_Job, lease cleared, watermark moves
+  S-->>B: ordinary, no permit
+  B->>B: nothing spoken; next state poll gets an ack
 ```
 
 ### The company swap (wave B)
@@ -333,44 +374,47 @@ RuleInput = {
   source: "asr" | "typed" | "pasted" | "tool",
   transcript: "final" | "missing" | "failed",
   judge: "O" | "H" | "U" | "timeout" | "error" | "typed",
-  parse: {kind:"ordinary"} | {kind:"hit", chosen: ControlClass | null, candidates: ControlClass[], uncertain: boolean, regex: boolean}
+  parse: {kind:"ordinary"} | {kind:"hit", chosen: ControlClass | null, candidates: ControlClass[], uncertain: boolean}
        | {kind:"failed", why: "deadline" | "transport" | "invalid" | "oversize"} | {kind:"none"},
+  regexMatch: boolean,         // a Regex_Table hit; decides only when the parse failed
   audience: Au,                // Effective_Audience
   narrowedHere: boolean,       // this Session narrowed during itself (wave B)
   callLive: boolean,           // the Session has a registered call
-  late: boolean,               // server opsNow > last commit + 2,300
   parseGap: boolean,
   noteSens: "none" | "S0" | "S1+",
   wordsPer2s: boolean, allFinal: boolean,
   toolParseCommitted: boolean,
   wave: "A" | "B",
 }
-RuleOutcome = {kind:"permit", permit: PermitKind, notes: "none" | "S0" | "all", line: FixedLine | null, swap: "none" | "now" | "afterReply"}
+RuleOutcome = {kind:"permit", permit: PermitKind, scope: "reply" | "ack", notes: "none" | "S0" | "all", line: FixedLine | null,
+               swap: "none" | "now" | "afterReply", cut: boolean}
             | {kind:"hold", reasons: ReasonCode[]}
 ```
+
+No input compares the server clock with a browser timestamp (R8.7): the old `late` input is gone. `cut` is true when the outcome must stop a playing reply; the route turns it into the status.
 
 Rows are checked in order; the first that matches decides. `chosen` is `choose(candidates)` from R10.7; `crisis ∈ candidates` is "crisis".
 
 | # | When | Outcome |
 |---|---|---|
 | 1 | `narrowedHere` | hold `["audience"]`; the route answers `blocked` (R14.5) |
-| 2 | `source=pasted` | `postCommitControl`, notes S0 (a pasted turn with an S1+ note holds `["sensitivity"]`, as today) |
-| 3 | `source=tool` | `toolParseCommitted` ? `slowOrdinary`, notes all : hold `["missingDependency"]` (R8.11) |
-| 4 | `transcript` missing or failed | `recoveryOnly`, notes none (R8.7) |
-| 5 | `parse.kind=failed` | `recoveryOnly`, notes none, reasons `["DEPENDENCY"]` (deadline, transport), `["invalidInput"]` or `["oversize"]` |
-| 6 | hit, crisis, wave B, `company` or `quiet` also a candidate, `callLive` | `postCommitControl`, notes none, swap `afterReply` (R14.7) |
-| 7 | hit, crisis | `postCommitControl`, notes none (R12.1) |
-| 8 | hit, chosen `company` or `quiet`, wave B, `callLive` | `postCommitControl` withheld: hold `["audience"]` + swap `now`; the route answers `blocked` |
-| 9 | hit, chosen `company` or `quiet`, wave B, no call | `postCommitControl`, line COMPANY |
-| 10 | hit, chosen `alone`, wave B | `postCommitControl`, line ALONE |
-| 11 | hit, chosen `forget` | `postCommitControl`, line FORGET_NOT_YET (R12.3) |
-| 12 | any other hit (a class, `uncertainSpeaker`, regex alone) | `postCommitControl`, notes S0 (R12.2, R12.5) |
-| 13 | `late` and rows 6–12 gave a permit without swap | replaced by `recoveryOnly` (R7.5) |
-| 14 | ordinary | `slowOrdinary`; notes `all` only if `judge=O` (or `typed`), `wordsPer2s`, `allFinal`, no `parseGap`, `audience=private`; else S0 (R8.4, R8.5) |
+| 2 | `source=pasted` | `postCommitControl`, scope reply, notes S0 (a pasted turn with an S1+ note holds `["sensitivity"]`, as today) |
+| 3 | `source=tool` | `toolParseCommitted` ? `slowOrdinary`, notes `all` if `audience=private` else S0 : hold `["missingDependency"]` (R8.11, R12.7) |
+| 4 | `transcript` missing or failed | `recoveryOnly`, notes none, `cut:false` (R7.4, R8.7) |
+| 5a | `parse.kind=failed` and `regexMatch` | `recoveryOnly`, notes none, `cut:true`, reasons as 5b (R10.2) |
+| 5b | `parse.kind=failed` | `recoveryOnly`, notes none, `cut:false`, reasons `["DEPENDENCY"]` (deadline, transport), `["invalidInput"]` or `["oversize"]` (R11.7) |
+| 6 | hit, crisis, wave B, `company` or `quiet` also a candidate, `callLive` | `postCommitControl`, scope ack, notes none, swap `afterReply`, `cut:true` (R14.7) |
+| 7 | hit, crisis | `postCommitControl`, scope ack, notes none, `cut:true` (R12.1, R12.6) |
+| 8 | hit, chosen `company` or `quiet`, wave B, `callLive` | hold `["audience"]` + swap `now`; the route answers `blocked` |
+| 9 | hit, chosen `company` or `quiet`, wave B, no call | `postCommitControl`, scope ack, line COMPANY, `cut:true` |
+| 10 | hit, chosen `alone`, wave B | `postCommitControl`, scope ack, line ALONE, `cut:true` |
+| 11 | hit, chosen `forget` | `postCommitControl`, scope ack, line FORGET_NOT_YET, `cut:true` (R12.3) |
+| 12 | any other hit (a class, or `uncertainSpeaker` alone) | `postCommitControl`, scope reply, notes S0, `cut:true` (R12.2, R12.5, R12.7) |
+| 13 | ordinary | `slowOrdinary`, scope reply; notes `all` only if `judge=O` (or `typed`), `wordsPer2s`, `allFinal`, no `parseGap`, `audience=private`; else S0; `cut:false` (R8.4, R8.5) |
 
-Row 13 is applied after rows 6–12 and before row 14 for ordinary turns too: an ordinary turn completed late gets `recoveryOnly`. A swap always applies its policy effects, late or not.
+A Regex_Match never changes rows 6 to 13 (R10.2). It is logged with the Turn as `turn.regex {turnId, ids}` and returned to the Harness (question 90).
 
-The outcome is the same function for voice and typed U turns (R8.8); `judge` is `typed` for typed lines, which row 14 treats as `O` (C§6: typed text substitutes audio/judge). `devPermitKind` is deleted; its rows map to rows 2, 3, 4 and 14.
+The outcome is the same function for voice and typed U turns (R8.8); `judge` is `typed` for typed lines, which row 13 treats as `O` (C§6: typed text substitutes audio/judge). `devPermitKind` is deleted; its rows map to rows 2, 3, 4 and 13.
 
 ### The Admission_Seam
 
@@ -396,27 +440,41 @@ Both functions are in `admission/seam.ts`, the only module that writes `decision
 
 | Outcome | `status` | `permit` | `notes` |
 |---|---|---|---|
-| row 14 | `ordinary` | `slowOrdinary` | per row |
+| row 13 | `ordinary` | `slowOrdinary` | per row |
 | rows 2, 7, 9–12 | `ready` | `postCommitControl` | ack note when a Fixed_Line |
-| rows 4, 5, 13 | `hold` | `recoveryOnly` | none |
+| rows 4, 5b | `hold` | `recoveryOnly` | none |
+| row 5a | `clarify` | `recoveryOnly` | none |
 | row 6 | `blocked` | `postCommitControl` (care) | none |
 | rows 1, 8 | `blocked` | null | none |
 | other holds | `hold`, `retryAfterMs:0` | null | none |
 | clientSeq ahead | `hold`, `retryAfterMs:250` | null | none (no writes, as today) |
+| Superseding_Post | `ordinary` (or `ready` for a late hit, with no permit) | null | none |
 
 4. After the response: schedule the Parse_Repair (if row 5 with `deadline` or `transport`), the hangup Job for a swap, and extraction as today.
+
+### The Superseding_Post
+
+`checkTurnRequest` accepts `supersedesRequestId` only with `source:"asr"`, `transcriptState:"final"` and items. The route takes this branch before the clientSeq compare-and-set (R11.9, question 89):
+
+1. Read the superseded request entry `H("req", uid, "turn", supersedesRequestId)`. It must be `complete`, and its stored response's `stamp.turnId` must equal this request's `turnId`; else PARSE.
+2. Run `runSlowParse` on the transcript, as for any turn.
+3. One transaction: the Turn `turnId` must exist with `state:"transcriptMissing"`, `seq = clientSeq` and the same `itemIds`; else `stale` with no writes (a repeat after success is a replay of this request's own entry). Write the Evidence and its Extract_Job as a first post would; update the Turn to `state:"committed"`, `text`, `evidenceId`, `final:true`, `parseState`, `uncertainSpeaker`, `rootSlices`. If the Session's `parseLease.clientSeq` is this turn's, clear it. On an ordinary parse, advance `committedParseSeq` over every contiguous committed user Turn; on a hit, the late-hit effects of the Parse_Repair below; on a failed parse, `audience:"unknown"`. No Permit and no `decision` are written, since nothing is admitted.
+4. Revisions are checked as for any turn: a stale stamp answers `stale` and the browser resends once with the new revisions.
+
+The Evidence is new, not an edit (KC02): the first post wrote none, because its transcript was empty.
 
 **Audience effects in the transaction.**
 
 | Turn | Session change |
 |---|---|
-| transcript missing or failed | `audience:"unknown"` (R15.7) |
-| parse failed, deadline or transport | `parseLease = {clientSeq, token, until: ops + 2,500}`; the Effective_Audience is `unknown` while it holds (R15.2, R15.3) |
+| transcript `missing` | `parseLease = {clientSeq, token, until: ops + 10,000}` (the Superseding_Post window); the Effective_Audience is `unknown` while it holds (R15.7). If a lease is already held for another turn, `audience:"unknown"` instead |
+| transcription `failed` | `audience:"unknown"`, no repair (R15.7) |
+| parse failed, deadline or transport | `parseLease = {clientSeq, token, until: ops + 2,500}`; the Effective_Audience is `unknown` while it holds (R15.2, R15.3). If a lease is already held for another turn, `audience:"unknown"` and no repair |
 | parse failed, invalid or oversize | `audience:"unknown"`, no repair |
 | wave B company or quiet hit | `audience:"company"`, `core/epoch.policyRev + 1`, `waitDeadline = ops + 10,000` (row 8) or `ops + 60,000` (row 6); row 8 also moves the Session to `closing` and writes its hangup Job, as `/api/session/close` does |
 | wave B alone hit | `audience:"private"`, `policyRev + 1`, a new full Head (below); `waitDeadline` unchanged |
 
-`Effective_Audience(s, ops) = s.parseLease !== null && msFromTs(s.parseLease.until) > ops ? "unknown" : s.audience`. An expired lease whose repair never committed is treated as a failed repair by the next `/api/turn` or state request that sees it: it writes `audience:"unknown"` and clears the lease.
+`Effective_Audience(s, ops) = s.parseLease !== null && msFromTs(s.parseLease.until) > ops ? "unknown" : s.audience`. An expired lease whose repair or Superseding_Post never committed is treated as a failed repair by the next `/api/turn` or state request that sees it: it writes `audience:"unknown"` and clears the lease.
 
 ### The slow parse
 
@@ -434,13 +492,13 @@ Both functions are in `admission/seam.ts`, the only module that writes `decision
 
 **Response** (`intents/parse.ts`, checked against `Decision`): `answers.length` must equal `questions.length`; answer *i* must have `type:"predicate"`, `name === questions[i].name` and a finite `probability` in [0, 1]. A refusal, a wrong type, a missing or extra answer, or a bad probability is `failed: invalid` (R10.6).
 
-**Normalize and choose.** `p` holds the 14 named probabilities. Candidates are the Control_Classes with `p ≥ CANDIDATE_P = 0.20`. `choose` takes the first candidate in `PRIORITY = [forget, company, quiet, crisis, hardRule, correct, transition, why, food, action, answer, rushed]` and retains all. `isOrdinary = no candidate && p.uncertainSpeaker < 0.10 && !regexHold`. A regex hold, or `uncertainSpeaker ≥ 0.10`, with no candidate is a hit with `chosen:null` (R10.2, R10.7).
+**Normalize and choose.** `p` holds the 14 named probabilities. Candidates are the Control_Classes with `p ≥ CANDIDATE_P = 0.20`. `choose` takes the first candidate in `PRIORITY = [forget, company, quiet, crisis, hardRule, correct, transition, why, food, action, answer, rushed]` and retains all. `isOrdinary = no candidate && p.uncertainSpeaker < 0.10` (C§5 "Ordinary=controls<.20,speaker<.10"); a Regex_Match does not enter it. `uncertainSpeaker ≥ 0.10` with no candidate is a hit with `chosen:null` (R10.2, R10.7).
 
 **The port.** `DecisionsPort.decide(body, deadlineMs): Promise<{ok:true, decision: unknown, ms} | {ok:false, why:"deadline"|"transport", ms}>`. The live adapter posts through the OpenAIPort's new `decisions.create` endpoint and races it with a `Timers` deadline on the opsClock (the Decisions API has no timeout or effort parameter, so the deadline is the caller's). The fake records requests and answers from a script, like the existing fake. `npm test` uses only the fake (R11.8).
 
 ### The Regex_Table
 
-Applied to the transcript after NFKC, lower-casing, `’` → `'` and whitespace collapse. Every pattern only holds; the cue family is recorded for the Harness and the debug log, never used as a route (R10.2, R10.3).
+Applied to the transcript after NFKC, lower-casing, `’` → `'` and whitespace collapse. A match never selects a route and never overrules a parse that succeeded; it is logged with the Turn and returned to the Harness, so the summary can show what the regex caught that the parse missed. It decides only when the parse failed: a failed parse with a match answers `clarify` with `recoveryOnly` and cuts a playing reply (row 5a) (R10.2, R10.3).
 
 | ID | Cue family | Pattern |
 |---|---|---|
@@ -452,7 +510,7 @@ Applied to the transcript after NFKC, lower-casing, `’` → `'` and whitespace
 | RX6 | correction | `\b(that'?s (wrong|not right)|i meant|not what i said)\b` |
 | RX7 | life change | `\b(passed away|died|diagnosed|broke up|divorc\w*|laid off|lost my job)\b` |
 
-Notes for review. `\bforget\b` does not match "forgot", "forgets" or "forgetting", and `\bdelete\b` does not match "deleted", so the near-miss probes o-04, o-16, o-19 and o-24 pass. RX4 holds o-10 ("I'm allergic to Mondays"): a known regex false hold, kept because an allergy miss is the costlier error; the Harness counts it. "Don't forget to…" holds through RX1, as the judge literal routes it H.
+Notes for review. `\bforget\b` does not match "forgot", "forgets" or "forgetting", and `\bdelete\b` does not match "deleted", so the near-miss probes o-04, o-16, o-19 and o-24 don't match. RX3 matches "I walked in the park", RX7 "my grandmother died ten years ago" and RX4 "I'm allergic to Mondays" (o-10); with a successful parse these change nothing, and with a failed parse they cost a "Sorry, say that again?" instead of a plain reply. "Don't forget to…" matches RX1.
 
 **The close-copy test** (R10.3, and R16.2 for `judge_v2`): render each pattern source and each line of `lines.json` the same way (lower case, every run of non-letters → one space) and assert that no 4-word window of any line, nor any whole line shorter than 4 words, appears in the rendered table. The table above passes this by inspection; the test proves it.
 
@@ -478,7 +536,7 @@ An `admitted` receipt with `permitKind:"fastO"` and an accepted Stamp calls `rec
 
 ### `/api/tool`
 
-The parse wait is unchanged (100 ms polls, 1.5 s). The Permit comes from `admit` with `source:"tool"`, row 3.
+The parse wait is unchanged (100 ms polls, 1.5 s). The Permit comes from `admit` with `source:"tool"`, row 3: notes limited to S0 while the Effective_Audience isn't `private`.
 
 ### Wave B: company, quiet, the swap and alone
 
@@ -494,8 +552,8 @@ The parse wait is unchanged (100 ms polls, 1.5 s). The Permit comes from `admit`
 - **Permit kind.** For a decision whose ID equals `H("fastO", parentId, turnId)` of its turn Ref: `fastO`. Otherwise, read the cited `ledger` Ref (the request entry) and take `response.permit.kind`; a hold shows "hold". The issuer column becomes "seam" or "browser (fastO)" (R13.4).
 - **False hold.** A `slowOrdinary` decision on a voice Turn whose stored `judge` is not `O`. "Class: not recorded" on control decisions until contracts v3 (R13.3).
 - **Grouping.** Decisions are grouped by their turn Ref, so a Turn with `fastO` and `slowOrdinary` decisions shows as one reply, with the `fastO` one marked as the one that played.
-- **Audience and parses.** The Session's stored audience, "unknown (repair pending)" while a `parseLease` holds, and the count of the Session's user Turns with `parseState:"failed"` (R13.5).
-- **Latency.** The last LatencyRow and the per-path p50 and p95 from the Voice_Client's machine state (R18.2).
+- **Audience and parses.** The Session's stored audience, "unknown (repair pending)" while a `parseLease` holds, and the count of the Session's user Turns with `parseState:"failed"`. While `committedParseSeq < lastClientSeq`, "fastO off: parse gap" with the user Turn at `seq = committedParseSeq + 1` (R13.5).
+- **Latency.** The last LatencyRow with its path and `refused` reason, the per-path p50 and p95, the count of each `refused` reason and the count of late turns, from the Voice_Client's machine state (R18.2, R18.6, R18.7).
 
 ## `judge_v2` and the Harness
 
@@ -515,7 +573,7 @@ The parse wait is unchanged (100 ms polls, 1.5 s). The Permit comes from `admit`
 | Firestore reads from polling | ≤ 900 | |
 | Session writes from polling | ≈ 2 | only when `expiresAt` moves 30 s or the status changes |
 | `/api/turn` | one per user turn (about 6 to 10) | reads as today, plus 1 (`fastO` decision lookup) |
-| Decisions calls | one per final voice transcript and typed U line, plus at most one repair | 0 for pasted lines and missing transcripts |
+| Decisions calls | one per final voice transcript and typed U line, plus at most one repair or one Superseding_Post per failed turn | 0 for pasted lines and missing transcripts |
 | `/api/receipt` | about 4 per `fastO` turn | `admitted` is new |
 
 That is about 54,000 Firestore reads per call-hour from polling, a few cents at list price. The reason to cap the Session writes is the soft limit of one sustained write per second on one document, which the turn and receipt routes also write.
@@ -535,7 +593,7 @@ Any one of these is the stop of R23.1: the build reports it and does not work ar
 
 ## Correctness Properties
 
-All machine properties run in `packages/core` with fast-check, in new files under `packages/core/src/voice/` (R1.8). The shared generator `arbCall` builds a live call (Session, Deck, fresh ack) and then a sequence of up to 60 steps drawn from: commits (1 to 3 per turn), `item.added` (possibly missing, repeated or out of order), transcripts (possibly missing or failed), judge `response.created`/`response.done` with `O`, `H`, `U`, invalid output or never, `error` events, speculative `response.created`, `output_audio_buffer.started`/`stopped` for any recorded or unknown response ID, function calls, `speech_started`, `turnOk` with each status row of the mapping table (with valid or wrong hashes and stamps), `stateOk` with fresh, stale, null or mismatched acks and arbitrary `sentAt`, higher Decks, `connectionLost`, events of another generation, and `timer` events at, before and after their deadlines. Time advances by 0 to 1,500 ms per step. The Voice_Client's `verifyPermit`/`hashPayload` answers are generated as matching or not. Each property runs at least 1,000 cases. A trace records, per step, the phase, `outputMuted`, the commands and the active/spec response IDs.
+All machine properties run in `packages/core` with fast-check. Each property's statement goes in its own new `*.property.test.ts` file under `packages/core/src/voice/` (or `packages/core/src/intents/`, `packages/server/src/`), and those files hold only property statements (R1.8, R20.5). `arbCall`, the trace recorder, the *audible* helper and every other generator live in plain modules under `packages/core/src/voice/testing/` (`arb-call.ts`, `trace.ts`), `packages/core/src/intents/testing/` (`arb-intents.ts`, `arb-rule-input.ts`) and `packages/server/src/testing/` (`arb-turns.ts`), so a generator fix is an ordinary edit and the Property_Guard only protects what each property claims. The shared generator `arbCall` builds a live call (Session, Deck, fresh ack) and then a sequence of up to 60 steps drawn from: commits (1 to 3 per turn), `item.added` (possibly missing, repeated or out of order), transcripts (possibly missing or failed), judge `response.created`/`response.done` with `O`, `H`, `U`, invalid output or never, `error` events, speculative `response.created`, `output_audio_buffer.started`/`stopped` for any recorded or unknown response ID, function calls, `speech_started`, `turnOk` with each status row of the mapping table (with valid or wrong hashes and stamps), `stateOk` with fresh, stale, null or mismatched acks and arbitrary `sentAt`, higher Decks, `connectionLost`, events of another generation, late transcripts for turns posted `missing`, and `timer` events at, before and after their deadlines. Time advances by 0 to 2,500 ms per step. The Voice_Client's `verifyPermit`/`hashPayload` answers are generated as matching or not. Each property runs at least 1,000 cases. A trace records, per step, the phase, `outputMuted`, the commands and the active/spec response IDs.
 
 Let *audible(r, i)* mean: after step *i*, `outputMuted` is false and the response playing is *r* (the last `output_audio_buffer.started` for *r* with no later `stopped`, `cancel` or `clear`).
 
@@ -546,16 +604,18 @@ Let *audible(r, i)* mean: after step *i*, `outputMuted` is false and the respons
 5. **Stale events are inert.** Generator variant: insert, at any point, events whose metadata generation differs or whose response ID was cancelled. ∀ such event at step *i*: `phase(i) = phase(i-1)`, `outputMuted` does not go from true to false, and the only commands are `response.cancel` for that ID. Validates R7.1, R7.2, R15.7 (first-spoken-call), KV05.
 6. **Every wait ends.** ∀ reachable state *s* (the last state of a generated prefix), fire every armed timer at its deadline in deadline order, repeatedly, with no other events: within 20 firings and 70 s of opsClock the phase is `LISTENING`, `RECOVERY` or `CLOSED` (and `RECOVERY` reaches `LISTENING` or a retry state through its own timers). Validates R7.3, KV06.
 7. **`fastO` needs a fresh ack.** ∀ trace, ∀ `fastO` Permit issued at step *i*: `ack(i) ≠ null` ∧ its four revisions equal the Deck's ∧ `now(i) − issuedOpsAt < 2,500` ∧ the ack's `stateOk.sentAt > lastTurnResponseAt(i)` ∧ `outstanding(i) = ∅` ∧ the verdict is a valid `O` for the current turn ∧ `now(i) < t0 + 1,200`. Validates R4.1–R4.4, KV13.
-8. **The seam is total and closed.** Over the full product of `RuleInput` (every enum value, every boolean, candidate sets drawn from subsets of the 13 classes, both waves): `serverRule` returns exactly one outcome; a permit outcome has exactly one `PermitKind`; `notes = "all"` ⇒ `judge ∈ {O, typed}` ∧ `audience = private` ∧ ¬`parseGap`; `crisis ∈ candidates` ⇒ notes `none` and no Fixed_Line; `transcript ≠ final` ⇒ `recoveryOnly`. Generator: `fc.record` over the closed domains; plus an exhaustive enumeration test of the enum-only part. Validates R8.3–R8.12, R12.
-9. **Priority is stable.** ∀ probability vector `p ∈ [0,1]^14` and regex outcome: `choose` returns the first class of `PRIORITY` with `p ≥ 0.20`, or null; it retains exactly the classes with `p ≥ 0.20`; a regex hold with every class below 0.20 gives `chosen = null` (never a route); and `serverRule` with `crisis` retained gives the care outcome whatever `chosen` is. Generator: `fc.array(fc.double({min:0,max:1,noNaN:true}),{minLength:14,maxLength:14})` with boundary values 0.1999 and 0.20 weighted in. Validates R10.6, R10.7, R12.1.
+8. **The seam is total and closed.** Over the full product of `RuleInput` (every enum value, every boolean including `regexMatch`, candidate sets drawn from subsets of the 13 classes, both waves): `serverRule` returns exactly one outcome; a permit outcome has exactly one `PermitKind`; `notes = "all"` ⇒ `judge ∈ {O, typed}` ∧ `audience = private` ∧ ¬`parseGap`; `crisis ∈ candidates` ⇒ notes `none`, scope `ack` and no Fixed_Line; `transcript ≠ final` ⇒ `recoveryOnly` with `cut:false`; `parse.kind = failed` ⇒ `recoveryOnly` with `cut = regexMatch`; and for every input whose parse did not fail, flipping `regexMatch` leaves the outcome unchanged. Generator: `fc.record` over the closed domains; plus an exhaustive enumeration test of the enum-only part. Validates R8.3–R8.12, R10.2, R12.
+9. **Priority is stable.** ∀ probability vector `p ∈ [0,1]^14` and regex outcome: `choose` returns the first class of `PRIORITY` with `p ≥ 0.20`, or null; it retains exactly the classes with `p ≥ 0.20`; `isOrdinary` does not depend on the regex outcome; and `serverRule` with `crisis` retained gives the care outcome whatever `chosen` is. Generator: `fc.array(fc.double({min:0,max:1,noNaN:true}),{minLength:14,maxLength:14})` with boundary values 0.1999 and 0.20 weighted in. Validates R10.2, R10.6, R10.7, R12.1.
 10. **Narrowing needs a closed call** (wave B). Machine traces extended with `turnOk blocked` (with and without a care Permit), `openOk`, `connect` and `proactive`. Label each `connect` command a new call *c*. ∀ `turnOk blocked` at step *i* on call *c*: ∀ *j > i*, *audible(r, j)* ⇒ *r* was created on a call opened after *i*, or *r* is the care reply of the blocked turn. Server half: after a narrowing commit, every `/api/turn` on that Session gets row 1. Validates R14.1, R14.5, R14.7.
-11. **A repaired gap leaves no trace.** Server model on the Memory_Store with the fake Decisions_Port: generate a sequence of up to 8 typed or ASR turns and, for one of them, a first parse that fails by deadline or transport and a repair that commits an ordinary result. Run the same sequence where that first parse succeeds with the same result. After both runs: the Sessions' `audience`, `committedParseSeq`, `nextClientSeq`, `lastClientSeq`, `parseLease` and `policyRev`, every Turn's `parseState` and `uncertainSpeaker`, the `ack` the state route would return, and the `serverRule` outcome of every later turn are equal. (The failed turn's own reply differs, by design: it heard the Neutral_Line.) Validates R15.3, R15.4, R11.3.
+11. **A repaired gap leaves no trace.** Server model on the Memory_Store with the fake Decisions_Port: generate a sequence of up to 8 typed or ASR turns and, for one of them, a first parse that fails by deadline or transport and a repair that commits an ordinary result. Run the same sequence where that first parse succeeds with the same result. After both runs: the Sessions' `audience`, `committedParseSeq`, `nextClientSeq`, `lastClientSeq`, `parseLease` and `policyRev`, every Turn's `parseState` and `uncertainSpeaker`, the `ack` the state route would return, and the `serverRule` outcome of every later turn are equal. (The failed turn's own reply differs, by design: it heard the Neutral_Line.) **11b, the superseded variant:** one turn is posted `missing` and then superseded with an ordinary final transcript, against a run where its transcript arrived in time; the same fields are equal, plus the Turn's `text`, `evidenceId` and `state`, the Evidence text, and the Extract_Job for it. The ledger is not compared: the in-time run has a `decision` for the reply, and the superseded run has none, because nothing was admitted. Validates R7.8, R11.9, R15.3, R15.4, R15.7, R11.3.
+
+12. **A late Permit plays; a timed-out request doesn't.** Machine traces with `turnOk` arriving at any time after the post. ∀ held turn *t*: a checked server Permit for *t* that arrives before post + 5,000 with no later `speech_started` leads to `response.create` for *t*; one that arrives after the `permit` timer fired leads to none. The LatencyRow of *t* has `late = permitAt > t0 + 2,500`. This is a new property, added by the design review's deadline change; it validates R7.5, R18.7.
 
 The Property_Guard blocks edits to these files once they are tracked. A failing property's seed and shrunk sequence go in the report before any fix (R20.3).
 
 ## Testing strategy
 
-- **Unit (Vitest):** `serverRule` rows, `choose`, `isOrdinary`, the request builder against `DecisionCreateParams` (a type-level test: the builder's return type is assignable), the parser against `Decision` fixtures (refusal, wrong order, extra answer, NaN), the Regex_Table near misses and the close-copy test, `JUDGE_V2_INSTRUCTIONS` text, `fastOProblem` per condition, `specCreate`, `ack`-note replies, `percentile`.
+- **Unit (Vitest):** `serverRule` rows, `choose`, `isOrdinary`, the request builder against `DecisionCreateParams` (a type-level test: the builder's return type is assignable), the parser against `Decision` fixtures (refusal, wrong order, extra answer, NaN), the Regex_Table near misses and the close-copy test, `JUDGE_V2_INSTRUCTIONS` text, `fastOProblem` per named reason, `specCreate`, `ack`-note replies, tools by scope, the wait-limit constants, `percentile` and `summarize`.
 - **Route tests (Memory_Store, fake OpenAI):** each status row of `/api/turn`; `recordFastO` in both orders; the state route's `ack:null` rules and its write throttle; the repair's three outcomes; wave B open inheritance, the swap line and alone.
 - **Voice_Client tests:** the existing end-to-end tests updated: the browser's payload hash equals the seam's, now for `fastO` and `slowOrdinary`.
 - **Emulator:** the slow-path timing test with 75 ms per round trip (R23.2).
@@ -563,7 +623,7 @@ The Property_Guard blocks edits to these files once they are tracked. A failing 
 
 ## Requirement changes
 
-This spec supersedes `first-spoken-call` R17.4, R17.5, R17.6, R17.8 and the issuer in R17.10 (stated in `requirements.md`). It also supersedes question 20's reading of the parse watermark (question 73) and question 17's derivation of the Permit kind from `devPermitKind` (question 57).
+This spec supersedes `first-spoken-call` R17.4, R17.5, R17.6, R17.8 and the issuer in R17.10 (stated in `requirements.md`). It also supersedes question 20's reading of the parse watermark (question 73), question 17's derivation of the Permit kind from `devPermitKind` (question 57), R15.11's 1.5 s missing-transcript limit and its rule that a transcript for a posted turn is dropped (question 54 and R7.8: a late transcript now supersedes a `missing` post), and the Voice_Client's 10 s `/api/turn` timeout (now 5 s).
 
 ## Contract questions
 
@@ -571,23 +631,23 @@ Numbered on from question 51 in `.kiro/specs/first-spoken-call/design.md`. "Owne
 
 52. **The company miss gets both nets (decided Nov 9 on the owner's delegation).** The judge held 1 of 5 company lines (Q51). The slow parse runs on every voice transcript whatever the judge said, and a late hit cuts audio; `judge_v2` adds one sentence about another person and replaces `judge_v1` only after a measured run shows company recall up and nothing else down. Proposal for v3: add `judge_v2` to C§5 if it wins, and say in C§5 TurnIntents that it runs on every transcript (see 66).
 53. **The VAD stays `semantic_vad` (decided Nov 9; answers Q47 for F2).** Being cut off is worse than a slower commit. Its settings are named constants in `voice/vad.ts`, and the Latency_Clock reports the commit delay. Proposal for v3: replace C§6's `server_vad`/300 ms with `semantic_vad`, and C§6 States' "VAD300" with "VAD (semantic)".
-54. **Deadlines count from the commit (decided Nov 9). Owner.** No transcript by t0 + 1.5 s: the Neutral_Line. A transcript but no server Permit by t0 + 2.5 s: RECOVERY. Q51 kept "the 1.5 s neutral line", which with a 1,200 ms judge would leave the slow path 300 ms. Because the browser may play nothing without a Permit, the server issues `recoveryOnly` instead of any reply Permit for a turn it completes after t0 + 2,300 ms (rule row 13), reading t0 from the last item's `audioEndOpsAt`. Proposal for v3: C§6 States HELD: "note/ordinary: no ASR by t0+1.5 s or no permit by t0+2.5 s → RECOVERY; the server answers recoveryOnly past t0+2.3 s".
+54. **Deadlines, from the measured transcript times (decided Nov 9, revised by the design review). Owner.** Run (c) of Q51 measured the transcript at p50 517 ms and p95 1,899 ms after the commit, so a 1.5 s wait would turn about 1 held turn in 12 into "Sorry, say that again?" while its transcript was on the way, and on `fastO` turns would leave a parse gap that turns `fastO` off for the call. All limits count from the commit t0 on the browser opsClock and are named constants: judge 1,200 ms (cancel judge and reply, slow path); transcript on a held turn 2,500 ms (post `missing`, the server answers `recoveryOnly`, the Neutral_Line plays); transcript on a turn admitted under `fastO` 5,000 ms (post `missing`, the reply is untouched); `/api/turn` response 5,000 ms from the post, the request's own timeout (RECOVERY, as a failed request does today). A server Permit that arrives before the request times out is played, even after t0 + 2.5 s; the LatencyRow marks it `late`, the Debug_Panel counts late turns, and 2.5 s stays the stop line of R23.2 and a reported number, not a cut-off. A transcript that arrives after its turn was posted `missing` is sent as a Superseding_Post (question 89) and repairs the gap. The server takes no input that compares its clock with a browser timestamp, so the earlier rule "the server answers `recoveryOnly` past t0 + 2.3 s" is gone. **This changes two things the owner ruled on:** Q51's 1.5 s neutral line becomes 2.5 s for a held turn, and a late Permit plays. Proposal for v3: C§6 States HELD and SPEAKING with these limits; C§6 Routes `/api/turn` "5 s; a late answer plays".
 55. **Company and quiet always hang up (decided Nov 9).** No isolation without a hang-up in this spec (the floor in MS§3 and C§6). Proposal: none; this is the contract's floor.
 56. **`judge` on a turn posted before its verdict.** `TurnRequest.judge` has no pending value. It carries the verdict known when the request is sent, and `timeout` when none has arrived. A later `O` reaches the server only through the `admitted` receipt; a later `H` or `U` is not recorded. Proposal for v3: add `pending` to the `judge` union, and a receipt kind for a late verdict.
 57. **The ledger can't record kind, verdict, route or false hold.** The closed `decision` payload has none of these (Q16, Q17), and `reasonCodes` is a closed enum without them. This design: the verdict and parse state go on the Turn (`judge`, `parseState`, `uncertainSpeaker`); the decision cites the `/api/turn` request entry with a `{type:"ledger"}` Ref in `acceptedRefs`, whose stored response holds the Permit kind, status and notes; a `fastO` decision is keyed `H("fastO", sessionId, turnId)`; the Debug_Panel derives the kind and the false hold, and shows the class as "not recorded". Proposal for v3: add `permitKind`, `judge`, `route` (a Control_Class or null) and `falseHold` to `decision`.
 58. **Two decisions for one turn.** A turn admitted under `fastO` whose parse is ordinary also gets a `slowOrdinary` decision from the server. The browser plays the first admitted Permit and ignores later ones of the same turn, except a cut. The Lab and Debug_Panel group decisions by turn. Proposal for v3: say "first admitted Permit per turn wins; Lab counts turns".
-59. **A Fixed_Line is an `ack` note.** `TurnResponse` has no field for "say this exact text". A Fixed_Line travels as one `W` of kind `ack`, S0, named in `Permit.noteIds` and covered by the hash; the browser speaks `ack` notes verbatim with `tools:[]`. Proposal for v3: say so in C§6.
-60. **What each `TurnResponse.status` means.** `ordinary` = ordinary parse with `slowOrdinary`; `ready` = a control route with `postCommitControl`; `hold` with `recoveryOnly` = parse failed, transcript missing or late; `hold` with no Permit and `retryAfterMs > 0` = not processed yet; `blocked` = this call is closed by narrowing (with a care Permit: play it, then swap). `ready` and `blocked` cut a playing reply; `ordinary` and `hold` don't. Proposal for v3: add these meanings to C§6 Routes.
+59. **A Fixed_Line is an `ack` note.** `TurnResponse` has no field for "say this exact text". A Fixed_Line travels as one `W` of kind `ack`, S0, named in `Permit.noteIds` and covered by the hash; the browser speaks `ack` notes verbatim with `tools:[]` (question 88). Proposal for v3: say so in C§6.
+60. **What each `TurnResponse.status` means.** `ordinary` = ordinary parse with `slowOrdinary` (or a Superseding_Post with no Permit); `ready` = a control route with `postCommitControl`; `hold` with `recoveryOnly` = transcript missing or failed, or the parse failed with no Regex_Match; `clarify` with `recoveryOnly` = the parse failed and a Regex_Match exists; `hold` with no Permit and `retryAfterMs > 0` = not processed yet; `blocked` = this call is closed by narrowing (with a care Permit: play it, then swap). `ready`, `clarify` and `blocked` cut a playing reply; `ordinary` and `hold` don't. Proposal for v3: add these meanings to C§6 Routes.
 61. **How `fastO` learns what the browser can't see.** The server answers `/api/session/state` with `ack:null` while an S2 user turn is among the last four, a Parse_Gap exists, or the Effective_Audience is `unknown`. The browser drops its ack when it posts a turn, and an ack from a state request sent before the last `/api/turn` response arrived can't grant `fastO` ("no control hit pending"). To check S2 without reading Evidence, a user Turn's `rootSlices` now carries its whole-text Slice. Proposal for v3: write these three conditions into C§6 Admission `fastO`.
 62. **No speculation while `noteWaiting`.** The brief says only that no speculation is unmuted; C§6 says "noteWaiting+O=>HELD/nospeculation". This design follows C§6: the judge alone (JUDGING). No note producer exists in this spec. Proposal: none.
-63. **A `fastO` reply plays on when the transcript goes missing.** At t0 + 1.5 s with a reply admitted, the turn is posted `missing` and the reply continues; the Session's audience becomes `unknown`. Proposal for v3: add this case to C§6 States SPEAKING.
+63. **A `fastO` reply plays on when the transcript goes missing.** At t0 + 5 s with a reply admitted, the turn is posted `missing` and the reply continues; the Effective_Audience is `unknown` until a Superseding_Post repairs it or its 10 s window ends (question 89). Proposal for v3: add this case to C§6 States SPEAKING.
 64. **Typed U lines are parsed.** An ordinary typed U line gets `slowOrdinary` as today; a control hit takes the control route. With no call open, Decisions runs beside the typed reply's Responses call, and the reply is discarded on a hit. Pasted T text is unchanged and unparsed. Proposal: none beyond 66.
 65. **`slowOrdinary` audio doesn't need judge `O`.** MS§3's permit table says audio additionally requires `O`; C§6 requires `O` only for an S1+ note. This design follows C§6, because a false hold has no `O` and could never play otherwise. Proposal for v3: align MS§3's `slowOrdinary` row with C§6.
 66. **Which transcripts get the parse.** C§5 TurnIntents says "every O/typed/chip transcript"; C§6 and MS§3 say every transcript. This design parses every final voice transcript and typed U line. Proposal for v3: C§5 "every final ASR, typed and chip transcript".
 67. **Wave A routes for classes without handlers.** `company`, `quiet`, `alone`, `rushed`, an `uncertainSpeaker` hold and a regex-only hold get `postCommitControl`, scope `reply`, no S1+ note in wave A; wave B gives company, quiet and alone their routes. Proposal: none; temporary.
 68. **Crisis always takes the reply. Owner.** When `crisis` is a retained candidate at 0.20 or above, the reply is the care reply with `tools:[]`, whichever class wins C§5's order (where crisis ranks below forget, company and quiet). In wave B, with `company` or `quiet` also a candidate, the audience is recorded and `policyRev` rises, but the hang-up and swap wait until the care reply has finished or been interrupted, and the company line is not spoken; this is the one reply property 10 allows on the old call. Proposal for v3: C§5 "crisis, when retained, sets the reply whatever the route"; C§6 "narrowing needs a closed call, except the crisis care reply of the narrowing turn".
 69. **Where `why` sits.** "Ledger why before food" places it only against food. This design: directly before `food`, after `transition`. Proposal for v3: write the full order.
-70. **The Regex_Table.** C§5 and MS§3 name "regex and alias checks" but give no patterns, and this slice has no aliases or doors. This design's closed table is above, hold-only, with no probe sentence or close copy in it (tested). Proposal for v3: put the table in C§5, or name its owner.
+70. **The Regex_Table, and where it decides.** C§5 and MS§3 name "regex and alias checks" but give no patterns, and this slice has no aliases or doors. This design's closed table is above, with no probe sentence or close copy in it (tested). C§5 says "Regex hold only" but also defines `Ordinary=controls<.20,speaker<.10` without the regex; this design follows the definition: a match never overrules a parse that succeeded, so "I walked in the park" or "allergic to Mondays" doesn't cut a good reply for a second one on the same call and Head. The regex decides only when the parse failed: then a match answers `clarify` with `recoveryOnly` and cuts a playing reply, and no match lets a `fastO` reply finish. **A regex-only allergy cue will need its own answer when the hard-rule route is built,** because allergies fail closed: a successful parse that misses "I'm allergic to shellfish" would then let it pass on the regex's word alone. Proposal for v3: put the table in C§5, and say "regex decides only when Decisions fails".
 71. **The 800-token input cap.** No tokenizer is installed and adding one is a new dependency. The bound is 2,400 UTF-16 code units over prefix, utterance and last question (about 3 code units per token, and `utterance` is already `s2400`). Proposal for v3: state the cap in code units.
 72. **The Decisions request.** C§5 gives the prefix and the predicate rows but not the message layout. This design: the prefix as one developer message; one user message `Last question (data): …\nOwner said (data): …`; answers matched by position and name; the 350 ms deadline enforced by the caller, since the API has none; Harness reports the share over 350 ms and its p50 and p95, which decides whether 350 ms stands. Checked against openai 7.45.1's `DecisionCreateParams` and `Decision`; the API accepts only `gpt-6-luna`, which `FRANKI_BG_MODEL` names. Proposal for v3: pin the layout.
 73. **The parse watermark (supersedes Q20's reading).** Q20 advanced `committedParseSeq` on failed turns. With a real parse, a failed or missing parse advances `nextClientSeq` only; `committedParseSeq` is contiguous and moves past a gap only when a repair commits it. Proposal for v3: say "contiguous" in C§1 sessions.
@@ -597,11 +657,14 @@ Numbered on from question 51 in `.kiro/specs/first-spoken-call/design.md`. "Owne
 77. **Tool continuations** get `slowOrdinary` once the turn's parse has committed, within the existing 1.5 s parse wait. Proposal: none; this is C§6's tool parse wait.
 78. **`fastO` is the browser half of the seam.** The steering rule "every reply goes through the seam" reads, after task 1, "every server Permit comes from the Admission_Seam, and `fastO` only from the FastO_Rule". The seam still records every `fastO` in the ledger. Proposal: none.
 79. **Quiet is recorded as company. Owner.** The audience union has no quiet value. A quiet hit sets `audience:"company"`, writes `reasonCodes:["quiet"]` on the decision, and narrows the whole Session; `alone` restores `private`. Proposal for v3: add `quiet` to `Au`, or a Session `quietSince` field, when topic-level quiet arrives with forget.
-80. **`unknown`, the Effective_Audience and the repair.** C§6 says a failed sequence means "unknownaudience/S1helduntilrepair/newcleanSession". While a repair is pending, `Session.parseLease` holds the failed turn and the Effective_Audience is `unknown`; the stored audience is untouched, so a successful repair leaves no trace (property 11). A failed repair, a refusal, an oversize turn or a missing transcript stores `unknown`. `unknown` means no S1+ note and no `fastO`, but no hang-up and no line; the live call keeps its full Head. Proposal for v3: describe the repair and `parseLease`'s use in C§6.
+80. **`unknown`, the Effective_Audience and the repair.** C§6 says a failed sequence means "unknownaudience/S1helduntilrepair/newcleanSession". While a repair or a Superseding_Post is pending, `Session.parseLease` holds the failed turn (2.5 s for a repair, 10 s for a missing transcript) and the Effective_Audience is `unknown`; the stored audience is untouched, so a successful repair leaves no trace (property 11). A failed repair, a refusal, an oversize turn, a failed transcription, a missing transcript whose window ends, or a second failure while a lease is held stores `unknown`. `unknown` means no S1+ note and no `fastO`, but no hang-up and no line; the live call keeps its full Head. Proposal for v3: describe the repair and `parseLease`'s use in C§6.
 81. **Swap mechanics (wave B).** The server hangs up when the control commits and answers `blocked`; the browser tears down without posting close and opens with `previousSessionId`. The old Session's `waitDeadline` marks that its audience carries over: `+10 s` for a swap, `+60 s` for a crisis-deferred swap and for a `reason:"error"` close of a non-private Session (so a reconnect stays narrow); a `reason:"user"` close leaves it null, so the next call starts `private`. The swap line arrives in the open response's `proactive` field under `postCommitControl`. The line is spoken whenever an open inherits a narrowed audience and the old Session had no crisis, so a reconnect after a drop in a company Session hears it again. Proposal for v3: a Session field for "audience carries to the next open until", and a C§6 States row for the swap.
 82. **Judge settings.** `JUDGE_CONTRACT_SETTINGS` keeps C§5's 16 tokens and 600 ms; `APP_JUDGE_SETTINGS` is Q51's `"inf"`, `minimal`, 1,200 ms; the Harness records the deadline and contract name per run. Proposal for v3: as in Q51.
 83. **The Latency_Clock's ends.** "End of audible speech" is the last 20 ms sample with unsmoothed level ≥ 0.05 (the spike's RMS 400 times `LEVEL_GAIN` 4); audible start is `output_audio_buffer.started` of the admitted response, or the unmute if later. These are not the spike's measurements (8-bit analyser, browser noise suppression, WebRTC playout instead of the first delta). Proposal for v3: say in MS§13 that latency is measured from the last loud frame, as Q51 proposed.
 84. **The state route's Session write.** Polling once a second would write the Session once a second, past Firestore's sustained one-write-per-second guidance for a document the turn and receipt routes also write. The route writes only when `status` or `browserState` changes or `expiresAt` moves 30 s, and `Session.stateAck` is updated only then. Proposal for v3: say `stateAck` is the last persisted ack, not every ack.
 85. **`event_id` on the judge and the speculative reply.** An `error` event carries the client `event_id` that caused it, not a response ID. Both `response.create` events carry `event_id` `judge:<turnId>:<n>` and `spec:<turnId>:<n>`. A judge error is `U`; a spec error drops speculation for the turn, and a valid `O` then creates the reply fresh. Proposal for v3: add to C§6 Realtime.
 86. **Local phases.** `JUDGING` and `SPECULATING` are C§6 names; `SWAPPING` is not, and C§6 States has no row for the company swap (CLEAN_READY is the forget fresh call, which forbids control audio, while the swap speaks its line). `BrowserState` on the wire is unchanged; the state route writes `LISTENING` as today. Proposal for v3: a `SWAPPING` row in C§6 States.
-87. **`postCommitControl` replies have no tools in this spec.** C§6 says only that crisis has none. Without handlers for the control classes, a tool call on a control turn could only recall into an unhandled route. Proposal: revisit when the handlers arrive.
+87. **Which control replies have tools.** C§6 says only that crisis has none. `tools:[]` for the crisis care reply, every Fixed_Line and `recoveryOnly`. Every other control reply in this spec (`correct`, `transition`, `hardRule`, `food`, `action`, `why`, `answer`, `rushed`, an `uncertainSpeaker` hold, and `company`, `quiet` and `alone` until wave B) keeps the speech tools it has today, because `food` and `action` cover ordinary requests such as "what should I cook tonight?" and `recall` only reads. Their tool continuation follows rule row 3, with notes limited to S0 while the audience isn't `private`. Proposal: revisit when the handlers arrive.
+88. **Permit scope `ack` means "no tools".** The browser can't see the parse, so it can't tell a crisis reply from a `food` reply under the same `postCommitControl` kind. The Server_Rule gives scope `ack` to the crisis care reply and every Fixed_Line, and the browser installs `tools:[]` for scope `ack` and for `recoveryOnly`. C§6 lists `ack` among the scopes without a meaning; this design gives it one. Proposal for v3: define `Permit.scope` values, and a separate `tools` binding if scope should keep another meaning.
+89. **The Superseding_Post.** `TurnRequest.supersedesRequestId` exists in C§6, but no rule says what it does. This design: a second request for a turn first posted `missing`, with the same `turnId` and `clientSeq`, `transcriptState:"final"` and the late transcript. It skips the clientSeq compare-and-set; it requires the superseded request entry to be complete for the same turn and the Turn to be `transcriptMissing` with the same items; it creates the Evidence and Extract_Job, moves the Turn to `committed` with its text, and commits the parse; it closes the gap like a repair, runs a hit as a late hit, and admits nothing. The Turn moves from `transcriptMissing` back to `committed`, which C§1 doesn't forbid but doesn't describe. Nothing is missing from the closed contract; only the meaning is. Proposal for v3: describe `supersedesRequestId` in C§6 Routes, and the Turn state move in C§1.
+90. **A Regex_Match has no field.** The review asks for the match to be recorded on the Turn; the closed Turn record (C§1) has no field for it, and `reasonCodes` has no regex code. This design logs `turn.regex {turnId, ids}` on the server and records the IDs in the Harness row; the Debug_Panel can't show it. Proposal for v3: add `regexIds: A<s16,8>` to the Turn.

@@ -10,7 +10,7 @@ Behavior comes from `docs/design/memory-spec-v3.md`, cited as "spec §N". Fields
 
 ### Waves
 
-- **Wave A, admission:** brief scope items 1 to 4, 6 and 7, the property guard, and the parse gap, the `unknown` audience and the parse repair (Requirements 1 to 13, 15.2 to 15.9 and 16 to 19, and properties 1 to 9 and 11 of Requirement 20).
+- **Wave A, admission:** brief scope items 1 to 4, 6 and 7, the property guard, and the parse gap, the `unknown` audience and the parse repair (Requirements 1 to 13, 15.2 to 15.9 and 16 to 19, and properties 1 to 9, 11 and 12 of Requirement 20).
 - **Wave B, audience:** brief scope item 5 (Requirements 14 and 15.1, and property 10 of Requirement 20).
 - Requirements 21 to 24 apply to both waves.
 
@@ -27,12 +27,12 @@ Decided for this spec on Nov 9 on the owner's delegation:
 
 5. The company miss gets both nets: the Slow_Parse on every voice transcript, and a `judge_v2` candidate measured before it replaces `judge_v1`.
 6. The VAD stays `semantic_vad` (question 47), with its settings as named constants.
-7. Deadlines count from the Commit. A turn with no transcript by Commit + 1.5 s gets the Neutral_Line. A turn whose judge is late but whose transcript arrived gets until Commit + 2.5 s for its server Permit.
+7. Deadlines count from the Commit, as revised by the design review from the measured transcript times (p50 517 ms, p95 1,899 ms after the commit, question 51 run c): a held turn waits 2,500 ms for its transcript, a turn already admitted under `fastO` waits 5,000 ms, a server Permit that arrives before the request times out is played, and a late transcript repairs the gap. This changes two things the owner ruled on and is marked for the owner's confirmation in the design (question 54).
 8. Company and quiet hang up and come back in a fresh call. No isolation without a hang-up in this spec.
 
 ### Requirement changes
 
-This spec supersedes `first-spoken-call` Requirement 17 where it describes `devAdmit`: criteria 17.4 (the `devAdmit` implementation and its issuer record), 17.5 and 17.6 (its production refusal), 17.8 (the voice rows of `devPermitKind` and the deviation it records) and the issuer `devAdmit` in 17.10. Criteria 17.1, 17.2, 17.3, 17.7 and 17.9 stay in force, amended by Requirements 3, 4 and 8 here. Existing tests are updated to the new requirements; no check is deleted without a replacement that protects the same thing (Requirement 21).
+This spec supersedes `first-spoken-call` Requirement 17 where it describes `devAdmit`: criteria 17.4 (the `devAdmit` implementation and its issuer record), 17.5 and 17.6 (its production refusal), 17.8 (the voice rows of `devPermitKind` and the deviation it records) and the issuer `devAdmit` in 17.10. Criteria 17.1, 17.2, 17.3, 17.7 and 17.9 stay in force, amended by Requirements 3, 4 and 8 here. Existing tests are updated to the new requirements; no check is deleted without a replacement that protects the same thing (Requirement 21). It also supersedes `first-spoken-call` R15.11's 1.5 s missing-transcript limit and its rule that a transcript for an already posted Turn is dropped (Requirement 7), and the Voice_Client's 10 s `/api/turn` timeout, which becomes 5 s.
 
 ### Out of scope
 
@@ -58,10 +58,13 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 - **Regex_Table**: The closed, hold-only table of cue patterns in the Core_Library that the Slow_Parse checks first.
 - **Decisions_Port**: The Server_Library port through which the Slow_Parse calls the OpenAI Decisions API, with a fake for tests.
 - **Control_Class**: One of `forget`, `quiet`, `correct`, `transition`, `hardRule`, `crisis`, `company`, `alone`, `why`, `rushed`, `food`, `action`, `answer` (contracts §5 TurnIntents).
-- **Control_Hit**: A Slow_Parse result that is not an Ordinary_Parse and did not fail: a chosen Control_Class, an `uncertainSpeaker` at or above 0.10, or a regex hold.
-- **Ordinary_Parse**: A Slow_Parse result with every Control_Class probability below 0.20, `uncertainSpeaker` below 0.10, and no regex hold (contracts §5).
+- **Control_Hit**: A Slow_Parse result that is not an Ordinary_Parse and did not fail: a chosen Control_Class, or an `uncertainSpeaker` at or above 0.10. A regex match alone is never a Control_Hit.
+- **Ordinary_Parse**: A Slow_Parse result with every Control_Class probability below 0.20 and `uncertainSpeaker` below 0.10 (contracts §5 "Ordinary=controls<.20,speaker<.10"). A regex match does not enter it.
+- **Regex_Match**: A Regex_Table hit on the transcript. It is recorded for every Turn (server log and Harness row), and it decides only when the Slow_Parse failed.
 - **Parse_Gap**: An earlier user Turn of the Session whose Slow_Parse failed, or whose transcript was missing or failed, and that has not been repaired.
-- **Parse_Repair**: The single retry of a failed Slow_Parse after the Turn's response has been sent (Requirement 15).
+- **Parse_Repair**: The single retry of a failed Slow_Parse after the Turn's response has been sent, or the Slow_Parse of a Superseding_Post (Requirement 15).
+- **Superseding_Post**: A second `/api/turn` request for a Turn first posted `missing`, sent when its transcript arrives late, with `transcriptState:"final"` and `supersedesRequestId` naming the first request.
+- **Late_Turn**: A Turn whose server Permit arrived after Commit + 2,500 ms.
 - **Neutral_Line**: `RECOVERY_LINE`, "Sorry, say that again?", played under `recoveryOnly`.
 - **Fixed_Line**: A reply whose exact text is a Core_Library constant, never model-worded.
 - **Audience**: The Session's `audience` field: `private`, `company` or `unknown`.
@@ -164,9 +167,11 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 1. WHEN speech starts, THE Voice_Machine SHALL mute output, cancel every in-flight response by ID (the Judge, the Speculative_Reply and any admitted reply), clear the output buffer and drop every unplayed Permit (KV04).
 2. WHEN a Deck or Stamp with a higher revision or generation arrives, THE Voice_Machine SHALL reject the older Deck and cancel and clear every reply built on it (KV05).
 3. WHEN the Voice_Machine starts any wait (item, Judge, transcript, server Permit, tool, state, swap), THE Voice_Machine SHALL arm an opsClock deadline for it (KV06).
-4. IF no final transcript has arrived by Commit + 1,500 ms and no reply is admitted, THEN THE Voice_Machine SHALL post the Turn as `missing` and play the Neutral_Line under `recoveryOnly`.
-5. IF the Turn is held with a final transcript and no server Permit has arrived by Commit + 2,500 ms, THEN THE Voice_Machine SHALL enter `RECOVERY` and play nothing until a `recoveryOnly` Permit arrives; THE Server_Rule SHALL issue `recoveryOnly`, so that the Neutral_Line plays, for any Turn whose response it completes later than Commit + 2,300 ms.
-6. WHEN the final transcript is missing at Commit + 1,500 ms while a reply is already admitted under `fastO`, THE Voice_Machine SHALL let that reply play and post the Turn as `missing`.
+4. IF no final transcript has arrived by Commit + 2,500 ms and no reply is admitted, THEN THE Voice_Machine SHALL post the Turn as `missing`, and THE Server_Rule SHALL answer `recoveryOnly`, so the Neutral_Line plays.
+5. WHEN a server Permit for a held Turn arrives before that `/api/turn` request times out (5,000 ms from the post), THE Voice_Machine SHALL check and play it, even after Commit + 2,500 ms, and THE Latency_Clock SHALL mark the Turn a Late_Turn. IF the request times out with no Permit, THEN THE Voice_Machine SHALL enter `RECOVERY`, as a failed request does today. Speech start still cancels a late Permit (criterion 1).
+6. WHEN the final transcript is missing at Commit + 5,000 ms while a reply is already admitted under `fastO`, THE Voice_Machine SHALL post the Turn as `missing` and leave the reply untouched.
+8. WHEN a transcript arrives for a Turn already posted `missing`, and every item of that Turn then has its transcript, THE Voice_Machine SHALL send one Superseding_Post with the same `turnId` and `clientSeq`, `transcriptState:"final"` and `supersedesRequestId` naming the first request, and SHALL speak no reply for it.
+9. Every wait limit in this requirement (Judge 1,200 ms, held transcript 2,500 ms, admitted transcript 5,000 ms, `/api/turn` response 5,000 ms from the post) SHALL be a named Core_Library constant counted on the browser opsClock.
 7. THE Voice_Machine SHALL read all times from the `now` argument (the browser opsClock), and the clock guard SHALL apply.
 
 ### Requirement 8: Real admission behind the same seam
@@ -181,7 +186,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 4. WHEN a voice Turn has a final transcript and an Ordinary_Parse, THE Server_Rule SHALL issue `slowOrdinary`, whatever the `judge` value (contracts §6 Admission).
 5. WHERE a `slowOrdinary` Permit would carry an S1+ note, THE Server_Rule SHALL also require `judge:"O"`, at least one ASR word per 2 s of total `audioDurationMs`, every item `final:true`, no Parse_Gap and an Effective_Audience of `private`; otherwise it SHALL issue the Permit without the note.
 6. WHEN a Turn has a Control_Hit, THE Server_Rule SHALL issue the Permit its route names (Requirement 12) and no S1+ note.
-7. WHEN a voice Turn's transcript is `missing` or `failed`, or its Slow_Parse fails, THE Server_Rule SHALL issue `recoveryOnly` with no notes and no tool output.
+7. WHEN a voice Turn's transcript is `missing` or `failed`, or its Slow_Parse fails, THE Server_Rule SHALL issue `recoveryOnly` with no notes and no tool output. THE Server_Rule SHALL take no input from the server clock compared with a browser timestamp.
 8. WHEN a typed U line has an Ordinary_Parse, THE Server_Rule SHALL issue `slowOrdinary` as today, with no judge; WHEN it has a Control_Hit, THE Server_Rule SHALL route it as a voice Control_Hit.
 9. WHEN a typed U line arrives with no call open, THE Server_Library SHALL run the Decisions call at the same time as the typed reply's Responses call, and SHALL discard the typed reply on a Control_Hit.
 10. WHEN a pasted (T) line arrives, THE Server_Rule SHALL keep today's behaviour: no Slow_Parse, `postCommitControl`, scope `reply`, no S1+ note.
@@ -206,7 +211,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 #### Acceptance Criteria
 
 1. THE Core_Library SHALL hold, as pure functions: the Regex_Table check, the `TurnIntents` request builder, the Decisions response parser, normalization, the 0.20 candidate threshold, the Ordinary_Parse test and the priority order.
-2. THE Regex_Table check SHALL only ever hold a Turn; a regex match alone SHALL never select a route.
+2. A Regex_Match SHALL never select a route and SHALL not overrule a Slow_Parse that succeeded. THE Server_Library SHALL record every Regex_Match (its cue IDs) in the Turn's server log line and in the Harness row; the closed Turn record has no field for it, so THE design SHALL raise a contract question. WHEN the Slow_Parse fails and a Regex_Match exists, THE Server_Rule SHALL answer `hold` with `recoveryOnly`, and that response SHALL cut a playing reply.
 3. THE Regex_Table SHALL be a small closed table of general cue words, listed in full in the design; no sentence from `scripts/judge-spike/lines.json`, and no close copy of one, SHALL appear in it, and a test SHALL assert that.
 4. THE request builder SHALL send the developer prefix from contracts §5 once and each selected row as `{type:"predicate", name, instructions}` with the literal predicate instruction from contracts §5: the 14 fixed rows and at most 8 `opens_{topicId}` rows, at most 22 questions.
 5. IF the developer prefix, the utterance and the last question together exceed 2,400 UTF-16 code units, THEN THE Slow_Parse SHALL hold rather than truncate (contracts §5 "Over800: hold"), with no tokenizer dependency.
@@ -226,7 +231,8 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 4. WHEN the Turn has an Ordinary_Parse while its reply is already playing under `fastO`, THE Server_Library SHALL change nothing about that reply.
 5. WHEN the Turn has an Ordinary_Parse and the Turn is held, THE Server_Library SHALL return a `slowOrdinary` Permit and a plain reply with no S1+ note, and the false hold and the judge's Verdict SHALL be recorded as Requirement 13 says.
 6. WHEN the Turn has a Control_Hit while a reply is playing, THE `/api/turn` response SHALL tell the Browser_Client, and THE Voice_Machine SHALL at once mute, cancel the reply by ID, clear the output buffer and enter `HELD`, then take the route of Requirement 12.
-7. WHEN the Turn's Slow_Parse fails while a reply is already playing under `fastO`, THE Voice_Machine SHALL let the reply finish.
+7. WHEN the Turn's Slow_Parse fails with no Regex_Match while a reply is already playing under `fastO`, THE Voice_Machine SHALL let the reply finish; WHEN it fails with a Regex_Match, THE Voice_Machine SHALL cut the reply as in criterion 6.
+9. WHEN `/api/turn` receives a Superseding_Post for a Turn stored as `transcriptMissing`, THE Server_Library SHALL run the Slow_Parse on its transcript and commit the parse, the text and the Evidence on the existing Turn, without a new `clientSeq`; an Ordinary_Parse SHALL close the Parse_Gap as a Parse_Repair does, a Control_Hit SHALL run as a late hit, and the response SHALL carry no Permit.
 8. THE Server_Library SHALL make no Decisions call in `npm test`; tests use the fake Decisions_Port.
 
 ### Requirement 12: Wave A routes
@@ -235,11 +241,13 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 
 #### Acceptance Criteria
 
-1. WHEN `crisis` is a retained candidate at or above 0.20, whichever class wins the priority order, THE Server_Rule SHALL issue `postCommitControl`, scope `reply`, with no notes, and THE reply SHALL be the crisis care reply, created with `tools:[]`.
-2. WHEN the chosen class is `forget`, `correct`, `transition`, `hardRule`, `food`, `action`, `why` or `answer`, and `crisis` is not a candidate, THE Server_Rule SHALL issue `postCommitControl`, scope `reply`, with no S1+ note.
+1. WHEN `crisis` is a retained candidate at or above 0.20, whichever class wins the priority order, THE Server_Rule SHALL issue `postCommitControl`, scope `ack`, with no notes, and THE reply SHALL be the crisis care reply, created with `tools:[]`.
+2. WHEN the chosen class is `forget`, `correct`, `transition`, `hardRule`, `food`, `action`, `why` or `answer`, and `crisis` is not a candidate, THE Server_Rule SHALL issue `postCommitControl` with no S1+ note, scope `reply`, or scope `ack` when the reply is a Fixed_Line.
 3. WHEN the chosen class is `forget` and `crisis` is not a candidate, THE reply SHALL be the Fixed_Line "I can't forget things yet.", never model-worded.
-4. THE Server_Library SHALL deliver a Fixed_Line as one `W` note of kind `ack`, sensitivity S0, covered by the Permit's `noteIds` and payload hash, and THE Voice_Machine SHALL speak an `ack` note's text verbatim with `tools:[]`.
-5. In wave A, WHEN the chosen class is `company`, `quiet`, `alone` or `rushed`, or the Turn is held by `uncertainSpeaker` or a regex hold alone, THE Server_Rule SHALL issue `postCommitControl`, scope `reply`, with no S1+ note. In wave B, `company`, `quiet` and `alone` take the routes of Requirements 14 and 15.
+4. THE Server_Library SHALL deliver a Fixed_Line as one `W` note of kind `ack`, sensitivity S0, covered by the Permit's `noteIds` and payload hash, under a Permit of scope `ack`, and THE Voice_Machine SHALL speak an `ack` note's text verbatim with `tools:[]`.
+5. In wave A, WHEN the chosen class is `company`, `quiet`, `alone` or `rushed`, or the Turn is held by `uncertainSpeaker` alone, THE Server_Rule SHALL issue `postCommitControl`, scope `reply`, with no S1+ note. In wave B, `company`, `quiet` and `alone` take the routes of Requirements 14 and 15.
+6. THE crisis care reply, every Fixed_Line and every `recoveryOnly` reply SHALL be created with `tools:[]`; THE Voice_Machine SHALL tell them apart by the Permit's kind `recoveryOnly` or scope `ack`, since it can't see the parse.
+7. Every other `postCommitControl` reply (`correct`, `transition`, `hardRule`, `food`, `action`, `why`, `answer`, `rushed`, an `uncertainSpeaker` hold, and `company`, `quiet` and `alone` until wave B) SHALL keep the tools a speech reply has today; its tool continuation SHALL follow Requirement 8.11, with notes limited to S0 WHILE the Effective_Audience is not `private`.
 
 ### Requirement 13: Ledger and Debug_Panel
 
@@ -251,7 +259,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 2. THE Server_Library SHALL record the judge's Verdict and the parse state on the Turn (`judge`, `parseState`, `uncertainSpeaker`), which already have fields.
 3. THE design SHALL raise one contract question proposing that contracts v3 add the Permit kind, the judge's Verdict and the route to `decision`; until then the Debug_Panel SHALL derive the Permit kind and a false hold from stored records, and SHALL show "not recorded" for the Control_Class.
 4. THE Debug_Panel SHALL stop deriving the Permit kind from `devPermitKind`, stop reporting issuer `devAdmit`, and group decisions by Turn, so a Turn with a `fastO` and a `slowOrdinary` decision reads as one reply.
-5. THE Debug_Panel SHALL show the Session's Audience and the count of failed parses in the Session.
+5. THE Debug_Panel SHALL show the Session's Audience and the count of failed parses in the Session, and WHILE a Parse_Gap exists SHALL show "fastO off: parse gap" with the Turn that caused it.
 
 ### Requirement 14: Company and quiet (wave B)
 
@@ -280,7 +288,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 4. WHEN the Parse_Repair commits an Ordinary_Parse, THE Parse_Gap SHALL close and the Effective_Audience SHALL return to the stored Audience.
 5. WHEN the Parse_Repair commits a Control_Hit, THE Server_Library SHALL run that route as a late hit.
 6. IF the Parse_Repair fails, THEN THE Server_Library SHALL set the Audience to `unknown` until a parsed `alone`, and the Parse_Gap SHALL stay for the Session.
-7. WHEN a voice Turn's transcript is `missing` or `failed`, THE Server_Library SHALL set the Audience to `unknown` with no Parse_Repair.
+7. WHEN a voice Turn is posted `missing`, THE Effective_Audience SHALL be `unknown` until a Superseding_Post commits its parse or its repair window ends; an ordinary Superseding_Post SHALL close the gap as criterion 4 says, and no Superseding_Post by the end of the window SHALL set the Audience to `unknown` as criterion 6 says. WHEN a voice Turn's transcription `failed`, THE Server_Library SHALL set the Audience to `unknown` with no repair.
 8. A parsed `alone` SHALL restore the Audience but SHALL NOT close a Parse_Gap (contracts §6 "alone canrestoreaudience,notgap").
 9. THE Fixed_Lines SHALL live as constants in one Core_Library module.
 
@@ -321,6 +329,8 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 3. THE Latency_Clock SHALL report the commit delay (last loud frame to Commit), so the `semantic_vad` settings can be tuned (decision 6).
 4. THE Latency_Clock SHALL add no wire field; IF the design wants these numbers on the server, THEN it SHALL raise a contract question.
 5. THE design SHALL name the loudness threshold for "last loud frame" and the Realtime event used for audible start, and say how they compare with the Harness's `SPEECH_RMS_THRESHOLD` and its audio deltas.
+6. THE LatencyRow SHALL carry why `fastO` was refused (`refused`: null, `verdict`, `ack`, `outstanding`, `staleAck`, `noteWaiting` or `hash`), and THE Debug_Panel SHALL show it in the last Turn's row with a count per reason for the Session.
+7. THE LatencyRow SHALL carry whether the Turn was a Late_Turn, and THE Debug_Panel SHALL count Late_Turns for the Session.
 
 ### Requirement 19: VAD settings
 
@@ -346,12 +356,14 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
    6. **Every wait ends.** From any reachable state, with timers firing at their deadlines and no other events, the machine reaches `LISTENING`, `RECOVERY` or `CLOSED` in bounded time.
    7. **`fastO` needs a fresh ack.** A `fastO` Permit is issued only with a matching four-revision StateAck under 2.5 s old, obtained after the last `/api/turn` response, with no Outstanding_Turn.
    8. **The seam is total and closed.** For every combination of Turn kind, transcript state, `judge` value, Slow_Parse result and Effective_Audience, the Server_Rule returns exactly one Permit kind or a hold, and never an S1+ note on a Turn the judge didn't mark `O`.
-   9. **Priority is stable.** For any probability vector, the chosen class follows the order of Requirement 10.7, a retained `crisis` candidate always gets the care reply, and regex alone never selects a route.
+   9. **Priority is stable.** For any probability vector, the chosen class follows the order of Requirement 10.7, a retained `crisis` candidate always gets the care reply, a Regex_Match never selects a route, and a Regex_Match never changes the outcome of a parse that succeeded.
    10. **Narrowing needs a closed call** (wave B). After a `company` or `quiet` hit, no reply is audible on a call opened before the hit, except the hit Turn's own crisis care reply (Requirement 14.7).
-   11. **A repaired gap leaves no trace.** After a Parse_Repair that commits an Ordinary_Parse, the Session's state equals the state of a run in which the first parse had succeeded.
+   11. **A repaired gap leaves no trace.** After a Parse_Repair that commits an Ordinary_Parse, and after a Turn posted `missing` and then superseded with an ordinary final transcript, the Session's state equals the state of a run in which the first parse, or the transcript, had arrived in time.
+   12. **A late Permit plays; a timed-out request doesn't.** A checked server Permit that arrives before its request times out leads to a reply even after Commit + 2,500 ms, unless speech starts first; one that arrives after the timeout leads to none; and the Turn is a Late_Turn exactly when its Permit arrived after Commit + 2,500 ms.
 2. Every property task SHALL be required, not optional.
 3. WHEN a property fails during the build, THE build SHALL put the seed and the shrunk failing sequence in the report before fixing the code, and SHALL never weaken a property to make it pass.
 4. IF a property is still red after a real attempt, THEN THE build SHALL leave it red and report the counterexample.
+5. Generators, arbitraries and trace helpers SHALL live in plain modules (`packages/core/src/voice/testing/`, `packages/core/src/intents/testing/` and `packages/server/src/testing/`), and each `*.property.test.ts` file SHALL hold only property statements, so that fixing a generator is an ordinary edit and changing what a property claims needs a stop and a report.
 
 ### Requirement 21: Existing tests and Requirement 17
 
