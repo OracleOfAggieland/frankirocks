@@ -1,6 +1,6 @@
 # Brief 001 report (draft): first spoken call
 
-Status: **draft, not complete.** Tasks 1–12, 14–24, 26–32, 34 and 35 are done and ticked. Task 25 (sign-in) and task 13 (save hook) stay open until the owner finishes their browser and hook checks, and task 33 stays open until CI has run. The typed path ran against real OpenAI and real Firestore on Nov 3, 2026: the two extract jobs completed on the first attempt, and one active Memory was written with lineage. The first real WebRTC calls ran on Nov 8, 2026 (task 35, see [Live check](#live-check-task-35-nov-8-2026)): Franki was told "My dog is called Pip" in one call and answered "Pip" in the next. This draft was first written at task 33 on branch `build/first-spoken-call`, and CI has not run on it.
+Status: **draft, not complete.** Tasks 1–12, 14–24, 26–35 are done and ticked. Task 25 (sign-in) and task 13 (save hook) stay open until the owner finishes their browser and hook checks. CI is green: on pull request 1 (`build/lab-ui` into `main`), the single CI job "Lint, typecheck, test, build", which includes the Firestore emulator tests, passed on commit e9f5751 in 4m47s ([run](https://github.com/OracleOfAggieland/frankirocks/actions/runs/42554730869)). The typed path ran against real OpenAI and real Firestore on Nov 3, 2026: the two extract jobs completed on the first attempt, and one active Memory was written with lineage. The first real WebRTC calls ran on Nov 8, 2026 (task 35, see [Live check](#live-check-task-35-nov-8-2026)): Franki was told "My dog is called Pip" in one call and answered "Pip" in the next. This draft was first written at task 33 on branch `build/first-spoken-call`.
 
 The build was done with **Kiro**: the `.kiro/steering` files set the stack, structure, product and memory rules; the spec in `.kiro/specs/first-spoken-call` (requirements, design, tasks) drove every task; a Kiro PreToolUse hook (`.kiro/hooks/clock-guard.json`) blocks wall-clock reads outside the Clock_Port; every commit ends with `Built-with: Kiro`; and the web app shows a "Built with Kiro" footer on every page.
 
@@ -14,7 +14,7 @@ The build was done with **Kiro**: the `.kiro/steering` files set the stack, stru
 | `npm run build` | exit 0 |
 | `npm run test:emulator` (Java 21) | 2 files, 35 tests passed |
 | `GET /api/health` fields | unchanged: `apps/web/src/app/api/health/route.test.ts` pins `ok`, `service`, `node`, `configured{openaiKey, smokeToken, brainModel, voiceModel}`, and `POST` still refuses without the smoke token. Not checked against a running server. |
-| CI `verify` and emulator jobs | not run: needs the owner to approve a push |
+| CI (pull request 1, `build/lab-ui` into `main`, commit e9f5751) | passed: the single job "Lint, typecheck, test, build", which includes the Firestore emulator tests, took 4m47s ([run](https://github.com/OracleOfAggieland/frankirocks/actions/runs/42554730869)). The earlier run on 4087b1a passed every step except the gitleaks secret scan, which got a 403 listing the PR's commits; e9f5751 added `pull-requests: read` to the workflow and fixed it. |
 
 ## What was built
 
@@ -207,13 +207,12 @@ Then sign in with Google in a browser that grants microphone access (the live ch
 3. The five Firestore indexes are deployed (done Nov 3, 2026, task 34).
 4. On a fresh machine only: `gcloud auth application-default login` with an account that can reach `frankirocks`.
 5. Only to test the deployed app, where `devAdmit` refuses replies until F2: add `franki-web--frankirocks.us-central1.hosted.app` to the Firebase Authentication authorized domains, and put `FRANKI_ID_HMAC_KEY` in Secret Manager with access for backend `franki-web`.
-6. Still open: approve a push so CI runs (task 33), finish the task 25 browser checks, and confirm or drop the task 13 save hook.
+6. Still open: finish the task 25 browser checks, and confirm or drop the task 13 save hook.
 
 **Real OpenAI calls made:** listed under the live check above.
 
 ## Still needs a person or a push
 
-- **Push and CI** (owner approval): run the CI `verify` and emulator jobs on this branch.
 - **Task 25 browser checks** on `http://localhost:3000` (`npm run dev`): sign in with Google and see the email within 5 s; close the popup and see the "window was closed" message with the button enabled again; reload while signed in and stay signed in; see the "Built with Kiro" footer signed in and signed out.
 - **Task 13 save hook**: confirm in the Kiro IDE that saving a file under `packages/` runs `npm run test:fast` once, or decide to drop R3.4.
 - **Call screen look** (no paid call needed): signed out, the call button and typed input show disabled; signed in, the call button shows its start form and the closed avatar.
