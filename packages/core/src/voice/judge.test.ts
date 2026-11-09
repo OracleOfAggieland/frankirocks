@@ -2,9 +2,11 @@ import { readFileSync } from "node:fs";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  APP_JUDGE_SETTINGS,
   JUDGE_CONTRACT_SETTINGS,
   JUDGE_MAX_FRAGMENTS,
   JUDGE_V1_INSTRUCTIONS,
+  JUDGE_V2_INSTRUCTIONS,
   type JudgeRequest,
   judgeContextText,
   judgeCreate,
@@ -35,6 +37,20 @@ describe("JUDGE_V1_INSTRUCTIONS", () => {
     expect(JUDGE_V1_INSTRUCTIONS).toBe(contractLiteral());
   });
   it("matches its pinned text", () => expect(JUDGE_V1_INSTRUCTIONS).toBe(EXPECTED));
+});
+
+describe("JUDGE_V2_INSTRUCTIONS", () => {
+  it("is judge_v1 with the company sentence on its own line after the H: line", () => {
+    const [l1, h, ...rest] = EXPECTED.split("\n");
+    const pinned = [
+      l1,
+      h,
+      "Another person present, arriving, listening, on speaker or being addressed is company: H, even when said as small talk.",
+      ...rest,
+    ].join("\n");
+    expect(JUDGE_V2_INSTRUCTIONS).toBe(pinned);
+    expect(JUDGE_V2_INSTRUCTIONS.split("\n")).toHaveLength(6);
+  });
 });
 
 const REQ: JudgeRequest = {
@@ -95,22 +111,36 @@ describe("judgeCreate", () => {
   });
 
   it("takes the output cap and effort as settings, contracts §5's by default", () => {
-    expect(JUDGE_CONTRACT_SETTINGS).toEqual({ maxOutputTokens: 16, effort: "minimal" });
-    const uncapped = judgeCreate(REQ, { maxOutputTokens: "inf", effort: "minimal" }).response as Record<string, unknown>;
+    expect(JUDGE_CONTRACT_SETTINGS).toEqual({ contract: "judge_v1", maxOutputTokens: 16, effort: "minimal", deadlineMs: 600 });
+    expect(APP_JUDGE_SETTINGS).toEqual({ contract: "judge_v1", maxOutputTokens: "inf", effort: "minimal", deadlineMs: 1200 });
+    const uncapped = judgeCreate(REQ, APP_JUDGE_SETTINGS).response as Record<string, unknown>;
     expect(uncapped.max_output_tokens).toBe("inf");
     expect(uncapped.reasoning).toEqual({ effort: "minimal" });
-    const low = judgeCreate(REQ, { maxOutputTokens: 64, effort: "low" }).response as Record<string, unknown>;
+    const low = judgeCreate(REQ, { ...JUDGE_CONTRACT_SETTINGS, maxOutputTokens: 64, effort: "low" }).response as Record<string, unknown>;
     expect(low).toMatchObject({ max_output_tokens: 64, reasoning: { effort: "low" } });
     const { max_output_tokens: _a, reasoning: _b, ...rest } = low;
     const { max_output_tokens: _c, reasoning: _d, ...contract } = judgeCreate(REQ).response as Record<string, unknown>;
     expect(rest).toEqual(contract);
   });
 
+  it("picks the instructions by contract and names it in metadata", () => {
+    const v1 = judgeCreate(REQ, APP_JUDGE_SETTINGS).response as Record<string, unknown>;
+    expect(v1.instructions).toBe(JUDGE_V1_INSTRUCTIONS);
+    expect((v1.metadata as Record<string, string>).contract).toBe("judge_v1");
+    const v2 = judgeCreate(REQ, { ...APP_JUDGE_SETTINGS, contract: "judge_v2" }).response as Record<string, unknown>;
+    expect(v2.instructions).toBe(JUDGE_V2_INSTRUCTIONS);
+    expect((v2.metadata as Record<string, string>).contract).toBe("judge_v2");
+    const { instructions: _e, metadata: _f, ...v2rest } = v2;
+    const { instructions: _g, metadata: _h, ...v1rest } = v1;
+    expect(v2rest).toEqual(v1rest);
+    expect(() => judgeCreate(REQ, { ...APP_JUDGE_SETTINGS, contract: "judge_v3" as never })).toThrow(RangeError);
+  });
+
   it("refuses a cap that is not a positive integer or inf, and an unknown effort", () => {
     for (const cap of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "16", "INF"]) {
-      expect(() => judgeCreate(REQ, { maxOutputTokens: cap as never, effort: "minimal" })).toThrow(RangeError);
+      expect(() => judgeCreate(REQ, { ...JUDGE_CONTRACT_SETTINGS, maxOutputTokens: cap as never })).toThrow(RangeError);
     }
-    expect(() => judgeCreate(REQ, { maxOutputTokens: 16, effort: "max" as never })).toThrow(RangeError);
+    expect(() => judgeCreate(REQ, { ...JUDGE_CONTRACT_SETTINGS, effort: "max" as never })).toThrow(RangeError);
     expect(isJudgeOutputCap(1)).toBe(true);
     expect(isJudgeEffort("none")).toBe(true);
   });

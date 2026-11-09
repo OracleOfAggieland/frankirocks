@@ -620,7 +620,7 @@ describe("judge spike CLI", () => {
     expect(files.filter((f) => f.endsWith(".json"))).toHaveLength(1);
     const out = JSON.parse(readFileSync(join(d, "dist", "dry-run", files.find((f) => f.endsWith(".json"))!), "utf8")) as RunFile;
     expect(out.transport).toBe("fake");
-    expect(out.judge).toEqual({ maxOutputTokens: "inf", effort: "minimal" });
+    expect(out.judge).toEqual({ contract: "judge_v1", maxOutputTokens: "inf", effort: "minimal", deadlineMs: 600 });
     expect(out.run).toEqual({ mode: "parallel", staggerMs: 0 });
     expect(logs[3]).toMatch(/^harness: mode parallel, stagger 0 ms;/);
     expect(Object.fromEntries(out.rows.map((r) => [r.lineId, r.decision]))).toEqual({ "c-forget-1": "held", "o-01": "reply" });
@@ -632,7 +632,7 @@ describe("judge spike CLI", () => {
     expect(await main(["harness", "--lines", "o-01", "--max-tokens", "64", "--effort", "low"], { spikeDir: d, env: {}, log: (l) => logs.push(l) })).toBe(0);
     expect(logs[1]).toBe("harness: judge max_output_tokens 64, effort low; line order seed 7");
     const file = readdirSync(join(d, "dist", "dry-run")).find((f) => f.endsWith(".json"))!;
-    expect((JSON.parse(readFileSync(join(d, "dist", "dry-run", file), "utf8")) as RunFile).judge).toEqual({ maxOutputTokens: 64, effort: "low" });
+    expect((JSON.parse(readFileSync(join(d, "dist", "dry-run", file), "utf8")) as RunFile).judge).toEqual({ contract: "judge_v1", maxOutputTokens: 64, effort: "low", deadlineMs: 600 });
     expect(judgeSettings({})).toEqual(SPIKE_JUDGE_SETTINGS);
     expect(judgeSettings({ "max-tokens": "inf" }).maxOutputTokens).toBe("inf");
     for (const bad of ["0", "-3", "1.5", "16x", "Infinity"]) expect(() => judgeSettings({ "max-tokens": bad })).toThrow(/--max-tokens/);

@@ -57,7 +57,7 @@ export const MAX_RUN_LINES = 70;
  * The spike's judge settings unless the CLI says otherwise (brief 007 item 2): no output cap, by the owner's
  * ruling, because reasoning tokens count against contracts §5's 16 and the first live run never got a letter.
  */
-export const SPIKE_JUDGE_SETTINGS: JudgeSettings = { maxOutputTokens: "inf", effort: "minimal" };
+export const SPIKE_JUDGE_SETTINGS: JudgeSettings = { contract: "judge_v1", maxOutputTokens: "inf", effort: "minimal", deadlineMs: JUDGE_DEADLINE_MS };
 
 /** Brief 009: `sequential` sends the reply after a valid `O`; `parallel` sends it beside the judge, muted. */
 export type RunMode = "sequential" | "parallel";

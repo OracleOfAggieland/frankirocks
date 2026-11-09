@@ -31,8 +31,8 @@ export interface RunMeta {
   lineSetCommit: string;
   lineSetHash: string;
   models: { voice: string; transcribe: string };
-  /** The judge's output cap and reasoning effort for this run. */
-  judge: JudgeSettings;
+  /** The judge's settings for this run. Runs before brief 011 carry only the cap and effort, and ran judge_v1 at 600 ms. */
+  judge: Pick<JudgeSettings, "maxOutputTokens" | "effort"> & Partial<Pick<JudgeSettings, "contract" | "deadlineMs">>;
   /** Sequential or parallel, and the stagger (brief 009). Absent in runs before it, which were all sequential. */
   run?: RunSettings;
 }
@@ -316,7 +316,7 @@ export function summarize(run: RunFile): Summary {
 const ms = (v: number | null) => (v === null ? "—" : `${Math.round(v)} ms`);
 const pct = (x: Ratio) => (x.of === 0 ? "—" : `${((x.n / x.of) * 100).toFixed(1)}% (${x.n} of ${x.of}${x.missing > 0 ? `, ${x.missing} not measured` : ""})`);
 const tokens = (t: TokenStats) => (t.n === 0 ? "not reported in any usage object" : `largest ${t.max}, p50 ${t.p50}, over ${t.n} response(s)`);
-const cap = (j: JudgeSettings) => (j.maxOutputTokens === "inf" ? "inf (no cap)" : String(j.maxOutputTokens));
+const cap = (j: Pick<JudgeSettings, "maxOutputTokens">) => (j.maxOutputTokens === "inf" ? "inf (no cap)" : String(j.maxOutputTokens));
 
 export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): string {
   const out: string[] = [];

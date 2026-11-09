@@ -130,7 +130,7 @@ export function judgeSettings(values: Readonly<Record<string, string>>): JudgeSe
   }
   const effort = values.effort ?? SPIKE_JUDGE_SETTINGS.effort;
   if (!isJudgeEffort(effort)) throw new Error(`--effort must be one of ${JUDGE_EFFORTS.join(", ")}, not ${effort}`);
-  return { maxOutputTokens, effort };
+  return { ...SPIKE_JUDGE_SETTINGS, maxOutputTokens, effort };
 }
 
 /** `--seed <n>` for the line order, an integer from 0 to 2^32 - 1; DEFAULT_SEED when absent. */

@@ -40,10 +40,11 @@ Rules for every task:
 
 ### Group A2: pure core, first layer (parallel)
 
-- [ ] 3. Judge settings and `judge_v2`
+- [x] 3. Judge settings and `judge_v2`
   - Requirements: R16.1–R16.5, R2.2; Q82
   - Depends on: 2
-  - Estimate: 2 h · Actual:
+  - Estimate: 2 h · Actual: 0.6 h
+  - Notes: `JudgeSettings` gains `contract` and `deadlineMs`; `SPIKE_JUDGE_SETTINGS` keeps 600 ms until task 41. Outside the file list, for types and existing tests only: `cli.ts` (`judgeSettings` spreads the spike settings), `summary.ts` (`RunFile.judge` accepts old run files without contract or deadline), and two run-file expectations in `harness.test.ts` (run files now carry `contract` and `deadlineMs`, which is R17.6 early). The contract's own judge_v1 literal quotes "Don't let me forget", which probe c-forget-5 also says; the probe-copy test checks that the added sentence is clean and that judge_v2 adds no copy beyond the contract's, rather than claiming v1 is clean.
   - Files: `packages/core/src/voice/judge.ts`, `packages/core/src/voice/judge.test.ts`, `scripts/close-copy.mjs` (new), `scripts/probe-copy.test.ts` (new), `scripts/judge-spike/harness.ts` (the `SPIKE_JUDGE_SETTINGS` constant only)
   - Witness: `judge.test.ts` › `JUDGE_V2_INSTRUCTIONS` equals `judge_v1` with the one sentence on its own line after the `H:` line; `judgeCreate` picks the instructions by `contract` and writes it to `metadata.contract`; `JUDGE_CONTRACT_SETTINGS` is `{judge_v1, 16, minimal, 600}`; `APP_JUDGE_SETTINGS` is `{judge_v1, "inf", minimal, 1200}`. `scripts/probe-copy.test.ts` › no 4-word window of any `lines.json` line, nor any whole line under 4 words, appears in `JUDGE_V2_INSTRUCTIONS` (both rendered by `close-copy.mjs`). Existing harness tests still pass.
   - Commit: `feat(voice): judge settings and the judge_v2 candidate`
