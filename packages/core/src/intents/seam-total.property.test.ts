@@ -3,6 +3,8 @@
 // marked O (or a typed line), in a private audience with no parse gap; crisis replies carry no notes, no tools and
 // no fixed line; a missing transcript or a failed parse gets recoveryOnly, cutting a playing reply only on a regex
 // match; and a regex match never changes the outcome of a parse that succeeded.
+// One exception to "crisis replies carry no notes": a typed line with no call open has no spoken reply, so its
+// typed reply is the care reply and travels as a note (docs/briefs/011-review-wave-a.md, item 17).
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { type RuleInput, serverRule } from "../admission";
@@ -24,7 +26,11 @@ function check(i: RuleInput): void {
   if ((i.source === "asr" || i.source === "typed") && !i.narrowedHere) {
     if (i.transcript !== "final") expect(o).toMatchObject({ kind: "permit", permit: "recoveryOnly", cut: false });
     else if (i.parse.kind === "failed" || i.parse.kind === "none") expect(o).toMatchObject({ kind: "permit", permit: "recoveryOnly", cut: i.regexMatch });
-    else if (i.parse.kind === "hit" && i.parse.candidates.includes("crisis")) expect(o).toMatchObject({ kind: "permit", scope: "ack", notes: "none", line: null });
+    else if (i.parse.kind === "hit" && i.parse.candidates.includes("crisis")) {
+      expect(o).toMatchObject({ kind: "permit", scope: "ack", line: null });
+      const typedNoCall = i.source === "typed" && !i.callLive;
+      if (!typedNoCall) expect(o).toMatchObject({ notes: "none" });
+    }
   }
   if (i.parse.kind !== "failed" && i.parse.kind !== "none") expect(serverRule({ ...i, regexMatch: !i.regexMatch })).toEqual(o);
 }
