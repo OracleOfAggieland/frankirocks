@@ -1831,7 +1831,10 @@ function maybeAdmit(s: Step): void {
 
 function onTimer(s: Step, name: TimerName): void {
   const at = s.st.deadlines[name];
-  if (at === undefined || s.now < at) return;
+  if (at === undefined) return;
+  // A tick that arrives early (the browser timer ran ahead of the opsClock) re-arms the same deadline, so it is
+  // never lost (review of wave A, item 11).
+  if (s.now < at) return s.arm(name, at);
   s.disarm(name);
   const st = s.st;
   switch (name) {

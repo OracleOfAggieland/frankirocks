@@ -1276,4 +1276,14 @@ describe("wave A review fixes, items 8 and 9", () => {
     r.ev({ type: "retryPressed" });
     expect(states()).toBe(n);
   });
+
+  it("item 11: a timer tick that arrives early re-arms the same deadline", () => {
+    const r = listening();
+    const t = commitTurn(r);
+    const at = r.st.deadlines.judge!;
+    expect(at).toBe(t.t0 + JUDGE_LIMIT_MS);
+    const cmds = r.timer("judge", 100);
+    expect(cmds).toContainEqual({ kind: "armTimer", name: "judge", at });
+    expect(r.st.deadlines.judge).toBe(at);
+  });
 });
