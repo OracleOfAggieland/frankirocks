@@ -119,10 +119,11 @@ Rules for every task:
 
 ### Group A5: machine types (serial)
 
-- [ ] 11. Voice_Machine types, no behaviour change
+- [x] 11. Voice_Machine types, no behaviour change
   - Requirements: R2.1, R6.4, R7.9 (constants); design §"New state", §"Wait limits"
   - Depends on: 10
-  - Estimate: 1.5 h · Actual:
+  - Estimate: 1.5 h · Actual: 0.4 h
+  - Notes: `lastLoudAt` rides on the `realtime` event wrapper (optional), since the Realtime event itself is OpenAI's shape. `stateOk.sentAt` is optional in the type until task 27 decides how a missing one is read. Added `ackDroppedStale` (for the `staleAck` reason), `lastLoudAt`, `eventSeq` and `MissingTurn` beyond the design's table. `LATE_TURN_MS` is re-exported from `latency.ts`.
   - Files: `packages/core/src/voice/machine.ts`, `packages/core/src/voice/machine.test.ts`
   - Witness: `machine.test.ts` › `initialVoiceState` has the new fields with empty values; the new events (`specHashed`, `error`, `stateOk.sentAt`, `committed.lastLoudAt`) and commands (`hashPayload`) type-check and are ignored by `step`; the wait-limit constants have the values of design §"Wait limits"; every existing test passes unchanged.
   - Commit: `refactor(voice): machine types for the judge and speculation`

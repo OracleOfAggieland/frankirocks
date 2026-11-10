@@ -16,6 +16,8 @@
  */
 import { RECOVERY_LINE, type PayloadInput } from "../admission";
 import { SEMANTIC_VAD } from "./vad";
+import { APP_JUDGE_SETTINGS, type JudgeVerdict } from "./judge";
+import { LATE_TURN_MS, type LatencyRow, type LatencyTimes } from "./latency";
 import { type Infer } from "../schema/v";
 import { type SS, type StateAck, msFromTs, tsFromMs } from "../schema/primitives";
 import type { PermitKind } from "../schema/records";
@@ -63,10 +65,37 @@ export const MAX_TURN_ITEMS = 8;
 /** How many responses `recent` keeps. */
 export const MAX_RECENT_RESPONSES = 4;
 
+// Wait limits of voice-control (R7.9; design "Wait limits"). All count on the browser opsClock.
+/** No verdict by t0 + this: cancel the judge and the speculative reply, and take the slow path. */
+export const JUDGE_LIMIT_MS = APP_JUDGE_SETTINGS.deadlineMs;
+/** No transcript by t0 + this on a held Turn: post `missing`; the server answers `recoveryOnly`. */
+export const HELD_TRANSCRIPT_LIMIT_MS = 2_500;
+/** No transcript by t0 + this on a Turn already admitted under `fastO`: post `missing`; the reply plays on. */
+export const ADMITTED_TRANSCRIPT_LIMIT_MS = 5_000;
+/** No `/api/turn` answer by the post + this: RECOVERY, as a failed request does today. */
+export const TURN_RESPONSE_LIMIT_MS = 5_000;
+/** A Turn posted `missing` waits this long from the post for a late transcript (the Superseding_Post). */
+export const MISSING_WINDOW_MS = 10_000;
+/** `/api/session/state` while a call is live, never two in flight (R4.5). */
+export const POLL_MS = 1_000;
+export { LATE_TURN_MS };
+
 // ---------------------------------------------------------------------------------------------
 // State
 
-export type VoicePhase = "CLOSED" | "CONNECTING" | "CONFIGURING" | "LISTENING" | "WAIT_ITEM" | "HELD" | "SPEAKING" | "TOOL_WAIT" | "RECOVERY";
+export type VoicePhase =
+  | "CLOSED"
+  | "CONNECTING"
+  | "CONFIGURING"
+  | "LISTENING"
+  | "WAIT_ITEM"
+  | "JUDGING"
+  | "SPECULATING"
+  | "HELD"
+  | "SPEAKING"
+  | "TOOL_WAIT"
+  | "SWAPPING"
+  | "RECOVERY";
 
 export type TimerName =
   | "openWait"
@@ -82,7 +111,10 @@ export type TimerName =
   | "reconnect"
   | "retryUi"
   | "tool"
-  | "lineDone";
+  | "lineDone"
+  | "judge"
+  | "poll"
+  | "swap";
 
 export interface VoiceItem {
   itemId: string;
@@ -136,6 +168,40 @@ export interface VoiceConfig {
   transcribeModel: string;
 }
 
+/** The current Turn's judge (design "New state"). */
+export interface JudgeState {
+  turnId: string;
+  responseId: string | null;
+  eventId: string;
+  sentAt: number;
+  /** t0 + JUDGE_LIMIT_MS. */
+  deadline: number;
+  verdict: JudgeVerdict | null;
+  valid: boolean;
+  verdictAt: number | null;
+}
+
+/** The speculative reply, and the payload it was created from. */
+export interface SpecState {
+  turnId: string;
+  responseId: string | null;
+  eventId: string;
+  payload: PayloadInput;
+  hash: string | null;
+  mutedStarted: boolean;
+  heldCall: ToolCallItem | null;
+}
+
+/** A Turn posted `missing` whose transcript may still arrive (R7.8). */
+export interface MissingTurn {
+  turnId: string;
+  clientSeq: number;
+  body: TurnBody;
+  items: VoiceItem[];
+  /** The post + MISSING_WINDOW_MS. */
+  until: number;
+}
+
 export interface VoiceState {
   phase: VoicePhase;
   config: VoiceConfig;
@@ -173,6 +239,28 @@ export interface VoiceState {
   awaitingOpen: boolean;
   hangingUp: boolean;
   error: "open" | "close" | null;
+  // voice-control (design "New state")
+  judge: JudgeState | null;
+  spec: SpecState | null;
+  /** Unadmitted_Fragments of this generation, in commit order (KV01). */
+  unadmitted: { itemId: string; commitSeq: number }[];
+  /** Outstanding_Turns: posted, no answer yet. */
+  outstanding: { turnId: string; deadline: number }[];
+  missing: MissingTurn[];
+  lastTurnResponseAt: number | null;
+  /** When the in-flight `/api/session/state` went out, or null when none is in flight. */
+  stateSentAt: number | null;
+  /** The last ack seen was dropped because its request went out before the last `/api/turn` answer. */
+  ackDroppedStale: boolean;
+  /** The Turn whose reply is admitted (R3.8). */
+  admittedTurnId: string | null;
+  /** Wave B: swap once the admitted care reply ends (R14.7). */
+  afterReply: "swap" | null;
+  /** The last loud input frame the Voice_Client reported (Latency_Clock). */
+  lastLoudAt: number | null;
+  latency: { current: LatencyTimes | null; rows: LatencyRow[] };
+  /** Counter for client `event_id`s. */
+  eventSeq: number;
 }
 
 export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState {
@@ -203,6 +291,19 @@ export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState
     awaitingOpen: false,
     hangingUp: false,
     error: null,
+    judge: null,
+    spec: null,
+    unadmitted: [],
+    outstanding: [],
+    missing: [],
+    lastTurnResponseAt: null,
+    stateSentAt: null,
+    ackDroppedStale: false,
+    admittedTurnId: null,
+    afterReply: null,
+    lastLoudAt: null,
+    latency: { current: null, rows: [] },
+    eventSeq: 0,
   };
 }
 
@@ -222,7 +323,9 @@ export type RealtimeServerEvent =
   | { type: "output_audio_buffer.started"; response_id: string }
   | { type: "output_audio_buffer.stopped"; response_id: string }
   | { type: "response.output_audio_transcript.done"; response_id: string; transcript: string }
-  | { type: "response.function_call_arguments.done"; response_id: string; call_id: string; name: string; arguments: string };
+  | { type: "response.function_call_arguments.done"; response_id: string; call_id: string; name: string; arguments: string }
+  /** A client event failed; `event_id` names the client event that caused it (question 85). */
+  | { type: "error"; error: { type?: string; code?: string | null; message?: string; event_id?: string | null } };
 
 export type VoiceEvent =
   | { type: "callPressed"; zone: string }
@@ -235,7 +338,7 @@ export type VoiceEvent =
   | { type: "channelOpen" }
   /** The peer connection reached `failed`, or the data channel closed without an Owner hang-up (R15.8). */
   | { type: "connectionLost" }
-  | { type: "stateOk"; response: Infer<typeof StateResponse> }
+  | { type: "stateOk"; response: Infer<typeof StateResponse>; sentAt?: number }
   | { type: "stateFailed" }
   | { type: "turnOk"; turnId: string; response: Infer<typeof TurnResponse> }
   | { type: "turnFailed"; turnId: string }
@@ -245,10 +348,13 @@ export type VoiceEvent =
   | { type: "closeFailed" }
   /** The Voice_Client's SHA-256 of the canonical payload a `verifyPermit` command named. */
   | { type: "permitChecked"; permitId: string; hash: string }
+  /** The Voice_Client's SHA-256 of the payload a `hashPayload` command named. */
+  | { type: "specHashed"; eventId: string; hash: string }
   /** A typed line sent while a call is live (design "One typed turn" step 4). */
   | { type: "typedSubmitted"; turnId: string; text: string }
-  /** `freshId` is a new random ID, used as the turnId if this event starts a Turn. */
-  | { type: "realtime"; event: RealtimeServerEvent; freshId: string }
+  /** `freshId` is a new random ID, used as the turnId if this event starts a Turn. `lastLoudAt` is the Voice_Client's
+   * last loud input frame on the opsClock, sent with commits for the Latency_Clock. */
+  | { type: "realtime"; event: RealtimeServerEvent; freshId: string; lastLoudAt?: number | null }
   | { type: "timer"; name: TimerName };
 
 // ---------------------------------------------------------------------------------------------
@@ -272,6 +378,8 @@ export type VoiceCommand =
   | { kind: "close"; body: Omit<Infer<typeof CloseRequest>, "requestId"> }
   | { kind: "receipt"; body: Omit<Infer<typeof ReceiptRequest>, "requestId"> }
   | { kind: "verifyPermit"; permitId: string; payload: PayloadInput }
+  /** Hash a payload; the answer comes back as `specHashed`. */
+  | { kind: "hashPayload"; eventId: string; payload: PayloadInput }
   | { kind: "armTimer"; name: TimerName; at: number };
 
 export interface StepResult {
@@ -444,8 +552,11 @@ export function avatarState(st: VoiceState): AvatarState {
     case "LISTENING":
       return "listening";
     case "WAIT_ITEM":
+    case "JUDGING":
+    case "SPECULATING":
     case "HELD":
     case "TOOL_WAIT":
+    case "SWAPPING":
       return "thinking";
     case "SPEAKING":
       return "speaking";

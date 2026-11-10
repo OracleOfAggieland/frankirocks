@@ -8,10 +8,17 @@ import type { Infer } from "../schema/v";
 import { sampleHead, testId } from "../testing/samples";
 import {
   ACK_LIMIT_MS,
+  ADMITTED_TRANSCRIPT_LIMIT_MS,
   CONNECT_LIMIT_MS,
+  HELD_TRANSCRIPT_LIMIT_MS,
+  JUDGE_LIMIT_MS,
+  LATE_TURN_MS,
   MAX_RECENT_RESPONSES,
+  MISSING_WINDOW_MS,
+  POLL_MS,
   type RealtimeServerEvent,
   TOOL_LIMIT_MS,
+  TURN_RESPONSE_LIMIT_MS,
   type VoiceCommand,
   type VoiceEvent,
   type VoiceState,
@@ -594,5 +601,42 @@ describe("voice state machine", () => {
     expect(r.last).toContainEqual({ kind: "armTimer", name: "reconnect", at: r.now + 2000 });
     r.timer("retryUi", 28_500);
     expect(r.st.retryVisible).toBe(true);
+  });
+});
+
+describe("voice-control machine types (task 11)", () => {
+  it("starts with empty judge, speculation and latency state", () => {
+    const st = initialVoiceState(CONFIG);
+    expect(st).toMatchObject({
+      judge: null,
+      spec: null,
+      unadmitted: [],
+      outstanding: [],
+      missing: [],
+      lastTurnResponseAt: null,
+      stateSentAt: null,
+      ackDroppedStale: false,
+      admittedTurnId: null,
+      afterReply: null,
+      lastLoudAt: null,
+      latency: { current: null, rows: [] },
+      eventSeq: 0,
+    });
+  });
+
+  it("names the wait limits of design §Wait limits", () => {
+    expect({ JUDGE_LIMIT_MS, HELD_TRANSCRIPT_LIMIT_MS, ADMITTED_TRANSCRIPT_LIMIT_MS, TURN_RESPONSE_LIMIT_MS, LATE_TURN_MS, MISSING_WINDOW_MS, POLL_MS }).toEqual({
+      JUDGE_LIMIT_MS: 1_200,
+      HELD_TRANSCRIPT_LIMIT_MS: 2_500,
+      ADMITTED_TRANSCRIPT_LIMIT_MS: 5_000,
+      TURN_RESPONSE_LIMIT_MS: 5_000,
+      LATE_TURN_MS: 2_500,
+      MISSING_WINDOW_MS: 10_000,
+      POLL_MS: 1_000,
+    });
+  });
+
+  it("maps the new phases to the thinking look", () => {
+    for (const phase of ["JUDGING", "SPECULATING", "SWAPPING"] as const) expect(avatarState({ ...initialVoiceState(CONFIG), phase })).toBe("thinking");
   });
 });
