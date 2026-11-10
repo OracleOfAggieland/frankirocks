@@ -1,7 +1,9 @@
 // Feature: voice-control, Property 7: fastO needs a fresh ack (R20.1.7; R4.1–R4.4, KV13).
 // Whenever the machine issues a fastO Permit: it holds a StateAck matching the Deck's four revisions, under 2.5 s
-// old, delivered by a state request sent after the last /api/turn answer; no /api/turn request is outstanding; the
-// judge gave a valid O for the turn; and the judge's 1,200 ms deadline has not passed.
+// old, delivered by a state request sent after the last /api/turn answer; no /api/turn request of another Turn is
+// outstanding; the judge gave a valid O for the turn; and the judge's 1,200 ms deadline has not passed.
+// The Turn's own post doesn't count: its transcript usually arrives before its verdict, and what the ack vouches
+// for is every earlier Turn (docs/briefs/011-review-wave-a.md, change 1).
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { msFromTs } from "../schema/primitives";
@@ -37,8 +39,8 @@ describe("Property 7: fastO needs a fresh ack", () => {
           const sentAt = delivery!.event.type === "stateOk" ? delivery!.event.sentAt : undefined;
           expect(sentAt).toBeDefined();
           expect(sentAt!).toBeGreaterThan(lastTurnAnswerAt(d.trace, s.i) ?? Number.NEGATIVE_INFINITY);
-          // c) no outstanding /api/turn
-          expect(outstandingAt(d.trace, s.i, 5_000)).toEqual([]);
+          // c) no outstanding /api/turn of another Turn
+          expect(outstandingAt(d.trace, s.i, 5_000).filter((id) => id !== turnId)).toEqual([]);
           // d) a valid O from this turn's judge
           const judges = new Set(responses.filter((r) => r.purpose === "judge" && r.turnId === turnId).map((r) => r.id));
           const gotO = trace.slice(0, s.i + 1).some((x) => {
