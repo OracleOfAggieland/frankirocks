@@ -97,10 +97,11 @@ Rules for every task:
   - Witness: `admission.test.ts` › one case per rule row 1–13 of design §"The Server_Rule", both waves; crisis retained beats every chosen class with scope `ack` and notes none; row 5a vs 5b differ only in `cut`; flipping `regexMatch` changes nothing when the parse did not fail; no input names a clock.
   - Commit: `feat(admission): the server rule`
 
-- [ ] 9. FastO_Rule
+- [x] 9. FastO_Rule
   - Requirements: R4.1, R4.4, R4.6, R4.7, R18.6; Q61
   - Depends on: 3
-  - Estimate: 1.5 h · Actual:
+  - Estimate: 1.5 h · Actual: 0.3 h
+  - Notes: A null ack reports `staleAck` when the machine dropped the last ack as stale (`ackDroppedStale`), else `ack`; so `staleAck` is checked inside the ack step rather than after `outstanding`.
   - Files: `packages/core/src/voice/fast-o.ts` (new), `packages/core/src/voice/fast-o.test.ts` (new)
   - Witness: `fast-o.test.ts` › `fastOProblem` returns each named reason (`verdict`, `ack`, `outstanding`, `staleAck`, `noteWaiting`) for one failing condition at a time, and null when all hold; boundaries at ack age 2,499/2,500 and at t0 + 1,199/1,200; `issueFastO` gives kind `fastO`, scope `reply`, no notes, `expiresAt = now + 10000`, and validates as `Permit`. Takes a narrow `FastOInput`, not `VoiceState`, so it doesn't wait on the machine types.
   - Commit: `feat(voice): fastO rule`
