@@ -276,9 +276,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `machine.test.ts` › one case per status row (`ordinary`, `ready`, `hold`/`clarify` with `recoveryOnly`, `blocked` ignored until wave B); "ready and clarify cut a playing fastO reply, ordinary and hold don't"; "a slowOrdinary that arrives while SPECULATING admits the spec reply"; "scope ack and recoveryOnly get tools []; scope reply keeps recall"; "an ack note is spoken verbatim"; "a Permit arriving after t0 + 2500 but before the request timeout plays and is late"; "after the permit timer a turnOk only adopts its Deck". Property 12 green.
   - Commit: `feat(voice): turn responses, cuts and tools by scope`
 
-- [ ] 27. Deadlines, `missing` posts, the superseding post, polling and speech start
+- [x] 27. Deadlines, `missing` posts, the superseding post, polling and speech start
   - Requirements: R4.1–R4.5, R7.1–R7.9; KV04, KV05, KV06; Q54, Q63, Q89
-  - Depends on: 26 · Estimate: 3 h · Actual:
+  - Depends on: 26 · Estimate: 3 h · Actual: in task 24
+  - Notes: Code and witnesses in `2563adf`. Witness: describe "deadlines, missing posts, polling and speech start (task 27)", 4 cases, plus the updated "missing a transcript at t_end+2.5 s" case. The `turn` command gains `supersedesTurnId`; the Voice_Client fills `supersedesRequestId` from the request ID it used (task 40). Every post arms the permit wait at post + 5 s (this fixed property 6's first red run, seed `-944006138`, task 19), and SPEAKING has the 45 s cap. Properties 5 and 6 green.
   - Files: same as 24
   - Witness: `machine.test.ts` › "held turn posts missing at t0 + 2500 and plays the neutral line"; "admitted turn posts missing at t0 + 5000 and keeps playing"; "a late transcript sends one superseding post with the same turnId and clientSeq and speaks nothing"; "posting drops the ack; an ack sent before the last turn response can't grant fastO"; "poll every 1000 ms, never two in flight"; "speech start cancels judge, spec and active, clears, drops Permits". Properties 5 and 6 green.
   - Commit: `feat(voice): deadlines, missing posts and the superseding post`
