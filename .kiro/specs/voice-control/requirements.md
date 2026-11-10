@@ -188,7 +188,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 6. WHEN a Turn has a Control_Hit, THE Server_Rule SHALL issue the Permit its route names (Requirement 12) and no S1+ note.
 7. WHEN a voice Turn's transcript is `missing` or `failed`, or its Slow_Parse fails, THE Server_Rule SHALL issue `recoveryOnly` with no notes and no tool output. THE Server_Rule SHALL take no input from the server clock compared with a browser timestamp.
 8. WHEN a typed U line has an Ordinary_Parse, THE Server_Rule SHALL issue `slowOrdinary` as today, with no judge; WHEN it has a Control_Hit, THE Server_Rule SHALL route it as a voice Control_Hit.
-9. WHEN a typed U line arrives with no call open, THE Server_Library SHALL run the Decisions call at the same time as the typed reply's Responses call, and SHALL discard the typed reply on a Control_Hit.
+9. WHEN a typed U line arrives with no call open, THE Server_Library SHALL run the Decisions call at the same time as the typed reply's Responses call, with a 2,000 ms deadline; THE typed reply SHALL be shown for every class except those with a Fixed_Line, which show their line (a crisis line shows the typed reply, scope `ack`, as an S0 note), and a failed parse SHALL show the Neutral_Line as text (review of wave A, item 17).
 10. WHEN a pasted (T) line arrives, THE Server_Rule SHALL keep today's behaviour: no Slow_Parse, `postCommitControl`, scope `reply`, no S1+ note.
 11. WHEN a tool continuation is admitted, THE Server_Rule SHALL issue `slowOrdinary` only after the Turn's Slow_Parse has committed, waiting at most 1.5 s, and otherwise hold.
 12. THE Server_Rule SHALL never issue an S1+ note on a Turn whose `judge` is not `O`.

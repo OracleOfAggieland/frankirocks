@@ -8,7 +8,7 @@ import type { ParseOutcome } from "./intents/parse";
 import type { Au, Head, ReasonCode, Ref } from "./schema/primitives";
 import type { PermitKind } from "./schema/records";
 import type { SafeTurn, Stamp, W } from "./schema/wire";
-import { ALONE_LINE, COMPANY_LINE, FORGET_NOT_YET, type FixedLine } from "./voice/lines";
+import { ALONE_LINE, COMPANY_LINE, FORGET_NOT_YET, type FixedLine, RECOVERY_LINE } from "./voice/lines";
 
 export const PERMIT_TTL_MS = 10_000;
 /** The only line a `recoveryOnly` Permit covers; it lives with every Fixed_Line in `voice/lines.ts`. */
@@ -97,7 +97,9 @@ export function serverRule(i: RuleInput): RuleOutcome {
   // 5. The parse failed: the regex decides whether a playing reply is cut (R10.2, R11.7).
   if (i.parse.kind === "failed" || i.parse.kind === "none") {
     const why = i.parse.kind === "failed" ? i.parse.why : "none";
-    return permit("recoveryOnly", "reply", "none", i.regexMatch, { reasons: failReasons(why) });
+    // A typed line with no call open has no spoken Neutral_Line: it is shown as text (review of wave A, item 17).
+    const typedNoCall = i.source === "typed" && !i.callLive;
+    return permit("recoveryOnly", "reply", "none", i.regexMatch, typedNoCall ? { line: RECOVERY_LINE, reasons: failReasons(why) } : { reasons: failReasons(why) });
   }
   const p = i.parse;
   if (p.kind === "hit") {
@@ -106,8 +108,9 @@ export function serverRule(i: RuleInput): RuleOutcome {
     const quietReason: ReasonCode[] = p.candidates.includes("quiet") ? ["quiet"] : [];
     // 6. Crisis with company or quiet: the care reply first, then the swap (R14.7; question 68).
     if (crisis && i.wave === "B" && narrows && i.callLive) return permit("postCommitControl", "ack", "none", true, { swap: "afterReply", reasons: ["audience", ...quietReason] });
-    // 7. Crisis always takes the reply (R12.1).
-    if (crisis) return permit("postCommitControl", "ack", "none", true);
+    // 7. Crisis always takes the reply (R12.1). A typed line with no call open has no spoken care reply: its typed
+    // reply, which the Head's crisis instruction governs, travels as an S0 note, still with scope ack (item 17).
+    if (crisis) return permit("postCommitControl", "ack", i.source === "typed" && !i.callLive ? "S0" : "none", true);
     if (i.wave === "B" && (p.chosen === "company" || p.chosen === "quiet")) {
       const reasons: ReasonCode[] = p.chosen === "quiet" ? ["audience", "quiet"] : ["audience"];
       // 8. Narrow with a live call: hang up and swap (R14.1).

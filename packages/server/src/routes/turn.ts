@@ -9,6 +9,7 @@
  */
 import {
   type CoreEpoch,
+  DECISIONS_DEADLINE_MS,
   type Evidence,
   type ID,
   type Infer,
@@ -29,7 +30,7 @@ import { admitRule, fastODecisionId, fastOTurnFields } from "../admission/seam";
 import { advancedWatermark, effectiveAudience, expireLease, failedParseEffect, hasParseGap } from "../audience";
 import { decisionsPort } from "../intents/decisions-port";
 import { repairs, runParseRepair } from "../intents/repair";
-import { runSlowParse } from "../intents/slow-parse";
+import { DECISIONS_NO_CALL_DEADLINE_MS, runSlowParse } from "../intents/slow-parse";
 import { ensureCoreDocs, ownerClock, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck } from "../deck";
 import { type RequestKey, completeRequest } from "../ledger/request";
@@ -96,6 +97,12 @@ export async function safeTurnsOf(tx: Pick<Tx, "get">, uid: string, rows: readon
   return out.slice(-4);
 }
 
+/** True when the Session has no call open: no current call and none registered (the typed path, R18.6). */
+async function noCallOpen(ctx: RouteContext, sessionId: string): Promise<boolean> {
+  const doc = await ctx.deps.store.get<Session>(ctx.uid, paths.session(ctx.uid, sessionId));
+  return doc !== null && doc.data.callId === null && doc.data.registeredCallIds.length === 0;
+}
+
 /** The TurnResponse status for a rule outcome (design "Status mapping"; question 60, 92). */
 export function statusOf(o: RuleOutcome): TurnRes["status"] {
   if (o.kind === "hold") return o.blocked ? "blocked" : "hold";
@@ -123,8 +130,12 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
     // the typed reply's Responses call runs beside it (R8.9).
     const parses = req.transcriptState === "final" && cls.cls === "U";
     const decisions = decisionsPort(deps);
+    // With no call open, a typed line's parse runs beside its typed reply, which takes longer than 350 ms anyway,
+    // so the parse gets 2,000 ms (review of wave A, item 17).
+    const noCall = req.source !== "asr" && (await noCallOpen(ctx, req.sessionId));
+    const deadlineMs = noCall ? DECISIONS_NO_CALL_DEADLINE_MS : DECISIONS_DEADLINE_MS;
     const [slow, reply] = await Promise.all([
-      parses ? runSlowParse({ decisions, env: deps.env, log: deps.log }, { turnId: req.turnId, utterance: typedText }) : Promise.resolve(null),
+      parses ? runSlowParse({ decisions, env: deps.env, log: deps.log }, { turnId: req.turnId, utterance: typedText }, deadlineMs) : Promise.resolve(null),
       typedReplyNote(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx)),
     ]);
     for (let attempt = 1; ; attempt++) {
@@ -169,9 +180,10 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           // An earlier failed parse whose repair window ran out is a failed repair (R15.6).
           const s = expireLease(s0, ops);
           const text = typedText;
-          // A Control_Hit discards the typed reply (R8.9); a pasted (T) turn never carries an S1+ note.
-          const hit = slow !== null && slow.parse.kind === "hit";
-          const candidateNotes = reply === null || hit ? [] : [reply];
+          // With no call open the typed reply is kept on a hit too: the rule decides its notes, and a Fixed_Line
+          // replaces it (review of wave A, item 17). With a call, typedReplyNote makes no reply. A pasted (T) turn
+          // never carries an S1+ note.
+          const candidateNotes = reply === null ? [] : [reply];
           const coreVals = { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev };
           const { turn: turn0, evidence } = userTurnRecords({ uid, sessionId: req.sessionId, req, text, cls, clock: pair, core: coreVals, hasher: deps.hasher });
 

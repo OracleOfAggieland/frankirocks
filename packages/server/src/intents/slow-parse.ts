@@ -9,6 +9,9 @@ import type { Env } from "../config/env";
 import type { Log } from "../routes/runtime";
 import { type DecisionsPort, decisionsModel } from "./decisions-port";
 
+/** With no call open the typed reply takes longer than this anyway, so the parse may too (review of wave A, item 17). */
+export const DECISIONS_NO_CALL_DEADLINE_MS = 2_000;
+
 export interface SlowParse {
   parse: Extract<RuleParse, { kind: "ordinary" | "hit" | "failed" }>;
   /** Regex_Table IDs that matched. */
