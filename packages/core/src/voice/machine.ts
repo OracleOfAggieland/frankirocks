@@ -1088,12 +1088,10 @@ function postTurn(s: Step, transcriptState: "final" | "missing" | "failed"): voi
   }
 }
 
-/** Sends a TurnRequest: the request is outstanding and the held StateAck is dropped (R4.3, R4.4). */
+/** Sends a TurnRequest: the request is outstanding. The held StateAck stays: it vouches for every earlier Turn (R4.3; review of wave A, item 1). */
 function pushTurn(s: Step, body: TurnBody, supersedesTurnId: string | null = null): void {
   s.push(supersedesTurnId === null ? { kind: "turn", body } : { kind: "turn", body, supersedesTurnId });
   s.set({
-    ack: null,
-    ackDroppedStale: false,
     outstanding: [...s.st.outstanding.filter((o) => o.turnId !== body.turnId), { turnId: body.turnId, deadline: s.now + TURN_RESPONSE_LIMIT_MS }],
   });
 }
@@ -1237,7 +1235,8 @@ function tryFastO(s: Step): void {
     ack: st.ack,
     ackDroppedStale: st.ackDroppedStale,
     deck: st.deck,
-    outstanding: st.outstanding.filter((o) => o.deadline > s.now).length,
+    // Only another Turn's post refuses: this Turn's own post doesn't (review of wave A, item 1).
+    outstanding: st.outstanding.filter((o) => o.deadline > s.now && o.turnId !== turn.turnId).length,
   });
   if (problem !== null || spec === null) return holdForSlowPath(s, problem ?? "hash");
   // The hash of the speculative payload is not back yet: issue when it is (specHashed).

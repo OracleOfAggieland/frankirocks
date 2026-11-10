@@ -811,7 +811,9 @@ describe("verdicts and fastO admission (task 25)", () => {
     created(r, t.judge!, "resp_j");
     created(r, t.spec!, "resp_s");
     answerHash(r);
-    r.rt({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_1", transcript: "hello" }, 100); // posting drops the ack
+    // The server refuses the ack (a parse gap, say).
+    const d = r.st.deck!;
+    r.ev({ type: "stateOk", sentAt: r.now, response: { stamp: ss(d), state: "LISTENING", deck: d, ack: null, barrierReceiptId: null, proactive: null } }, 100);
     judgeDone(r, "resp_j", "O", 100);
     expect(r.last.some((c) => c.kind === "verifyPermit")).toBe(false);
     expect(r.st.phase).toBe("HELD");
@@ -924,12 +926,13 @@ describe("deadlines, missing posts, polling and speech start (task 27)", () => {
     expect(r.st.outputMuted).toBe(false);
   });
 
-  it("posting drops the ack; an ack requested before the last turn answer can't grant fastO (R4.3, R4.4)", () => {
+  it("posting keeps the ack; a turn answer drops it; an ack requested before the last turn answer can't grant fastO (R4.3, R4.4; review item 1)", () => {
     const r = listening();
     speak(r);
-    expect(r.st.ack).toBeNull();
+    expect(r.st.ack).not.toBeNull();
     const sentAt = r.now;
     r.ev({ type: "turnOk", turnId: turnBody(r).turnId, response: admitted(r, "slowOrdinary") }, 50);
+    expect(r.st.ack).toBeNull();
     const d = r.st.deck!;
     r.ev({ type: "stateOk", sentAt, response: { stamp: ss(d), state: "LISTENING", deck: d, ack: ackAt(d, r.now), barrierReceiptId: null, proactive: null } }, 10);
     expect(r.st.ack).toBeNull();
@@ -992,5 +995,39 @@ describe("latency rows and the avatar (task 28)", () => {
     const st = initialVoiceState(CONFIG);
     expect(avatarState({ ...st, phase: "SPEAKING", outputMuted: true })).toBe("thinking");
     expect(avatarState({ ...st, phase: "SPEAKING", outputMuted: false })).toBe("speaking");
+  });
+});
+
+// docs/briefs/011-review-wave-a.md
+describe("wave A review fixes", () => {
+  it("item 1: a turn's own post doesn't refuse its own fastO; another turn's post still does", () => {
+    const r = listening();
+    const t = commitTurn(r);
+    created(r, t.judge!, "resp_j");
+    created(r, t.spec!, "resp_s");
+    answerHash(r);
+    // The transcript arrives before the verdict: the turn is posted, and the ack it holds still vouches for every earlier turn.
+    r.rt({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_1", transcript: "My dog is called Pip" }, 100);
+    expect(r.log.some((c) => c.kind === "turn")).toBe(true);
+    expect(r.st.ack).not.toBeNull();
+    judgeDone(r, "resp_j", "O", 200);
+    expect(r.st.pending?.permit.kind).toBe("fastO");
+    expect(r.st.latency.current!.refused).toBeNull();
+  });
+
+  it("item 1: an outstanding post of another turn still refuses fastO", () => {
+    const r = listening();
+    // Turn 1 is posted and never answered.
+    speak(r);
+    r.ev({ type: "realtime", event: { type: "input_audio_buffer.speech_started", item_id: "item_2", audio_start_ms: 5000 }, freshId: testId("x") }, 10);
+    const t = commitTurn(r, "item_2");
+    created(r, t.judge!, "resp_j2");
+    created(r, t.spec!, "resp_s2");
+    answerHash(r);
+    const d = r.st.deck!;
+    r.ev({ type: "stateOk", sentAt: r.now, response: { stamp: ss(d), state: "LISTENING", deck: d, ack: ackAt(d, r.now), barrierReceiptId: null, proactive: null } }, 10);
+    judgeDone(r, "resp_j2", "O", 100);
+    expect(r.st.pending?.permit.kind).not.toBe("fastO");
+    expect(r.st.latency.current!.refused).toBe("outstanding");
   });
 });

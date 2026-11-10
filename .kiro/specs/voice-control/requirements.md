@@ -129,9 +129,9 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 
 #### Acceptance Criteria
 
-1. THE FastO_Rule SHALL issue a `fastO` Permit only when all of these hold (contracts §6 Admission, KV13): a Valid_O for this Turn and generation; a held StateAck whose four revisions (epoch, policyRev, bundleRev, rulesRev) equal the Deck's, whose generation is at most the local generation, and whose age on the browser opsClock is under 2,500 ms; no Outstanding_Turn; and a StateAck that came from a `/api/session/state` request sent after the last `/api/turn` response arrived.
+1. THE FastO_Rule SHALL issue a `fastO` Permit only when all of these hold (contracts §6 Admission, KV13): a Valid_O for this Turn and generation; a held StateAck whose four revisions (epoch, policyRev, bundleRev, rulesRev) equal the Deck's, whose generation is at most the local generation, and whose age on the browser opsClock is under 2,500 ms; no Outstanding_Turn of another Turn (this Turn's own post doesn't count); and a StateAck that came from a `/api/session/state` request sent after the last `/api/turn` response arrived.
 2. THE Server_Library SHALL answer `/api/session/state` with `ack:null` WHILE an S2 user Turn is among the Session's last four user Turns, a Parse_Gap exists, or the Effective_Audience is `unknown`; so no S2 Turn among the last four, no Parse_Gap and no `unknown` audience are conditions of `fastO` through the StateAck. A `company` Session keeps `fastO`, because its Head has no S1+ line.
-3. WHEN the Voice_Machine posts a Turn, THE Voice_Machine SHALL drop its held StateAck.
+3. WHEN the Voice_Machine posts a Turn, THE Voice_Machine SHALL keep its held StateAck, which vouches for every earlier Turn; WHEN any `/api/turn` response arrives, THE Voice_Machine SHALL drop it (review of wave A, item 1).
 4. An ack obtained before an Outstanding_Turn's response arrives SHALL NOT grant `fastO`; this is what "no control hit pending" means.
 5. WHILE a call is live, THE Voice_Client SHALL request `/api/session/state` at most once per second to keep the StateAck fresh (contracts §6 "poll1s").
 6. THE `fastO` Permit SHALL carry the current Stamp, scope `reply`, `approvedPayloadHash` equal to the hash of the payload the Speculative_Reply was created from (contracts §6 Hash), no notes, and `expiresAt` equal to the issuing opsClock time plus 10,000 ms.
@@ -354,7 +354,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
    4. **No clipped suffix.** After an `O` that follows Muted_Audio_Start, the audible response is a new response, and the earlier one was cancelled and cleared first.
    5. **Stale events are inert.** Events of another generation, or for a cancelled response, never move the machine or unmute output.
    6. **Every wait ends.** From any reachable state, with timers firing at their deadlines and no other events, the machine reaches `LISTENING`, `RECOVERY` or `CLOSED` in bounded time.
-   7. **`fastO` needs a fresh ack.** A `fastO` Permit is issued only with a matching four-revision StateAck under 2.5 s old, obtained after the last `/api/turn` response, with no Outstanding_Turn.
+   7. **`fastO` needs a fresh ack.** A `fastO` Permit is issued only with a matching four-revision StateAck under 2.5 s old, obtained after the last `/api/turn` response, with no Outstanding_Turn of another Turn.
    8. **The seam is total and closed.** For every combination of Turn kind, transcript state, `judge` value, Slow_Parse result and Effective_Audience, the Server_Rule returns exactly one Permit kind or a hold, and never an S1+ note on a Turn the judge didn't mark `O`.
    9. **Priority is stable.** For any probability vector, the chosen class follows the order of Requirement 10.7, a retained `crisis` candidate always gets the care reply, a Regex_Match never selects a route, and a Regex_Match never changes the outcome of a parse that succeeded.
    10. **Narrowing needs a closed call** (wave B). After a `company` or `quiet` hit, no reply is audible on a call opened before the hit, except the hit Turn's own crisis care reply (Requirement 14.7).
