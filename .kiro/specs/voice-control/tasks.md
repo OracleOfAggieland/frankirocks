@@ -312,9 +312,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
 
 ### Group A10
 
-- [ ] 31. Slow parse runner
+- [x] 31. Slow parse runner
   - Requirements: R11.1, R11.2, R10.2; Q90
-  - Depends on: 7, 29 · Estimate: 1.5 h · Actual:
+  - Depends on: 7, 29 · Estimate: 1.5 h · Actual: 0.3 h
+  - Notes: Adds `packages/server/src/testing/decisions.ts` (a fake `Decision` builder) for the route tests. The log line carries regex IDs only, never the words.
   - Files: `packages/server/src/intents/slow-parse.ts` (new), `packages/server/src/intents/slow-parse.test.ts` (new)
   - Witness: `slow-parse.test.ts` › regex then Decisions; ordinary, hit, `failed` (deadline, transport, invalid, oversize) each from the fake; the regex IDs are returned and logged as `turn.regex`; a regex match with a successful parse leaves the result unchanged.
   - Commit: `feat(intents): slow parse`
