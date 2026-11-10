@@ -1669,8 +1669,11 @@ function bargeIn(s: Step): void {
   cancelAll(s, false);
   const turn = s.st.turn;
   s.disarm("permit", "turnRetry", "tool", "lineDone");
-  // An unposted Turn is kept, so the next commit judges all of its fragments (R2.6).
-  s.set({ phase: "LISTENING", turn: turn !== null && turn.posted === null ? turn : null, recovery: null, admittedTurnId: null });
+  // An unposted Turn is kept, so the next commit judges all of its fragments (R2.6). Its transcript and item waits
+  // end here: it isn't posted from LISTENING, so no Neutral_Line plays mid-sentence (review of wave A, item 8).
+  const kept = turn !== null && turn.posted === null ? turn : null;
+  if (kept !== null) s.disarm("item", "transcript");
+  s.set({ phase: "LISTENING", turn: kept, recovery: null, admittedTurnId: null });
 }
 
 function recordSpeech(s: Step, itemId: string, patch: { startMs?: number | null; endMs?: number | null }): void {
@@ -1803,6 +1806,8 @@ function finishLatency(s: Step): void {
 function maybeAdmit(s: Step): void {
   const turn = s.st.turn;
   if (turn === null || turn.posted !== null || turn.items.length === 0) return;
+  // A voice Turn kept after a barge-in waits in LISTENING for the next commit (review of wave A, item 8).
+  if (s.st.phase === "LISTENING" && turn.source === "asr") return;
   if (!turn.items.every((i) => i.commitSeq !== null && i.transcript !== null)) return;
   if (turn.items.every((i) => i.transcript!.trim() === "")) {
     // Nothing was said (noise the VAD committed): no Turn, no clientSeq, keep listening.

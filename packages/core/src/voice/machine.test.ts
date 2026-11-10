@@ -1222,3 +1222,32 @@ describe("wave A review fixes, item 7: an admitted turn is posted after its repl
     ]);
   });
 });
+
+describe("wave A review fixes, items 8 and 9", () => {
+  /** A fastO reply playing before the turn's transcript arrived. */
+  function playingUnposted() {
+    const r = listening();
+    fastOTurn(r);
+    answerVerify(r);
+    r.rt({ type: "output_audio_buffer.started", response_id: "resp_s" }, 100);
+    expect(r.st.phase).toBe("SPEAKING");
+    return r;
+  }
+
+  it("item 8: after a barge-in the kept turn's deadlines are disarmed and it isn't posted from LISTENING", () => {
+    const r = playingUnposted();
+    r.rt({ type: "input_audio_buffer.speech_started", item_id: "item_2", audio_start_ms: 9000 }, 200);
+    expect(r.st.phase).toBe("LISTENING");
+    expect(r.st.turn?.posted).toBeNull();
+    expect(r.st.deadlines.transcript).toBeUndefined();
+    expect(r.st.deadlines.item).toBeUndefined();
+    // Its transcript arrives mid-sentence: no post, and no Neutral_Line.
+    r.rt({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_1", transcript: "My dog is" }, 100);
+    expect(r.log.some((c) => c.kind === "turn")).toBe(false);
+    expect(r.st.phase).toBe("LISTENING");
+    // The next commit judges all of it.
+    const next = r.rt({ type: "input_audio_buffer.committed", item_id: "item_2" }, 300);
+    expect(next).toBeDefined();
+    expect(r.st.turn!.items.map((i) => i.itemId)).toEqual(["item_1", "item_2"]);
+  });
+});
