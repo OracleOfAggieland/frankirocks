@@ -68,10 +68,11 @@ Rules for every task:
   - Witness: `lines.test.ts` › `RECOVERY_LINE`, `FORGET_NOT_YET = "I can't forget things yet."`, `COMPANY_LINE = "Got it. I'll keep things general for now."`, `ALONE_LINE = "Okay, just us again."`, exact; `ackNote(line, …)` builds an S0 `W` of kind `ack` that validates. Existing `machine.test.ts` › the `session.update` body is unchanged byte for byte.
   - Commit: `feat(voice): fixed lines and VAD constants`
 
-- [ ] 6. Latency_Clock (pure)
+- [x] 6. Latency_Clock (pure)
   - Requirements: R18.1–R18.3, R18.6, R18.7; Q83
   - Depends on: 2
-  - Estimate: 1.5 h · Actual:
+  - Estimate: 1.5 h · Actual: 0.3 h
+  - Notes: `LATE_TURN_MS` (2,500) lives here, so the machine imports it rather than defining it twice. `FastORefusal` is defined here and reused by the FastO_Rule.
   - Files: `packages/core/src/voice/latency.ts` (new), `packages/core/src/voice/latency.test.ts` (new)
   - Witness: `latency.test.ts` › `LatencyRow` derived fields (`commitDelayMs`, `endToAudibleMs`, `late` exactly when `permitAt > commit + 2500`); `percentile` nearest rank on 1, 2 and 20 values; `summarize` gives per-path n, p50, p95, a count per `refused` reason and the late count; rows capped at 50; `LOUD_LEVEL = 0.05` and `LATENCY_SAMPLE_MS = 20`.
   - Commit: `feat(voice): latency clock`
