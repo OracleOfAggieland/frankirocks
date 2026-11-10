@@ -13,5 +13,8 @@ export default defineConfig({
       "apps/web/src/**/*.test.{ts,tsx}",
     ],
     setupFiles: ["tests/setup/setup.ts"],
+    // Property 8's exhaustive half (36,288 inputs) takes about 2 s alone and over 5 s when the whole suite runs in
+    // parallel. A longer limit changes no check (voice-control task 38 Notes).
+    testTimeout: 15_000,
   },
 });
