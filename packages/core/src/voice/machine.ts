@@ -1642,6 +1642,14 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string, lastLoudA
       }
       const sp = st.spec;
       if (sp !== null && sp.eventId === eventId) s.set({ spec: { ...sp, failed: true } });
+      // The admitted reply's own response.create was refused: nothing will play. End it as a failed reply does,
+      // in RECOVERY with nothing to play, then listen again (review of wave A, item 14).
+      const a = st.active;
+      if (a !== null && a.eventId != null && a.eventId === eventId) {
+        cancelAll(s, false);
+        s.set({ admittedTurnId: null, phase: "RECOVERY", recovery: { kind: "line", since: s.now, attempts: 0 } });
+        s.arm("lineDone", s.now + LINE_FALLBACK_MS);
+      }
       return;
     }
   }

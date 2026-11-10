@@ -1332,4 +1332,17 @@ describe("wave A review fixes, items 13 to 15", () => {
     expect(r.st.phase).toBe("HELD");
     expect(r.st.latency.current!.refused).toBe("hash");
   });
+
+  it("item 14: a Realtime error for the admitted reply's own response.create ends the reply in RECOVERY", () => {
+    const r = listening();
+    speak(r);
+    r.ev({ type: "turnOk", turnId: turnBody(r).turnId, response: admitted(r, "slowOrdinary") }, 100);
+    const create = sends(answerVerify(r)).find((e) => e.type === "response.create" && (e.response as { metadata: { purpose: string } }).metadata.purpose === "speech");
+    expect(create).toBeDefined();
+    r.rt({ type: "error", error: { type: "invalid_request_error", code: "conversation_already_has_active_response", message: "busy", event_id: create!.event_id as string } } as never, 50);
+    expect(r.st.active).toBeNull();
+    expect(r.st.phase).toBe("RECOVERY");
+    expect(r.st.deadlines.speakCap).toBeUndefined();
+    expect(r.st.deadlines.lineDone).toBeDefined();
+  });
 });
