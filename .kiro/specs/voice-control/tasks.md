@@ -130,10 +130,11 @@ Rules for every task:
 
 ### Group A6: generators (parallel)
 
-- [ ] 12. Machine generators and trace helpers
+- [x] 12. Machine generators and trace helpers
   - Requirements: R20.1 (generators), R20.5
   - Depends on: 11
-  - Estimate: 3 h · Actual:
+  - Estimate: 3 h · Actual: 1 h
+  - Notes: Purely random actions rarely made a whole turn (9 of 300 calls posted one), so `arbCall` is mostly 1–4 coherent turn scenes (stateOk, commits, both creates, the judge and transcripts in a drawn order, the server answer, audio), each with steps dropped, repeated, swapped and noise inserted, plus 1 in 5 pure-noise calls. The driver uses a pure test hasher (no `node:crypto` in core) for both the "server" Permit and the "browser" hash. `CallDriver.connect` replays open, channel and the first ack after a reconnect. The non-vacuity test asserts that over 60 of 300 calls post a turn and over 10 reach SPEAKING.
   - Files: `packages/core/src/voice/testing/arb-call.ts` (new), `packages/core/src/voice/testing/trace.ts` (new), `packages/core/src/voice/testing/arb-call.test.ts` (new)
   - Witness: `arb-call.test.ts` › 200 generated calls replay through `step` without throwing; every event kind of design §"Correctness Properties" appears across 1,000 samples; `trace` records phase, `outputMuted`, commands and response IDs per step; `audible(r, i)` agrees with a hand-built trace.
   - Commit: `test(voice): call generators and trace helpers`
