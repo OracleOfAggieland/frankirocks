@@ -1,212 +1,121 @@
-import { type Evidence, type Job, type Session, type Turn, TurnResponse, msFromTs, tsFromMs, utf8, validate } from "@franki/core";
+import { FORGET_NOT_YET, type Session, type Turn, msFromTs } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
+import { fastODecisionId, recordFastO } from "../admission/seam";
+import { effectiveAudience } from "../audience";
+import { never, ok } from "../openai/fake";
 import { paths } from "../store/paths";
-import { insertTurnForTest } from "../testing/extract-fixtures";
-import { callRoute, testRig } from "../testing/fakes";
+import { decisionAnswer } from "../testing/decisions";
+import { callRoute, settle, testRig } from "../testing/fakes";
 import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
-import { turnEvidenceId } from "../turns";
-import { extractJobId } from "../worker/extract-jobs";
 import { turnRoute } from "./turn";
 
 const UID = "owner-1";
+const items = (n: number) => [{ itemId: `item_${n}`, commitSeq: n }];
 
-async function setup() {
+async function rigAndSession() {
   const rig = testRig();
   const s = await openTestSession(rig);
-  const read = async <T>(path: string) => (await rig.store.get<T>(UID, path))?.data ?? null;
-  const turnOf = (label: string | number) => read<Turn>(paths.turn(UID, s.sessionId, testId(`turn-${label}`)));
-  const evidenceOf = (label: string | number) => read<Evidence>(paths.evidence(UID, turnEvidenceId(testId(`turn-${label}`), rig.deps.hasher)));
-  const session = () => read<Session>(paths.session(UID, s.sessionId));
-  return { rig, s, turnOf, evidenceOf, session, read };
+  return { rig, s };
 }
+const post = (rig: ReturnType<typeof testRig>, body: unknown) => settle(callRoute(rig, turnRoute, body), rig.clock, rig.timers).then((r) => r.value);
+const session = async (rig: ReturnType<typeof testRig>, id: string) => (await rig.store.get<Session>(UID, paths.session(UID, id)))!.data;
+const turn = async (rig: ReturnType<typeof testRig>, sessionId: string, label: number) => (await rig.store.get<Turn>(UID, paths.turn(UID, sessionId, testId(`turn-${label}`))))!.data;
 
-describe("POST /api/turn (typed path)", () => {
-  it("Turn+Evidence+Extract_Job atomic: an ordinary typed line is U with source voice and one Extract_Job", async () => {
-    const { rig, s, turnOf, evidenceOf, session } = await setup();
-    const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "My dog is called Pip"));
-    expect(res.status).toBe(200);
-    expect(validate(TurnResponse, res.body).ok).toBe(true);
-    expect(res.body).toMatchObject({ status: "ordinary", stamp: { ...s.stamp, turnId: testId("turn-1") } });
-    const turn = (await turnOf(1))!;
-    const ev = (await evidenceOf(1))!;
-    expect(turn).toMatchObject({ seq: 1, role: "user", sourceClass: "U", state: "committed", text: "My dog is called Pip", itemIds: [] });
-    expect(ev).toMatchObject({ kind: "turn", source: "voice", turnId: testId("turn-1"), sessionId: s.sessionId, itemIds: [], text: { kind: "inline", text: "My dog is called Pip" } });
-    expect(ev.fieldSlices).toEqual([expect.objectContaining({ fieldPath: "text", start: 0, end: 20, class: "U", sens: "S0" })]);
-    expect(turn.evidenceId).toBe(turnEvidenceId(testId("turn-1"), rig.deps.hasher));
-    const job = await rig.store.get<Job>(UID, paths.job(UID, extractJobId(turn.evidenceId!, rig.deps.hasher)));
-    expect(job?.data).toMatchObject({ kind: "extract", status: "queued", epoch: 1, policyRev: 1, sourceIds: [turn.evidenceId] });
-    expect(await session()).toMatchObject({ nextClientSeq: 2, lastClientSeq: 1, committedParseSeq: 1, status: "minting" });
+describe("/api/turn with the slow parse and the server rule", () => {
+  it("an ordinary voice turn gets slowOrdinary whatever the judge said (R8.4)", async () => {
+    for (const judge of ["O", "H", "U", "timeout"]) {
+      const { rig, s } = await rigAndSession();
+      const res = await post(rig, { ...asrTurn(s.stamp, 1, "my dog loves the park", items(1)), judge });
+      expect(res.body).toMatchObject({ status: "ordinary", permit: { kind: "slowOrdinary", scope: "reply" } });
+      expect(rig.openai.requestsTo("decisions.create")).toHaveLength(1);
+    }
   });
 
-  it("Turn+Evidence+Extract_Job atomic: a failed commit stores none of them", async () => {
-    const { rig, s, turnOf, evidenceOf } = await setup();
-    const inner = rig.store;
-    rig.deps.store = {
-      get: (u, p) => inner.get(u, p),
-      query: (u, q) => inner.query(u, q),
-      transaction: (u, fn) =>
-        inner.transaction(u, async (tx) => {
-          let writesTurn = false;
-          const r = await fn({ ...tx, get: tx.get, query: tx.query, update: tx.update, create: (p, rec) => ((writesTurn ||= p.includes("/turns/")), tx.create(p, rec)) });
-          if (writesTurn) throw new Error("injected commit failure");
-          return r;
-        }),
-    };
-    const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "My dog is called Pip"));
-    expect(res.status).toBe(503);
-    expect(await turnOf(1)).toBeNull();
-    expect(await evidenceOf(1)).toBeNull();
-    expect(rig.store.countUnder(paths.collection(UID, "jobs"))).toBe(0);
+  it("forget: ready, postCommitControl, scope ack, the fixed line (R12.3)", async () => {
+    const { rig, s } = await rigAndSession();
+    rig.openai.script("decisions.create", ok(decisionAnswer({ forget: 0.95 })));
+    const res = await post(rig, asrTurn(s.stamp, 1, "forget what I said about work", items(1)));
+    expect(res.body).toMatchObject({ status: "ready", permit: { kind: "postCommitControl", scope: "ack" } });
+    expect(res.body.notes).toEqual([expect.objectContaining({ kind: "ack", text: FORGET_NOT_YET })]);
   });
 
-  describe("pasted classification (R18.2)", () => {
-    it.each([
-      ["over 280 code units", "a".repeat(281)],
-      ["a line feed", "line one\nline two"],
-      ["a carriage return", "line one\rline two"],
-      ["From:", "From: boss@example.com hi"],
-      ["Subject:", "Subject: hello"],
-      ["a URL", "see https://example.com"],
-      ["www.", "go to www.example.com"],
-    ])("stores text with %s as pasted/T with no Extract_Job", async (_label, text) => {
-      const { rig, s, turnOf, evidenceOf } = await setup();
-      const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, text));
-      expect(res.status).toBe(200);
-      expect((await turnOf(1))?.sourceClass).toBe("T");
-      const ev = (await evidenceOf(1))!;
-      expect(ev.source).toBe("pasted");
-      expect(ev.fieldSlices[0]!.class).toBe("T");
-      expect(ev.text?.kind === "inline" && ev.text.text).not.toMatch(/\r/);
-      expect(rig.store.countUnder(paths.collection(UID, "jobs"))).toBe(0);
-    });
-
-    it("normalizes CRLF and lone CR before offsets and hashes (R20.2)", async () => {
-      const { rig, s, evidenceOf } = await setup();
-      await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "a\r\nb\rc"));
-      const ev = (await evidenceOf(1))!;
-      expect(ev.text).toEqual({ kind: "inline", text: "a\nb\nc" });
-      expect(ev.fieldSlices[0]).toMatchObject({ start: 0, end: 5, contentHash: rig.deps.hasher.sha256(utf8("a\nb\nc")) });
-    });
+  it("a hit whose route doesn't change what is said answers ordinary with postCommitControl (question 92)", async () => {
+    const { rig, s } = await rigAndSession();
+    rig.openai.script("decisions.create", ok(decisionAnswer({ rushed: 0.4 })));
+    const res = await post(rig, asrTurn(s.stamp, 1, "quick question, what time is it in Denver", items(1)));
+    expect(res.body).toMatchObject({ status: "ordinary", permit: { kind: "postCommitControl", scope: "reply" } });
   });
 
-  describe("empty/oversize rejected (R18.8)", () => {
-    it.each([
-      ["an empty transcript", ""],
-      ["a whitespace-only transcript", "   "],
-      ["a transcript over 8192 code units", "a".repeat(8193)],
-    ])("rejects %s with PARSE and stores nothing", async (_label, text) => {
-      const { rig, s, turnOf, session } = await setup();
-      const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, text));
-      expect(res).toMatchObject({ status: 400, body: { error: "PARSE" } });
-      expect(await turnOf(1)).toBeNull();
-      expect((await session())!.nextClientSeq).toBe(1);
-    });
+  it("crisis with company in wave A: the care reply, no tools (R12.1)", async () => {
+    const { rig, s } = await rigAndSession();
+    rig.openai.script("decisions.create", ok(decisionAnswer({ crisis: 0.6, company: 0.7 })));
+    const res = await post(rig, asrTurn(s.stamp, 1, "my sister is here and I can't do this", items(1)));
+    expect(res.body).toMatchObject({ status: "ready", permit: { kind: "postCommitControl", scope: "ack" }, notes: [] });
   });
 
-  describe("missing/failed transcript advances seq with no Evidence (R20.8)", () => {
-    it.each(["missing", "failed"] as const)("commits a %s ASR Turn, advances nextClientSeq, writes no Evidence or job", async (state) => {
-      const { rig, s, turnOf, evidenceOf, session } = await setup();
-      const res = await callRoute(rig, turnRoute, asrTurn(s.stamp, 1, "", [{ itemId: "item_1", commitSeq: 1 }], state));
-      expect(res.status).toBe(200);
-      expect(await turnOf(1)).toMatchObject({ state: state === "missing" ? "transcriptMissing" : "failed", evidenceId: null, text: null, seq: 1 });
-      expect(await evidenceOf(1)).toBeNull();
-      expect(rig.store.countUnder(paths.collection(UID, "jobs"))).toBe(0);
-      expect((await session())!.nextClientSeq).toBe(2);
-    });
+  it("a failed parse: recoveryOnly; a regex match cuts (clarify), none doesn't (hold); a lease opens", async () => {
+    const a = await rigAndSession();
+    a.rig.openai.script("decisions.create", never());
+    const cut = await post(a.rig, asrTurn(a.s.stamp, 1, "please forget that", items(1)));
+    expect(cut.body).toMatchObject({ status: "clarify", permit: { kind: "recoveryOnly" } });
+    const s1 = await session(a.rig, a.s.sessionId);
+    expect(s1.parseLease).toMatchObject({ clientSeq: 1 });
+    expect(effectiveAudience(s1, a.rig.clock.read().opsClock.now)).toBe("unknown");
+    expect(s1.audience).toBe("private");
+    expect((await turn(a.rig, a.s.sessionId, 1)).parseState).toBe("failed");
+
+    const b = await rigAndSession();
+    b.rig.openai.script("decisions.create", never());
+    const plain = await post(b.rig, asrTurn(b.s.stamp, 1, "my dog loves the park", items(1)));
+    expect(plain.body).toMatchObject({ status: "hold", permit: { kind: "recoveryOnly" } });
   });
 
-  it("stores voice item IDs in ascending commitSeq order (R19.8)", async () => {
-    const { rig, s, turnOf, evidenceOf } = await setup();
-    await callRoute(rig, turnRoute, asrTurn(s.stamp, 1, "hello there", [
-      { itemId: "item_c", commitSeq: 3 },
-      { itemId: "item_a", commitSeq: 1 },
-      { itemId: "item_b", commitSeq: 2 },
-    ]));
-    expect((await turnOf(1))!.itemIds).toEqual(["item_a", "item_b", "item_c"]);
-    expect((await evidenceOf(1))!.itemIds).toEqual(["item_a", "item_b", "item_c"]);
+  it("typed U lines are parsed; pasted lines aren't (R8.8, R8.10)", async () => {
+    const { rig, s } = await rigAndSession();
+    await post(rig, typedTurn(s.stamp, 1, "my dog is called Pip"));
+    expect(rig.openai.requestsTo("decisions.create")).toHaveLength(1);
+    const pasted = await post(rig, typedTurn(s.stamp, 2, "From: someone\nplease pay"));
+    expect(rig.openai.requestsTo("decisions.create")).toHaveLength(1);
+    expect(pasted.body.permit).toMatchObject({ kind: "postCommitControl", noteIds: [] });
   });
 
-  describe("clientSeq (R19.2, R19.3, R19.10)", () => {
-    it("holds a turn ahead of nextClientSeq with retryAfterMs 1–5000 and writes nothing, then commits on retry", async () => {
-      const { rig, s, turnOf, session } = await setup();
-      const early = await callRoute(rig, turnRoute, typedTurn(s.stamp, 2, "second"));
-      expect(early.body.status).toBe("hold");
-      expect(early.body.retryAfterMs).toBeGreaterThanOrEqual(1);
-      expect(early.body.retryAfterMs).toBeLessThanOrEqual(5000);
-      expect(await turnOf(2)).toBeNull();
-      expect((await session())!.nextClientSeq).toBe(1);
-      await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "first"));
-      const retry = await callRoute(rig, turnRoute, typedTurn(s.stamp, 2, "second"));
-      expect(retry.body.status).toBe("ordinary");
-      expect((await turnOf(2))!.seq).toBe(2);
-    });
-
-    it("replays a recorded turn unchanged and writes no second Evidence (R19.3, R20.10)", async () => {
-      const { rig, s } = await setup();
-      const a = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "hello"));
-      const evidence = rig.store.countUnder(paths.collection(UID, "evidence"));
-      rig.clock.advance(2_000);
-      const b = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "hello"));
-      expect(b.body).toEqual(a.body);
-      expect(rig.store.countUnder(paths.collection(UID, "evidence"))).toBe(evidence);
-    });
-
-    it("rejects a lower clientSeq with a new requestId, and the same requestId with a new body", async () => {
-      const { rig, s, session } = await setup();
-      await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "hello"));
-      const other = { ...typedTurn(s.stamp, 1, "hello", "x"), clientSeq: 1 };
-      expect((await callRoute(rig, turnRoute, other)).body.error).toBe("STALE");
-      expect((await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "changed"))).body.error).toBe("HASH");
-      expect((await session())!.nextClientSeq).toBe(2);
-    });
+  it("a missing transcript: recoveryOnly, a 10 s lease; a failed transcription stores unknown (R15.7)", async () => {
+    const a = await rigAndSession();
+    const res = await post(a.rig, asrTurn(a.s.stamp, 1, "", items(1), "missing"));
+    expect(res.body).toMatchObject({ status: "hold", permit: { kind: "recoveryOnly" } });
+    const s1 = await session(a.rig, a.s.sessionId);
+    expect(msFromTs(s1.parseLease!.until) - a.rig.clock.read().opsClock.now).toBe(10_000);
+    const b = await rigAndSession();
+    await post(b.rig, asrTurn(b.s.stamp, 1, "", items(1), "failed"));
+    expect((await session(b.rig, b.s.sessionId)).audience).toBe("unknown");
   });
 
-  it("returns stale for an old Stamp and writes nothing", async () => {
-    const { rig, s, turnOf } = await setup();
-    const res = await callRoute(rig, turnRoute, typedTurn({ ...s.stamp, bundleRev: 0 }, 1, "hello"));
-    expect(res.body.status).toBe("stale");
-    expect(await turnOf(1)).toBeNull();
+  it("the parse watermark stays behind a gap (question 73)", async () => {
+    const { rig, s } = await rigAndSession();
+    await post(rig, asrTurn(s.stamp, 1, "", items(1), "missing"));
+    await post(rig, asrTurn(s.stamp, 2, "hello again", items(2)));
+    const s2 = await session(rig, s.sessionId);
+    expect([s2.lastClientSeq, s2.committedParseSeq, s2.nextClientSeq]).toEqual([2, 0, 3]);
   });
 
-  it("schedules extraction after the response instead of running it", async () => {
-    const { rig, s } = await setup();
-    const before = rig.sched.pending;
-    await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "My dog is called Pip"));
-    expect(rig.sched.pending).toBe(before + 1);
+  it("the Turn stores judge, parse state, uncertainSpeaker and its Slice", async () => {
+    const { rig, s } = await rigAndSession();
+    rig.openai.script("decisions.create", ok(decisionAnswer({ uncertainSpeaker: 0.05 })));
+    await post(rig, { ...asrTurn(s.stamp, 1, "my dog loves the park", items(1)), judge: "O" });
+    const t = await turn(rig, s.sessionId, 1);
+    expect(t).toMatchObject({ judge: "O", parseState: "committed", uncertainSpeaker: 0.05 });
+    expect(t.rootSlices).toHaveLength(1);
+    expect(t.rootSlices[0]).toMatchObject({ class: "U" });
   });
 
-  it("puts earlier S0/S1 Turns in the Deck as SafeTurns, never the current one or S2", async () => {
-    const { rig, s } = await setup();
-    await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "I like tea"));
-    await callRoute(rig, turnRoute, typedTurn(s.stamp, 2, "my diagnosis came back"));
-    const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 3, "what now"));
-    expect(res.body.deck.turns.map((t: { text: string }) => t.text)).toEqual(["I like tea"]);
-  });
-
-  it("gives the Deck earlier Turns in R19.6 order: the question, then Franki's replies by commit time, whatever their IDs", async () => {
-    const { rig, s, turnOf } = await setup();
-    await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "What's my favorite movie?"));
-    const question = (await turnOf(1))!;
-    const after = (ms: number) => tsFromMs(msFromTs(question.committedAt) + ms);
-    // Franki's preamble and its answer after a recall share the question's seq (R21.5). Their IDs sort before the
-    // question's and opposite to their commit order, the way Firestore's tie order put the answer before the
-    // question in the Nov 6 live test; the model then answered the old question again. Only Turn text is read
-    // here, so both reuse the question's Evidence.
-    const reply = { seq: 1, role: "assistant" as const, evidenceId: question.evidenceId, sourceClass: "M" as const };
-    await insertTurnForTest(rig.store, UID, s.sessionId, `${"-".repeat(42)}A`, { ...reply, text: "You haven't told me one yet.", committedAt: after(2_000) });
-    await insertTurnForTest(rig.store, UID, s.sessionId, `${"-".repeat(42)}B`, { ...reply, text: "Let me check.", committedAt: after(1_000) });
-    const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 2, "What's my dog's name?"));
-    expect(res.body.deck.turns.map((t: { role: string; text: string }) => `${t.role}: ${t.text}`)).toEqual([
-      "user: What's my favorite movie?",
-      "assistant: Let me check.",
-      "assistant: You haven't told me one yet.",
-    ]);
-  });
-
-  it("rejects a Session of another Owner with SCOPE", async () => {
-    const { rig, s } = await setup();
-    const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "hi"), { token: "token:owner-2" });
-    expect(res.body.error).toBe("SCOPE");
+  it("a fastO decision recorded first gives the Turn judge O and admittedAt (R9.2)", async () => {
+    const { rig, s } = await rigAndSession();
+    const turnId = testId("turn-1");
+    const stamp = { ...s.stamp, turnId };
+    await rig.store.transaction(UID, (tx) => recordFastO(tx, { uid: UID, stamp, responseId: "resp_s", opsNow: rig.clock.read().opsClock.now, core: { epoch: 1, policyRev: 1 }, audience: "private" }, rig.deps));
+    expect(await rig.store.get(UID, paths.ledger(UID, fastODecisionId(rig.deps.hasher, s.sessionId, turnId)))).not.toBeNull();
+    await post(rig, asrTurn(s.stamp, 1, "my dog loves the park", items(1)));
+    expect(await turn(rig, s.sessionId, 1)).toMatchObject({ judge: "O", admittedAt: expect.any(String) });
   });
 });

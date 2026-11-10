@@ -6,7 +6,8 @@ import { type FakeClock, createFakeClock } from "@franki/core";
 import type { TokenVerifier } from "../auth/guard";
 import type { Timers } from "../clock/timers";
 import { createHasher } from "../crypto";
-import { FakeOpenAI } from "../openai/fake";
+import { FakeOpenAI, ok } from "../openai/fake";
+import { decisionAnswer } from "./decisions";
 import { type HttpInput, type Log, type RouteDeps, type RouteSpec, type Schedule, runRoute } from "../routes/runtime";
 import { MemoryStore } from "../store/memory-store";
 import type { StorePort } from "../store/port";
@@ -155,6 +156,9 @@ export function testRig(env: Record<string, string> = TEST_ENV): TestRig {
   const clock = createFakeClock({ world: T0_MS, ops: T0_MS, zone: "UTC" });
   const timers = fakeTimers(clock);
   const openai = new FakeOpenAI();
+  // Every transcript is parsed (voice-control R11.1): by default the fake Decisions answer is ordinary. A test
+  // that needs another answer queues it with `script`, which is used first.
+  openai.always("decisions.create", ok(decisionAnswer()));
   const tokens = fakeTokenVerifier();
   const logs: TestRig["logs"] = [];
   const log: Log = (event, fields) => logs.push({ event, fields });

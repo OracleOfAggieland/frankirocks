@@ -132,7 +132,7 @@ export const fastODecisionId = (hasher: Hasher, sessionId: string, turnId: strin
 
 /**
  * Records a browser-issued `fastO` from its `admitted` receipt (R9.1, R9.2): one decision, keyed by the Turn, and
- * the Turn's `judge:"O"`, `admittedAt` and `spokenResponseId` when the Turn exists. `/api/turn` writes the same
+ * the Turn's `judge:"O"` and `admittedAt` when the Turn exists. `/api/turn` writes the same
  * Turn fields when it finds the decision first, so either order gives the same records. Creates no Permit.
  */
 export async function recordFastO(
@@ -156,8 +156,11 @@ export async function recordFastO(
     payload: { purpose: "answer", acceptedRefs: [ref], heldRefs: [], reasonCodes: ["ok"], audience: input.audience },
   };
   tx.create(path, entry);
-  if (turn !== null) tx.update(turnPath, { ...turn.data, ...fastOTurnFields(input.opsNow, input.responseId), updatedAt: now });
+  if (turn !== null) tx.update(turnPath, { ...turn.data, ...fastOTurnFields(input.opsNow), updatedAt: now });
 }
 
-/** The Turn fields a fastO admission sets. */
-export const fastOTurnFields = (opsNow: number, responseId: string) => ({ judge: "O" as const, admittedAt: tsFromMs(opsNow), spokenResponseId: responseId });
+/**
+ * The Turn fields a fastO admission sets, from the decision's time, so receipt-first and turn-first give the same
+ * Turn. The response ID is not among them: the closed decision payload can't carry it for the turn-first order.
+ */
+export const fastOTurnFields = (opsNow: number) => ({ judge: "O" as const, admittedAt: tsFromMs(opsNow) });

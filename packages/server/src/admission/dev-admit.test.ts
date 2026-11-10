@@ -56,17 +56,16 @@ describe("devAdmit", () => {
     expect(payloadHash({ ...input, audioIds: ["item_2"] }, hasher)).not.toBe(r.permit.approvedPayloadHash);
   });
 
-  it("throws CONFIG in production and writes no ledger", async () => {
+  it("devAdmit throws CONFIG in production; the turn route, now on the server rule, admits in production (voice-control R8.2)", async () => {
     expect(() => devAdmit({ ...base, turn: { kind: "typed", cls: "U" } }, { ...TEST_ENV, NODE_ENV: "production" }, hasher)).toThrow(/CONFIG/);
 
     const rig = testRig();
     const s = await openTestSession(rig);
     rig.deps.env = { ...TEST_ENV, NODE_ENV: "production" };
     const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "hello"));
-    expect(res).toMatchObject({ status: 500, body: { error: "CONFIG" } });
-    expect(res.body.permit).toBeUndefined();
-    expect(await ledgerEntries(rig)).toEqual([]);
-    expect(await rig.store.get(UID, paths.turn(UID, s.sessionId, testId("turn-1")))).toBeNull();
+    expect(res.status).toBe(200);
+    expect(res.body.permit).toMatchObject({ kind: "slowOrdinary" });
+    expect((await ledgerEntries(rig)).map((e) => e.id)).toEqual([res.body.permit.permitId]);
   });
 
   it("one decision ledger entry per outcome, keyed by permitId", async () => {
@@ -83,7 +82,7 @@ describe("devAdmit", () => {
     expect(first).toMatchObject({
       kind: "decision",
       state: "complete",
-      payload: { purpose: "answer", acceptedRefs: [{ type: "turn", id: testId("turn-1"), parentId: s.sessionId, rev: 1 }], heldRefs: [], reasonCodes: [], audience: "private" },
+      payload: { purpose: "answer", acceptedRefs: [{ type: "turn", id: testId("turn-1"), parentId: s.sessionId, rev: 1 }, expect.objectContaining({ type: "ledger" })], heldRefs: [], reasonCodes: [], audience: "private" },
     });
     // The Permit binds the turn's Stamp and the Deck the browser will hash.
     expect(a.body.permit.stamp).toEqual(a.body.stamp);
