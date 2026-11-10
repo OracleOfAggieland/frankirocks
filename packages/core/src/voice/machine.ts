@@ -15,6 +15,7 @@
  *   - the mute control only touches the microphone track (R15.6).
  */
 import { RECOVERY_LINE, type PayloadInput } from "../admission";
+import { SEMANTIC_VAD } from "./vad";
 import { type Infer } from "../schema/v";
 import { type SS, type StateAck, msFromTs, tsFromMs } from "../schema/primitives";
 import type { PermitKind } from "../schema/records";
@@ -301,9 +302,9 @@ export function sessionUpdate(instructions: string, transcribeModel: string): Re
         input: {
           noise_reduction: { type: "near_field" },
           transcription: { model: transcribeModel, language: TRANSCRIBE_LANGUAGE, prompt: TRANSCRIBE_PROMPT },
-          // Semantic end-of-turn: a 300 ms silence cut the Owner off mid-sentence in the Nov 6 live check
-          // ("I only heard 'By the way…'"). Responses stay app-created after admission, and barge-in app-handled.
-          turn_detection: { type: "semantic_vad", eagerness: "auto", create_response: false, interrupt_response: false },
+          // Semantic end-of-turn (voice/vad.ts): a 300 ms silence cut the Owner off mid-sentence in the Nov 6 live
+          // check ("I only heard 'By the way…'"). Responses stay app-created after admission, and barge-in app-handled.
+          turn_detection: { ...SEMANTIC_VAD },
         },
       },
     },

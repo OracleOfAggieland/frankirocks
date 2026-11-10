@@ -9,8 +9,8 @@ import type { PermitKind } from "./schema/records";
 import type { SafeTurn, Stamp, W } from "./schema/wire";
 
 export const PERMIT_TTL_MS = 10_000;
-/** The only line a `recoveryOnly` Permit covers. */
-export const RECOVERY_LINE = "Sorry, say that again?";
+/** The only line a `recoveryOnly` Permit covers; it lives with every Fixed_Line in `voice/lines.ts`. */
+export { RECOVERY_LINE } from "./voice/lines";
 
 export type AdmissionTurn =
   | { kind: "voice"; transcriptState: "final" | "missing" | "failed" }

@@ -59,10 +59,11 @@ Rules for every task:
   - The type check against `DecisionCreateParams` and `Decision` is in task 29 (core may not import `openai`).
   - Commit: `feat(intents): TurnIntents request, parser and priority`
 
-- [ ] 5. Fixed lines and VAD constants
+- [x] 5. Fixed lines and VAD constants
   - Requirements: R15.9, R12.3, R19.1, R19.2; Q53
   - Depends on: 2
-  - Estimate: 1 h · Actual:
+  - Estimate: 1 h · Actual: 0.3 h
+  - Notes: `lines.ts` also exports `ackNote`, `isFixedLine` and `sayExactly`. `admission.ts` re-exports `RECOVERY_LINE` from `voice/lines.ts`, so every existing import still works. The existing `machine.test.ts` `session.update` assertion passes unchanged.
   - Files: `packages/core/src/voice/lines.ts` (new), `packages/core/src/voice/vad.ts` (new), `packages/core/src/voice/lines.test.ts` (new), `packages/core/src/admission.ts` (`RECOVERY_LINE` re-exported from `lines.ts`), `packages/core/src/voice/machine.ts` (`sessionUpdate` uses `SEMANTIC_VAD`)
   - Witness: `lines.test.ts` › `RECOVERY_LINE`, `FORGET_NOT_YET = "I can't forget things yet."`, `COMPANY_LINE = "Got it. I'll keep things general for now."`, `ALONE_LINE = "Okay, just us again."`, exact; `ackNote(line, …)` builds an S0 `W` of kind `ack` that validates. Existing `machine.test.ts` › the `session.update` body is unchanged byte for byte.
   - Commit: `feat(voice): fixed lines and VAD constants`
