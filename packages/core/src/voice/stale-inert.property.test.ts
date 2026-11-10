@@ -12,8 +12,10 @@ describe("Property 5: stale events are inert", () => {
       fc.property(arbCall, (steps) => {
         const d = runCall(steps);
         const { steps: trace, responses } = d.trace;
-        const cancelledBefore = (id: string, i: number) =>
-          trace.slice(0, i).some((s: TraceStep) => s.commands.some((c) => (c.kind === "send" && c.event.type === "response.cancel" && c.event.response_id === id) || c.kind === "teardown"));
+        // Only a cancel or teardown after the response was created cancels it: a teardown before that (an earlier
+        // reconnect) says nothing about a response of the new call.
+        const cancelledBefore = (id: string, createdAt: number, i: number) =>
+          trace.slice(createdAt, i).some((s: TraceStep) => s.commands.some((c) => (c.kind === "send" && c.event.type === "response.cancel" && c.event.response_id === id) || c.kind === "teardown"));
         for (const s of trace) {
           if (s.event.type !== "realtime") continue;
           const e = s.event.event;
@@ -25,7 +27,7 @@ describe("Property 5: stale events are inert", () => {
             const known = responses.find((r) => r.id === id && r.createdAt < s.i);
             const judgeDone = e.type === "response.done" && known?.purpose === "judge";
             if (known === undefined) staleId = id;
-            else if ((e.type === "output_audio_buffer.started" || judgeDone) && cancelledBefore(id, s.i)) staleId = id;
+            else if ((e.type === "output_audio_buffer.started" || judgeDone) && cancelledBefore(id, known.createdAt, s.i)) staleId = id;
           }
           if (staleId === null) continue;
           expect(s.after.phase).toBe(s.before.phase);
