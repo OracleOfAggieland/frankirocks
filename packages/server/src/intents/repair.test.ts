@@ -5,8 +5,9 @@ import { fail, never, ok } from "../openai/fake";
 import { turnRoute } from "../routes/turn";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
+import { StoreError } from "../store/errors";
 import { decisionAnswer } from "../testing/decisions";
-import { callRoute, settle, testRig } from "../testing/fakes";
+import { callRoute, patchRecord, settle, testRig } from "../testing/fakes";
 import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
 import { REPAIR_DEADLINE_MS, repairDecisionId, runParseRepair } from "./repair";
 
@@ -120,5 +121,43 @@ describe("the Parse_Repair (R15.3–R15.6, R15.8; question 80)", () => {
     await post(rig, typedTurn(s.stamp, 1, "my dog is called Pip"));
     await runScheduled(rig);
     expect((await session(rig, s.sessionId)).committedParseSeq).toBe(1);
+  });
+});
+
+describe("the Parse_Repair under contention (review of wave A, item 18)", () => {
+  /** Makes the next `n` transactions that write the turn's parse lose their compare-and-set at commit. */
+  function loseRepairCommits(rig: Rig, n: number, before?: () => Promise<void>) {
+    const inner = rig.store.transaction.bind(rig.store);
+    let lost = 0;
+    rig.store.transaction = (async (uid: string, fn: (tx: Tx) => Promise<unknown>) =>
+      inner(uid, async (tx) => {
+        let writesParse = false;
+        const r = await fn({ ...tx, update: (p, rec, e) => ((writesParse ||= p.includes("/turns/") && (rec as Turn).parseState === "committed"), tx.update(p, rec, e)) });
+        if (writesParse && lost < n) {
+          lost++;
+          await before?.();
+          throw new StoreError("staleRevision", "a receipt won the race", p0);
+        }
+        return r;
+      })) as typeof rig.store.transaction;
+    const p0 = "session";
+    return () => lost;
+  }
+
+  it("a lost compare-and-set is retried and the gap closes", async () => {
+    const { rig, s } = await failedFirst(never());
+    const lost = loseRepairCommits(rig, 2);
+    await runScheduled(rig);
+    expect(lost()).toBe(2);
+    const after = await session(rig, s.sessionId);
+    expect([after.committedParseSeq, after.parseLease, after.audience]).toEqual([1, null, "private"]);
+    expect((await turn(rig, s.sessionId, 1)).parseState).toBe("committed");
+  });
+
+  it("each retry re-checks the lease: one gone by then commits nothing", async () => {
+    const { rig, s } = await failedFirst(never());
+    loseRepairCommits(rig, 1, () => patchRecord<Session>(rig.store, UID, paths.session(UID, s.sessionId), { parseLease: null }));
+    await runScheduled(rig);
+    expect((await turn(rig, s.sessionId, 1)).parseState).toBe("failed");
   });
 });

@@ -13,12 +13,16 @@ import { type CoreEpoch, type ID, type Ledger, type Session, type Turn, msFromTs
 import { advancedWatermark, expireLease } from "../audience";
 import { cFields } from "../records";
 import type { RouteDeps } from "../routes/runtime";
+import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
+import type { Tx } from "../store/port";
 import { decisionsPort } from "./decisions-port";
 import { runSlowParse } from "./slow-parse";
 
 /** The Parse_Repair's Decisions deadline (R15.3). */
 export const REPAIR_DEADLINE_MS = 2_000;
+/** Transaction attempts before the repair gives up; its lease then runs out, which stores `unknown`. */
+const REPAIR_TX_ATTEMPTS = 8;
 
 export type RepairResult = "ordinary" | "hit" | "failed" | "lostLease" | "skipped";
 
@@ -39,7 +43,20 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
   if (stored === null || stored.data.role !== "user" || stored.data.parseState !== "failed" || stored.data.text === null) return "skipped";
   const slow = await runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log }, { turnId, utterance: stored.data.text }, REPAIR_DEADLINE_MS);
 
-  const result = await deps.store.transaction(uid, async (tx): Promise<RepairResult> => {
+  // A concurrent write (a receipt, the next turn) loses this compare-and-set: run the transaction again, as the
+  // routes do. Each attempt re-reads the Session and re-checks the lease (review of wave A, item 18).
+  let result: RepairResult | null = null;
+  for (let attempt = 1; result === null; attempt++) {
+    try {
+      result = await deps.store.transaction(uid, (tx) => repairTx(tx));
+    } catch (error) {
+      if (!isStoreError(error, "staleRevision") || attempt >= REPAIR_TX_ATTEMPTS) throw error;
+    }
+  }
+  deps.log("turn.repair", { turnId, result, ms: slow.ms });
+  return result;
+
+  async function repairTx(tx: Tx): Promise<RepairResult> {
     const doc = await tx.get<Session>(paths.session(uid, sessionId));
     const turn = await tx.get<Turn>(turnPath);
     if (doc === null || turn === null) return "skipped";
@@ -84,9 +101,7 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
     };
     tx.create(paths.ledger(uid, repairDecisionId(deps, sessionId, turnId)), entry);
     return "hit";
-  });
-  deps.log("turn.repair", { turnId, result, ms: slow.ms });
-  return result;
+  }
 }
 
 /** The ledger ID of a late hit's held decision. */
