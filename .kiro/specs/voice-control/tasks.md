@@ -332,9 +332,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
 
 ### Group A12 (parallel)
 
-- [ ] 33. **[property]** P11 A repaired gap leaves no trace
+- [x] 33. **[property]** P11 A repaired gap leaves no trace
   - Requirements: R20.1.11; R7.8, R11.9, R15.3, R15.4, R15.7
-  - Depends on: 32 · Estimate: 1.5 h · Actual:
+  - Depends on: 32 · Estimate: 1.5 h · Actual: 0.5 h
+  - Notes: **Red, as expected (no repair or superseding post yet).** Seed `-2118694151`, path `0:0:0:0:0`. Shrunk counterexample: `[{kinds:["typed"], k:0, how:"deadline"}]`: after one typed turn whose parse missed its deadline, the wrong run has `committedParseSeq 0` (want 1), a lease still held, the Turn `parseState "failed"` (want committed) and `uncertainSpeaker 0` (want 0.01). The first run (seed `249418788`) failed in the generator, not the property: it queried jobs with an undeclared index; `arb-turns.ts` now reads the job by its ID. 200 runs per check; the observed fields are design §11/11b's (Session audience, watermark, sequence numbers and lease; core policyRev; each Turn's parse state, uncertainSpeaker, state, text, Evidence text and Extract_Job; later turns' status and Permit kind; whether the state route grants an ack).
   - Files: `packages/server/src/testing/arb-turns.ts` (new), `packages/server/src/parse-gap.property.test.ts` (new)
   - Witness: the property file, 200 runs on the Memory_Store (both the repair and the superseded variant, design §"Correctness Properties" 11 and 11b). Expected red until tasks 37 and 38; record the seed and counterexample in **Notes**.
   - Commit: `test(turn): property 11, a repaired gap leaves no trace`
