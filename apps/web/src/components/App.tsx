@@ -253,5 +253,5 @@ function DebugArea({ debug, typed, voice }: { debug: DebugPanelModel; typed: Typ
     return () => clearInterval(timer);
   }, [debug, live]);
 
-  return <DebugPanel state={d} selectedMemoryId={selected} onSelectMemory={setSelected} onRefresh={() => void debug.refresh()} latency={voice.latency.rows} />;
+  return <DebugPanel state={d} selectedMemoryId={selected} onSelectMemory={setSelected} onRefresh={() => void debug.refresh()} latency={voice.latency.rows} realtimeErrors={voice.realtimeErrors} />;
 }

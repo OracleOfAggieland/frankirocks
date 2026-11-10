@@ -1345,4 +1345,14 @@ describe("wave A review fixes, items 13 to 15", () => {
     expect(r.st.deadlines.speakCap).toBeUndefined();
     expect(r.st.deadlines.lineDone).toBeDefined();
   });
+
+  it("item 15: every Realtime error event is counted, by the client event it names", () => {
+    const r = listening();
+    const t = commitTurn(r);
+    const err = (eventId: string | null, code = "conversation_already_has_active_response") => r.rt({ type: "error", error: { type: "invalid_request_error", code, message: "x", event_id: eventId } } as never, 10);
+    err(t.spec!.event_id as string);
+    err(t.judge!.event_id as string);
+    err(null, "invalid_value");
+    expect(r.st.realtimeErrors).toEqual({ n: 3, judge: 1, spec: 1, speech: 0, other: 1, lastCode: "invalid_value" });
+  });
 });

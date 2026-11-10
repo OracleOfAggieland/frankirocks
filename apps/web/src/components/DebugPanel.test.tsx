@@ -316,3 +316,17 @@ describe("DebugPanel for the judge in the call (voice-control R13.4, R13.5, R18.
     expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
   });
 });
+
+describe("DebugPanel, Realtime errors (review of wave A, item 15)", () => {
+  it("shows the count of Realtime error events by the client event they name, and the last code", async () => {
+    const { model } = await loaded();
+    const errors = { n: 3, judge: 1, spec: 2, speech: 0, other: 0, lastCode: "conversation_already_has_active_response" };
+    const html = renderToStaticMarkup(<DebugPanel state={model.getSnapshot()} selectedMemoryId={null} onSelectMemory={() => {}} onRefresh={() => {}} realtimeErrors={errors} />).replaceAll("<!-- -->", "");
+    const block = html.match(/data-testid="realtime-errors"[\s\S]*?<\/p>/)![0];
+    expect(block).toContain("Realtime errors 3: judge 1, spec 2, reply 0, other 0");
+    expect(block).toContain("last conversation_already_has_active_response");
+    // None yet: the line still shows 0, so the live check can read it.
+    const none = renderToStaticMarkup(<DebugPanel state={model.getSnapshot()} selectedMemoryId={null} onSelectMemory={() => {}} onRefresh={() => {}} />).replaceAll("<!-- -->", "");
+    expect(none).toContain("Realtime errors 0");
+  });
+});

@@ -12,13 +12,15 @@ export interface DebugPanelProps {
   onRefresh: () => void;
   /** The Voice_Client's LatencyRows for the current call, oldest first (voice-control R18.2). */
   latency?: readonly LatencyRow[];
+  /** Realtime `error` events this visit (review of wave A, item 15). */
+  realtimeErrors?: { n: number; judge: number; spec: number; speech: number; other: number; lastCode: string | null };
 }
 
 const HEAD_CAP = 3500;
 const box = "rounded border border-stitch p-3 text-left";
 const mono = "font-mono text-xs break-all";
 
-export function DebugPanel({ state, selectedMemoryId, onSelectMemory, onRefresh, latency = [] }: DebugPanelProps) {
+export function DebugPanel({ state, selectedMemoryId, onSelectMemory, onRefresh, latency = [], realtimeErrors }: DebugPanelProps) {
   const { data } = state;
   return (
     <section aria-label="Debug panel" className="flex w-full max-w-5xl flex-col gap-4 text-left text-sm text-ink">
@@ -35,6 +37,12 @@ export function DebugPanel({ state, selectedMemoryId, onSelectMemory, onRefresh,
         ) : null}
       </header>
       <LatencyView rows={latency} />
+      <p data-testid="realtime-errors" className="text-xs">
+        Realtime errors {realtimeErrors?.n ?? 0}
+        {realtimeErrors !== undefined && realtimeErrors.n > 0
+          ? `: judge ${realtimeErrors.judge}, spec ${realtimeErrors.spec}, reply ${realtimeErrors.speech}, other ${realtimeErrors.other} · last ${realtimeErrors.lastCode ?? "—"}`
+          : ""}
+      </p>
       {data === null ? <p className="text-ink-dim">{state.stale ? "Nothing loaded yet." : "Loading…"}</p> : <Sections data={data} selectedMemoryId={selectedMemoryId} onSelectMemory={onSelectMemory} />}
     </section>
   );

@@ -287,6 +287,8 @@ export interface VoiceState {
   eventSeq: number;
   /** Audio of a response this call doesn't own started since the last clear; the next reply clears first (R3.2). */
   strayAudio?: boolean;
+  /** Realtime `error` events this visit, by the client event they name (review of wave A, item 15). */
+  realtimeErrors?: { n: number; judge: number; spec: number; speech: number; other: number; lastCode: string | null };
 }
 
 export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState {
@@ -1628,6 +1630,12 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string, lastLoudA
       return;
     }
     case "error": {
+      // Every error is counted, by the client event it names, for the Debug_Panel: the live check reads the
+      // data-channel stop condition from it (R23.1; review of wave A, item 15).
+      const named = ev.error.event_id ?? null;
+      const kind = named?.startsWith("judge:") ? "judge" : named?.startsWith("spec:") ? "spec" : named?.startsWith("speech:") ? "speech" : "other";
+      const c = st.realtimeErrors ?? { n: 0, judge: 0, spec: 0, speech: 0, other: 0, lastCode: null };
+      s.set({ realtimeErrors: { ...c, n: c.n + 1, [kind]: c[kind] + 1, lastCode: ev.error.code ?? null } });
       // Question 85: an error names the client event that caused it.
       const eventId = ev.error.event_id ?? null;
       if (eventId === null) return;
