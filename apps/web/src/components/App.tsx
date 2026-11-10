@@ -108,6 +108,7 @@ export function App() {
       createPeer: () => new RTCPeerConnection() as unknown as PeerLike,
       getMicrophone: () => navigator.mediaDevices.getUserMedia({ audio: true }),
       onStreams: (s) => meter.setStreams({ mic: s.mic as unknown as MediaStream | null, output: s.output as MediaStream | null }),
+      inputLevel: () => meter.rawInput(),
     });
   }, [tokens, debugOn, meter]);
 

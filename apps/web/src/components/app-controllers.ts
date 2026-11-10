@@ -20,6 +20,8 @@ export interface ControllerDeps {
   createPeer: () => PeerLike;
   getMicrophone: () => Promise<StreamLike>;
   onStreams: (s: { mic: StreamLike | null; output: unknown | null }) => void;
+  /** The mic's unsmoothed level, for the Latency_Clock's last loud frame (voice-control R18.5). */
+  inputLevel?: () => number;
 }
 
 export interface SignedInControllers {
@@ -41,6 +43,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
           createPeer: deps.createPeer,
           getMicrophone: deps.getMicrophone,
           onStreams: deps.onStreams,
+          ...(deps.inputLevel === undefined ? {} : { inputLevel: deps.inputLevel }),
         });
   return { typed: new TypedTurns({ api, clock }), debug: deps.debug ? new DebugPanelModel({ api, clock }) : null, voice };
 }

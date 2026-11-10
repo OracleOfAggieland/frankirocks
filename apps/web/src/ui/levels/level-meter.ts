@@ -1,7 +1,7 @@
 // The Level_Meter (lab-ui-foundation R10.7, R11.1, R11.2, R11.4, R11.5, R11.7). Web Audio analysers
 // over the mic and remote streams. Each source connects to its analyser and nothing else, so the
 // meter never plays audio. It records, stores and sends nothing. Web Audio errors read as 0.
-import { levelFrom } from "./level-math";
+import { levelFrom, rawLevel } from "./level-math";
 
 export interface Levels {
   input: number;
@@ -13,6 +13,11 @@ export interface LevelMeter {
   setStreams(s: { mic: MediaStream | null; output: MediaStream | null }): void;
   /** One analyser read per stream per call; 0 and 0 when a stream or the context is missing (R11.4). */
   sample(): Levels;
+  /**
+   * The mic's unsmoothed `rawLevel`, for the Voice_Client's last-loud-frame clock (voice-control R18.5). It reads
+   * the same analyser and leaves the smoothed level alone; 0 while paused or with no mic.
+   */
+  rawInput(): number;
   /** While the document is hidden (R10.7). */
   pause(): void;
   resume(): void;
@@ -54,12 +59,13 @@ export function createLevelMeter(getContext: () => AudioContext | null): LevelMe
   const tap = (stream: MediaStream | null): Tap | null =>
     stream === null ? null : { stream, source: null, analyser: null, buffer: null, level: 0, failed: false };
 
-  function read(t: Tap | null): number {
-    if (t === null || t.failed) return 0;
+  /** Reads the analyser into the tap's buffer; false when there is nothing to read. */
+  function fill(t: Tap | null): t is Tap {
+    if (t === null || t.failed) return false;
     try {
       if (t.analyser === null) {
         const ctx = getContext();
-        if (ctx === null) return 0;
+        if (ctx === null) return false;
         const source = ctx.createMediaStreamSource(t.stream);
         const analyser = ctx.createAnalyser();
         analyser.fftSize = FFT_SIZE;
@@ -69,13 +75,18 @@ export function createLevelMeter(getContext: () => AudioContext | null): LevelMe
         t.buffer = new Uint8Array(analyser.fftSize);
       }
       t.analyser.getByteTimeDomainData(t.buffer!);
-      t.level = levelFrom(t.buffer!, t.level);
-      return t.level;
+      return true;
     } catch {
       t.failed = true;
       disconnect(t);
-      return 0;
+      return false;
     }
+  }
+
+  function read(t: Tap | null): number {
+    if (!fill(t)) return 0;
+    t.level = levelFrom(t.buffer!, t.level);
+    return t.level;
   }
 
   return {
@@ -92,6 +103,10 @@ export function createLevelMeter(getContext: () => AudioContext | null): LevelMe
     sample() {
       if (paused) return { input: 0, output: 0 };
       return { input: read(mic), output: read(output) };
+    },
+    rawInput() {
+      if (paused || !fill(mic)) return 0;
+      return rawLevel(mic.buffer!);
     },
     pause() {
       paused = true;
