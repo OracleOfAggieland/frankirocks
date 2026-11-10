@@ -473,8 +473,8 @@ The Evidence is new, not an edit (KC02): the first post wrote none, because its 
 |---|---|
 | transcript `missing` | `parseLease = {clientSeq, token, until: ops + 10,000}` (the Superseding_Post window); the Effective_Audience is `unknown` while it holds (R15.7). If a lease is already held for another turn, `audience:"unknown"` instead |
 | transcription `failed` | `audience:"unknown"`, no repair (R15.7) |
-| parse failed, deadline or transport | `parseLease = {clientSeq, token, until: ops + 2,500}`; the Effective_Audience is `unknown` while it holds (R15.2, R15.3). If a lease is already held for another turn, `audience:"unknown"` and no repair |
-| parse failed, invalid or oversize | `audience:"unknown"`, no repair |
+| parse failed, deadline, transport or invalid (review of the live run, item 4) | `parseLease = {clientSeq, token, until: ops + 2,500}`; the Effective_Audience is `unknown` while it holds (R15.2, R15.3). If a lease is already held for another turn, `audience:"unknown"` and no repair |
+| parse failed, oversize | `audience:"unknown"`, no repair |
 | wave B company or quiet hit | `audience:"company"`, `core/epoch.policyRev + 1`, `waitDeadline = ops + 10,000` (row 8) or `ops + 60,000` (row 6); row 8 also moves the Session to `closing` and writes its hangup Job, as `/api/session/close` does |
 | wave B alone hit | `audience:"private"`, `policyRev + 1`, a new full Head (below); `waitDeadline` unchanged |
 
@@ -520,7 +520,7 @@ Notes for review. `\bforget\b` does not match "forgot", "forgets" or "forgetting
 
 ### The Parse_Repair (`intents/repair.ts`)
 
-Scheduled with `ctx.schedule` after the `/api/turn` response is sent, only for `failed: deadline | transport` (R15.3):
+Scheduled with `ctx.schedule` after the `/api/turn` response is sent, only for `failed: deadline | transport | invalid` (R15.3; `invalid` since the live run, where 5 of 60 parses were invalid; review of the live run, item 4). `parseDecision` says which check an invalid answer failed (`shape`, `count`, `type`, `refusal`, `name`, `probability`, `missing`) and the question's name; the slow parse logs it as `turn.parseInvalid` and the Harness row and summary show it. The Turn has no failure-reason field, so it isn't stored there:
 
 1. Run `runSlowParse` again on the stored Turn text with a 2,000 ms deadline.
 2. In one transaction, check that the Session's `parseLease.token` is this repair's; then:

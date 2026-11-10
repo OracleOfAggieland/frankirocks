@@ -1,7 +1,7 @@
 /**
  * The Parse_Repair (voice-control R15.3–R15.6, R15.8; design "The Parse_Repair", question 80).
  *
- * One retry of a Slow_Parse that failed by deadline or transport, run after the `/api/turn` response is sent, with
+ * One retry of a Slow_Parse that failed by deadline, transport or an invalid answer, run after the `/api/turn` response is sent, with
  * its own 2,000 ms deadline. It commits only while the Session's `parseLease` still holds this repair's token:
  *   ordinary  the Turn's parse commits, the lease clears and the watermark moves; the stored audience is untouched
  *   hit       the same, then the late-hit effects: `policyRev + 1` (the next Deck cancels older speech, KV05) and
@@ -33,8 +33,8 @@ export interface RepairTarget {
   token: ID;
 }
 
-/** Whether a failed parse gets a Parse_Repair: only a missed deadline or a transport error (R15.3). */
-export const repairs = (why: string): boolean => why === "deadline" || why === "transport";
+/** Whether a failed parse gets a Parse_Repair: a missed deadline, a transport error or an invalid answer (R15.3; review of the live run, item 4). Oversize never does. */
+export const repairs = (why: string): boolean => why === "deadline" || why === "transport" || why === "invalid";
 
 export async function runParseRepair(uid: string, deps: RouteDeps, target: RepairTarget): Promise<RepairResult> {
   const { sessionId, turnId, token } = target;

@@ -25,26 +25,26 @@ describe("parseDecision", () => {
     const base = () => answers(zero());
     const refusal = base();
     refusal.answers[3] = { type: "refusal", name: refusal.answers[3]!.name } as never;
-    expect(parseDecision(refusal, QUESTIONS)).toEqual(fail);
+    expect(parseDecision(refusal, QUESTIONS)).toMatchObject(fail);
     const choice = base();
     (choice.answers[0] as { type: string }).type = "choice";
-    expect(parseDecision(choice, QUESTIONS)).toEqual(fail);
+    expect(parseDecision(choice, QUESTIONS)).toMatchObject(fail);
     const missing = base();
     missing.answers.pop();
-    expect(parseDecision(missing, QUESTIONS)).toEqual(fail);
+    expect(parseDecision(missing, QUESTIONS)).toMatchObject(fail);
     const extra = base();
     extra.answers.push({ type: "predicate", name: "extra", probability: 0 });
-    expect(parseDecision(extra, QUESTIONS)).toEqual(fail);
+    expect(parseDecision(extra, QUESTIONS)).toMatchObject(fail);
     const swapped = base();
     [swapped.answers[0], swapped.answers[1]] = [swapped.answers[1]!, swapped.answers[0]!];
-    expect(parseDecision(swapped, QUESTIONS)).toEqual(fail);
+    expect(parseDecision(swapped, QUESTIONS)).toMatchObject(fail);
     for (const bad of [Number.NaN, -0.01, 1.01, Number.POSITIVE_INFINITY, "0.5"]) {
       const b = base();
       (b.answers[2] as { probability: unknown }).probability = bad;
-      expect(parseDecision(b, QUESTIONS)).toEqual(fail);
+      expect(parseDecision(b, QUESTIONS)).toMatchObject(fail);
     }
-    expect(parseDecision(null, QUESTIONS)).toEqual(fail);
-    expect(parseDecision({ answers: "x" }, QUESTIONS)).toEqual(fail);
+    expect(parseDecision(null, QUESTIONS)).toMatchObject(fail);
+    expect(parseDecision({ answers: "x" }, QUESTIONS)).toMatchObject(fail);
   });
 });
 
@@ -70,5 +70,28 @@ describe("candidates, choose and isOrdinary", () => {
     expect(isOrdinary({ ...zero(), uncertainSpeaker: 0.1 })).toBe(false);
     expect(outcomeOf({ ...zero(), uncertainSpeaker: 0.4 })).toEqual({ kind: "hit", chosen: null, candidates: [], uncertain: true });
     expect(outcomeOf(zero())).toEqual({ kind: "ordinary" });
+  });
+});
+
+describe("parseDecision says which check failed (review of the live run, item 4)", () => {
+  const base = () => answers(zero());
+  const name = (i: number) => QUESTIONS[i]!.name;
+  it("names the check and the question, never the words", () => {
+    const refusal = base();
+    refusal.answers[3] = { type: "refusal", name: name(3) } as never;
+    expect(parseDecision(refusal, QUESTIONS)).toEqual({ ok: false, why: "invalid", reason: "refusal", index: 3, name: name(3) });
+    const choice = base();
+    (choice.answers[0] as { type: string }).type = "choice";
+    expect(parseDecision(choice, QUESTIONS)).toEqual({ ok: false, why: "invalid", reason: "type", index: 0, name: name(0) });
+    const missing = base();
+    missing.answers.pop();
+    expect(parseDecision(missing, QUESTIONS)).toEqual({ ok: false, why: "invalid", reason: "count", index: null, name: null });
+    const swapped = base();
+    [swapped.answers[0], swapped.answers[1]] = [swapped.answers[1]!, swapped.answers[0]!];
+    expect(parseDecision(swapped, QUESTIONS)).toEqual({ ok: false, why: "invalid", reason: "name", index: 0, name: name(0) });
+    const bad = base();
+    (bad.answers[2] as { probability: unknown }).probability = 1.01;
+    expect(parseDecision(bad, QUESTIONS)).toEqual({ ok: false, why: "invalid", reason: "probability", index: 2, name: name(2) });
+    expect(parseDecision(null, QUESTIONS)).toEqual({ ok: false, why: "invalid", reason: "shape", index: null, name: null });
   });
 });

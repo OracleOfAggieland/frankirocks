@@ -29,10 +29,12 @@ export function expireLease(s: Session, opsNow: number): Session {
 
 /**
  * The audience effect of a Turn whose parse didn't commit. A missing transcript or a deadline or transport failure
- * opens a lease (unless one is already held, which stores `unknown`); anything else stores `unknown` at once.
+ * opens a lease (unless one is already held, which stores `unknown`), and so does an invalid answer; anything else (oversize, a
+ * failed transcript) stores `unknown` at once.
  */
 export function failedParseEffect(s: Session, f: { clientSeq: number; token: ID; why: "missing" | "failedTranscript" | "deadline" | "transport" | "invalid" | "oversize" }, opsNow: number): Session {
-  const leaseMs = f.why === "missing" ? MISSING_LEASE_MS : f.why === "deadline" || f.why === "transport" ? REPAIR_LEASE_MS : null;
+  // An invalid answer is repaired like a deadline or transport failure; oversize is not (review of the live run, item 4).
+  const leaseMs = f.why === "missing" ? MISSING_LEASE_MS : f.why === "deadline" || f.why === "transport" || f.why === "invalid" ? REPAIR_LEASE_MS : null;
   if (leaseMs === null || (s.parseLease !== null && msFromTs(s.parseLease.until) > opsNow)) return { ...s, audience: "unknown" };
   return { ...s, parseLease: { clientSeq: f.clientSeq, token: f.token, until: tsFromMs(opsNow + leaseMs) } };
 }

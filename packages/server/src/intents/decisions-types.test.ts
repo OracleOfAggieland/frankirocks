@@ -22,6 +22,6 @@ describe("TurnIntents against the openai package's Decisions types", () => {
     };
     expect(parseDecision(decision, questions).ok).toBe(true);
     const refused: Decision = { ...decision, answers: [{ type: "refusal", name: "forget" }, ...decision.answers.slice(1)] };
-    expect(parseDecision(refused, questions)).toEqual({ ok: false, why: "invalid" });
+    expect(parseDecision(refused, questions)).toMatchObject({ ok: false, why: "invalid", reason: "refusal" });
   });
 });

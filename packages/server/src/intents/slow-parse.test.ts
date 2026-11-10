@@ -30,6 +30,19 @@ describe("runSlowParse", () => {
     expect(rig.openai.requestsTo("decisions.create")).toHaveLength(3);
   });
 
+  it("an invalid answer says which check failed, logs it by question name only, and keeps the words out (review of the live run, item 4)", async () => {
+    const { rig, run } = parser();
+    const answer = decisionAnswer();
+    answer.answers[2] = { type: "refusal", name: answer.answers[2]!.name } as never;
+    rig.openai.script("decisions.create", ok(answer));
+    const r = await run("my secret words");
+    expect(r.parse).toEqual({ kind: "failed", why: "invalid" });
+    expect(r.invalid).toEqual({ reason: "refusal", index: 2, name: answer.answers[2]!.name });
+    const line = rig.logs.find((l) => l.event === "turn.parseInvalid");
+    expect(line).toMatchObject({ fields: { reason: "refusal", index: 2, question: answer.answers[2]!.name } });
+    expect(JSON.stringify(rig.logs)).not.toContain("secret");
+  });
+
   it("records a regex match as IDs and never lets it overrule a successful parse", async () => {
     const { rig, run } = parser();
     rig.openai.script("decisions.create", ok(decisionAnswer()));

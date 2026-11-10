@@ -284,7 +284,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 
 1. (Wave B) WHEN the chosen class is `alone`, THE Server_Library SHALL set the Audience to `private`, raise `policyRev` and issue a new Deck, with no hang-up, and THE reply SHALL be the Fixed_Line "Okay, just us again."
 2. WHILE the Effective_Audience is `unknown`, THE Server_Library SHALL issue no S1+ note and no StateAck, so no reply uses `fastO` and every reply takes the slow path; there SHALL be no hang-up and no Fixed_Line.
-3. WHEN a Slow_Parse fails on its deadline or on a transport error, THE Server_Library SHALL run one Parse_Repair after the Turn's response has been sent, through the same Decisions_Port, with a 2,000 ms deadline.
+3. WHEN a Slow_Parse fails on its deadline, on a transport error or with an invalid answer (not oversize; review of the live run, item 4), THE Server_Library SHALL run one Parse_Repair after the Turn's response has been sent, through the same Decisions_Port, with a 2,000 ms deadline.
 4. WHEN the Parse_Repair commits an Ordinary_Parse, THE Parse_Gap SHALL close and the Effective_Audience SHALL return to the stored Audience.
 5. WHEN the Parse_Repair commits a Control_Hit, THE Server_Library SHALL run that route as a late hit.
 6. IF the Parse_Repair fails, THEN THE Server_Library SHALL set the Audience to `unknown` until a parsed `alone`, and the Parse_Gap SHALL stay for the Session.

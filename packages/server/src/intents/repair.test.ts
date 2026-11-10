@@ -36,7 +36,8 @@ describe("the Parse_Repair (R15.3–R15.6, R15.8; question 80)", () => {
     for (const [how, repaired] of [
       [never(), true],
       [fail(new Error("transport")), true],
-      [ok({ answers: [] }), false],
+      // An invalid answer is repaired too (review of the live run, item 4).
+      [ok({ answers: [] }), true],
     ] as const) {
       const { rig } = await failedFirst(how);
       expect(decisions(rig)).toBe(1);
@@ -49,6 +50,16 @@ describe("the Parse_Repair (R15.3–R15.6, R15.8; question 80)", () => {
     await post(rig, asrTurn(s.stamp, 1, "", items(1), "missing"));
     await runScheduled(rig);
     expect(decisions(rig)).toBe(0);
+  });
+
+  it("an oversize turn is not repaired, and stores unknown at once", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    await post(rig, asrTurn(s.stamp, 1, "x ".repeat(4000), items(1)));
+    await runScheduled(rig);
+    expect(decisions(rig)).toBe(0);
+    const after = await session(rig, s.sessionId);
+    expect([after.audience, after.parseLease]).toEqual(["unknown", null]);
   });
 
   it("runs with its own 2,000 ms deadline", async () => {

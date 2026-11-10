@@ -12,33 +12,51 @@ export interface Intents {
   opens: { topicId: string; p: number }[];
 }
 
-export type ParsedDecision = { ok: true; intents: Intents } | { ok: false; why: "invalid" };
+/** Which check an invalid Decision failed (review of the live run, item 4). Names a question, never the words. */
+export type InvalidReason = "shape" | "count" | "type" | "refusal" | "name" | "probability" | "missing";
+export const INVALID_REASONS: readonly InvalidReason[] = ["shape", "count", "type", "refusal", "name", "probability", "missing"];
+export interface InvalidDecision {
+  ok: false;
+  why: "invalid";
+  reason: InvalidReason;
+  /** The answer's position, when one answer failed. */
+  index: number | null;
+  /** That question's name (a TurnIntents predicate or `opens_<topicId>`), when one answer failed. */
+  name: string | null;
+}
+
+export type ParsedDecision = { ok: true; intents: Intents } | InvalidDecision;
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isProbability = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
+const invalid = (reason: InvalidReason, index: number | null = null, name: string | null = null): InvalidDecision => ({ ok: false, why: "invalid", reason, index, name });
 
 /**
  * Matches answers to questions by position and name. A refusal, a wrong type, a missing or extra answer, a name
  * that differs, or a probability that is not finite in [0, 1] fails the whole parse (contracts §5
- * "refusal/missing/extra=hold").
+ * "refusal/missing/extra=hold"), and the failure says which check and which question.
  */
 export function parseDecision(raw: unknown, questions: readonly PredicateQuestion[]): ParsedDecision {
-  const fail: ParsedDecision = { ok: false, why: "invalid" };
-  if (!isRecord(raw) || !Array.isArray(raw.answers) || raw.answers.length !== questions.length) return fail;
+  if (!isRecord(raw) || !Array.isArray(raw.answers)) return invalid("shape");
+  if (raw.answers.length !== questions.length) return invalid("count");
   const p: Partial<Probabilities> = {};
   const opens: Intents["opens"] = [];
   for (let i = 0; i < questions.length; i++) {
     const a = raw.answers[i];
     const q = questions[i]!;
-    if (!isRecord(a) || a.type !== "predicate" || a.name !== q.name || !isProbability(a.probability)) return fail;
+    if (!isRecord(a)) return invalid("type", i, q.name);
+    if (a.type === "refusal") return invalid("refusal", i, q.name);
+    if (a.type !== "predicate") return invalid("type", i, q.name);
+    if (a.name !== q.name) return invalid("name", i, q.name);
+    if (!isProbability(a.probability)) return invalid("probability", i, q.name);
     if (q.name.startsWith("opens_")) opens.push({ topicId: q.name.slice("opens_".length), p: a.probability });
     else if ((INTENT_NAMES as readonly string[]).includes(q.name)) p[q.name as IntentName] = a.probability;
-    else return fail;
+    else return invalid("name", i, q.name);
   }
-  if (INTENT_NAMES.some((n) => p[n] === undefined)) return fail;
+  const absent = INTENT_NAMES.find((n) => p[n] === undefined);
+  if (absent !== undefined) return invalid("missing", null, absent);
   return { ok: true, intents: { p: p as Probabilities, opens } };
 }
-
 /** The control classes at or above 0.20, in contracts §5 row order (all are retained). */
 export function candidates(p: Probabilities): ControlClass[] {
   return CONTROL_CLASSES.filter((c) => p[c] >= CANDIDATE_P);

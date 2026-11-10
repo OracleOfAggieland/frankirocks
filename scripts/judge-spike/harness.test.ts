@@ -851,3 +851,23 @@ describe("judge spike, judge_v2 and the slow parse per line (voice-control R17)"
     expect(readFileSync(join(d, "lines.json"), "utf8")).toBe(before);
   });
 });
+
+describe("judge spike, invalid parse reasons (review of the live run, item 4)", () => {
+  it("each row says which check an invalid parse failed, and the summary counts them", async () => {
+    const bad = { decide: async (body: Parameters<ReturnType<typeof fakeDecisionsPort>["decide"]>[0]) => {
+      const r = await fakeDecisionsPort().decide(body, HARNESS_PARSE_WAIT_MS);
+      const d = r.ok ? (r.decision as { answers: Record<string, unknown>[] }) : { answers: [] };
+      d.answers[1] = { type: "refusal", name: d.answers[1]!.name };
+      return { ok: true as const, decision: d, ms: 500 };
+    } };
+    const row1 = await lineParser(bad, {}, false)("o-01", "my dog loves the park");
+    expect(row1.parse).toMatchObject({ failure: "invalid", invalid: { reason: "refusal", index: 1, name: "quiet" } });
+    const probs = Object.fromEntries(["forget", "quiet", "correct", "transition", "hardRule", "crisis", "company", "alone", "why", "rushed", "food", "action", "answer", "uncertainSpeaker"].map((k) => [k, 0]));
+    const ok = { probabilities: probs, chosen: null, ordinary: true, ms: 100, missedDeadline: false, failure: null, invalid: null };
+    const inv = (reason: string, name: string | null) => ({ probabilities: null, chosen: null, ordinary: false, ms: 500, missedDeadline: false, failure: "invalid", invalid: { reason, index: 1, name } });
+    const r = run([row({ lineId: "o-01", parse: ok }), row({ lineId: "o-02", parse: inv("refusal", "quiet") as never }), row({ lineId: "o-03", parse: inv("refusal", "alone") as never }), row({ lineId: "o-04", parse: inv("count", null) as never })]);
+    const s = summarize(r);
+    expect(s.slowParse!.invalid).toEqual({ n: 3, reasons: { refusal: 2, count: 1 } });
+    expect(summaryMarkdown({ ...r, decisions: "live" })).toContain("- Invalid answers: 3 (refusal 2, count 1)");
+  });
+});

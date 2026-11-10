@@ -236,6 +236,8 @@ export interface SlowParseStats {
   /** Parses over the app's 350 ms deadline, and the parse time. */
   overDeadline: Ratio;
   ms: { p50: number | null; p95: number | null; n: number };
+  /** Invalid answers and which check each failed (review of the live run, item 4). */
+  invalid: { n: number; reasons: Record<string, number> };
 }
 
 /** A Ratio over the rows that have a parse; rows without one are `missing`. */
@@ -259,7 +261,14 @@ function slowParseStats(rows: readonly Row[]): SlowParseStats | null {
   }
   const ordinary = rows.filter((r) => r.expect === "ordinary");
   const times = nums(rows, (r) => r.parse?.ms ?? null);
+  const reasons: Record<string, number> = {};
+  const invalidRows = rows.filter((r) => r.parse?.failure === "invalid");
+  for (const r of invalidRows) {
+    const k = r.parse?.invalid?.reason ?? "not recorded";
+    reasons[k] = (reasons[k] ?? 0) + 1;
+  }
   return {
+    invalid: { n: invalidRows.length, reasons },
     byClass,
     falseHolds: { judge: ratio(ordinary, (r) => !judgePassed(r)), parse: parsedRatio(ordinary, (r) => r.parse!.ordinary !== true) },
     overDeadline: parsedRatio(rows, (r) => r.parse!.missedDeadline),
@@ -473,6 +482,8 @@ function slowParseMarkdown(p: SlowParseStats, decisions: DecisionsKind): string[
   for (const [c, x] of Object.entries(p.byClass)) out.push(`| ${c} | ${pct(x.judgeRecall)} | ${pct(x.parseRecall)} | ${pct(x.jointMiss)} |`);
   out.push("");
   out.push(`- False holds on ordinary lines: judge ${pct(p.falseHolds.judge)}, slow parse ${pct(p.falseHolds.parse)}`);
+  const inv = Object.entries(p.invalid.reasons).map(([k, v]) => `${k} ${v}`).join(", ");
+  out.push(`- Invalid answers: ${p.invalid.n}${p.invalid.n > 0 ? ` (${inv})` : ""}`);
   out.push(`- Parses over ${DECISIONS_DEADLINE_MS} ms: ${pct(p.overDeadline)}; parse time p50 ${ms(p.ms.p50)}, p95 ${ms(p.ms.p95)}, over ${p.ms.n} parse(s)`);
   out.push("");
   return out;

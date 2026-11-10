@@ -45,6 +45,8 @@ export interface ParseRow {
     /** Slower than the app's 350 ms deadline, or failed on it. */
     missedDeadline: boolean;
     failure: string | null;
+    /** Which check an invalid answer failed, by question name (review of the live run, item 4). Absent before Nov 10. */
+    invalid?: { reason: string; index: number | null; name: string | null } | null;
   };
 }
 
@@ -59,6 +61,7 @@ export function parseRowOf(p: SlowParse): ParseRow {
       ms: p.ms,
       missedDeadline: failure === "deadline" || p.ms > DECISIONS_DEADLINE_MS,
       failure,
+      invalid: p.invalid === null ? null : { ...p.invalid },
     },
   };
 }
