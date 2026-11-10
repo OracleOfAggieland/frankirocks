@@ -176,9 +176,10 @@ Machine properties 2, 4, 7 and 12 are expected red on the current machine. The o
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 3, nothing dispatches before admission`
 
-- [ ] 17. **[property]** P4 No clipped suffix
+- [x] 17. **[property]** P4 No clipped suffix
   - Requirements: R20.1.4; R3.2
-  - Depends on: 12 · Estimate: 0.75 h · Actual:
+  - Depends on: 12 · Estimate: 0.75 h · Actual: 0.2 h
+  - Notes: Green vacuously: today's machine creates no speculative reply. "Muted start" is an `output_audio_buffer.started` for the speculative reply after which output is still muted.
   - Files: `packages/core/src/voice/no-clipped-suffix.property.test.ts` (new)
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 4, no clipped suffix`
