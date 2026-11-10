@@ -191,7 +191,7 @@ Wave A ends here. Wave B (tasks 45 to 53: Head compile by audience, company and 
 
 ## Wave A fixes (`docs/briefs/011-review-wave-a.md`)
 
-The review was committed as is (`50b1874`). The reviewer's property 7 change is `704d3de`. Each item has its own commit and a test that failed on the code before it. **The run stopped at item 17**: its crisis sub-item needs an edit to property 8, which is guarded (see item 17 below). Items 18 to 23 were not started.
+The review was committed as is (`50b1874`). The reviewer's property 7 change is `704d3de`. Each item has its own commit and a test that failed on the code before it. The first run stopped at item 17, because its crisis sub-item needed an edit to property 8, which is guarded. **The reviewer then changed property 8 in `97d5893`** (the agent's proposal, accepted): a typed line with no call open may carry its typed reply as a note on a crisis hit, still with scope `ack` and no fixed line. Items 17 to 23 were then built, one commit each. All 23 items are done; none was declined.
 
 | Item | Commit | Test that failed first |
 |---|---|---|
@@ -211,8 +211,13 @@ The review was committed as is (`50b1874`). The reviewer's property 7 change is 
 | 14. A refused reply create ends the reply in RECOVERY | `7b62827` | "item 14" (waited for the 45 s cap) |
 | 15. Realtime `error` events counted and shown | `91e2027` | "item 15" in `machine.test.ts` and `DebugPanel.test.tsx` |
 | 16. A `policyRev` rise requeues extraction | `4c88ee5` | `extract.test.ts` "a raised policyRev runs the job again at the new one" (the job was failed STALE). Contract question 93 proposes the KS06 amendment: a changed epoch still fails STALE; a raised `policyRev` requeues at the new one. |
-| 17. Typed lines with no call open | **not built** | see below |
-| 18 to 23 | not started | |
+| 17. A typed line with no call open always gets an answer | `7239766` | `turn.typed-no-call.test.ts`: a crisis line, another hit, a failed parse and the 2,000 ms deadline all failed; the `forget` case already passed. R8.9 and Q64 updated. |
+| 18. The Parse_Repair's transaction is retried | `3de598f` | `repair.test.ts` "a lost compare-and-set is retried and the gap closes" and "each retry re-checks the lease" (the repair threw `staleRevision` and was lost) |
+| 19. An early Superseding_Post gets a retryable hold | `fc45a58` | `supersede.test.ts` "while the missing post is still pending" and the updated "not visible" case (both PARSE); `voice-client.test.ts` "a superseding post that is answered hold is resent" |
+| 20. A late `alone` closes its own turn's gap | `38ad73c` | `repair.test.ts` "a parsed alone closes its own turn's gap" and `supersede.test.ts` "closes its own turn's gap" (watermark stayed 0). The old repair test that pinned 0 for the turn's own gap now expects 1; a new case keeps another turn's gap open (R15.8). |
+| 21. A pasted turn's tool output is S0 | `c1fc2f5` | `tool.test.ts` "a pasted (T) turn's tool output is limited to S0" (an S1 note came back) |
+| 22. The late-hit decision is written by the seam | `5daca01` | `seam.test.ts` "no server source outside admission/seam.ts writes a decision with purpose answer" (`intents/repair.ts` did) and "recordLateHit writes one held decision" |
+| 23. The Decisions call starts beside `ensureCoreDocs` and `beginRequest` | `f289b1d` | `turn.typed-no-call.test.ts` "the Decisions call starts beside ensureCoreDocs and beginRequest" (it started after the first transaction) |
 
 **Choices made while fixing.**
 - Item 4: speech start counts as a barge-in in HELD, with a check pending, or in RECOVERY waiting for the Neutral_Line, so a late Permit for the posted turn can't play over the owner. That turn gets no reply; the owner's new speech is the next turn.
@@ -222,14 +227,23 @@ The review was committed as is (`50b1874`). The reviewer's property 7 change is 
 
 **Property that ran red.** New property 13, "an admitted turn is posted" (`packages/core/src/voice/admitted-turn-posted.property.test.ts`, helper `drainAll` in `testing/trace.ts`). It fires every armed timer after the trace. Every turn whose reply was admitted must be posted at most once, and exactly once unless the call ended or the turn is still collecting audio. Run on the code before item 7, it failed: seed `-231391213`, shrunk counterexample `[speechStop 900, stateOk fresh 100, commit 200, itemAdded 0 40, created 1 20, judgeDone 0 O 0, hash 0 ok 0, hash 0 ok 0, created 0 30, started 0 300, stopped 1500]`. The `fastO` reply ended before the transcript, and the turn was never posted. It is green since item 7. No other property ran red.
 
-**Item 17: stopped.** Most of item 17 needs no property change: the 2,000 ms Decisions deadline with no call open, the Fixed_Line for `forget`, the typed reply on other hits (row 12 allows S0 notes), the Neutral_Line as text on a failed parse, and the typed client rendering any note. One sub-item does: "A crisis line shows the typed reply". With no call open, the typed reply reaches the browser only as a `W` note under the Permit. Property 8 (`seam-total.property.test.ts`) states that for an `asr` or `typed` source, any parse hit with a `crisis` candidate gets a Permit with `notes: "none"`. The seam filters notes by that outcome, so a crisis Permit can carry no typed reply. Building this needs property 8's crisis clause to exempt a typed line with no call open, or to say that the care reply on that path is the typed reply. That is an edit to a guarded file, so the run stopped here, as the review says.
-- Moving the text into `toolOutput`, or letting the route skip the rule's notes level, would make the claim true in name only, so neither was done.
-- Proposed change, for the reviewer: in property 8, read "crisis replies carry no notes" as "no notes except the typed reply when `source` is typed and no call is live". Then the Server_Rule gets a typed-no-call crisis row that allows that one `result` note, still with scope `ack`.
-- The rest of item 17 can land in the same commit once the property decides. It wasn't built on its own, so the crisis line wouldn't stay as the one hit with no reply.
+**Item 17 and the property 8 change.** The first run stopped here, as the rules require: property 8 said every crisis reply has `notes: "none"`, and with no call open a typed line's reply exists only as a note. The agent proposed an exception for a typed line with no call open; **the reviewer accepted it and made the edit to the guarded file in `97d5893`** (the agent did not edit it). The crisis clause still requires scope `ack` and no fixed line on every crisis reply. With that, item 17 landed in one commit:
+- The Decisions deadline with no call open is 2,000 ms (`DECISIONS_NO_CALL_DEADLINE_MS`). "No call open" means the Session has no `callId` and no registered calls.
+- The typed reply is no longer discarded on a hit. Row 12 keeps it as an S0 note. A crisis line keeps it under scope `ack` (row 7, now `S0` for a typed line with no call). A Fixed_Line class shows its line instead, because the seam replaces the notes with the line.
+- A failed parse on a typed line with no call carries `RECOVERY_LINE` as an `ack` note, so it shows as text.
+- The typed client already rendered every note the Permit carries; nothing changed there.
+- One limit, from R8.6 ("a Control_Hit gets no S1+ note"): a typed reply whose Head drew on S1 Memories has `sens` S1, so on a hit it is still filtered out and nothing shows. That is the requirement as written, so I left it, but the owner should know a typed hit can still come back empty when the Head is personal. The fix would be a contract decision: either let a typed line with no call carry S1 on a hit in a private Session, or compute the typed reply's `sens` from what it actually cites.
 
-**Not started:** item 18 (the Parse_Repair transaction retry), item 19 (a Superseding_Post that arrives before its `missing` post completes), item 20 (a late `alone` leaves a permanent gap), item 21 (a pasted turn's tool continuation), item 22 (the repair's decision written outside the seam), item 23 (start the Decisions call earlier).
+**Choices made in items 18 to 23.**
+- Item 18: up to 8 transaction attempts, as the routes use. Each attempt re-reads the Session and re-checks the lease token and window. If all fail, the lease runs out and the next request stores `unknown`, as before.
+- Item 19: a missing or still-pending superseded entry answers `hold` with `retryAfterMs` 250 and records nothing. The Voice_Client resends a superseding post on that hold inside its 5,000 ms budget, so the machine sees only the final answer; if the budget runs out it is a failed turn, which reconnects (item 6). A complete entry for another turn is still PARSE.
+- Item 21: a T-class Turn reaches the rule as not judge-O and not typed, so row 3 limits its tool output to S0. `RuleInput` gained no field, so the property 8 enumeration is unchanged.
+- Item 22: the decision's `audience` is the Effective_Audience after the repair commits (the lease is cleared by then, so it equals the stored audience).
+- Item 23: a replayed request now costs one Decisions call that nothing uses. The parse also checks the Session for an open call first, which costs one read before the parse starts.
 
-**Checks after item 16** (telemetry variables set, no network call, nothing with `--live`):
-- `npm test`: 162 files, 1,492 tests.
+**Properties.** No property ran red in items 17 to 23. Property 8 passed after item 17's rule change, under the reviewer's new statement.
+
+**Checks after item 23** (telemetry variables set, no network call, nothing with `--live`):
+- `npm test`: 163 files, 1,507 tests.
 - `npm run lint`, `npm run typecheck` and `npm run build`: exit 0.
-- The wave A properties (P1 to P9, P11, P12) and the new P13 (12 files, 13 tests) passed five full runs in a row.
+- The wave A properties (P1 to P9, P11, P12) and P13 (12 files, 13 tests) passed five full runs in a row.
