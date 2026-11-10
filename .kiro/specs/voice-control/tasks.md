@@ -302,9 +302,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `decisions-types.test.ts` › the core builder's return type is assignable to `DecisionCreateParams` and `parseDecision` accepts a `Decision` (type-level, against `node_modules/openai`); `decisions-port.test.ts` › the fake records requests and answers from a script; the deadline gives `{ok:false, why:"deadline"}` on the fake timers; a thrown transport error gives `why:"transport"`; the model comes from `FRANKI_BG_MODEL`. `scripts/model-literals.test.ts` passes.
   - Commit: `feat(intents): decisions port`
 
-- [ ] 30. Admission_Seam: `admitRule` and `recordFastO`
+- [x] 30. Admission_Seam: `admitRule` and `recordFastO`
   - Requirements: R8.1, R8.2, R9.1–R9.3, R13.1; Q57, Q78
-  - Depends on: 10 · Estimate: 2 h · Actual:
+  - Depends on: 10 · Estimate: 2 h · Actual: 0.5 h
+  - Notes: `admitRule` takes no env, so nothing can make it refuse in production; the test runs it on a production-env rig. It also filters the reply's notes by the rule's `notes` (none, S0 or all), so an S1+ note never reaches a Permit the rule didn't allow. The Fixed_Line's note ID is `H("ack", stamp, line)`. `admit` (devAdmit) stays until task 39.
   - Files: `packages/server/src/admission/seam.ts` (add `admitRule` and `recordFastO` beside `admit`), `packages/server/src/admission/seam.test.ts` (new)
   - Witness: `seam.test.ts` › one decision per outcome keyed by `permitId`, `H("hold", …)` or `H("fastO", sessionId, turnId)`; the decision cites the request entry with a `ledger` Ref; the payload hash equals `payloadHash`; an ack note is in `noteIds` and the hash; `recordFastO` twice writes once; issues Permits with `NODE_ENV=production`.
   - Commit: `feat(admission): seam with the server rule and fastO record`
