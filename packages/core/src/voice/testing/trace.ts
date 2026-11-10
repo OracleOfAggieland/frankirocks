@@ -101,3 +101,23 @@ export function eventResponseId(s: TraceStep): string | null {
   const r = e.response as Record<string, unknown> | undefined;
   return typeof r?.id === "string" ? r.id : null;
 }
+
+/**
+ * Fires every armed timer except `ignore`, earliest first, with no other events, until none is armed or
+ * `maxFirings` is reached, whatever the phase. Returns the commands the firings sent and the final state.
+ */
+export function drainAll(start: VoiceState, now: number, ignore: readonly TimerName[] = [], maxFirings = 40): { commands: import("../machine").VoiceCommand[]; state: VoiceState } {
+  let st = start;
+  let t = now;
+  const commands: import("../machine").VoiceCommand[] = [];
+  for (let n = 0; n < maxFirings; n++) {
+    const armed = (Object.entries(st.deadlines) as [TimerName, number][]).filter(([name]) => !ignore.includes(name)).sort((a, b) => a[1] - b[1]);
+    if (armed.length === 0) break;
+    const [name, at] = armed[0]!;
+    t = Math.max(t, at);
+    const r = step(st, { type: "timer", name }, t);
+    st = r.state;
+    commands.push(...r.commands);
+  }
+  return { commands, state: st };
+}

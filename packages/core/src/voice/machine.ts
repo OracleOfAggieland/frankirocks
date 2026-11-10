@@ -122,7 +122,9 @@ export type TimerName =
   | "poll"
   | "swap"
   /** Contracts §6 States SPEAKING "45scap": an active reply that never starts or never stops ends here. */
-  | "speakCap";
+  | "speakCap"
+  /** R7.6: the t0 + ADMITTED_TRANSCRIPT_LIMIT_MS wait of a Turn whose admitted reply ended before its transcript. */
+  | "heldBack";
 
 export interface VoiceItem {
   itemId: string;
@@ -267,6 +269,8 @@ export interface VoiceState {
   /** Outstanding_Turns: posted, no answer yet. */
   outstanding: { turnId: string; deadline: number }[];
   missing: MissingTurn[];
+  /** An admitted Turn whose reply ended before its transcript came; posted `final` or `missing` (review item 7). */
+  heldBack: VoiceTurn | null;
   lastTurnResponseAt: number | null;
   /** When the in-flight `/api/session/state` went out, or null when none is in flight. */
   stateSentAt: number | null;
@@ -318,6 +322,7 @@ export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState
     unadmitted: [],
     outstanding: [],
     missing: [],
+    heldBack: null,
     lastTurnResponseAt: null,
     stateSentAt: null,
     ackDroppedStale: false,
@@ -838,7 +843,7 @@ function onOpen(s: Step, res: Infer<typeof OpenResponse>): void {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: [], missing: [], admittedTurnId: null, stateSentAt: null, afterReply: null, 
+    judge: null, spec: null, unadmitted: [], outstanding: [], missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null, 
     stateFailures: null,
     stateRetryVisible: false,
   });
@@ -873,7 +878,7 @@ function closedFields(st: VoiceState): Partial<VoiceState> {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: [], missing: [], admittedTurnId: null, stateSentAt: null, afterReply: null, 
+    judge: null, spec: null, unadmitted: [], outstanding: [], missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null, 
     deadlines: {},
     recovery: null,
     retryVisible: false,
@@ -915,7 +920,7 @@ function connectionRecovery(s: Step, closeSession: boolean): void {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: [], missing: [], admittedTurnId: null, stateSentAt: null, afterReply: null, 
+    judge: null, spec: null, unadmitted: [], outstanding: [], missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null, 
     deadlines: {},
     recovery: { kind: "connection", since, attempts: st.recovery?.kind === "connection" ? st.recovery.attempts : 0 },
   });
@@ -1030,9 +1035,8 @@ function onStateFailed(s: Step): void {
 // ---------------------------------------------------------------------------------------------
 // Turns
 
-function postTurn(s: Step, transcriptState: "final" | "missing" | "failed"): void {
-  const st = s.st;
-  const turn = st.turn!;
+/** The TurnRequest body for `turn` at the next clientSeq, with commitSeqs filled in (design "Turn grouping"). */
+function buildTurnBody(st: VoiceState, turn: VoiceTurn, transcriptState: "final" | "missing" | "failed") {
   const deck = st.deck!;
   const session = st.session!;
   let lastCommitSeq = st.lastCommitSeq;
@@ -1071,6 +1075,31 @@ function postTurn(s: Step, transcriptState: "final" | "missing" | "failed"): voi
     supersedesRequestId: null,
     uiControl: null,
   };
+  return { body, items, lastCommitSeq };
+}
+
+/**
+ * A Turn whose reply was admitted and ended before its transcript came is kept here until it is posted `final` or
+ * `missing` at t0 + ADMITTED_TRANSCRIPT_LIMIT_MS (R7.6; review of wave A, item 7). Posting it changes no phase.
+ */
+function postHeldBack(s: Step, transcriptState: "final" | "missing" | "failed"): void {
+  const st = s.st;
+  const turn = st.heldBack;
+  if (turn === null || st.session === null || st.deck === null) return;
+  const { body, items, lastCommitSeq } = buildTurnBody(st, turn, transcriptState);
+  s.set({ heldBack: null, nextClientSeq: st.nextClientSeq + 1, lastCommitSeq });
+  s.disarm("heldBack");
+  pushTurn(s, body);
+  if (transcriptState === "missing")
+    s.set({ missing: [...s.st.missing.filter((m) => m.until > s.now), { turnId: turn.turnId, clientSeq: body.clientSeq, body, items, until: s.now + MISSING_WINDOW_MS }].slice(-2) });
+}
+
+function postTurn(s: Step, transcriptState: "final" | "missing" | "failed"): void {
+  // An earlier admitted Turn still waiting for its transcript goes first, so clientSeq keeps commit order (item 7).
+  if (s.st.heldBack !== null) postHeldBack(s, "missing");
+  const st = s.st;
+  const turn = st.turn!;
+  const { body, items, lastCommitSeq } = buildTurnBody(st, turn, transcriptState);
   s.set({ turn: { ...turn, items, posted: body }, nextClientSeq: st.nextClientSeq + 1, lastCommitSeq });
   s.disarm("item", "transcript");
   pushTurn(s, body);
@@ -1179,8 +1208,32 @@ function toListening(s: Step): void {
   s.mute();
   dropSpeculation(s);
   finishLatency(s);
+  const st = s.st;
+  const turn = st.turn;
+  // R7.6: an admitted reply ended before its transcript came. The Turn is kept until it is posted `final` (its
+  // transcript), or `missing` at t0 + 5 s, so its Evidence and slow parse still happen (review of wave A, item 7).
+  const keep = turn !== null && turn.posted === null && turn.source === "asr" && st.admittedTurnId === turn.turnId;
   s.disarm("permit", "turnRetry", "tool", "lineDone", "item", "transcript", "judge", "speakCap");
+  if (keep) {
+    if (st.heldBack !== null) postHeldBack(s, "missing");
+    s.set({ heldBack: turn });
+    s.arm("heldBack", turn.tEnd + ADMITTED_TRANSCRIPT_LIMIT_MS);
+  }
   s.set({ phase: "LISTENING", turn: null, pending: null, active: null, admittedTurnId: null, recovery: s.st.recovery?.kind === "line" ? null : s.st.recovery });
+}
+
+/** A transcript for the held-back Turn: posted `final` once every item has one. Returns true when it was one. */
+function onHeldBackTranscript(s: Step, itemId: string, transcript: string | null): boolean {
+  const hb = s.st.heldBack;
+  if (hb === null || !hb.items.some((i) => i.itemId === itemId)) return false;
+  if (transcript === null) {
+    postHeldBack(s, "failed");
+    return true;
+  }
+  const items = hb.items.map((i) => (i.itemId === itemId ? { ...i, transcript } : i));
+  s.set({ heldBack: { ...hb, items } });
+  if (items.every((i) => i.transcript !== null)) postHeldBack(s, "final");
+  return true;
 }
 
 function requestVerify(s: Step, reply: PendingReply): void {
@@ -1417,6 +1470,7 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string, lastLoudA
       return onItemAdded(s, ev.item.id);
     case "conversation.item.input_audio_transcription.completed": {
       if (onLateTranscript(s, ev.item_id, ev.transcript)) return;
+      if (onHeldBackTranscript(s, ev.item_id, ev.transcript)) return;
       const turn = st.turn;
       // A transcript for a Turn already posted `final` is dropped (R15.11).
       if (turn === null || turn.posted !== null || !turn.items.some((i) => i.itemId === ev.item_id)) return;
@@ -1424,6 +1478,7 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string, lastLoudA
       return maybeAdmit(s);
     }
     case "conversation.item.input_audio_transcription.failed": {
+      if (onHeldBackTranscript(s, ev.item_id, null)) return;
       const turn = st.turn;
       if (turn === null || turn.posted !== null || !turn.items.some((i) => i.itemId === ev.item_id)) return;
       return postTurn(s, "failed");
@@ -1788,6 +1843,10 @@ function onTimer(s: Step, name: TimerName): void {
       if (turn !== null && turn.posted === null && turn.source === "asr" && s.now >= turn.tEnd + limit) postTurn(s, "missing");
       return;
     }
+    case "heldBack":
+      // R7.6: no transcript by t0 + 5 s for a Turn whose admitted reply already ended.
+      if (st.heldBack !== null) postHeldBack(s, "missing");
+      return;
     case "turnRetry":
       if (st.turn?.posted != null && st.pending === null && st.active === null) pushTurn(s, st.turn.posted);
       return;

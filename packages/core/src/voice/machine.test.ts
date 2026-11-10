@@ -1182,3 +1182,43 @@ describe("wave A review fixes, items 5 and 6", () => {
     expect(r.st.deck!.policyRev).toBe(higher.policyRev);
   });
 });
+
+describe("wave A review fixes, item 7: an admitted turn is posted after its reply ends", () => {
+  /** A fastO reply that plays and ends before the transcript arrives. */
+  function shortReply() {
+    const r = listening();
+    fastOTurn(r);
+    answerVerify(r);
+    r.rt({ type: "output_audio_buffer.started", response_id: "resp_s" }, 100);
+    r.rt({ type: "response.done", response: { id: "resp_s", metadata: { purpose: "speculative", generation: "1" } } }, 300);
+    r.rt({ type: "output_audio_buffer.stopped", response_id: "resp_s" }, 200);
+    expect(r.st.phase).toBe("LISTENING");
+    expect(r.log.some((c) => c.kind === "turn")).toBe(false);
+    return r;
+  }
+
+  it("the late transcript posts it final", () => {
+    const r = shortReply();
+    r.rt({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_1", transcript: "My dog is called Pip" }, 300);
+    expect(turnBody(r)).toMatchObject({ transcriptState: "final", transcript: "My dog is called Pip", judge: "O", clientSeq: 1 });
+    expect(r.st.phase).toBe("LISTENING");
+  });
+
+  it("no transcript by t0 + 5 s posts it missing, ready for a superseding post", () => {
+    const r = shortReply();
+    r.now = r.st.deadlines.heldBack!;
+    r.timer("heldBack");
+    expect(turnBody(r)).toMatchObject({ transcriptState: "missing", clientSeq: 1 });
+    expect(r.st.missing).toHaveLength(1);
+  });
+
+  it("a new turn's post first posts the held-back turn missing, so clientSeq keeps commit order", () => {
+    const r = shortReply();
+    r.ev({ type: "typedSubmitted", turnId: testId("typed-2"), text: "And another thing" }, 100);
+    const posts = r.log.flatMap((c) => (c.kind === "turn" ? [c.body] : []));
+    expect(posts.map((b) => [b.transcriptState, b.clientSeq])).toEqual([
+      ["missing", 1],
+      ["final", 2],
+    ]);
+  });
+});
