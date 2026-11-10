@@ -139,10 +139,11 @@ Rules for every task:
   - Witness: `arb-call.test.ts` › 200 generated calls replay through `step` without throwing; every event kind of design §"Correctness Properties" appears across 1,000 samples; `trace` records phase, `outputMuted`, commands and response IDs per step; `audible(r, i)` agrees with a hand-built trace.
   - Commit: `test(voice): call generators and trace helpers`
 
-- [ ] 13. Intents and rule generators
+- [x] 13. Intents and rule generators
   - Requirements: R20.1 (generators), R20.5
   - Depends on: 10
-  - Estimate: 1 h · Actual:
+  - Estimate: 1 h · Actual: 0.3 h
+  - Notes: `allRuleInputs` enumerates 1,741,824 inputs: every enum value, every boolean (word density and all-final share one flag), and 21 parse shapes (ordinary, each class alone, crisis with company, uncertain only, each failure, none).
   - Files: `packages/core/src/intents/testing/arb-intents.ts` (new), `packages/core/src/intents/testing/arb-rule-input.ts` (new), `packages/core/src/intents/testing/arb.test.ts` (new)
   - Witness: `arb.test.ts` › probability vectors include 0.1999 and 0.20; `arbRuleInput` covers every enum value and both waves across 1,000 samples; the enum-only part enumerates exhaustively.
   - Commit: `test(intents): probability and rule-input generators`
