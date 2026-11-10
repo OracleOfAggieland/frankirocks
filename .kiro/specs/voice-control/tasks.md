@@ -374,9 +374,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `supersede.test.ts` › an ordinary late transcript commits the Turn, Evidence and Extract_Job, clears the lease and moves the watermark; a control hit runs the late-hit effects; no Permit and no decision; a request whose superseded entry is for another turn is PARSE; a Turn not in `transcriptMissing` is `stale` with no writes; a replay is a replay.
   - Commit: `feat(turn): superseding post for late transcripts`
 
-- [ ] 38. The Parse_Repair
+- [x] 38. The Parse_Repair
   - Requirements: R15.3–R15.6, R15.8; Q80
-  - Depends on: 37 · Estimate: 2 h · Actual:
+  - Depends on: 37 · Estimate: 2 h · Actual: 0.7 h
+  - Notes: `runParseRepair` in `intents/repair.ts`. `/api/turn` schedules it only when the failure was `deadline` or `transport` and the post opened its own lease (a second failure while another lease holds stores `unknown` with no repair, as design "Audience effects" says). The Turn text is re-read before the parse, so typed U lines are repaired too. A lease past its window, or another turn's lease, is `lostLease`: the parse doesn't commit, and an expired lease stores `unknown`. A late hit writes one `blocked` decision keyed `H("repair", sessionId, turnId)` with `heldRefs:[turn]` and `reasonCodes:["time"]` (no reason code fits a late hit better; noted for the report). Property 11 green after this task, in every run since. A full `npm test` then timed out property 8's exhaustive half (5,234 ms against vitest's 5 s default; 2 s alone) under parallel load; the global `testTimeout` is now 15 s (`vitest.config.ts`, its own commit). No property changed.
   - Files: `packages/server/src/intents/repair.ts` (new), `packages/server/src/intents/repair.test.ts` (new), `packages/server/src/routes/turn.ts` (schedule the repair)
   - Witness: `repair.test.ts` › scheduled only for deadline and transport failures; ordinary closes the gap with the stored audience untouched; a hit raises `policyRev`; a failure stores `unknown`; a stale lease token does nothing; `alone` never moves the watermark past a gap. Property 11 green.
   - Commit: `feat(intents): parse repair`

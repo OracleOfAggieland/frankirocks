@@ -10,6 +10,7 @@
 import {
   type CoreEpoch,
   type Evidence,
+  type ID,
   type Infer,
   type Ledger,
   type RuleInput,
@@ -27,6 +28,7 @@ import {
 import { admitRule, fastODecisionId, fastOTurnFields } from "../admission/seam";
 import { advancedWatermark, effectiveAudience, expireLease, failedParseEffect, hasParseGap } from "../audience";
 import { decisionsPort } from "../intents/decisions-port";
+import { repairs, runParseRepair } from "../intents/repair";
 import { runSlowParse } from "../intents/slow-parse";
 import { ensureCoreDocs, ownerClock, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck } from "../deck";
@@ -193,11 +195,14 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           const committed = turn.parseState === "committed";
           const committedParseSeq = committed && s.committedParseSeq === req.clientSeq - 1 ? req.clientSeq : s.committedParseSeq;
           let next: Session = s;
+          const leaseToken = deps.hasher.id(["lease", req.sessionId, req.turnId]);
           if (req.source === "asr" && req.transcriptState !== "final") {
-            next = failedParseEffect(s, { clientSeq: req.clientSeq, token: deps.hasher.id(["lease", req.sessionId, req.turnId]), why: req.transcriptState === "missing" ? "missing" : "failedTranscript" }, ops);
+            next = failedParseEffect(s, { clientSeq: req.clientSeq, token: leaseToken, why: req.transcriptState === "missing" ? "missing" : "failedTranscript" }, ops);
           } else if (slow !== null && slow.parse.kind === "failed") {
-            next = failedParseEffect(s, { clientSeq: req.clientSeq, token: deps.hasher.id(["lease", req.sessionId, req.turnId]), why: slow.parse.why }, ops);
+            next = failedParseEffect(s, { clientSeq: req.clientSeq, token: leaseToken, why: slow.parse.why }, ops);
           }
+          // A deadline or transport failure that opened its own lease gets one Parse_Repair after the response (R15.3).
+          const repair = slow !== null && slow.parse.kind === "failed" && repairs(slow.parse.why) && next.parseLease?.token === leaseToken ? (leaseToken as ID) : null;
           const now = tsFromMs(ops);
           tx.update(doc.path, {
             ...next,
@@ -254,10 +259,14 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           const status = statusOf(admitted.outcome);
           const response: TurnRes = admitted.kind === "permit" ? { ...base, status, deck, notes: admitted.notes, permit: admitted.permit } : { ...base, status, deck, permit: null };
           await completeRequest(tx, key, response, ops);
-          return { kind: "committed" as const, response, jobId };
+          return { kind: "committed" as const, response, jobId, repair };
         });
         if (outcome.kind === "unrecorded") throw new Unrecorded(outcome.response);
-        // Extraction starts after the response is sent (R18.4, R22.12).
+        // Extraction and the Parse_Repair start after the response is sent (R18.4, R22.12, R15.3).
+        if (outcome.repair !== null) {
+          const target = { sessionId: req.sessionId as ID, turnId: req.turnId as ID, token: outcome.repair };
+          ctx.schedule(() => runParseRepair(uid, deps, target));
+        }
         if (outcome.jobId !== null) ctx.schedule(() => drainExtractJobs(uid, deps));
         return outcome.response;
       } catch (error) {
