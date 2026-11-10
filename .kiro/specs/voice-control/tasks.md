@@ -268,9 +268,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `machine.test.ts` › "valid O with a fresh ack unmutes at the spec's start"; "O after muted audio cancels, clears and regenerates"; "H, U, invalid and judge error cancel and hold; a later O changes nothing"; "judge timeout cancels both"; "a refused fastO records its reason"; "a held function call dispatches after admission and drops on a hold"; "`admitted` receipt before `playbackStarted`"; "the post carries the known verdict or timeout". Properties 1–4 and 7 green; any still red is reported.
   - Commit: `feat(voice): verdicts and fastO admission`
 
-- [ ] 26. Turn responses, cuts and tools by scope
+- [x] 26. Turn responses, cuts and tools by scope
   - Requirements: R3.8, R7.5, R11.4, R11.6, R11.7, R12.4, R12.6, R12.7; Q58, Q59, Q60, Q88
-  - Depends on: 25 · Estimate: 3 h · Actual:
+  - Depends on: 25 · Estimate: 3 h · Actual: in task 24
+  - Notes: Code and witnesses in `2563adf`. Witness: describe "turn responses, cuts and tools by scope (task 26)", 5 cases. Follows question 92: only `ready` and `clarify` cut an admitted reply; `ordinary` with `postCommitControl` doesn't. A recoveryOnly Permit on any status plays the neutral line. Property 12 green.
   - Files: same as 24
   - Witness: `machine.test.ts` › one case per status row (`ordinary`, `ready`, `hold`/`clarify` with `recoveryOnly`, `blocked` ignored until wave B); "ready and clarify cut a playing fastO reply, ordinary and hold don't"; "a slowOrdinary that arrives while SPECULATING admits the spec reply"; "scope ack and recoveryOnly get tools []; scope reply keeps recall"; "an ack note is spoken verbatim"; "a Permit arriving after t0 + 2500 but before the request timeout plays and is late"; "after the permit timer a turnOk only adopts its Deck". Property 12 green.
   - Commit: `feat(voice): turn responses, cuts and tools by scope`
