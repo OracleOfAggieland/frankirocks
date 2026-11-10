@@ -59,7 +59,7 @@ describe("candidates, choose and isOrdinary", () => {
     expect([...PRIORITY].sort()).toEqual([...CONTROL_CLASSES].sort());
     const p = { ...zero(), food: 0.9, why: 0.3, rushed: 0.5 };
     expect(choose(candidates(p))).toBe("why");
-    expect(outcomeOf(p)).toEqual({ kind: "hit", chosen: "why", candidates: ["why", "rushed", "food"], uncertain: false });
+    expect(outcomeOf(p)).toEqual({ kind: "hit", chosen: "why", candidates: ["why", "rushed", "food"], uncertain: false, candidateP: { why: 0.3, rushed: 0.5, food: 0.9 } });
     expect(choose(candidates({ ...zero(), crisis: 0.9, company: 0.3 }))).toBe("company");
     expect(choose([])).toBeNull();
   });
@@ -68,7 +68,7 @@ describe("candidates, choose and isOrdinary", () => {
     expect(isOrdinary(zero())).toBe(true);
     expect(isOrdinary({ ...zero(), uncertainSpeaker: 0.0999, forget: 0.19 })).toBe(true);
     expect(isOrdinary({ ...zero(), uncertainSpeaker: 0.1 })).toBe(false);
-    expect(outcomeOf({ ...zero(), uncertainSpeaker: 0.4 })).toEqual({ kind: "hit", chosen: null, candidates: [], uncertain: true });
+    expect(outcomeOf({ ...zero(), uncertainSpeaker: 0.4 })).toEqual({ kind: "hit", chosen: null, candidates: [], uncertain: true, candidateP: {} });
     expect(outcomeOf(zero())).toEqual({ kind: "ordinary" });
   });
 });

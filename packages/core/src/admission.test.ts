@@ -19,8 +19,9 @@ const base: RuleInput = {
   toolParseCommitted: false,
   wave: "A",
 };
-const hit = (chosen: ControlClass | null, candidates: ControlClass[] = chosen === null ? [] : [chosen], uncertain = false) =>
-  ({ kind: "hit", chosen, candidates, uncertain }) as const;
+/** A hit whose candidates are sure (0.9), so a route fires whatever the judge said, unless p says otherwise. */
+const hit = (chosen: ControlClass | null, candidates: ControlClass[] = chosen === null ? [] : [chosen], uncertain = false, p = 0.9) =>
+  ({ kind: "hit", chosen, candidates, uncertain, candidateP: Object.fromEntries(candidates.map((c) => [c, p])) }) as const;
 const rule = (over: Partial<RuleInput>) => serverRule({ ...base, ...over });
 
 describe("serverRule, one case per design row", () => {
@@ -112,5 +113,24 @@ describe("serverRule, one case per design row", () => {
     for (const parse of [{ kind: "ordinary" } as const, hit("food"), hit("forget"), hit("crisis")]) {
       expect(rule({ parse, regexMatch: true })).toEqual(rule({ parse, regexMatch: false }));
     }
+  });
+});
+
+describe("a route that changes what is said needs both nets (review of the live run, item 5)", () => {
+  it("forget under 0.80 with judge O doesn't cut and speaks no Fixed_Line: row 12", () => {
+    expect(rule({ judge: "O", parse: hit("forget", ["forget"], false, 0.5) })).toMatchObject({ kind: "permit", permit: "postCommitControl", scope: "reply", notes: "S0", cut: false, line: null });
+  });
+  it("forget at 0.80 with judge O, or at 0.20 with any other judge value, takes its route", () => {
+    expect(rule({ judge: "O", parse: hit("forget", ["forget"], false, 0.8) })).toMatchObject({ scope: "ack", cut: true, line: FORGET_NOT_YET });
+    for (const judge of ["H", "U", "timeout", "error"] as const) expect(rule({ judge, parse: hit("forget", ["forget"], false, 0.2) }), judge).toMatchObject({ cut: true, line: FORGET_NOT_YET });
+    expect(rule({ source: "typed", judge: "typed", callLive: false, parse: hit("forget", ["forget"], false, 0.2) })).toMatchObject({ line: FORGET_NOT_YET });
+  });
+  it("crisis at 0.20 with judge O still takes the reply", () => {
+    expect(rule({ judge: "O", parse: hit("crisis", ["crisis"], false, 0.2) })).toMatchObject({ permit: "postCommitControl", scope: "ack", notes: "none", cut: true });
+  });
+  it("in wave B, a weak company hit with judge O doesn't swap or speak the company line", () => {
+    expect(rule({ wave: "B", judge: "O", parse: hit("company", ["company"], false, 0.5) })).toMatchObject({ kind: "permit", permit: "postCommitControl", scope: "reply", cut: false, line: null });
+    expect(rule({ wave: "B", judge: "O", callLive: false, parse: hit("alone", ["alone"], false, 0.41) })).toMatchObject({ scope: "reply", cut: false, line: null });
+    expect(rule({ wave: "B", judge: "H", parse: hit("company", ["company"], false, 0.5) })).toMatchObject({ kind: "hold", swap: "now" });
   });
 });

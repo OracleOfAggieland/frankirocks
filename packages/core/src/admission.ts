@@ -4,7 +4,9 @@
  * `approvedPayloadHash` and re-check the Permit at unmute. Hashing is injected (`Hasher.sha256`).
  */
 import { type Hasher, canonicalBytes } from "./ids";
+import type { ControlClass } from "./intents/classes";
 import type { ParseOutcome } from "./intents/parse";
+import { routeFires } from "./intents/route";
 import type { Au, Head, ReasonCode, Ref } from "./schema/primitives";
 import type { PermitKind } from "./schema/records";
 import type { SafeTurn, Stamp, W } from "./schema/wire";
@@ -106,15 +108,18 @@ export function serverRule(i: RuleInput): RuleOutcome {
     // A typed line with no call open, in a private audience with no gap: no one else sees the typed reply, so a hit
     // with no Fixed_Line keeps it whatever its Sensitivity, as an ordinary parse would (review of wave A, item 24).
     const typedPrivate: NotesAllowed = i.source === "typed" && i.judge === "typed" && !i.callLive && i.audience === "private" && !i.parseGap ? "all" : "S0";
-    const crisis = p.candidates.includes("crisis");
-    const narrows = p.candidates.includes("company") || p.candidates.includes("quiet");
+    // A route that changes what is said needs both nets, or one very sure net; crisis is exempt (routeFires; review of
+    // the live run, item 5). A candidate that doesn't fire still gets the cheap protections of row 12.
+    const fires = (c: ControlClass) => p.candidates.includes(c) && routeFires(c, p.candidateP[c] ?? 0, i.judge);
+    const crisis = fires("crisis");
+    const narrows = fires("company") || fires("quiet");
     const quietReason: ReasonCode[] = p.candidates.includes("quiet") ? ["quiet"] : [];
     // 6. Crisis with company or quiet: the care reply first, then the swap (R14.7; question 68).
     if (crisis && i.wave === "B" && narrows && i.callLive) return permit("postCommitControl", "ack", "none", true, { swap: "afterReply", reasons: ["audience", ...quietReason] });
     // 7. Crisis always takes the reply (R12.1). A typed line with no call open has no spoken care reply: its typed
     // reply, which the Head's crisis instruction governs, travels as an S0 note, still with scope ack (item 17).
     if (crisis) return permit("postCommitControl", "ack", i.source === "typed" && !i.callLive ? typedPrivate : "none", true);
-    if (i.wave === "B" && (p.chosen === "company" || p.chosen === "quiet")) {
+    if (i.wave === "B" && (p.chosen === "company" || p.chosen === "quiet") && fires(p.chosen)) {
       const reasons: ReasonCode[] = p.chosen === "quiet" ? ["audience", "quiet"] : ["audience"];
       // 8. Narrow with a live call: hang up and swap (R14.1).
       if (i.callLive) return hold(reasons, true, "now");
@@ -122,9 +127,9 @@ export function serverRule(i: RuleInput): RuleOutcome {
       return permit("postCommitControl", "ack", "none", true, { line: COMPANY_LINE, reasons });
     }
     // 10. Alone (R15.1).
-    if (i.wave === "B" && p.chosen === "alone") return permit("postCommitControl", "ack", "none", true, { line: ALONE_LINE, reasons: ["audience"] });
+    if (i.wave === "B" && p.chosen === "alone" && fires("alone")) return permit("postCommitControl", "ack", "none", true, { line: ALONE_LINE, reasons: ["audience"] });
     // 11. Forget before forget exists (R12.3).
-    if (p.chosen === "forget") return permit("postCommitControl", "ack", "none", true, { line: FORGET_NOT_YET });
+    if (p.chosen === "forget" && fires("forget")) return permit("postCommitControl", "ack", "none", true, { line: FORGET_NOT_YET });
     // 12. Every other hit keeps its tools, no S1+ note except a typed line's own reply with no call open in a private
     // audience with no gap (R12.2, R12.5, R12.7; item 24). Its route doesn't change what is
     // said, so a reply already playing under fastO is not cut (design review of the build; question 92).

@@ -30,6 +30,7 @@ export * from "./intents/classes";
 export * from "./intents/request";
 export * from "./intents/parse";
 export * from "./intents/regex";
+export * from "./intents/route";
 export * from "./audio/wav";
 export * from "./recall";
 export * from "./memory-text";

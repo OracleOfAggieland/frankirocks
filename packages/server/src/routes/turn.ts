@@ -21,6 +21,7 @@ import {
   type Turn,
   TurnRequest,
   type TurnResponse,
+  changesWhatIsSaid,
   idParts,
   msFromTs,
   tsFromMs,
@@ -248,7 +249,9 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           const rule: RuleInput = {
             source: req.source === "asr" ? "asr" : cls.cls === "T" ? "pasted" : "typed",
             transcript: transcriptState,
-            judge: req.judge,
+            // A fastO already admitted for this Turn means the verdict was O, whatever the request said: a turn posted
+            // before its verdict says `timeout` (question 56). Review of the live run, item 5.
+            judge: fastO !== null ? "O" : req.judge,
             parse: slow === null ? { kind: "none" } : slow.parse,
             regexMatch: (slow?.regex.length ?? 0) > 0,
             // The gap and the audience are those before this Turn; its own failure shows from the next one.
@@ -364,8 +367,11 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
           return { kind: "unrecorded" as const, response: { ...base, status: "stale" as const } };
         }
 
-        // A hit runs as a late hit: policyRev + 1, so the next Deck cancels older speech (KV05; R15.5).
-        const hit = slow.parse.kind === "hit";
+        // A hit whose route changes what is said and fires runs as a late hit: policyRev + 1, so the next Deck cancels
+        // older speech (KV05; R15.5). A weak one with judge O doesn't (review of the live run, item 5).
+        const fastO = await tx.get(paths.ledger(uid, fastODecisionId(deps.hasher, req.sessionId, req.turnId)));
+        const judge = fastO !== null ? "O" : req.judge;
+        const hit = slow.parse.kind === "hit" && changesWhatIsSaid(slow.parse, judge, "A");
         const epoch: CoreEpoch = hit ? { ...core.epoch.data, policyRev: core.epoch.data.policyRev + 1, updatedAt: tsFromMs(ops) } : core.epoch.data;
         if (hit) tx.update(paths.core(uid, "epoch"), epoch);
         const coreVals = { epoch: epoch.epoch, policyRev: epoch.policyRev };

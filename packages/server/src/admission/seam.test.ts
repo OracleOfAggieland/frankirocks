@@ -77,7 +77,7 @@ describe("Admission_Seam with the server rule", () => {
 
   it("a Fixed_Line travels as an S0 ack note named in noteIds and covered by the hash", async () => {
     const rig = testRig();
-    const r = await rig.store.transaction(UID, async (tx) => admitRule(tx, input({ parse: { kind: "hit", chosen: "forget", candidates: ["forget"], uncertain: false } }), { hasher }));
+    const r = await rig.store.transaction(UID, async (tx) => admitRule(tx, input({ parse: { kind: "hit", chosen: "forget", candidates: ["forget"], uncertain: false, candidateP: { forget: 0.9 } } }), { hasher }));
     if (r.kind !== "permit") throw new Error("expected a permit");
     expect(r.notes).toHaveLength(1);
     expect(r.notes[0]).toMatchObject({ kind: "ack", sens: "S0", text: FORGET_NOT_YET });

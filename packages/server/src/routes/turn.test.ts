@@ -118,4 +118,20 @@ describe("/api/turn with the slow parse and the server rule", () => {
     await post(rig, asrTurn(s.stamp, 1, "my dog loves the park", items(1)));
     expect(await turn(rig, s.sessionId, 1)).toMatchObject({ judge: "O", admittedAt: expect.any(String) });
   });
+
+  it("a recorded fastO counts as judge O for the route rule: a weak forget doesn't cut (review of the live run, item 5)", async () => {
+    const { rig, s } = await rigAndSession();
+    const stamp = { ...s.stamp, turnId: testId("turn-1") };
+    await rig.store.transaction(UID, (tx) => recordFastO(tx, { uid: UID, stamp, responseId: "resp_s", opsNow: rig.clock.read().opsClock.now, core: { epoch: 1, policyRev: 1 }, audience: "private" }, rig.deps));
+    rig.openai.script("decisions.create", ok(decisionAnswer({ forget: 0.5 })));
+    // Posted before the verdict: the request says timeout, but the browser already played under fastO.
+    const res = await post(rig, asrTurn(s.stamp, 1, "I deleted an old game off my phone", items(1)));
+    expect(res.body).toMatchObject({ status: "ordinary", permit: { kind: "postCommitControl", scope: "reply" } });
+    expect(res.body.notes).toEqual([]);
+    // With no fastO and the same request, the judge's value is not O, so forget takes its route.
+    const b = await rigAndSession();
+    b.rig.openai.script("decisions.create", ok(decisionAnswer({ forget: 0.5 })));
+    const cut = await post(b.rig, asrTurn(b.s.stamp, 1, "I deleted an old game off my phone", items(1)));
+    expect(cut.body.notes.map((n: { text: string }) => n.text)).toEqual([FORGET_NOT_YET]);
+  });
 });

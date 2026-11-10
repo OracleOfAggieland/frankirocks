@@ -75,10 +75,11 @@ export function isOrdinary(p: Probabilities): boolean {
 /** The parse as the Server_Rule reads it. */
 export type ParseOutcome =
   | { kind: "ordinary" }
-  | { kind: "hit"; chosen: ControlClass | null; candidates: ControlClass[]; uncertain: boolean };
+  /** `candidateP` holds each candidate's probability, for the route rule (review of the live run, item 5). */
+  | { kind: "hit"; chosen: ControlClass | null; candidates: ControlClass[]; uncertain: boolean; candidateP: Partial<Record<ControlClass, number>> };
 
 export function outcomeOf(p: Probabilities): ParseOutcome {
   const cands = candidates(p);
   if (isOrdinary(p)) return { kind: "ordinary" };
-  return { kind: "hit", chosen: choose(cands), candidates: cands, uncertain: p.uncertainSpeaker >= UNCERTAIN_SPEAKER_P };
+  return { kind: "hit", chosen: choose(cands), candidates: cands, uncertain: p.uncertainSpeaker >= UNCERTAIN_SPEAKER_P, candidateP: Object.fromEntries(cands.map((c) => [c, p[c]])) };
 }

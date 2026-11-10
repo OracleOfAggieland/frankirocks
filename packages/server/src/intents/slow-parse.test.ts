@@ -17,7 +17,7 @@ describe("runSlowParse", () => {
     const { rig, run } = parser();
     rig.openai.script("decisions.create", ok(decisionAnswer()), ok(decisionAnswer({ forget: 0.9, food: 0.4 })));
     expect((await run("my dog loves the park")).parse).toEqual({ kind: "ordinary" });
-    expect((await run("forget that")).parse).toEqual({ kind: "hit", chosen: "forget", candidates: ["forget", "food"], uncertain: false });
+    expect((await run("forget that")).parse).toEqual({ kind: "hit", chosen: "forget", candidates: ["forget", "food"], uncertain: false, candidateP: { forget: 0.9, food: 0.4 } });
   });
 
   it("fails on a missed deadline, a transport error, a bad answer and an oversize turn", async () => {

@@ -52,6 +52,12 @@ export const TURN_INTENTS_PREFIX =
 
 /** A class is a candidate at or above this probability (contracts §5 "Candidate>=.20"). */
 export const CANDIDATE_P = 0.2;
+/**
+ * A class alone at or above this may take a route that changes what is said even when the judge said `O` (review of
+ * the live run, item 5; question 95). On Nov 10, `company` reached 0.92 on "Hey Franki, how's it going?" and
+ * `alone` 0.41 on "It's so windy out today."; 0.20 was too low for a route.
+ */
+export const STRONG_P = 0.8;
 /** `uncertainSpeaker` at or above this holds the turn (contracts §5 "speaker<.10"). */
 export const UNCERTAIN_SPEAKER_P = 0.1;
 

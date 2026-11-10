@@ -9,7 +9,7 @@
  *   failed    `parseState` stays `failed`, the lease clears, the audience is `unknown` until a parsed `alone`
  * A parsed `alone` never moves the watermark past a gap (R15.8).
  */
-import { type CoreEpoch, type ID, type Session, type Turn, msFromTs, tsFromMs } from "@franki/core";
+import { type CoreEpoch, type ID, type Session, type Turn, changesWhatIsSaid, msFromTs, tsFromMs } from "@franki/core";
 import { lateHitDecisionId, recordLateHit } from "../admission/seam";
 import { advancedWatermark, effectiveAudience, expireLease } from "../audience";
 import type { RouteDeps } from "../routes/runtime";
@@ -81,10 +81,14 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
     tx.update(doc.path, { ...s, committedParseSeq, updatedAt: now });
     if (slow.parse.kind !== "hit") return "ordinary";
 
+    // The held decision is on the record for any hit; only a route that changes what is said and fires raises
+    // policyRev, which cancels speech (review of the live run, item 5). A Turn with no stored verdict is not O.
+    const judge = turn.data.judge ?? (turn.data.itemIds.length === 0 ? "typed" : "timeout");
     const epochDoc = await tx.get<CoreEpoch>(paths.core(uid, "epoch"));
     if (epochDoc === null) return "hit";
-    const epoch: CoreEpoch = { ...epochDoc.data, policyRev: epochDoc.data.policyRev + 1, updatedAt: now };
-    tx.update(epochDoc.path, epoch);
+    const cuts = changesWhatIsSaid(slow.parse, judge, "A");
+    const epoch: CoreEpoch = cuts ? { ...epochDoc.data, policyRev: epochDoc.data.policyRev + 1, updatedAt: now } : epochDoc.data;
+    if (cuts) tx.update(epochDoc.path, epoch);
     // Nothing is admitted for a late hit: the seam records one held decision for the Turn (item 22).
     recordLateHit(tx, { uid, sessionId, turnId, core: { epoch: epoch.epoch, policyRev: epoch.policyRev }, opsNow: ops, audience: effectiveAudience(s, ops) }, deps);
     return "hit";

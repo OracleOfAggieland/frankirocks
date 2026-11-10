@@ -19,7 +19,10 @@ const arbCandidates: fc.Arbitrary<ControlClass[]> = fc.subarray([...CONTROL_CLAS
 /** A parse: ordinary, a hit whose `chosen` follows `choose`, failed, or none. */
 export const arbRuleParse: fc.Arbitrary<RuleParse> = fc.oneof(
   fc.constant({ kind: "ordinary" } as const),
-  fc.tuple(arbCandidates, fc.boolean()).filter(([c, u]) => c.length > 0 || u).map(([candidates, uncertain]) => ({ kind: "hit" as const, chosen: choose(candidates), candidates, uncertain })),
+  fc
+    .tuple(arbCandidates, fc.boolean(), fc.array(fc.constantFrom(0.2, 0.5, 0.79, 0.8, 0.99), { minLength: CONTROL_CLASSES.length, maxLength: CONTROL_CLASSES.length }))
+    .filter(([c, u]) => c.length > 0 || u)
+    .map(([candidates, uncertain, ps]) => ({ kind: "hit" as const, chosen: choose(candidates), candidates, uncertain, candidateP: Object.fromEntries(candidates.map((c, n) => [c, ps[n]!])) })),
   fc.constantFrom(...FAIL_WHYS).map((why) => ({ kind: "failed" as const, why })),
   fc.constant({ kind: "none" } as const),
 );
@@ -43,8 +46,8 @@ export const arbRuleInput: fc.Arbitrary<RuleInput> = fc.record({
 
 /**
  * Every combination of the enum parts of RuleInput (source, transcript, judge, parse shape, audience, note level,
- * wave), with 14 parse shapes (ordinary, each class the rule names alone plus `food` for the rest, crisis with
- * company, uncertain only, each failure, none), under two boolean profiles: all false, and a live call with dense
+ * wave), with 16 parse shapes (ordinary, each class the rule names alone at 0.9 plus `food` for the rest, forget and company
+ * at 0.5, crisis with company, uncertain only, each failure, none), under two boolean profiles: all false, and a live call with dense
  * final audio and a committed tool parse. The full product (1.7 M inputs) ran about 67 s, and 54 k inputs 5.5 s
  * under the full suite, past vitest's 5 s test timeout; the fast-check half of property 8 draws classes and
  * booleans freely.
@@ -54,9 +57,11 @@ export function* allRuleInputs(): Generator<RuleInput> {
     { kind: "ordinary" },
     // Each class the rule names on its own; `food` stands for the eight classes rule row 12 treats alike, which the
     // fast-check half covers in every subset.
-    ...(["forget", "company", "quiet", "alone", "crisis", "food"] as const).map((c) => ({ kind: "hit" as const, chosen: c, candidates: [c], uncertain: false })),
-    { kind: "hit", chosen: "company", candidates: ["crisis", "company"], uncertain: false },
-    { kind: "hit", chosen: null, candidates: [], uncertain: true },
+    // A sure candidate (0.9) for each, and a weak one (0.5) for the route classes the judge's O can stop (item 5).
+    ...(["forget", "company", "quiet", "alone", "crisis", "food"] as const).map((c) => ({ kind: "hit" as const, chosen: c, candidates: [c], uncertain: false, candidateP: { [c]: 0.9 } })),
+    ...(["forget", "company"] as const).map((c) => ({ kind: "hit" as const, chosen: c, candidates: [c], uncertain: false, candidateP: { [c]: 0.5 } })),
+    { kind: "hit", chosen: "company", candidates: ["crisis", "company"], uncertain: false, candidateP: { crisis: 0.25, company: 0.9 } },
+    { kind: "hit", chosen: null, candidates: [], uncertain: true, candidateP: {} },
     ...FAIL_WHYS.map((why) => ({ kind: "failed" as const, why })),
     { kind: "none" },
   ];

@@ -80,6 +80,16 @@ describe("the Parse_Repair (R15.3–R15.6, R15.8; question 80)", () => {
     expect(await turn(rig, s.sessionId, 1)).toMatchObject({ parseState: "committed", uncertainSpeaker: 0.01 });
   });
 
+  it("a weak late hit with judge O raises no policyRev: its route doesn't fire (review of the live run, item 5)", async () => {
+    const { rig, s } = await failedFirst(never(), ok(decisionAnswer({ forget: 0.5 })));
+    await patchRecord<Turn>(rig.store, UID, paths.turn(UID, s.sessionId, testId("turn-1")), { judge: "O" });
+    const rev = await policyRev(rig);
+    await runScheduled(rig);
+    expect(await policyRev(rig)).toBe(rev);
+    expect((await turn(rig, s.sessionId, 1)).parseState).toBe("committed");
+    expect((await session(rig, s.sessionId)).committedParseSeq).toBe(1);
+  });
+
   it("a hit raises policyRev and holds one decision for the turn, with no reply", async () => {
     const { rig, s } = await failedFirst(never(), ok(decisionAnswer({ forget: 0.95 })));
     const rev = await policyRev(rig);
