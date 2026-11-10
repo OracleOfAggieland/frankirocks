@@ -168,9 +168,10 @@ Machine properties 2, 4, 7 and 12 are expected red on the current machine. The o
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 2, a held reply never resumes`
 
-- [ ] 16. **[property]** P3 Nothing dispatches before admission
+- [x] 16. **[property]** P3 Nothing dispatches before admission
   - Requirements: R20.1.3; R6.2, R6.3, KV02
-  - Depends on: 12 · Estimate: 0.75 h · Actual:
+  - Depends on: 12 · Estimate: 0.75 h · Actual: 0.2 h
+  - Notes: Green on the current machine (1,000 runs). Admission is the step at which a reply of the turn becomes the machine's active reply; a dispatch in that same step (the `fastO` `admitted` receipt, a held function call) counts as after it.
   - Files: `packages/core/src/voice/no-dispatch-before-admission.property.test.ts` (new)
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 3, nothing dispatches before admission`
