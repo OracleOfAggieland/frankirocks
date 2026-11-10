@@ -4,7 +4,7 @@
  * package's `DecisionCreateParams`; `packages/server/src/intents/decisions-types.test.ts` checks it against the
  * package's own types (core may not import `openai`).
  */
-import { INTENT_NAMES, MAX_DOORS, MAX_INPUT_UNITS, OPENS_INSTRUCTION, PREDICATE_INSTRUCTIONS, TURN_INTENTS_PREFIX } from "./classes";
+import { INTENT_NAMES, type IntentName, MAX_DOORS, MAX_INPUT_UNITS, OPENS_INSTRUCTION, PREDICATE_INSTRUCTIONS, TURN_INTENTS_PREFIX } from "./classes";
 
 export interface Door {
   topicId: string;
@@ -39,15 +39,15 @@ export function turnIntentsUserText(utterance: string, lastQuestion: string | nu
 }
 
 /** The questions in contracts §5 row order, then one `opens_{topicId}` per door. */
-export function turnIntentsQuestions(doors: readonly Door[]): PredicateQuestion[] {
+export function turnIntentsQuestions(doors: readonly Door[], instructions: Readonly<Record<IntentName, string>> = PREDICATE_INSTRUCTIONS): PredicateQuestion[] {
   return [
-    ...INTENT_NAMES.map((name) => ({ type: "predicate" as const, name, instructions: PREDICATE_INSTRUCTIONS[name] })),
+    ...INTENT_NAMES.map((name) => ({ type: "predicate" as const, name, instructions: instructions[name] })),
     ...doors.map((d) => ({ type: "predicate" as const, name: `opens_${d.topicId}`, instructions: OPENS_INSTRUCTION })),
   ];
 }
 
 /** Builds the Decisions body, or refuses: no truncation (contracts §5 "Over800: hold, not truncate"). */
-export function buildTurnIntents(input: TurnIntentsInput, model: string): BuildResult {
+export function buildTurnIntents(input: TurnIntentsInput, model: string, instructions: Readonly<Record<IntentName, string>> = PREDICATE_INSTRUCTIONS): BuildResult {
   if (input.utterance.trim() === "" || model === "" || input.doors.length > MAX_DOORS) return { ok: false, why: "invalidInput" };
   const units = TURN_INTENTS_PREFIX.length + input.utterance.length + (input.lastQuestion?.length ?? 0);
   if (units > MAX_INPUT_UNITS) return { ok: false, why: "oversize" };
@@ -59,7 +59,7 @@ export function buildTurnIntents(input: TurnIntentsInput, model: string): BuildR
         { role: "developer", content: TURN_INTENTS_PREFIX },
         { role: "user", content: turnIntentsUserText(input.utterance, input.lastQuestion) },
       ],
-      questions: turnIntentsQuestions(input.doors),
+      questions: turnIntentsQuestions(input.doors, instructions),
     },
   };
 }

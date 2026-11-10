@@ -43,6 +43,14 @@ export const PREDICATE_INSTRUCTIONS: Record<IntentName, string> = {
   uncertainSpeaker: "Owner act obscured by quotation/background/uncertain speaker?",
 };
 
+/**
+ * Named sets of predicate instructions for the Decisions call (review of the live run, item 6). `contract` is contracts
+ * §5's literals and the only set; a candidate set is added and measured in the Harness the way `judge_v2` was.
+ */
+export const PREDICATE_SETS = { contract: PREDICATE_INSTRUCTIONS } as const satisfies Record<string, Record<IntentName, string>>;
+export type PredicateSetName = keyof typeof PREDICATE_SETS;
+export const isPredicateSetName = (v: unknown): v is PredicateSetName => typeof v === "string" && Object.hasOwn(PREDICATE_SETS, v);
+
 /** Contracts §5 `opens_{topicId}` row. */
 export const OPENS_INSTRUCTION = "Speaks about this topic rather than merely the person?";
 

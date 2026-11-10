@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { APP_JUDGE_SETTINGS, JUDGE_V1_INSTRUCTIONS, JUDGE_V2_INSTRUCTIONS, type JudgeSettings, encodeWav } from "@franki/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { judgeSettings, main, runSettings, seedOf } from "./cli";
+import { judgeSettings, main, predicateSettings, runSettings, seedOf } from "./cli";
 import { HARNESS_PARSE_WAIT_MS, fakeDecisionsPort, lineParser } from "./decisions";
 import { FAKE_REFUSAL, type FakeJudgeScript, type FakeOptions, fakeConnect, placeholderPcm } from "./fake-realtime";
 import { DEFAULT_RUN, DEFAULT_SEED, MAX_RUN_LINES, NO_SPEECH, type Row, type RunSettings, SESSION_LINES, SPIKE_JUDGE_SETTINGS, openSession, outputTokensOf, reasoningTokensOf, runHarness, runLine, shuffleLines, silentTakes } from "./harness";
@@ -869,5 +869,52 @@ describe("judge spike, invalid parse reasons (review of the live run, item 4)", 
     const s = summarize(r);
     expect(s.slowParse!.invalid).toEqual({ n: 3, reasons: { refusal: 2, count: 1 } });
     expect(summaryMarkdown({ ...r, decisions: "live" })).toContain("- Invalid answers: 3 (refusal 2, count 1)");
+  });
+});
+describe("judge spike, what the routes would do (review of the live run, item 6)", () => {
+  const probs = (p: Record<string, number>) => ({ forget: 0, quiet: 0, correct: 0, transition: 0, hardRule: 0, crisis: 0, company: 0, alone: 0, why: 0, rushed: 0, food: 0, action: 0, answer: 0, uncertainSpeaker: 0, ...p });
+  const parse = (p: Record<string, number>) => ({ probabilities: probs(p), chosen: Object.keys(p)[0] ?? null, ordinary: false, ms: 400, missedDeadline: false, failure: null, invalid: null });
+
+  it("per class, ordinary lines at 0.20 and at 0.80, and would-cut-or-swap counts under the route rule", () => {
+    const rows = [
+      row({ lineId: "o-01", verdict: "O", parse: parse({ company: 0.92 }) }),
+      row({ lineId: "o-06", verdict: "O", parse: parse({ alone: 0.41 }) }),
+      row({ lineId: "o-07", verdict: "H", decision: "held", parse: parse({ alone: 0.41 }) }),
+      row({ lineId: "c-forget-1", class: "forget", expect: "hold", verdict: "O", parse: parse({ forget: 0.5 }) }),
+      row({ lineId: "c-crisis-1", class: "crisis", expect: "hold", verdict: "O", parse: parse({ rushed: 0.4, crisis: 0.25 }) }),
+    ];
+    const s = summarize(run(rows));
+    expect(s.routes!.ordinaryAt.company).toEqual({ at20: 1, at80: 1 });
+    expect(s.routes!.ordinaryAt.alone).toEqual({ at20: 2, at80: 0 });
+    // o-01: company 0.92 alone fires; o-07: alone 0.41 with judge H fires; o-06: judge O and 0.41 doesn't.
+    expect(s.routes!.wouldFire.ordinary).toMatchObject({ company: 1, alone: 1 });
+    // c-forget-1: judge O and 0.5 doesn't fire; c-crisis-1: crisis is exempt.
+    expect(s.routes!.wouldFire.control).toMatchObject({ forget: 0, crisis: 1 });
+    const md = summaryMarkdown(run(rows));
+    expect(md).toContain("## What the routes would do");
+    expect(md).toContain("| company | 1 | 1 | 1 | 0 |");
+    expect(md).toContain("| alone | 2 | 0 | 1 | 0 |");
+  });
+
+  it("the caveats count control lines whose judge went out late, from the rows", () => {
+    const late = (id: string, trimmedMs: number, fragments: number, gap: number) =>
+      row({ lineId: id, class: "forget", expect: "hold", trimmedMs, fragments, t: { ...row({}).t, commit: 1_000, judgeSent: 1_000 + gap } });
+    const r = run([late("c-forget-1", 0, 2, 400), late("c-forget-2", 300, 1, 10), late("c-forget-3", 0, 1, 1_224)]);
+    expect(summarize(r).caveats).toEqual({ control: 3, trimmed: 1, fragmented: 1, lateJudge: 2, lateJudgeMs: { min: 400, max: 1_224 } });
+    expect(summaryMarkdown(r)).toContain("Only 1 of the 3 control takes had their tails trimmed, and 1 came in as more than one fragment, so on 2 control lines the judge was sent 400 to 1224 ms after the commit.");
+  });
+
+  it("--predicates contract is the default and the only set; it is recorded in the run file", async () => {
+    expect(predicateSettings({})).toBe("contract");
+    expect(() => predicateSettings({ predicates: "v2" })).toThrow(/--predicates/);
+    const d = mkdtempSync(join(tmpdir(), "judge-spike-"));
+    try {
+      copyFileSync(LINES_URL, join(d, "lines.json"));
+      expect(await main(["harness", "--lines", "o-01", "--predicates", "contract"], { spikeDir: d, env: {}, log: () => {} })).toBe(0);
+      const file = readdirSync(join(d, "dist", "dry-run")).find((f) => f.endsWith(".json"))!;
+      expect((JSON.parse(readFileSync(join(d, "dist", "dry-run", file), "utf8")) as RunFile).predicates).toBe("contract");
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
   });
 });

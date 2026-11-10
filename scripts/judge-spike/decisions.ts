@@ -6,7 +6,7 @@
  * The Harness waits up to HARNESS_PARSE_WAIT_MS, so a parse slower than the app's 350 ms deadline still reports its
  * real time; `missedDeadline` marks it.
  */
-import { DECISIONS_DEADLINE_MS, type DecisionsBody } from "@franki/core";
+import { DECISIONS_DEADLINE_MS, type DecisionsBody, PREDICATE_SETS, type PredicateSetName } from "@franki/core";
 import { liveClockPort } from "../../packages/server/src/clock/live-clock";
 import { liveTimers } from "../../packages/server/src/clock/timers";
 import type { Env } from "../../packages/server/src/config/env";
@@ -70,7 +70,7 @@ export function parseRowOf(p: SlowParse): ParseRow {
  * The per-line slow parse the Harness calls. The TurnIntents body names FRANKI_BG_MODEL; a dry run without it
  * names "unset", which the fake port never sends anywhere.
  */
-export function lineParser(port: DecisionsPort, env: Env, live: boolean): (turnId: string, utterance: string) => Promise<ParseRow> {
+export function lineParser(port: DecisionsPort, env: Env, live: boolean, predicates: PredicateSetName = "contract"): (turnId: string, utterance: string) => Promise<ParseRow> {
   const parseEnv: Env = live ? env : { ...env, FRANKI_BG_MODEL: env.FRANKI_BG_MODEL ?? "unset" };
-  return async (turnId, utterance) => parseRowOf(await runSlowParse({ decisions: port, env: parseEnv, log: () => {} }, { turnId, utterance }, HARNESS_PARSE_WAIT_MS));
+  return async (turnId, utterance) => parseRowOf(await runSlowParse({ decisions: port, env: parseEnv, log: () => {} }, { turnId, utterance, predicates: PREDICATE_SETS[predicates] }, HARNESS_PARSE_WAIT_MS));
 }

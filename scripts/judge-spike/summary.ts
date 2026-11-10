@@ -4,7 +4,7 @@
  * or `over the line` when the rule fails even if every missing number had come out at its best. The stop rules
  * read the judge's own verdicts within the deadline, never a hold defaulted from an invalid answer.
  */
-import { CANDIDATE_P, DECISIONS_DEADLINE_MS, type JudgeSettings, type JudgeVerdict } from "@franki/core";
+import { CANDIDATE_P, CONTROL_CLASSES as INTENT_CLASSES, type ControlClass as IntentClass, DECISIONS_DEADLINE_MS, type JudgeSettings, type JudgeValue, type JudgeVerdict, STRONG_P, changesWhatIsSaid, choose, routeFires } from "@franki/core";
 import { CONTROL_CLASSES } from "./lines";
 import type { DecisionsKind } from "./decisions";
 import type { HarnessOutput, Row, RunSettings } from "./harness";
@@ -38,6 +38,8 @@ export interface RunMeta {
   run?: RunSettings;
   /** The Decisions_Port of the slow parse per line (voice-control R17.2). Absent in runs before brief 011. */
   decisions?: DecisionsKind;
+  /** The named predicate set the slow parse used (review of the live run, item 6). Absent before Nov 10: `contract`. */
+  predicates?: string;
 }
 
 export interface RunFile extends RunMeta {
@@ -145,6 +147,10 @@ export interface Summary {
   parallel: ParallelStats | null;
   /** The slow parse beside the judge (voice-control R17.4, R17.5); null when no row has a parse. */
   slowParse: SlowParseStats | null;
+  /** What the routes would do under the route rule (review of the live run, item 6); null when no row has a parse. */
+  routes: RouteStats | null;
+  /** Control lines whose judge went out late, so their within-deadline numbers count the harness's own wait. */
+  caveats: Caveats;
   /** Per session: its lines by kind and its judge time, so a session effect shows. */
   sessions: SessionStats[];
   stops: { verdict: StopState; latency: StopState; recall: StopState };
@@ -353,6 +359,8 @@ export function summarize(run: RunFile): Summary {
     probes: { p50: percentile(probeLatencies, 50), measured: probeLatencies.length, total: probes.length },
     parallel: runModeOf(run).mode === "parallel" ? parallelStats(rows) : null,
     slowParse: slowParseStats(rows),
+    routes: routeStats(rows),
+    caveats: caveatsOf(rows),
     sessions: [...new Set(rows.map((r) => r.session))]
       .sort((a, b) => a - b)
       .map((session) => {
@@ -456,6 +464,8 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   out.push("");
   if (s.parallel !== null) out.push(...parallelMarkdown(s.parallel, mode.staggerMs));
   if (s.slowParse !== null) out.push(...slowParseMarkdown(s.slowParse, run.decisions ?? "fake"));
+  if (s.routes !== null) out.push(...routesMarkdown(s.routes, run.predicates ?? "contract"));
+  out.push(...caveatsMarkdown(s.caveats));
   out.push("## Sessions");
   out.push("");
   out.push(`Lines ran in a seeded order (seed ${run.seed}), up to 30 per session.`);
@@ -512,4 +522,87 @@ function parallelMarkdown(p: ParallelStats, staggerMs: number): string[] {
   else out.push(`**Two out-of-band responses ran at once: not always.** The server created both with no error event on ${p.ranAtOnce} of the ${p.overlapped} lines where the reply went out while the judge was still running.`);
   out.push("");
   return out;
+}
+
+/** The classes whose route changes what is said, wave B included (question 92). */
+const ROUTE_CLASSES = ["forget", "company", "quiet", "alone", "crisis"] as const;
+type RouteClass = (typeof ROUTE_CLASSES)[number];
+
+export interface RouteStats {
+  /** Per TurnIntents class, ordinary lines at CANDIDATE_P or more and at STRONG_P or more. */
+  ordinaryAt: Record<IntentClass, { at20: number; at80: number }>;
+  /** Lines whose route would cut or swap under the route rule (wave B's routes included), per class. */
+  wouldFire: { ordinary: Record<RouteClass, number>; control: Record<RouteClass, number> };
+}
+
+/** The judge's value as the server would have it: a valid verdict, else `timeout` (not O). */
+const judgeValueOf = (r: Row): JudgeValue => (r.valid === true && r.verdict !== null ? r.verdict : "timeout");
+
+/** The route class that would fire on a row, or null. */
+function firingClass(r: Row): RouteClass | null {
+  const p = r.parse?.probabilities;
+  if (p == null) return null;
+  const candidates = INTENT_CLASSES.filter((c) => (p[c] ?? 0) >= CANDIDATE_P);
+  const parse = { chosen: choose(candidates), candidates, candidateP: Object.fromEntries(candidates.map((c) => [c, p[c] ?? 0])) };
+  const judge = judgeValueOf(r);
+  if (!changesWhatIsSaid(parse, judge, "B")) return null;
+  if (candidates.includes("crisis") && routeFires("crisis", p.crisis ?? 0, judge)) return "crisis";
+  return parse.chosen as RouteClass;
+}
+
+function routeStats(rows: readonly Row[]): RouteStats | null {
+  if (!rows.some((r) => r.parse?.probabilities != null)) return null;
+  const ordinary = rows.filter((r) => r.expect === "ordinary");
+  const at = (c: IntentClass, min: number) => ordinary.filter((r) => (r.parse?.probabilities?.[c] ?? 0) >= min).length;
+  const ordinaryAt = Object.fromEntries(INTENT_CLASSES.map((c) => [c, { at20: at(c, CANDIDATE_P), at80: at(c, STRONG_P) }])) as RouteStats["ordinaryAt"];
+  const count = (of: readonly Row[]) => Object.fromEntries(ROUTE_CLASSES.map((c) => [c, of.filter((r) => firingClass(r) === c).length])) as Record<RouteClass, number>;
+  return { ordinaryAt, wouldFire: { ordinary: count(ordinary), control: count(rows.filter((r) => r.expect === "hold")) } };
+}
+
+export interface Caveats {
+  control: number;
+  trimmed: number;
+  fragmented: number;
+  /** Control lines whose judge was sent 100 ms or more after the commit. */
+  lateJudge: number;
+  lateJudgeMs: { min: number; max: number } | null;
+}
+
+function caveatsOf(rows: readonly Row[]): Caveats {
+  const control = rows.filter((r) => r.expect === "hold");
+  const gaps = control.map((r) => (r.t.commit === null || r.t.judgeSent === null ? null : r.t.judgeSent - r.t.commit)).filter((g): g is number => g !== null && g >= 100);
+  return {
+    control: control.length,
+    trimmed: control.filter((r) => r.trimmedMs > 0).length,
+    fragmented: control.filter((r) => r.fragments > 1).length,
+    lateJudge: gaps.length,
+    lateJudgeMs: gaps.length === 0 ? null : { min: Math.round(Math.min(...gaps)), max: Math.round(Math.max(...gaps)) },
+  };
+}
+
+function routesMarkdown(r: RouteStats, predicates: string): string[] {
+  const out: string[] = [];
+  out.push("## What the routes would do");
+  out.push("");
+  out.push(`Predicate set: ${predicates}. A route that changes what is said fires when the judge's value is not O and the class is at ${CANDIDATE_P} or more, or the class alone is at ${STRONG_P} or more; crisis fires at ${CANDIDATE_P} whatever the judge said. Wave B's routes (company, quiet, alone) are counted too.`);
+  out.push("");
+  out.push(`| Class | Ordinary at ${CANDIDATE_P}+ | Ordinary at ${STRONG_P}+ | Ordinary would cut or swap | Control would cut or swap |`);
+  out.push("|---|---|---|---|---|");
+  for (const c of INTENT_CLASSES) {
+    const routed = (ROUTE_CLASSES as readonly string[]).includes(c);
+    const f = (side: "ordinary" | "control") => (routed ? String(r.wouldFire[side][c as RouteClass]) : "—");
+    out.push(`| ${c} | ${r.ordinaryAt[c].at20} | ${r.ordinaryAt[c].at80} | ${f("ordinary")} | ${f("control")} |`);
+  }
+  out.push("");
+  return out;
+}
+
+function caveatsMarkdown(c: Caveats): string[] {
+  if (c.lateJudge === 0 || c.lateJudgeMs === null) return [];
+  return [
+    "## Caveats",
+    "",
+    `Only ${c.trimmed} of the ${c.control} control takes had their tails trimmed, and ${c.fragmented} came in as more than one fragment, so on ${c.lateJudge} control lines the judge was sent ${c.lateJudgeMs.min} to ${c.lateJudgeMs.max} ms after the commit. Those rows count the harness's own wait as judge time: read control recall from the "any time" column, and judge speed from "judge sent to judge done".`,
+    "",
+  ];
 }

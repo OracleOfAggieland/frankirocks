@@ -4,7 +4,7 @@
  *
  *   synth [--live] [--lines id,id]    synthetic audio through text-to-speech
  *   harness [--source synthetic|owner] [--live] [--lines id,id] [--max-tokens n|inf] [--effort value] [--seed n]
- *           [--mode sequential|parallel] [--stagger-ms n] [--judge judge_v1|judge_v2]
+ *           [--mode sequential|parallel] [--stagger-ms n] [--judge judge_v1|judge_v2] [--predicates contract]
  *                                     the judge measurement; without --live it runs the whole flow against the
  *                                     fake transport. The judge defaults to no output cap and effort minimal; the
  *                                     lines run in a fixed seeded order (default seed 7), up to 30 per session.
@@ -15,7 +15,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { JUDGE_CONTRACTS, JUDGE_EFFORTS, type JudgeOutputCap, type JudgeSettings, isJudgeContract, isJudgeEffort, isJudgeOutputCap, isSpikeFormat, parseWav } from "@franki/core";
+import { JUDGE_CONTRACTS, JUDGE_EFFORTS, PREDICATE_SETS, type PredicateSetName, isPredicateSetName, type JudgeOutputCap, type JudgeSettings, isJudgeContract, isJudgeEffort, isJudgeOutputCap, isSpikeFormat, parseWav } from "@franki/core";
 import { MODEL_VARS, requireModel } from "../../packages/server/src/config/models";
 import { requireEnv } from "../../packages/server/src/config/env";
 import { type HarnessClock, liveClock, wallDateIso } from "./clock";
@@ -139,6 +139,13 @@ export function judgeSettings(values: Readonly<Record<string, string>>): JudgeSe
   return { ...SPIKE_JUDGE_SETTINGS, contract, maxOutputTokens, effort };
 }
 
+/** `--predicates <name>`: the named predicate set for the Decisions call; `contract` is the default and the only set today. */
+export function predicateSettings(values: Readonly<Record<string, string>>): PredicateSetName {
+  const name = values.predicates ?? "contract";
+  if (!isPredicateSetName(name)) throw new Error(`--predicates must be one of ${Object.keys(PREDICATE_SETS).join(", ")}, not ${name}`);
+  return name;
+}
+
 /** `--seed <n>` for the line order, an integer from 0 to 2^32 - 1; DEFAULT_SEED when absent. */
 export function seedOf(values: Readonly<Record<string, string>>): number {
   const raw = values.seed;
@@ -173,6 +180,7 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   const judge = judgeSettings(flags.values);
   const runMode = runSettings(flags.values);
   const seed = seedOf(flags.values);
+  const predicates = predicateSettings(flags.values);
   const all = loadLines(linesFile(ctx.spikeDir));
   let lines = selectLines(all, flags.lines);
   // The owner may record any subset: without --lines, the owner run takes the lines that have a take.
@@ -257,11 +265,11 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
 
   // The slow parse per line: live only with --live (R17.2).
   const decisions: DecisionsKind = flags.live ? "live" : "fake";
-  const parseLine = lineParser(flags.live ? liveDecisionsPort(ctx.env) : fakeDecisionsPort(), ctx.env, flags.live);
+  const parseLine = lineParser(flags.live ? liveDecisionsPort(ctx.env) : fakeDecisionsPort(), ctx.env, flags.live, predicates);
   const work = runHarness({ lines, audio, voices, models, judge, run: runMode, seed, apiKey, connect, clock, log: ctx.log, parseLine });
   const out = virtual === null ? await work : await virtual.run(work);
   const date = wallDateIso();
-  const run = runFile({ date, source, transport: flags.live ? "live" : "fake", lineSetCommit: set.commit + (set.dirty ? " (dirty)" : ""), lineSetHash: lineSetHash(all), models, judge, run: runMode, decisions }, out);
+  const run = runFile({ date, source, transport: flags.live ? "live" : "fake", lineSetCommit: set.commit + (set.dirty ? " (dirty)" : ""), lineSetHash: lineSetHash(all), models, judge, run: runMode, decisions, predicates }, out);
   const dir = flags.live ? resultsDir(ctx.spikeDir) : join(ctx.spikeDir, "dist", "dry-run");
   mkdirSync(dir, { recursive: true });
   const base = join(dir, `${date.replace(/[:.]/g, "-")}-${source}`);
@@ -280,7 +288,7 @@ export async function main(argv: readonly string[], ctx: CliContext): Promise<nu
   const [name, ...rest] = argv;
   const command = name === undefined ? undefined : COMMANDS[name];
   if (command === undefined) {
-    ctx.log(`usage: node scripts/judge-spike/run.mjs <${Object.keys(COMMANDS).join("|")}> [--live] [--lines id,id] [--source synthetic|owner] [--max-tokens n|inf] [--effort value] [--seed n] [--mode sequential|parallel] [--stagger-ms n] [--judge judge_v1|judge_v2]`);
+    ctx.log(`usage: node scripts/judge-spike/run.mjs <${Object.keys(COMMANDS).join("|")}> [--live] [--lines id,id] [--source synthetic|owner] [--max-tokens n|inf] [--effort value] [--seed n] [--mode sequential|parallel] [--stagger-ms n] [--judge judge_v1|judge_v2] [--predicates contract]`);
     return 2;
   }
   return command(parseFlags(rest), ctx);
