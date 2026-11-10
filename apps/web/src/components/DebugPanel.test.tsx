@@ -37,6 +37,7 @@ const pageOf = (section: DebugSection, items: DebugItem[]): DebugPage => ({
   items,
   nextCursor: null,
   coverage: { state: "complete", from: null, to: null, missingRanges: [], generation: 0 },
+  session: null,
 });
 
 interface Store {
@@ -63,8 +64,11 @@ const baseStore = (): Store => ({
       kind: "ledger",
       id: testId("led1"),
       record: { ...sampleLedgerDecision(), payload: { purpose: "answer", acceptedRefs: [{ type: "turn", id: testId("t1u"), parentId: testId("ses"), rev: 1 }], heldRefs: [], reasonCodes: [], audience: "private" } },
-      issuer: "devAdmit",
+      issuer: "seam",
       permitKind: "slowOrdinary",
+      falseHold: false,
+      turnId: testId("t1u"),
+      played: true,
     },
   ],
   head: bundleWith(sampleHead()),
@@ -208,7 +212,7 @@ describe("DebugPanel", () => {
     const led = html.match(/data-testid="ledger-row"[\s\S]*?<\/li>/)![0];
     expect(led).toContain(testId("t1u"));
     expect(led).toContain("slowOrdinary");
-    expect(led).toContain("devAdmit");
+    expect(led).toContain("seam");
   });
 
   it("a refresh during a load queues one more load", async () => {

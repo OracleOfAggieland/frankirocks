@@ -384,9 +384,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
 
 ### Group A14 (parallel)
 
-- [ ] 39. Server cleanup and the debug route
+- [x] 39. Server cleanup and the debug route
   - Requirements: R13.3–R13.5, R21.1, R21.2; Q57, Q58
-  - Depends on: 32, 35, 36, 37, 38 · Estimate: 2.5 h · Actual:
+  - Depends on: 32, 35, 36, 37, 38 · Estimate: 2.5 h · Actual: 0.9 h
+  - Notes: `DebugItem.ledger` gains `falseHold`, `turnId` and `played`; `DebugPage` gains `session` (a `DebugSessionView`: stored audience, `repairPending`, `failedParses`, `parseGapTurnId`), set on the turns section only. The ledger page is grouped by Turn inside the page, in the order each Turn first appears; its cursor stays the oldest decision read, so paging is unchanged. `played` marks the `fastO` decision when its Turn has one on the page, otherwise the complete decision with a known kind; a Turn whose decisions span two pages can be marked on each. A late hit's held decision (task 38) cites no request entry and shows kind null. `errors.ts`'s `DevAdmitRefusedError` mapping is removed. `DebugPanel.test.tsx`'s fixture got the new fields and "seam" for "devAdmit" so the web typecheck passes; task 43 rewrites the panel. Comments that named devAdmit in `hash.ts`, `tool.ts`, `machine.test.ts` and `voice-client.test.ts` now name the seam. `git grep -i devAdmit` finds only the seam test's carried-checks heading and the debug test's `not.toContain("devAdmit")`.
   - Files: `packages/server/src/admission/seam.ts` (remove `admit`), `packages/server/src/admission/dev-admit.ts` (delete), `packages/server/src/admission/dev-admit.test.ts` (delete), `packages/server/src/routes/errors.ts` (drop the `DevAdmitRefusedError` mapping), `packages/core/src/admission.ts` (delete `devPermitKind`, `AdmissionTurn`), `packages/core/src/schema/wire.ts` (DebugPage issuer `"seam" | "browser"`), `packages/server/src/routes/debug-memory.ts`, `packages/server/src/routes/debug-memory.test.ts`
   - Witness: `debug-memory.test.ts` › permit kind from the cited request entry and `fastO` from its key; false hold derived; decisions grouped by turn; audience, "unknown (repair pending)", failed-parse count and "fastO off: parse gap" with its turn. `grep` finds no `devAdmit` or `devPermitKind` in source. `seam.test.ts` keeps every check `dev-admit.test.ts` had (R21.2), listed in the commit body.
   - Commit: `refactor(admission): remove devAdmit; debug route reads the seam's records`

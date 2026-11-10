@@ -72,7 +72,7 @@ describe("typed memory path end to end", () => {
     expect(m.lineage.links.map((l) => [l.slice.eid, l.slice.start, l.slice.end, l.text])).toEqual([[eid, 17, 20, quote]]);
 
     const ledger = of(await debug(rig, "ledger"), "ledger");
-    const admission = ledger.find((l) => l.issuer === "devAdmit");
+    const admission = ledger.find((l) => l.issuer === "seam");
     expect(admission).toMatchObject({ permitKind: "slowOrdinary", record: { kind: "decision", payload: { purpose: "answer" } } });
 
     // 4. The Head of the open Session predates the Memory; the next open's Head contains it (R22.12, R26.4).

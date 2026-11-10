@@ -13,7 +13,7 @@
  *      failed or late read gives code-ranked excerpts of the same lines (contracts §5 Recall readers), and empty
  *      notes with coverage `unknown` only when none match (R27.7). Statements without supplied citations are
  *      dropped (R27.6).
- *   6. In one transaction, `devAdmit` issues the tool continuation's `slowOrdinary` Permit over a payload that
+ *   6. In one transaction, the Admission_Seam (`admitRule`) issues the tool continuation's Permit over a payload that
  *      includes the tool output, its decision is written to the ledger, and the response is recorded (R27.8).
  * The response is sent within TOOL_RESULT_LIMIT_MS (R27.5): the read's deadline shrinks by whatever the parse wait and reads used.
  */

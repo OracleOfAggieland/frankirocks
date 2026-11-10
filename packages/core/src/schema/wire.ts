@@ -3,6 +3,7 @@
  * Wire TS is RFC3339 UTC. All objects are closed and every key is required (nullable keys hold null).
  */
 import {
+  Au,
   BrowserState,
   Cov,
   ErrorCode,
@@ -410,18 +411,42 @@ export const DebugItem = tagged("kind", {
     kind: literal("ledger"),
     id: ID,
     record: Ledger,
-    issuer: nullable(literal("devAdmit")),
+    /** "seam" for a server decision, "browser" for a recorded fastO (voice-control R13.4). */
+    issuer: nullable(oneOf(["seam", "browser"])),
+    /** From the cited request entry's response, or `fastO` from the decision's key; null for a hold. */
     permitKind: nullable(PermitKind),
+    /** A slowOrdinary decision on a voice Turn whose stored judge is not O (R13.3). */
+    falseHold: bool,
+    /** The decision's turn Ref, for grouping by Turn (R13.4). */
+    turnId: nullable(ID),
+    /** The decision whose reply played: the fastO one when its Turn has one on this page. */
+    played: bool,
   }),
   session: obj({ kind: literal("session"), id: ID, record: Session }),
   head: obj({ kind: literal("head"), id: literal("bundle"), record: CoreBundle }),
 });
 export type DebugItem = Infer<typeof DebugItem>;
 
+/** The turns section's Session view (voice-control R13.5; design "Debug_Panel"). */
+export const DebugSessionView = obj({
+  sessionId: ID,
+  /** The stored audience. */
+  audience: Au,
+  /** A `parseLease` holds: shown as "unknown (repair pending)". */
+  repairPending: bool,
+  /** User Turns of the Session with `parseState:"failed"`. */
+  failedParses: nat(),
+  /** While `committedParseSeq < lastClientSeq`: the user Turn at `committedParseSeq + 1` ("fastO off: parse gap"). */
+  parseGapTurnId: nullable(ID),
+});
+export type DebugSessionView = Infer<typeof DebugSessionView>;
+
 export const DebugPage = obj({
   section: DebugSection,
   items: arr(DebugItem, 50),
   nextCursor: nullable(str(128, { min: 1 })),
   coverage: Cov,
+  /** Set on the turns section of a Session; null otherwise. */
+  session: nullable(DebugSessionView),
 });
 export type DebugPage = Infer<typeof DebugPage>;

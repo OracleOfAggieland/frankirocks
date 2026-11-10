@@ -14,16 +14,6 @@ export const PERMIT_TTL_MS = 10_000;
 /** The only line a `recoveryOnly` Permit covers; it lives with every Fixed_Line in `voice/lines.ts`. */
 export { RECOVERY_LINE } from "./voice/lines";
 
-export type AdmissionTurn =
-  | { kind: "voice"; transcriptState: "final" | "missing" | "failed" }
-  | { kind: "typed"; cls: "U" | "T" }
-  | { kind: "tool" };
-
-export interface PermitShape {
-  kind: PermitKind;
-  scope: "reply";
-}
-
 // ---------------------------------------------------------------------------------------------
 // The Server_Rule (voice-control R8, R10.2, R12, R14, R15; design "The Server_Rule"). Pure and total: every input
 // gives exactly one outcome. It reads no clock, and no input compares the server clock with a browser time (R8.7).
@@ -138,25 +128,6 @@ export function serverRule(i: RuleInput): RuleOutcome {
   const typed = i.source === "typed";
   const full = (i.judge === "O" || i.judge === "typed") && (typed || (i.wordsPer2s && i.allFinal)) && !i.parseGap && i.audience === "private";
   return permit("slowOrdinary", "reply", full ? "all" : "S0", false);
-}
-
-/**
- * devPermitKind (design table):
- *   voice, transcript final     slowOrdinary (deviation: contracts §6 needs judge O for audio; F2 restores it)
- *   voice, missing or failed    recoveryOnly
- *   typed U                     slowOrdinary
- *   typed T (pasted)            postCommitControl, no S1+ notes
- *   tool continuation           slowOrdinary
- */
-export function devPermitKind(turn: AdmissionTurn): PermitShape {
-  switch (turn.kind) {
-    case "voice":
-      return { kind: turn.transcriptState === "final" ? "slowOrdinary" : "recoveryOnly", scope: "reply" };
-    case "typed":
-      return { kind: turn.cls === "U" ? "slowOrdinary" : "postCommitControl", scope: "reply" };
-    case "tool":
-      return { kind: "slowOrdinary", scope: "reply" };
-  }
 }
 
 export interface PayloadInput {

@@ -1,10 +1,11 @@
-import { DebugPage, type Memory, validate } from "@franki/core";
+import { DebugPage, type Memory, turnRef, validate } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
+import { admitRule, recordFastO } from "../admission/seam";
 import type { StorePort } from "../store/port";
 import { commitUserTurnForTest, insertMemoryForTest } from "../testing/extract-fixtures";
 import { type TestRig, callRoute, testRig } from "../testing/fakes";
-import { openTestSession, typedTurn } from "../testing/session-fixtures";
+import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
 import { debugMemoryRoute } from "./debug-memory";
 import { turnRoute } from "./turn";
 
@@ -49,7 +50,7 @@ describe("GET /api/debug/memory", () => {
     expect((await pages(rig, "evidence")).map((p) => p.length)).toEqual([50]);
   });
 
-  it("lists Turns in seq order and admission entries with issuer devAdmit and the Permit kind", async () => {
+  it("lists Turns in seq order and admission entries with issuer seam and the Permit kind from the request entry", async () => {
     const rig = testRig();
     const s = await openTestSession(rig);
     await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "first line"));
@@ -60,11 +61,74 @@ describe("GET /api/debug/memory", () => {
     const ledger = await get(rig, { section: "ledger" });
     expect(validate(DebugPage, ledger.body).ok).toBe(true);
     expect(ledger.body.items.map((i: { issuer: string; permitKind: string }) => [i.issuer, i.permitKind]).sort()).toEqual([
-      ["devAdmit", "postCommitControl"],
-      ["devAdmit", "slowOrdinary"],
+      ["seam", "postCommitControl"],
+      ["seam", "slowOrdinary"],
     ]);
+    expect(ledger.body.session).toBeNull();
     const head = await get(rig, { section: "head" });
     expect(head.body.items[0]).toMatchObject({ kind: "head", id: "bundle", record: { bundleRev: 1, state: "clean" } });
+  });
+
+  it("fastO from its key, a false hold derived, decisions grouped by turn with the fastO one played (R13.3, R13.4)", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    const items = (n: number) => [{ itemId: `item_${n}`, commitSeq: n }];
+    // Turn 1: judged O and admitted in the browser; the slow path also answers.
+    await callRoute(rig, turnRoute, { ...asrTurn(s.stamp, 1, "my dog loves the park", items(1)), judge: "O" });
+    const opsNow = rig.clock.read().opsClock.now;
+    await rig.store.transaction(UID, (tx) => recordFastO(tx, { uid: UID, stamp: { ...s.stamp, turnId: testId("turn-1") }, responseId: "resp_1", opsNow, core: { epoch: 1, policyRev: 1 }, audience: "private" }, rig.deps));
+    // Turn 2: held by the judge, ordinary to the parse: a false hold.
+    await callRoute(rig, turnRoute, { ...asrTurn(s.stamp, 2, "the weather is nice today", items(2)), judge: "H" });
+    // Turn 3: a missing transcript is a hold-free recoveryOnly.
+    await callRoute(rig, turnRoute, asrTurn(s.stamp, 3, "", items(3), "missing"));
+
+    const ledger = await get(rig, { section: "ledger" });
+    expect(validate(DebugPage, ledger.body).ok).toBe(true);
+    const rows = ledger.body.items.map((i: { turnId: string; issuer: string; permitKind: string; falseHold: boolean; played: boolean }) => [i.turnId, i.issuer, i.permitKind, i.falseHold, i.played]);
+    const t1 = rows.filter((r: unknown[]) => r[0] === testId("turn-1"));
+    expect(t1).toEqual(
+      expect.arrayContaining([
+        [testId("turn-1"), "browser", "fastO", false, true],
+        [testId("turn-1"), "seam", "slowOrdinary", false, false],
+      ]),
+    );
+    expect(rows.filter((r: unknown[]) => r[0] === testId("turn-2"))).toEqual([[testId("turn-2"), "seam", "slowOrdinary", true, true]]);
+    expect(rows.filter((r: unknown[]) => r[0] === testId("turn-3"))).toEqual([[testId("turn-3"), "seam", "recoveryOnly", false, true]]);
+    // Grouped: each Turn's decisions are adjacent.
+    const order = rows.map((r: unknown[]) => r[0]);
+    for (const id of new Set(order)) {
+      const at = order.map((x: unknown, n: number) => (x === id ? n : -1)).filter((n: number) => n >= 0);
+      expect(at[at.length - 1]! - at[0]!).toBe(at.length - 1);
+    }
+    expect(JSON.stringify(ledger.body)).not.toContain("devAdmit");
+  });
+
+  it("a hold has no Permit kind", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    const stamp = { ...s.stamp, turnId: testId("turn-1") };
+    const rule = { source: "tool", transcript: "final", judge: "O", parse: { kind: "ordinary" }, regexMatch: false, audience: "private", narrowedHere: false, callLive: true, parseGap: false, noteSens: "none", wordsPer2s: true, allFinal: true, toolParseCommitted: false, wave: "A" } as const;
+    const input = { uid: UID, requestId: testId("req-t"), requestEntryId: testId("no-entry"), turnRef: turnRef(testId("turn-1"), s.sessionId, 1), core: { epoch: 1, policyRev: 1 }, opsNow: rig.clock.read().opsClock.now, stamp, head: null, notes: [], turns: [], audioIds: [], toolOutput: null, rule };
+    const r = await rig.store.transaction(UID, async (tx) => admitRule(tx, input, rig.deps));
+    expect(r.kind).toBe("hold");
+    const ledger = await get(rig, { section: "ledger" });
+    expect(ledger.body.items.map((i: { issuer: string; permitKind: string | null; record: { state: string }; played: boolean }) => [i.issuer, i.record.state, i.permitKind, i.played])).toEqual([["seam", "blocked", null, false]]);
+  });
+
+  it("the turns section carries the Session view: audience, repair pending, failed parses and the parse gap (R13.5)", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    const items = (n: number) => [{ itemId: `item_${n}`, commitSeq: n }];
+    const view = async () => (await get(rig, { section: "turns", sessionId: s.sessionId })).body.session;
+    expect(await view()).toEqual({ sessionId: s.sessionId, audience: "private", repairPending: false, failedParses: 0, parseGapTurnId: null });
+    await callRoute(rig, turnRoute, asrTurn(s.stamp, 1, "my dog loves the park", items(1)));
+    await callRoute(rig, turnRoute, asrTurn(s.stamp, 2, "", items(2), "missing"));
+    const v = await view();
+    expect(v).toEqual({ sessionId: s.sessionId, audience: "private", repairPending: true, failedParses: 1, parseGapTurnId: testId("turn-2") });
+    const page = await get(rig, { section: "turns", sessionId: s.sessionId });
+    expect(validate(DebugPage, page.body).ok).toBe(true);
+    rig.clock.advance(10_001);
+    expect(await view()).toMatchObject({ repairPending: false, parseGapTurnId: testId("turn-2") });
   });
 
   it("other tenant's ids rejected, and malformed ones are PARSE", async () => {

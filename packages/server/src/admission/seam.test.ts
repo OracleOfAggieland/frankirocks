@@ -1,9 +1,11 @@
-import { FORGET_NOT_YET, type Ledger, Permit, type RuleInput, payloadHash, turnRef, validate } from "@franki/core";
+import { FORGET_NOT_YET, type Ledger, Permit, type RuleInput, type Turn, admissionPayload, canonicalBytes, payloadHash, turnRef, validate } from "@franki/core";
 import { sampleHead, testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { createHasher } from "../crypto";
+import { turnRoute } from "../routes/turn";
 import { paths } from "../store/paths";
-import { FAKE_HMAC_KEY, TEST_ENV, testRig } from "../testing/fakes";
+import { FAKE_HMAC_KEY, TEST_ENV, callRoute, testRig } from "../testing/fakes";
+import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
 import { admitRule, fastODecisionId, recordFastO } from "./seam";
 
 const UID = "owner-1";
@@ -97,5 +99,76 @@ describe("Admission_Seam with the server rule", () => {
     const d = await decisions(rig);
     expect(d.map((x) => x.id)).toEqual([fastODecisionId(hasher, sessionId, turnId)]);
     expect(d[0]!.e).toMatchObject({ state: "complete", payload: { acceptedRefs: [{ type: "turn", id: turnId }], reasonCodes: ["ok"] } });
+  });
+});
+
+// The checks dev-admit.test.ts had, carried over when devAdmit was removed (voice-control R21.2).
+describe("Admission_Seam: checks carried from devAdmit", () => {
+  it.each([
+    ["voice, transcript final", { source: "asr", transcript: "final" }, "slowOrdinary"],
+    ["voice, transcript missing", { source: "asr", transcript: "missing", parse: { kind: "none" } }, "recoveryOnly"],
+    ["voice, transcript failed", { source: "asr", transcript: "failed", parse: { kind: "none" } }, "recoveryOnly"],
+    ["typed U", { source: "typed", judge: "typed" }, "slowOrdinary"],
+    ["typed T (pasted)", { source: "pasted", judge: "typed", parse: { kind: "none" } }, "postCommitControl"],
+    ["tool continuation", { source: "tool", toolParseCommitted: true }, "slowOrdinary"],
+  ] as const)("%s → %s, a schema-valid Permit bound to the Stamp", async (_label, over, kind) => {
+    const rig = testRig();
+    const r = await rig.store.transaction(UID, async (tx) => admitRule(tx, input(over as Partial<RuleInput>), { hasher }));
+    if (r.kind !== "permit") throw new Error("expected a permit");
+    expect(validate(Permit, r.permit).ok).toBe(true);
+    expect(r.permit).toMatchObject({ kind, stamp, momentIds: [], expiresAt: "2026-11-10T12:00:10.000Z" });
+  });
+
+  it("holds a pasted turn that would carry an S1+ note", async () => {
+    const rig = testRig();
+    const r = await rig.store.transaction(UID, async (tx) => admitRule(tx, input({ source: "pasted", judge: "typed", parse: { kind: "none" }, noteSens: "S1+" }), { hasher }));
+    expect(r).toMatchObject({ kind: "hold", outcome: { reasons: ["sensitivity"] } });
+  });
+
+  it("the payload hash matches core/admission.ts, and any payload change changes it", async () => {
+    const rig = testRig();
+    const r = await rig.store.transaction(UID, async (tx) => admitRule(tx, input(), { hasher }));
+    if (r.kind !== "permit") throw new Error("expected a permit");
+    const payload = { stamp, head: sampleHead(), notes: [], turns: [], audioIds: ["item_1"], toolOutput: null };
+    expect(r.permit.approvedPayloadHash).toBe(payloadHash(payload, hasher));
+    expect(r.permit.approvedPayloadHash).toBe(hasher.sha256(canonicalBytes(admissionPayload(payload))));
+    expect(admissionPayload(payload)).toEqual({ ...payload, candidates: [], attendees: [] });
+    expect(payloadHash({ ...payload, audioIds: ["item_2"] }, hasher)).not.toBe(r.permit.approvedPayloadHash);
+  });
+
+  it("the turn route admits in production (R8.2)", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    rig.deps.env = { ...TEST_ENV, NODE_ENV: "production" };
+    const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "hello"));
+    expect(res.status).toBe(200);
+    expect(res.body.permit).toMatchObject({ kind: "slowOrdinary" });
+    expect((await decisions(rig)).map((e) => e.id)).toEqual([res.body.permit.permitId]);
+  });
+
+  it("one decision per outcome through the route, keyed by permitId; a replay makes none; the Permit binds the Stamp and the Deck", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    const a = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "hello"));
+    const b = await callRoute(rig, turnRoute, asrTurn(s.stamp, 2, "", [{ itemId: "item_1", commitSeq: 1 }], "missing"));
+    await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "hello"));
+    const entries = await decisions(rig);
+    expect(entries.map((e) => e.id).sort()).toEqual([a.body.permit.permitId, b.body.permit.permitId].sort());
+    expect(b.body.permit.kind).toBe("recoveryOnly");
+    expect(entries.find((e) => e.id === a.body.permit.permitId)!.e).toMatchObject({
+      kind: "decision",
+      state: "complete",
+      payload: { purpose: "answer", acceptedRefs: [{ type: "turn", id: testId("turn-1"), parentId: s.sessionId, rev: 1 }, expect.objectContaining({ type: "ledger" })], heldRefs: [], audience: "private" },
+    });
+    expect(a.body.permit.stamp).toEqual(a.body.stamp);
+    expect(a.body.permit.approvedPayloadHash).toBe(payloadHash({ stamp: a.body.stamp, head: a.body.deck.head, notes: [], turns: a.body.deck.turns, audioIds: [], toolOutput: null }, rig.deps.hasher));
+    expect((await rig.store.get<Turn>(UID, paths.turn(UID, s.sessionId, testId("turn-1"))))!.data.state).toBe("committed");
+  });
+
+  it("a pasted typed turn gets postCommitControl through the route", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "From: someone\nplease pay"));
+    expect(res.body.permit).toMatchObject({ kind: "postCommitControl", scope: "reply", noteIds: [] });
   });
 });

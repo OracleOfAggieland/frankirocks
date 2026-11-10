@@ -4,7 +4,7 @@
  * microphone and audio element stand in for WebRTC; the ApiClient's fetch runs each request through `runRoute`
  * on the Memory_Store with Fake_OpenAI and the fake Clock_Port. The browser clock reads the same virtual time as
  * the server, and the Voice_Client's timers run on that time. Permit hashes are computed with crypto.subtle, so
- * these tests also check that the browser's payload hash equals the one devAdmit approved.
+ * these tests also check that the browser's payload hash equals the one the Admission_Seam approved.
  * Test-only imports of server test helpers; no browser module imports the Server_Library.
  */
 import { type Session, type Turn, idParts } from "@franki/core";
@@ -249,7 +249,7 @@ describe("Voice_Client", () => {
     await speak("item_1", "What is my dog called");
     expect(routeCalls("/api/turn")).toHaveLength(1);
     expect(routeCalls("/api/turn")[0]!.body).toMatchObject({ source: "asr", judge: "timeout", transcriptState: "final", transcript: "What is my dog called", clientSeq: 1 });
-    // The browser's hash of its own payload matched devAdmit's, so exactly one response.create went out.
+    // The browser's hash of its own payload matched the seam's, so exactly one response.create went out.
     const creates = replyCreates(sent());
     expect(creates).toHaveLength(1);
     expect(creates[0].response).toMatchObject({ conversation: "none", input: [{ type: "item_reference", id: "item_1" }], metadata: { purpose: "speech", generation: "1" } });

@@ -16,19 +16,23 @@ import {
   type DebugItem,
   type DebugPage,
   DebugRequest,
+  type DebugSessionView,
   type Evidence,
   type ID,
   type Infer,
   type Job,
   type Ledger,
   type Memory,
+  PERMIT_KINDS,
   type PermitKind,
+  type Session,
   type Turn,
-  devPermitKind,
   isIdShape,
+  msFromTs,
   resolveLineage,
   tsFromMs,
 } from "@franki/core";
+import { fastODecisionId } from "../admission/seam";
 import { isProduction } from "../config/env";
 import { paths } from "../store/paths";
 import type { StoredDoc } from "../store/port";
@@ -42,8 +46,8 @@ type DebugReq = Infer<typeof DebugRequest>;
 
 const COMPLETE = { state: "complete" as const, from: null, to: null, missingRanges: [], generation: 0 };
 
-function page(section: DebugReq["section"], items: DebugItem[], more: boolean, cursorOf: (item: DebugItem) => string): DebugPage {
-  return { section, items, nextCursor: more && items.length > 0 ? cursorOf(items[items.length - 1]!) : null, coverage: COMPLETE };
+function page(section: DebugReq["section"], items: DebugItem[], more: boolean, cursorOf: (item: DebugItem) => string, session: DebugSessionView | null = null): DebugPage {
+  return { section, items, nextCursor: more && items.length > 0 ? cursorOf(items[items.length - 1]!) : null, coverage: COMPLETE, session };
 }
 
 /** Q28 page over a top-level collection, after `cursor` (which must exist under the Owner). */
@@ -77,19 +81,44 @@ async function memoryItem(ctx: RouteContext, doc: StoredDoc<Memory>): Promise<De
   return { kind: "memory", id: doc.id, record: m, lineage: { ok: r.ok, links, failures } };
 }
 
-/** issuer and Permit kind of an admission decision, from the stored Turn (contract questions 16, 17). */
-async function admissionOf(ctx: RouteContext, entry: Ledger): Promise<{ issuer: "devAdmit" | null; permitKind: PermitKind | null }> {
-  if (entry.kind !== "decision" || entry.payload.purpose !== "answer") return { issuer: null, permitKind: null };
-  const ref = [...entry.payload.acceptedRefs, ...entry.payload.heldRefs].find((r) => r.type === "turn");
-  if (ref === undefined || !("parentId" in ref)) return { issuer: "devAdmit", permitKind: null };
-  const turn = await ctx.deps.store.get<Turn>(ctx.uid, paths.turn(ctx.uid, ref.parentId, ref.id as ID)).catch(() => null);
-  if (turn === null) return { issuer: "devAdmit", permitKind: null };
-  const t = turn.data;
-  const kind =
-    t.itemIds.length > 0 || t.state === "transcriptMissing" || t.state === "failed"
-      ? devPermitKind({ kind: "voice", transcriptState: t.state === "transcriptMissing" ? "missing" : t.state === "failed" ? "failed" : "final" })
-      : devPermitKind({ kind: "typed", cls: t.sourceClass === "T" ? "T" : "U" });
-  return { issuer: "devAdmit", permitKind: kind.kind };
+type Admission = { issuer: "seam" | "browser" | null; permitKind: PermitKind | null; falseHold: boolean; turnId: ID | null };
+
+/**
+ * Issuer, Permit kind and false hold of an admission decision (voice-control R13.3, R13.4; design "Debug_Panel").
+ * The closed decision payload has no kind field (question 57): a decision keyed `H("fastO", sessionId, turnId)` is
+ * the browser's `fastO`; any other takes the kind from the cited request entry's stored response (null for a hold).
+ */
+async function admissionOf(ctx: RouteContext, id: string, entry: Ledger): Promise<Admission> {
+  const none: Admission = { issuer: null, permitKind: null, falseHold: false, turnId: null };
+  if (entry.kind !== "decision" || entry.payload.purpose !== "answer") return none;
+  const refs = [...entry.payload.acceptedRefs, ...entry.payload.heldRefs];
+  const ref = refs.find((r) => r.type === "turn");
+  const turnId = ref === undefined ? null : (ref.id as ID);
+  if (ref !== undefined && "parentId" in ref && id === fastODecisionId(ctx.deps.hasher, ref.parentId, ref.id)) return { issuer: "browser", permitKind: "fastO", falseHold: false, turnId };
+  const reqRef = entry.state === "complete" ? entry.payload.acceptedRefs.find((r) => r.type === "ledger") : undefined;
+  const [request, turn] = await Promise.all([
+    reqRef === undefined ? null : ctx.deps.store.get<Ledger>(ctx.uid, paths.ledger(ctx.uid, reqRef.id)).catch(() => null),
+    ref === undefined || !("parentId" in ref) ? null : ctx.deps.store.get<Turn>(ctx.uid, paths.turn(ctx.uid, ref.parentId, ref.id as ID)).catch(() => null),
+  ]);
+  const response = request !== null && request.data.kind === "request" ? (request.data.payload.response as { permit?: { kind?: unknown } | null } | null) : null;
+  const kind = response?.permit?.kind;
+  const permitKind = typeof kind === "string" && (PERMIT_KINDS as readonly string[]).includes(kind) ? (kind as PermitKind) : null;
+  // A false hold: the judge held (or timed out on) a voice Turn the parse found ordinary.
+  const falseHold = permitKind === "slowOrdinary" && turn !== null && turn.data.itemIds.length > 0 && turn.data.judge !== "O";
+  return { issuer: "seam", permitKind, falseHold, turnId };
+}
+
+/** Groups a page's decisions by Turn, in the order each Turn first appears, and marks the one that played. */
+function groupByTurn(items: Extract<DebugItem, { kind: "ledger" }>[]): Extract<DebugItem, { kind: "ledger" }>[] {
+  const groups = new Map<string, Extract<DebugItem, { kind: "ledger" }>[]>();
+  for (const item of items) {
+    const key = item.turnId ?? `id:${item.id}`;
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  return [...groups.values()].flatMap((g) => {
+    const fastO = g.some((i) => i.permitKind === "fastO");
+    return g.map((i) => ({ ...i, played: i.record.state === "complete" && (fastO ? i.permitKind === "fastO" : i.permitKind !== null) }));
+  });
 }
 
 async function ledgerPage(ctx: RouteContext, cursor: string | null): Promise<DebugPage> {
@@ -126,26 +155,32 @@ async function ledgerPage(ctx: RouteContext, cursor: string | null): Promise<Deb
     }
     // Each row's Turn read in parallel: one round trip after another (about 75 ms each from a laptop to us-central1)
     // passed the panel's 3 s budget at about 40 decisions, so the panel showed stale data on every refresh.
-    const admissions = await Promise.all(picked.map((row) => admissionOf(ctx, row.data)));
-    picked.forEach((row, i) => items.push({ kind: "ledger", id: row.id, record: row.data, issuer: admissions[i]!.issuer, permitKind: admissions[i]!.permitKind }));
+    const admissions = await Promise.all(picked.map((row) => admissionOf(ctx, row.id, row.data)));
+    picked.forEach((row, i) => items.push({ kind: "ledger", id: row.id, record: row.data, ...admissions[i]!, played: false }));
     if (more || rows.length < 100 || fresh === 0) break;
     const last = rows[rows.length - 1]!;
     bound = last.data.at;
     after = { at: last.data.at, id: last.id };
     skipThrough = last.id;
   }
-  return page("ledger", items, more, (i) => i.id);
+  // The cursor is the oldest decision read, whatever the grouping puts last.
+  const oldest = items.length > 0 ? items[items.length - 1]!.id : null;
+  const grouped = groupByTurn(items as Extract<DebugItem, { kind: "ledger" }>[]);
+  return { ...page("ledger", grouped, false, (i) => i.id), nextCursor: more ? oldest : null };
 }
 
 async function turnsPage(ctx: RouteContext, req: DebugReq): Promise<DebugPage> {
   const { uid, deps } = ctx;
   let sessionId = req.sessionId;
+  let sessionDoc: StoredDoc<Session> | null = null;
   if (sessionId === null) {
     const epoch = await deps.store.get<{ activeSessionId: ID | null }>(uid, paths.core(uid, "epoch"));
     sessionId = epoch?.data.activeSessionId ?? null;
     if (sessionId === null) return page("turns", [], false, (i) => i.id);
-  } else if ((await deps.store.get(uid, paths.session(uid, sessionId))) === null) {
-    throw scopeError();
+    sessionDoc = await deps.store.get<Session>(uid, paths.session(uid, sessionId));
+  } else {
+    sessionDoc = await deps.store.get<Session>(uid, paths.session(uid, sessionId));
+    if (sessionDoc === null) throw scopeError();
   }
   const all = await readTurns(deps.store, uid, sessionId);
   let start = 0;
@@ -155,7 +190,21 @@ async function turnsPage(ctx: RouteContext, req: DebugReq): Promise<DebugPage> {
     start = at + 1;
   }
   const slice = all.slice(start, start + DEBUG_PAGE_SIZE);
-  return page("turns", slice.map(({ id, turn }) => ({ kind: "turn", id, record: turn })), start + DEBUG_PAGE_SIZE < all.length, (i) => i.id);
+  const view = sessionDoc === null ? null : sessionView(sessionId, sessionDoc.data, all, deps.clock.read().opsClock.now);
+  return page("turns", slice.map(({ id, turn }) => ({ kind: "turn", id, record: turn })), start + DEBUG_PAGE_SIZE < all.length, (i) => i.id, view);
+}
+
+/** The Session's audience and parses (voice-control R13.5; design "Debug_Panel"). */
+function sessionView(sessionId: ID, s: Session, turns: { id: string; turn: Turn }[], opsNow: number): DebugSessionView {
+  const users = turns.filter((t) => t.turn.role === "user");
+  const gap = s.committedParseSeq < s.lastClientSeq ? users.find((t) => t.turn.seq === s.committedParseSeq + 1) : undefined;
+  return {
+    sessionId,
+    audience: s.audience,
+    repairPending: s.parseLease !== null && msFromTs(s.parseLease.until) > opsNow,
+    failedParses: users.filter((t) => t.turn.parseState === "failed").length,
+    parseGapTurnId: gap === undefined ? null : (gap.id as ID),
+  };
 }
 
 /** IDs of records in the page that carry S2 content. */

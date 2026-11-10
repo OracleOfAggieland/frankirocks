@@ -101,7 +101,7 @@ function turnBody(r: Rig) {
   return c.body;
 }
 
-/** The server's response with a Permit computed the way devAdmit does. */
+/** The server's response with a Permit computed the way the Admission_Seam does. */
 function admitted(r: Rig, kind: Permit["kind"], tamper: Partial<Permit> = {}): Infer<typeof TurnResponse> {
   const body = turnBody(r);
   const stamp = localStamp(r.st)!;
