@@ -1286,4 +1286,30 @@ describe("wave A review fixes, items 8 and 9", () => {
     expect(cmds).toContainEqual({ kind: "armTimer", name: "judge", at });
     expect(r.st.deadlines.judge).toBe(at);
   });
+
+  it("item 12: stray audio is cleared before a fastO reply whose speculative audio would fit", () => {
+    const r = listening();
+    const t = commitTurn(r);
+    created(r, t.judge!, "resp_j");
+    created(r, t.spec!, "resp_s");
+    answerHash(r);
+    r.rt({ type: "output_audio_buffer.started", response_id: "resp_cancelled_earlier" }, 10);
+    expect(r.st.strayAudio).toBe(true);
+    judgeDone(r, "resp_j", "O", 200);
+    const out = sends(answerVerify(r)).map((e) => e.type);
+    expect(out).toContain("output_audio_buffer.clear");
+    expect(out.indexOf("output_audio_buffer.clear")).toBeLessThan(out.indexOf("response.create"));
+    expect(r.st.strayAudio).toBe(false);
+  });
+
+  it("item 12: a rejected reply clears stray audio", () => {
+    const r = listening();
+    speak(r);
+    r.rt({ type: "output_audio_buffer.started", response_id: "resp_stray" }, 10);
+    expect(r.st.strayAudio).toBe(true);
+    const answer = r.ev({ type: "turnOk", turnId: turnBody(r).turnId, response: admitted(r, "slowOrdinary") }, 100);
+    const out = [...sends(answer), ...sends(answerVerify(r, "f".repeat(64)))].map((e) => e.type);
+    expect(out).toContain("output_audio_buffer.clear");
+    expect(r.st.strayAudio).toBe(false);
+  });
 });

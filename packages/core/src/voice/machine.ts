@@ -1252,6 +1252,8 @@ function requestVerify(s: Step, reply: PendingReply): void {
 function rejectReply(s: Step): void {
   // R17.3: play nothing and cancel any pending response of this reply.
   for (const id of s.st.inFlight) s.send({ type: "response.cancel", response_id: id });
+  // Whatever a cancelled response left in the output buffer is cleared (review of wave A, item 12).
+  if (s.st.strayAudio === true || s.st.inFlight.length > 0) s.send({ type: "output_audio_buffer.clear" });
   s.set({ inFlight: [], pending: null, active: null, judge: null, spec: null });
   noReply(s);
 }
@@ -1356,7 +1358,8 @@ function admit(s: Step, reply: PendingReply): void {
   const fastO = reply.permit.kind === "fastO";
   const fits = spec !== null && spec.turnId === turnId && !spec.failed && reply.purpose === "speech" && reply.notes.length === 0 && reply.toolOutput === null && spec.hash === reply.permit.approvedPayloadHash;
   const phase: VoicePhase = s.st.phase === "RECOVERY" ? "RECOVERY" : "HELD";
-  if (fits && !spec.mutedStarted && (!spec.done || spec.heldCall !== null)) {
+  // Stray audio since the last clear rules out the "fits" branch: clear and regenerate instead (review item 12).
+  if (fits && !spec.mutedStarted && (!spec.done || spec.heldCall !== null) && s.st.strayAudio !== true) {
     const active: ActiveReply = { ...reply, responseId: spec.responseId, audioStarted: false, pendingTool: null, eventId: spec.eventId };
     s.set({ spec: null, phase, active });
     setLatency(s, (t) => ({ ...t, path: fastO ? "fastO" : "slow" }));
