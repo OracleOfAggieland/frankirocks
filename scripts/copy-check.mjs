@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { REPO_ROOT, toRepoPath } from "./clock-check.mjs";
 
 export const BANNED_CAUSE_WORDS = ["because", "caused", "thanks to", "led to", "won back"];
-export const COPY_SCAN_ROOTS = ["apps/web/src/components", "apps/web/src/ui", "apps/web/src/app/specimens"];
+export const COPY_SCAN_ROOTS = ["apps/web/src/components", "apps/web/src/ui", "apps/web/src/app/specimens", "apps/web/src/app/recorder"];
 const EXTENSIONS = [".ts", ".tsx", ".mjs"];
 const SKIP_DIRS = new Set(["node_modules", "dist", ".next"]);
 

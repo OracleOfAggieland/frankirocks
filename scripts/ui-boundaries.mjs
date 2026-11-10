@@ -145,10 +145,14 @@ function* walk(dir) {
 const isTest = (file) => /\.test\.[^/]+$/.test(file);
 const isSource = (file) => /\.(ts|tsx|mjs|js|css)$/.test(file);
 
-// Specimens rules (R14.3, R17.2, R20.3, R20.5).
+// Specimens rules (R14.3, R17.2, R20.3, R20.5), applied also to the judge spike recorder (brief 006 item 3).
 const APP = "apps/web/src/app/";
 export const SPECIMENS_DIR = APP + "specimens/";
 export const SPECIMENS_PAGE = SPECIMENS_DIR + "page.dev.tsx";
+export const RECORDER_DIR = APP + "recorder/";
+/** The only files that may use the development-only `.dev.tsx` and `.dev.ts` suffixes. */
+export const DEV_FILES = [SPECIMENS_PAGE, RECORDER_DIR + "page.dev.tsx", APP + "api/dev/takes/route.dev.ts"];
+const DEV_DIRS = [SPECIMENS_DIR, RECORDER_DIR];
 export const ENTRY_POINTS = [APP + "page.tsx", APP + "layout.tsx"];
 const WORKSPACE = {
   "@franki/core": "packages/core/src/index.ts",
@@ -195,20 +199,23 @@ export function checkSpecimens(root = REPO_ROOT) {
   const read = (rel) => readFileSync(join(root, rel), "utf8");
   const violations = [];
   for (const [file, via] of reachable(ENTRY_POINTS, read, exists)) {
-    if (file.startsWith(SPECIMENS_DIR)) {
-      violations.push({ file: via ?? file, line: 1, match: file, rule: "the Main_Screen reaches a Specimens_Page module" });
+    if (DEV_DIRS.some((d) => file.startsWith(d))) {
+      violations.push({ file: via ?? file, line: 1, match: file, rule: "the Main_Screen reaches a development-only page module" });
     }
   }
   for (const abs of walk(join(root, "apps/web/src"))) {
     const file = toRepoPath(abs, root);
-    if (file.endsWith(".dev.tsx") && file !== SPECIMENS_PAGE) {
-      violations.push({ file, line: 1, match: ".dev.tsx", rule: "only app/specimens/page.dev.tsx may use the .dev.tsx suffix" });
+    if (/\.dev\.tsx?$/.test(file) && !DEV_FILES.includes(file)) {
+      const match = file.endsWith(".dev.tsx") ? ".dev.tsx" : ".dev.ts";
+      violations.push({ file, line: 1, match, rule: "only the listed development-only pages and routes may use the .dev.tsx or .dev.ts suffix" });
     }
-    if (file.startsWith(SPECIMENS_DIR) || isTest(file) || !CODE.test(file)) continue;
+    const home = DEV_DIRS.find((d) => file.startsWith(d));
+    if (isTest(file) || !CODE.test(file)) continue;
     for (const { specifier, line } of importsOf(read(file))) {
       const target = resolveModule(file, specifier, exists);
-      if (target !== null && target.startsWith(SPECIMENS_DIR)) {
-        violations.push({ file, line, match: specifier, rule: "imports from the Specimens_Page directory" });
+      const into = target === null ? undefined : DEV_DIRS.find((d) => target.startsWith(d));
+      if (into !== undefined && into !== home) {
+        violations.push({ file, line, match: specifier, rule: into === SPECIMENS_DIR ? "imports from the Specimens_Page directory" : "imports from the recorder page directory" });
       }
     }
   }

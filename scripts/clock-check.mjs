@@ -13,7 +13,7 @@ const DATE_NOW = new RegExp(DATE + "\\.now\\(", "g");
 /** `new Date()` with an empty argument list only; `new Date(x)` formats a supplied time and passes. */
 const NEW_DATE_EMPTY = new RegExp("new\\s+" + DATE + "\\s*\\(\\s*\\)", "g");
 
-export const SCAN_ROOTS = ["packages/core", "packages/server", "apps/web/src", "functions/src"];
+export const SCAN_ROOTS = ["packages/core", "packages/server", "apps/web/src", "functions/src", "scripts/judge-spike"];
 const SCAN_EXTENSIONS = [".ts", ".tsx", ".js", ".mjs", ".cjs"];
 const SKIP_DIRS = new Set(["node_modules", "dist", ".next"]);
 

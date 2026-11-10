@@ -69,7 +69,7 @@ describe("static clock check", () => {
     expect(scanRepo(root)).toEqual([]);
   });
 
-  it("allow-list holds 1 to 5 files, including the three Clock_Port files", () => {
+  it("allow-list holds 1 to 5 files, including the three Clock_Port files and the judge spike clock", () => {
     const allow = loadAllowList();
     expect(allow.length).toBeGreaterThanOrEqual(1);
     expect(allow.length).toBeLessThanOrEqual(5);
@@ -77,6 +77,7 @@ describe("static clock check", () => {
       "packages/server/src/clock/live-clock.ts",
       "apps/web/src/client/clock.ts",
       "functions/src/clock.ts",
+      "scripts/judge-spike/clock.ts",
     ]);
   });
 

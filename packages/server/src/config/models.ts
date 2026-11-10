@@ -12,6 +12,8 @@ export const MODEL_VARS = {
   bg: "FRANKI_BG_MODEL",
   embed: "FRANKI_EMBED_MODEL",
   transcribe: "FRANKI_TRANSCRIBE_MODEL",
+  /** Judge spike only: text-to-speech for the synthetic probe audio (brief 006 item 3). */
+  tts: "FRANKI_TTS_MODEL",
 } as const;
 
 export type ModelUse = keyof typeof MODEL_VARS;

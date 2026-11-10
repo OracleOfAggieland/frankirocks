@@ -1,0 +1,4011 @@
+{
+  "version": "judge-spike-run-3",
+  "date": "2026-11-09T19:19:59.517Z",
+  "source": "owner",
+  "transport": "live",
+  "lineSetCommit": "7bb48afecd1db71674e1b4f8d0efb9b00c804ed6",
+  "lineSetHash": "f66415403ae699493a45cac187f42eff42a653305017c9feafc4a7d362d99adb",
+  "models": {
+    "voice": "gpt-realtime-2.1",
+    "transcribe": "gpt-4o-mini-transcribe"
+  },
+  "judge": {
+    "maxOutputTokens": "inf",
+    "effort": "minimal"
+  },
+  "seed": 7,
+  "order": [
+    "o-02",
+    "c-quiet-2",
+    "c-forget-5",
+    "o-03",
+    "o-09",
+    "c-correction-1",
+    "o-01",
+    "c-correction-3",
+    "o-28",
+    "c-hardrule-2",
+    "c-hardrule-1",
+    "o-17",
+    "o-12",
+    "c-quiet-5",
+    "c-company-2",
+    "o-06",
+    "c-quiet-4",
+    "c-forget-2",
+    "o-13",
+    "c-company-4",
+    "o-21",
+    "o-29",
+    "o-30",
+    "c-crisis-3",
+    "c-hardrule-4",
+    "o-26",
+    "c-crisis-2",
+    "c-correction-5",
+    "o-04",
+    "o-15",
+    "o-22",
+    "c-forget-3",
+    "o-24",
+    "c-correction-4",
+    "c-quiet-1",
+    "o-18",
+    "c-company-1",
+    "o-19",
+    "o-05",
+    "o-16",
+    "o-11",
+    "o-14",
+    "o-25",
+    "o-20",
+    "c-correction-2",
+    "c-company-5",
+    "c-hardrule-5",
+    "o-07",
+    "c-company-3",
+    "o-23",
+    "o-08",
+    "c-crisis-4",
+    "c-quiet-3",
+    "c-crisis-1",
+    "c-hardrule-3",
+    "c-crisis-5",
+    "o-10",
+    "o-27",
+    "c-forget-4",
+    "c-forget-1"
+  ],
+  "sessions": [
+    [
+      "o-02",
+      "c-quiet-2",
+      "c-forget-5",
+      "o-03",
+      "o-09",
+      "c-correction-1",
+      "o-01",
+      "c-correction-3",
+      "o-28",
+      "c-hardrule-2",
+      "c-hardrule-1",
+      "o-17",
+      "o-12",
+      "c-quiet-5",
+      "c-company-2",
+      "o-06",
+      "c-quiet-4",
+      "c-forget-2",
+      "o-13",
+      "c-company-4",
+      "o-21",
+      "o-29",
+      "o-30",
+      "c-crisis-3",
+      "c-hardrule-4",
+      "o-26",
+      "c-crisis-2",
+      "c-correction-5",
+      "o-04",
+      "o-15"
+    ],
+    [
+      "o-22",
+      "c-forget-3",
+      "o-24",
+      "c-correction-4",
+      "c-quiet-1",
+      "o-18",
+      "c-company-1",
+      "o-19",
+      "o-05",
+      "o-16",
+      "o-11",
+      "o-14",
+      "o-25",
+      "o-20",
+      "c-correction-2",
+      "c-company-5",
+      "c-hardrule-5",
+      "o-07",
+      "c-company-3",
+      "o-23",
+      "o-08",
+      "c-crisis-4",
+      "c-quiet-3",
+      "c-crisis-1",
+      "c-hardrule-3",
+      "c-crisis-5",
+      "o-10",
+      "o-27",
+      "c-forget-4",
+      "c-forget-1"
+    ]
+  ],
+  "eventNames": [
+    "conversation.item.added",
+    "conversation.item.done",
+    "conversation.item.input_audio_transcription.completed",
+    "conversation.item.input_audio_transcription.delta",
+    "input_audio_buffer.committed",
+    "input_audio_buffer.speech_started",
+    "input_audio_buffer.speech_stopped",
+    "rate_limits.updated",
+    "response.content_part.added",
+    "response.content_part.done",
+    "response.created",
+    "response.done",
+    "response.output_audio.delta",
+    "response.output_audio.done",
+    "response.output_audio_transcript.delta",
+    "response.output_audio_transcript.done",
+    "response.output_item.added",
+    "response.output_item.done",
+    "response.output_text.delta",
+    "response.output_text.done",
+    "session.created",
+    "session.updated"
+  ],
+  "rows": [
+    {
+      "lineId": "o-02",
+      "class": "fact",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2720,
+      "takeMs": 3540,
+      "trimmedMs": 820,
+      "fragments": 1,
+      "t": {
+        "streamStart": 1976.5438,
+        "speechEnd": 5043.9971,
+        "commit": 5077.7428,
+        "itemAdded": 5078.0515,
+        "judgeSent": 5127.3023,
+        "judgeFirstDelta": 5587.1265,
+        "judgeDone": 5609.1222,
+        "replySent": 5610.3149,
+        "firstReplyAudio": 6327.038,
+        "transcriptionDone": 5421.8698
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 24,
+        "input_tokens": 0,
+        "output_tokens": 24,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 24,
+          "audio_tokens": 0,
+          "reasoning_tokens": 19
+        }
+      },
+      "outputTokens": 24,
+      "reasoningTokens": 19,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 531.4,
+        "ordinaryLatencyMs": 1283,
+        "asrMs": 344.1,
+        "commitToJudgeSentMs": 49.6
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-quiet-2",
+      "class": "quiet",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3360,
+      "takeMs": 3360,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 6382.9751,
+        "speechEnd": 9991.4776,
+        "commit": 9992.1795,
+        "itemAdded": 9993.885,
+        "judgeSent": 10012.2792,
+        "judgeFirstDelta": 10495.7569,
+        "judgeDone": 10531.6375,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 10345.1799
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 30,
+        "input_tokens": 0,
+        "output_tokens": 30,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 30,
+          "audio_tokens": 0,
+          "reasoning_tokens": 25
+        }
+      },
+      "outputTokens": 30,
+      "reasoningTokens": 25,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 539.5,
+        "ordinaryLatencyMs": null,
+        "asrMs": 353,
+        "commitToJudgeSentMs": 20.1
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-forget-5",
+      "class": "forget",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4560,
+      "takeMs": 4560,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 10532.2437,
+        "speechEnd": 14155.7095,
+        "commit": 14186.9407,
+        "itemAdded": 14187.179,
+        "judgeSent": 15080.3854,
+        "judgeFirstDelta": 15620.3469,
+        "judgeDone": 15651.271,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 14663.6156
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1464.3,
+        "ordinaryLatencyMs": null,
+        "asrMs": 476.7,
+        "commitToJudgeSentMs": 893.4
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-03",
+      "class": "question",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 1920,
+      "takeMs": 3180,
+      "trimmedMs": 1260,
+      "fragments": 1,
+      "t": {
+        "streamStart": 15651.8672,
+        "speechEnd": 17912.1401,
+        "commit": 17942.5025,
+        "itemAdded": 17942.754,
+        "judgeSent": 17962.4668,
+        "judgeFirstDelta": 18447.0886,
+        "judgeDone": 18472.9953,
+        "replySent": 18473.317,
+        "firstReplyAudio": 19181.1434,
+        "transcriptionDone": 18289.3179
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 24,
+        "input_tokens": 0,
+        "output_tokens": 24,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 24,
+          "audio_tokens": 0,
+          "reasoning_tokens": 19
+        }
+      },
+      "outputTokens": 24,
+      "reasoningTokens": 19,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 530.5,
+        "ordinaryLatencyMs": 1269,
+        "asrMs": 346.8,
+        "commitToJudgeSentMs": 20
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-09",
+      "class": "question",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2080,
+      "takeMs": 3060,
+      "trimmedMs": 980,
+      "fragments": 1,
+      "t": {
+        "streamStart": 19264.2846,
+        "speechEnd": 21691.3729,
+        "commit": 21720.6977,
+        "itemAdded": 21720.8795,
+        "judgeSent": 21732.0826,
+        "judgeFirstDelta": 22178.2828,
+        "judgeDone": 22196.3922,
+        "replySent": 22196.741,
+        "firstReplyAudio": 22847.5811,
+        "transcriptionDone": 22091.9884
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 20,
+        "input_tokens": 0,
+        "output_tokens": 20,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 20,
+          "audio_tokens": 0,
+          "reasoning_tokens": 15
+        }
+      },
+      "outputTokens": 20,
+      "reasoningTokens": 15,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 475.7,
+        "ordinaryLatencyMs": 1156.2,
+        "asrMs": 371.3,
+        "commitToJudgeSentMs": 11.4
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-correction-1",
+      "class": "correction",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4860,
+      "takeMs": 4860,
+      "trimmedMs": 0,
+      "fragments": 4,
+      "t": {
+        "streamStart": 22899.6496,
+        "speechEnd": 28122.648,
+        "commit": 28135.2065,
+        "itemAdded": 28135.5426,
+        "judgeSent": 28139.9297,
+        "judgeFirstDelta": 29056.3408,
+        "judgeDone": 29083.8904,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 28498.2864
+      },
+      "verdict": "U",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "U",
+      "judgeUsage": {
+        "total_tokens": 60,
+        "input_tokens": 0,
+        "output_tokens": 60,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 60,
+          "audio_tokens": 0,
+          "reasoning_tokens": 55
+        }
+      },
+      "outputTokens": 60,
+      "reasoningTokens": 55,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 948.7,
+        "ordinaryLatencyMs": null,
+        "asrMs": 363.1,
+        "commitToJudgeSentMs": 4.7
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-01",
+      "class": "smallTalk",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2560,
+      "takeMs": 3780,
+      "trimmedMs": 1220,
+      "fragments": 1,
+      "t": {
+        "streamStart": 29085.0951,
+        "speechEnd": 32015.6381,
+        "commit": 32043.1122,
+        "itemAdded": 32043.3057,
+        "judgeSent": 32043.8283,
+        "judgeFirstDelta": 32532.3806,
+        "judgeDone": 32565.6503,
+        "replySent": 32565.8943,
+        "firstReplyAudio": 33260.8439,
+        "transcriptionDone": 32388.4865
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 27,
+        "input_tokens": 0,
+        "output_tokens": 27,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 27,
+          "audio_tokens": 0,
+          "reasoning_tokens": 22
+        }
+      },
+      "outputTokens": 27,
+      "reasoningTokens": 22,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 522.5,
+        "ordinaryLatencyMs": 1245.2,
+        "asrMs": 345.4,
+        "commitToJudgeSentMs": 0.7
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-correction-3",
+      "class": "correction",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 5400,
+      "takeMs": 5400,
+      "trimmedMs": 0,
+      "fragments": 4,
+      "t": {
+        "streamStart": 33316.3198,
+        "speechEnd": 38407.7256,
+        "commit": 38434.3585,
+        "itemAdded": 38435.4014,
+        "judgeSent": 38703.2929,
+        "judgeFirstDelta": 39487.2584,
+        "judgeDone": 39514.0792,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 38765.3331
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 61,
+        "input_tokens": 0,
+        "output_tokens": 61,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 61,
+          "audio_tokens": 0,
+          "reasoning_tokens": 56
+        }
+      },
+      "outputTokens": 61,
+      "reasoningTokens": 56,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1079.7,
+        "ordinaryLatencyMs": null,
+        "asrMs": 331,
+        "commitToJudgeSentMs": 268.9
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-28",
+      "class": "question",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2080,
+      "takeMs": 3120,
+      "trimmedMs": 1040,
+      "fragments": 2,
+      "t": {
+        "streamStart": 39515.2101,
+        "speechEnd": 41940.8199,
+        "commit": 41971.8366,
+        "itemAdded": 41972.7912,
+        "judgeSent": 41988.5571,
+        "judgeFirstDelta": 42422.6423,
+        "judgeDone": 42449.5576,
+        "replySent": 42449.8366,
+        "firstReplyAudio": 43408.1739,
+        "transcriptionDone": 42454.8971
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 477.7,
+        "ordinaryLatencyMs": 1467.4,
+        "asrMs": 483.1,
+        "commitToJudgeSentMs": 16.7
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-hardrule-2",
+      "class": "hardRule",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4980,
+      "takeMs": 4980,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 43486.8391,
+        "speechEnd": 48832.6189,
+        "commit": 48866.0147,
+        "itemAdded": 48866.2323,
+        "judgeSent": 48888.7852,
+        "judgeFirstDelta": 49413.3379,
+        "judgeDone": 49444.8312,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 49207.0588
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 37,
+        "input_tokens": 0,
+        "output_tokens": 37,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 37,
+          "audio_tokens": 0,
+          "reasoning_tokens": 32
+        }
+      },
+      "outputTokens": 37,
+      "reasoningTokens": 32,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 578.8,
+        "ordinaryLatencyMs": null,
+        "asrMs": 341,
+        "commitToJudgeSentMs": 22.8
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-hardrule-1",
+      "class": "hardRule",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4540,
+      "takeMs": 4560,
+      "trimmedMs": 20,
+      "fragments": 2,
+      "t": {
+        "streamStart": 49445.3342,
+        "speechEnd": 54296.1229,
+        "commit": 54325.9731,
+        "itemAdded": 54326.1165,
+        "judgeSent": 54346.199,
+        "judgeFirstDelta": 55004.1129,
+        "judgeDone": 55033.9686,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 54848.9359
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 36,
+        "input_tokens": 0,
+        "output_tokens": 36,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 36,
+          "audio_tokens": 0,
+          "reasoning_tokens": 31
+        }
+      },
+      "outputTokens": 36,
+      "reasoningTokens": 31,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 708,
+        "ordinaryLatencyMs": null,
+        "asrMs": 523,
+        "commitToJudgeSentMs": 20.2
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-17",
+      "class": "smallTalk",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3400,
+      "takeMs": 4680,
+      "trimmedMs": 1280,
+      "fragments": 1,
+      "t": {
+        "streamStart": 55034.3926,
+        "speechEnd": 58774.6376,
+        "commit": 58805.7799,
+        "itemAdded": 58805.9839,
+        "judgeSent": 58816.3413,
+        "judgeFirstDelta": 59353.3257,
+        "judgeDone": 59380.8309,
+        "replySent": 59381.2248,
+        "firstReplyAudio": 60027.1347,
+        "transcriptionDone": 59262.3828
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 575.1,
+        "ordinaryLatencyMs": 1252.5,
+        "asrMs": 456.6,
+        "commitToJudgeSentMs": 10.6
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-12",
+      "class": "smallTalk",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3780,
+      "takeMs": 4380,
+      "trimmedMs": 600,
+      "fragments": 1,
+      "t": {
+        "streamStart": 60086.9107,
+        "speechEnd": 64218.2823,
+        "commit": 64248.3717,
+        "itemAdded": 64248.5437,
+        "judgeSent": 64268.0935,
+        "judgeFirstDelta": 64762.4429,
+        "judgeDone": 64786.3005,
+        "replySent": 64786.5403,
+        "firstReplyAudio": 65490.0168,
+        "transcriptionDone": 64626.3202
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 24,
+        "input_tokens": 0,
+        "output_tokens": 24,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 24,
+          "audio_tokens": 0,
+          "reasoning_tokens": 19
+        }
+      },
+      "outputTokens": 24,
+      "reasoningTokens": 19,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 537.9,
+        "ordinaryLatencyMs": 1271.7,
+        "asrMs": 377.9,
+        "commitToJudgeSentMs": 19.7
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-quiet-5",
+      "class": "quiet",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4020,
+      "takeMs": 4020,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 65548.6552,
+        "speechEnd": 69913.9788,
+        "commit": 69943.5195,
+        "itemAdded": 69943.9714,
+        "judgeSent": 69964.2359,
+        "judgeFirstDelta": 70516.6104,
+        "judgeDone": 70517.5213,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 70285.5323
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 30,
+        "input_tokens": 0,
+        "output_tokens": 30,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 30,
+          "audio_tokens": 0,
+          "reasoning_tokens": 25
+        }
+      },
+      "outputTokens": 30,
+      "reasoningTokens": 25,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 574,
+        "ordinaryLatencyMs": null,
+        "asrMs": 342,
+        "commitToJudgeSentMs": 20.7
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-company-2",
+      "class": "company",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4140,
+      "takeMs": 4140,
+      "trimmedMs": 0,
+      "fragments": 3,
+      "t": {
+        "streamStart": 70518.0447,
+        "speechEnd": 74999.3967,
+        "commit": 75025.2123,
+        "itemAdded": 75026.4388,
+        "judgeSent": 75050.0225,
+        "judgeFirstDelta": 75814.7604,
+        "judgeDone": 75854.7005,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 75444.0592
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 61,
+        "input_tokens": 0,
+        "output_tokens": 61,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 61,
+          "audio_tokens": 0,
+          "reasoning_tokens": 56
+        }
+      },
+      "outputTokens": 61,
+      "reasoningTokens": 56,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 829.5,
+        "ordinaryLatencyMs": null,
+        "asrMs": 418.8,
+        "commitToJudgeSentMs": 24.8
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-06",
+      "class": "smallTalk",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2360,
+      "takeMs": 3600,
+      "trimmedMs": 1240,
+      "fragments": 1,
+      "t": {
+        "streamStart": 75855.225,
+        "speechEnd": 78570.7993,
+        "commit": 78598.4388,
+        "itemAdded": 78598.8187,
+        "judgeSent": 78620.3791,
+        "judgeFirstDelta": 79184.675,
+        "judgeDone": 79229.1812,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 78985.8756
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 25,
+        "input_tokens": 0,
+        "output_tokens": 25,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 25,
+          "audio_tokens": 0,
+          "reasoning_tokens": 20
+        }
+      },
+      "outputTokens": 25,
+      "reasoningTokens": 20,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 630.7,
+        "ordinaryLatencyMs": null,
+        "asrMs": 387.4,
+        "commitToJudgeSentMs": 21.9
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-quiet-4",
+      "class": "quiet",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 5100,
+      "takeMs": 5100,
+      "trimmedMs": 0,
+      "fragments": 3,
+      "t": {
+        "streamStart": 79229.7514,
+        "speechEnd": 84656.3045,
+        "commit": 84683.6255,
+        "itemAdded": 84684.2398,
+        "judgeSent": 84705.7033,
+        "judgeFirstDelta": 85383.9073,
+        "judgeDone": 85406.9448,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 85075.7559
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 52,
+        "input_tokens": 0,
+        "output_tokens": 52,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 52,
+          "audio_tokens": 0,
+          "reasoning_tokens": 47
+        }
+      },
+      "outputTokens": 52,
+      "reasoningTokens": 47,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 723.3,
+        "ordinaryLatencyMs": null,
+        "asrMs": 392.1,
+        "commitToJudgeSentMs": 22.1
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-forget-2",
+      "class": "forget",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3600,
+      "takeMs": 3600,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 85407.4693,
+        "speechEnd": 87676.3729,
+        "commit": 87709.618,
+        "itemAdded": 87709.7565,
+        "judgeSent": 88996.868,
+        "judgeFirstDelta": 89605.8657,
+        "judgeDone": 89632.4554,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 88156.4419
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 36,
+        "input_tokens": 0,
+        "output_tokens": 36,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 36,
+          "audio_tokens": 0,
+          "reasoning_tokens": 31
+        }
+      },
+      "outputTokens": 36,
+      "reasoningTokens": 31,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1922.8,
+        "ordinaryLatencyMs": null,
+        "asrMs": 446.8,
+        "commitToJudgeSentMs": 1287.3
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-13",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3580,
+      "takeMs": 4800,
+      "trimmedMs": 1220,
+      "fragments": 1,
+      "t": {
+        "streamStart": 89632.9498,
+        "speechEnd": 93580.372,
+        "commit": 93612.2913,
+        "itemAdded": 93613.7874,
+        "judgeSent": 93613.9658,
+        "judgeFirstDelta": 94062.7633,
+        "judgeDone": 94085.5909,
+        "replySent": 94086.3776,
+        "firstReplyAudio": 94978.5669,
+        "transcriptionDone": 94302.6216
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 24,
+        "input_tokens": 0,
+        "output_tokens": 24,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 24,
+          "audio_tokens": 0,
+          "reasoning_tokens": 19
+        }
+      },
+      "outputTokens": 24,
+      "reasoningTokens": 19,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 473.3,
+        "ordinaryLatencyMs": 1398.2,
+        "asrMs": 690.3,
+        "commitToJudgeSentMs": 1.7
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-company-4",
+      "class": "company",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4240,
+      "takeMs": 4260,
+      "trimmedMs": 20,
+      "fragments": 2,
+      "t": {
+        "streamStart": 95034.9872,
+        "speechEnd": 99578.471,
+        "commit": 99607.2297,
+        "itemAdded": 99607.4456,
+        "judgeSent": 99629.0642,
+        "judgeFirstDelta": 100160.2764,
+        "judgeDone": 100187.5757,
+        "replySent": 100187.8052,
+        "firstReplyAudio": 100918.8173,
+        "transcriptionDone": 100005.4843
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 26,
+        "input_tokens": 0,
+        "output_tokens": 26,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 26,
+          "audio_tokens": 0,
+          "reasoning_tokens": 21
+        }
+      },
+      "outputTokens": 26,
+      "reasoningTokens": 21,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 580.3,
+        "ordinaryLatencyMs": 1340.3,
+        "asrMs": 398.3,
+        "commitToJudgeSentMs": 21.8
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-21",
+      "class": "question",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3580,
+      "takeMs": 4860,
+      "trimmedMs": 1280,
+      "fragments": 1,
+      "t": {
+        "streamStart": 100983.6483,
+        "speechEnd": 104911.1092,
+        "commit": 104942.049,
+        "itemAdded": 104942.3016,
+        "judgeSent": 104943.1094,
+        "judgeFirstDelta": 105461.2178,
+        "judgeDone": 105483.3371,
+        "replySent": 105483.5987,
+        "firstReplyAudio": 106132.9576,
+        "transcriptionDone": 105535.063
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 18,
+        "input_tokens": 0,
+        "output_tokens": 18,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 18,
+          "audio_tokens": 0,
+          "reasoning_tokens": 13
+        }
+      },
+      "outputTokens": 18,
+      "reasoningTokens": 13,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 541.3,
+        "ordinaryLatencyMs": 1221.8,
+        "asrMs": 593,
+        "commitToJudgeSentMs": 1.1
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-29",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3280,
+      "takeMs": 4500,
+      "trimmedMs": 1220,
+      "fragments": 1,
+      "t": {
+        "streamStart": 106188.3558,
+        "speechEnd": 109829.4429,
+        "commit": 109860.4444,
+        "itemAdded": 109860.574,
+        "judgeSent": 109879.2905,
+        "judgeFirstDelta": 110418.3322,
+        "judgeDone": 110439.9028,
+        "replySent": 110440.1761,
+        "firstReplyAudio": 111276.4264,
+        "transcriptionDone": 110338.4806
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 24,
+        "input_tokens": 0,
+        "output_tokens": 24,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 24,
+          "audio_tokens": 0,
+          "reasoning_tokens": 19
+        }
+      },
+      "outputTokens": 24,
+      "reasoningTokens": 19,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 579.5,
+        "ordinaryLatencyMs": 1447,
+        "asrMs": 478,
+        "commitToJudgeSentMs": 18.8
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-30",
+      "class": "fact",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3040,
+      "takeMs": 3540,
+      "trimmedMs": 500,
+      "fragments": 2,
+      "t": {
+        "streamStart": 111330.7442,
+        "speechEnd": 114733.0846,
+        "commit": 114744.5798,
+        "itemAdded": 114744.7594,
+        "judgeSent": 114766.3298,
+        "judgeFirstDelta": 115226.418,
+        "judgeDone": 115252.7663,
+        "replySent": 115253.0014,
+        "firstReplyAudio": 116089.3864,
+        "transcriptionDone": 115123.0543
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 508.2,
+        "ordinaryLatencyMs": 1356.3,
+        "asrMs": 378.5,
+        "commitToJudgeSentMs": 21.8
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-crisis-3",
+      "class": "crisis",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3000,
+      "takeMs": 4200,
+      "trimmedMs": 1200,
+      "fragments": 1,
+      "t": {
+        "streamStart": 116145.9897,
+        "speechEnd": 119446.743,
+        "commit": 119473.1988,
+        "itemAdded": 119473.3589,
+        "judgeSent": 119488.5821,
+        "judgeFirstDelta": 119920.8478,
+        "judgeDone": 119944.6088,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 119978.2141
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 27,
+        "input_tokens": 0,
+        "output_tokens": 27,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 27,
+          "audio_tokens": 0,
+          "reasoning_tokens": 22
+        }
+      },
+      "outputTokens": 27,
+      "reasoningTokens": 22,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 471.4,
+        "ordinaryLatencyMs": null,
+        "asrMs": 505,
+        "commitToJudgeSentMs": 15.4
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-hardrule-4",
+      "class": "hardRule",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4620,
+      "takeMs": 4620,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 119978.662,
+        "speechEnd": 124320.086,
+        "commit": 124348.8218,
+        "itemAdded": 124350.5251,
+        "judgeSent": 124579.7926,
+        "judgeFirstDelta": 125015.2377,
+        "judgeDone": 125049.5352,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 124752.1563
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 700.7,
+        "ordinaryLatencyMs": null,
+        "asrMs": 403.3,
+        "commitToJudgeSentMs": 231
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-26",
+      "class": "fact",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2700,
+      "takeMs": 3840,
+      "trimmedMs": 1140,
+      "fragments": 1,
+      "t": {
+        "streamStart": 125049.9909,
+        "speechEnd": 128122.629,
+        "commit": 128125.5069,
+        "itemAdded": 128125.67,
+        "judgeSent": 128139.3991,
+        "judgeFirstDelta": 128637.1807,
+        "judgeDone": 128661.8383,
+        "replySent": 128662.0619,
+        "firstReplyAudio": 129341.3289,
+        "transcriptionDone": 128558.9288
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 536.3,
+        "ordinaryLatencyMs": 1218.7,
+        "asrMs": 433.4,
+        "commitToJudgeSentMs": 13.9
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-crisis-2",
+      "class": "crisis",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3440,
+      "takeMs": 4620,
+      "trimmedMs": 1180,
+      "fragments": 1,
+      "t": {
+        "streamStart": 129401.9864,
+        "speechEnd": 133150.8973,
+        "commit": 133179.8964,
+        "itemAdded": 133180.0229,
+        "judgeSent": 133184.353,
+        "judgeFirstDelta": 133629.5856,
+        "judgeDone": 133654.5147,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 133677.1244
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 24,
+        "input_tokens": 0,
+        "output_tokens": 24,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 24,
+          "audio_tokens": 0,
+          "reasoning_tokens": 19
+        }
+      },
+      "outputTokens": 24,
+      "reasoningTokens": 19,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 474.6,
+        "ordinaryLatencyMs": null,
+        "asrMs": 497.2,
+        "commitToJudgeSentMs": 4.5
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-correction-5",
+      "class": "correction",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 6120,
+      "takeMs": 6120,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 133677.7258,
+        "speechEnd": 140123.5088,
+        "commit": 140134.9802,
+        "itemAdded": 140136.668,
+        "judgeSent": 140136.8133,
+        "judgeFirstDelta": 140755.8628,
+        "judgeDone": 140779.8962,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 140479.7105
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 38,
+        "input_tokens": 0,
+        "output_tokens": 38,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 38,
+          "audio_tokens": 0,
+          "reasoning_tokens": 33
+        }
+      },
+      "outputTokens": 38,
+      "reasoningTokens": 33,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 644.9,
+        "ordinaryLatencyMs": null,
+        "asrMs": 344.7,
+        "commitToJudgeSentMs": 1.8
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-04",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2080,
+      "takeMs": 3240,
+      "trimmedMs": 1160,
+      "fragments": 1,
+      "t": {
+        "streamStart": 140780.515,
+        "speechEnd": 143191.1807,
+        "commit": 143219.0313,
+        "itemAdded": 143219.1766,
+        "judgeSent": 143226.4155,
+        "judgeFirstDelta": 143728.399,
+        "judgeDone": 143758.7467,
+        "replySent": 143759.054,
+        "firstReplyAudio": 144570.7249,
+        "transcriptionDone": 143640.2804
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 27,
+        "input_tokens": 0,
+        "output_tokens": 27,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 27,
+          "audio_tokens": 0,
+          "reasoning_tokens": 22
+        }
+      },
+      "outputTokens": 27,
+      "reasoningTokens": 22,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 539.7,
+        "ordinaryLatencyMs": 1379.5,
+        "asrMs": 421.2,
+        "commitToJudgeSentMs": 7.4
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-15",
+      "class": "question",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2580,
+      "takeMs": 3600,
+      "trimmedMs": 1020,
+      "fragments": 1,
+      "t": {
+        "streamStart": 144644.9839,
+        "speechEnd": 147595.8933,
+        "commit": 147623.2639,
+        "itemAdded": 147623.3915,
+        "judgeSent": 147624.1539,
+        "judgeFirstDelta": 148034.9332,
+        "judgeDone": 148065.0012,
+        "replySent": 148065.281,
+        "firstReplyAudio": 148799.0357,
+        "transcriptionDone": 147959.9171
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 18,
+        "input_tokens": 0,
+        "output_tokens": 18,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 18,
+          "audio_tokens": 0,
+          "reasoning_tokens": 13
+        }
+      },
+      "outputTokens": 18,
+      "reasoningTokens": 13,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 441.7,
+        "ordinaryLatencyMs": 1203.1,
+        "asrMs": 336.7,
+        "commitToJudgeSentMs": 0.9
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-22",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 4460,
+      "takeMs": 5520,
+      "trimmedMs": 1060,
+      "fragments": 2,
+      "t": {
+        "streamStart": 149658.5287,
+        "speechEnd": 154481.6732,
+        "commit": 154512.9974,
+        "itemAdded": 154514.0424,
+        "judgeSent": 154523.3582,
+        "judgeFirstDelta": 155040.4945,
+        "judgeDone": 155070.5841,
+        "replySent": 155070.815,
+        "firstReplyAudio": 155806.1568,
+        "transcriptionDone": 154919.5794
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 21,
+        "input_tokens": 0,
+        "output_tokens": 21,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 21,
+          "audio_tokens": 0,
+          "reasoning_tokens": 16
+        }
+      },
+      "outputTokens": 21,
+      "reasoningTokens": 16,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 557.6,
+        "ordinaryLatencyMs": 1324.5,
+        "asrMs": 406.6,
+        "commitToJudgeSentMs": 10.4
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-forget-3",
+      "class": "forget",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 5580,
+      "takeMs": 5580,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 155874.5553,
+        "speechEnd": 160255.7365,
+        "commit": 160286.8658,
+        "itemAdded": 160287.0045,
+        "judgeSent": 161435.0532,
+        "judgeFirstDelta": 162020.3879,
+        "judgeDone": 162050.4064,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 160773.0827
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1763.5,
+        "ordinaryLatencyMs": null,
+        "asrMs": 486.2,
+        "commitToJudgeSentMs": 1148.2
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-24",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 4860,
+      "takeMs": 5700,
+      "trimmedMs": 840,
+      "fragments": 2,
+      "t": {
+        "streamStart": 162051.3173,
+        "speechEnd": 167259.8949,
+        "commit": 167289.3429,
+        "itemAdded": 167289.583,
+        "judgeSent": 167300.7985,
+        "judgeFirstDelta": 167831.8328,
+        "judgeDone": 167862.1047,
+        "replySent": 167862.485,
+        "firstReplyAudio": 168664.0772,
+        "transcriptionDone": 167923.8767
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 572.8,
+        "ordinaryLatencyMs": 1404.2,
+        "asrMs": 634.5,
+        "commitToJudgeSentMs": 11.5
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-correction-4",
+      "class": "correction",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 4500,
+      "takeMs": 4500,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 168725.2698,
+        "speechEnd": 172598.3769,
+        "commit": 172629.949,
+        "itemAdded": 172630.8753,
+        "judgeSent": 173216.329,
+        "judgeFirstDelta": 173963.9132,
+        "judgeDone": 174002.0897,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 173163.535
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 18,
+        "input_tokens": 0,
+        "output_tokens": 18,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 18,
+          "audio_tokens": 0,
+          "reasoning_tokens": 13
+        }
+      },
+      "outputTokens": 18,
+      "reasoningTokens": 13,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1372.1,
+        "ordinaryLatencyMs": null,
+        "asrMs": 533.6,
+        "commitToJudgeSentMs": 586.4
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-quiet-1",
+      "class": "quiet",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3660,
+      "takeMs": 3660,
+      "trimmedMs": 0,
+      "fragments": 3,
+      "t": {
+        "streamStart": 174002.4822,
+        "speechEnd": 178014.1088,
+        "commit": 178045.2482,
+        "itemAdded": 178047.0422,
+        "judgeSent": 178063.7963,
+        "judgeFirstDelta": 178466.4657,
+        "judgeDone": 178596.3352,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 178488.9677
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 18,
+        "input_tokens": 0,
+        "output_tokens": 18,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 18,
+          "audio_tokens": 0,
+          "reasoning_tokens": 13
+        }
+      },
+      "outputTokens": 18,
+      "reasoningTokens": 13,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 551.1,
+        "ordinaryLatencyMs": null,
+        "asrMs": 443.7,
+        "commitToJudgeSentMs": 18.5
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-18",
+      "class": "askMemory",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2140,
+      "takeMs": 3780,
+      "trimmedMs": 1640,
+      "fragments": 1,
+      "t": {
+        "streamStart": 178596.9859,
+        "speechEnd": 181103.0499,
+        "commit": 181134.8449,
+        "itemAdded": 181135.1373,
+        "judgeSent": 181152.9436,
+        "judgeFirstDelta": 181658.0063,
+        "judgeDone": 181685.146,
+        "replySent": 181685.3567,
+        "firstReplyAudio": 182492.0485,
+        "transcriptionDone": 181762.0173
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 29,
+        "input_tokens": 0,
+        "output_tokens": 29,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 29,
+          "audio_tokens": 0,
+          "reasoning_tokens": 24
+        }
+      },
+      "outputTokens": 29,
+      "reasoningTokens": 24,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 550.3,
+        "ordinaryLatencyMs": 1389,
+        "asrMs": 627.2,
+        "commitToJudgeSentMs": 18.1
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-company-1",
+      "class": "company",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3000,
+      "takeMs": 3000,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 182568.4121,
+        "speechEnd": 184875.5587,
+        "commit": 184906.0359,
+        "itemAdded": 184907.2518,
+        "judgeSent": 185557.3635,
+        "judgeFirstDelta": 186079.2259,
+        "judgeDone": 186110.4292,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 185442.4127
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1204.4,
+        "ordinaryLatencyMs": null,
+        "asrMs": 536.4,
+        "commitToJudgeSentMs": 651.3
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-19",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 4740,
+      "takeMs": 5460,
+      "trimmedMs": 720,
+      "fragments": 3,
+      "t": {
+        "streamStart": 186111.2502,
+        "speechEnd": 191219.6004,
+        "commit": 191233.6017,
+        "itemAdded": 191235.5889,
+        "judgeSent": 191252.3495,
+        "judgeFirstDelta": 192035.0282,
+        "judgeDone": 192067.9316,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 191818.3302
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 38,
+        "input_tokens": 0,
+        "output_tokens": 38,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 38,
+          "audio_tokens": 0,
+          "reasoning_tokens": 33
+        }
+      },
+      "outputTokens": 38,
+      "reasoningTokens": 33,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 834.3,
+        "ordinaryLatencyMs": null,
+        "asrMs": 584.7,
+        "commitToJudgeSentMs": 18.7
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-05",
+      "class": "askMemory",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2280,
+      "takeMs": 3240,
+      "trimmedMs": 960,
+      "fragments": 1,
+      "t": {
+        "streamStart": 192068.2638,
+        "speechEnd": 194715.9083,
+        "commit": 194748.9833,
+        "itemAdded": 194751.5079,
+        "judgeSent": 194774.5254,
+        "judgeFirstDelta": 195663.2433,
+        "judgeDone": 195703.2009,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 195293.4185
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 61,
+        "input_tokens": 0,
+        "output_tokens": 61,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 61,
+          "audio_tokens": 0,
+          "reasoning_tokens": 56
+        }
+      },
+      "outputTokens": 61,
+      "reasoningTokens": 56,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 954.2,
+        "ordinaryLatencyMs": null,
+        "asrMs": 544.4,
+        "commitToJudgeSentMs": 25.5
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-16",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3840,
+      "takeMs": 4680,
+      "trimmedMs": 840,
+      "fragments": 1,
+      "t": {
+        "streamStart": 195703.9271,
+        "speechEnd": 199922.8193,
+        "commit": 200102.0907,
+        "itemAdded": 200102.2808,
+        "judgeSent": 200102.8702,
+        "judgeFirstDelta": 200863.1655,
+        "judgeDone": 200898.6412,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 200688.2952
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 38,
+        "input_tokens": 0,
+        "output_tokens": 38,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 38,
+          "audio_tokens": 0,
+          "reasoning_tokens": 33
+        }
+      },
+      "outputTokens": 38,
+      "reasoningTokens": 33,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 796.6,
+        "ordinaryLatencyMs": null,
+        "asrMs": 586.2,
+        "commitToJudgeSentMs": 0.8
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-11",
+      "class": "askMemory",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2460,
+      "takeMs": 3540,
+      "trimmedMs": 1080,
+      "fragments": 1,
+      "t": {
+        "streamStart": 200899.1025,
+        "speechEnd": 203701.9553,
+        "commit": 203734.9024,
+        "itemAdded": 203735.0841,
+        "judgeSent": 203748.8254,
+        "judgeFirstDelta": 204381.3176,
+        "judgeDone": 204430.2888,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 204267.2063
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 31,
+        "input_tokens": 0,
+        "output_tokens": 31,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 31,
+          "audio_tokens": 0,
+          "reasoning_tokens": 26
+        }
+      },
+      "outputTokens": 31,
+      "reasoningTokens": 26,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 695.4,
+        "ordinaryLatencyMs": null,
+        "asrMs": 532.3,
+        "commitToJudgeSentMs": 13.9
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-14",
+      "class": "fact",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3660,
+      "takeMs": 4440,
+      "trimmedMs": 780,
+      "fragments": 1,
+      "t": {
+        "streamStart": 204430.7554,
+        "speechEnd": 208455.6909,
+        "commit": 208491.4225,
+        "itemAdded": 208491.7941,
+        "judgeSent": 208514.1138,
+        "judgeFirstDelta": 209294.5564,
+        "judgeDone": 209322.2082,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 209183.1447
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 830.8,
+        "ordinaryLatencyMs": null,
+        "asrMs": 691.7,
+        "commitToJudgeSentMs": 22.7
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-25",
+      "class": "askMemory",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2280,
+      "takeMs": 3000,
+      "trimmedMs": 720,
+      "fragments": 2,
+      "t": {
+        "streamStart": 209322.5616,
+        "speechEnd": 211966.5468,
+        "commit": 211995.1017,
+        "itemAdded": 211998.2406,
+        "judgeSent": 212016.643,
+        "judgeFirstDelta": 212652.9978,
+        "judgeDone": 212701.1383,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 212889.4083
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 41,
+        "input_tokens": 0,
+        "output_tokens": 41,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 41,
+          "audio_tokens": 0,
+          "reasoning_tokens": 36
+        }
+      },
+      "outputTokens": 41,
+      "reasoningTokens": 36,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 706,
+        "ordinaryLatencyMs": null,
+        "asrMs": 894.3,
+        "commitToJudgeSentMs": 21.5
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-20",
+      "class": "fact",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3760,
+      "takeMs": 4320,
+      "trimmedMs": 560,
+      "fragments": 2,
+      "t": {
+        "streamStart": 212889.7604,
+        "speechEnd": 217010.4398,
+        "commit": 217040.9766,
+        "itemAdded": 217041.3574,
+        "judgeSent": 217060.4085,
+        "judgeFirstDelta": 217874.7838,
+        "judgeDone": 217913.0433,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 217476.8687
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 33,
+        "input_tokens": 0,
+        "output_tokens": 33,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 33,
+          "audio_tokens": 0,
+          "reasoning_tokens": 28
+        }
+      },
+      "outputTokens": 33,
+      "reasoningTokens": 28,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 872.1,
+        "ordinaryLatencyMs": null,
+        "asrMs": 435.9,
+        "commitToJudgeSentMs": 19.4
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-correction-2",
+      "class": "correction",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 5280,
+      "takeMs": 5280,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 217913.519,
+        "speechEnd": 223497.6896,
+        "commit": 223683.1714,
+        "itemAdded": 223684.1593,
+        "judgeSent": 223705.1498,
+        "judgeFirstDelta": 224521.6373,
+        "judgeDone": 224560.9932,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 224176.9815
+      },
+      "verdict": "U",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "U",
+      "judgeUsage": {
+        "total_tokens": 61,
+        "input_tokens": 0,
+        "output_tokens": 61,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 61,
+          "audio_tokens": 0,
+          "reasoning_tokens": 56
+        }
+      },
+      "outputTokens": 61,
+      "reasoningTokens": 56,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 877.8,
+        "ordinaryLatencyMs": null,
+        "asrMs": 493.8,
+        "commitToJudgeSentMs": 22
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-company-5",
+      "class": "company",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3720,
+      "takeMs": 3720,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 224561.4712,
+        "speechEnd": 227922.3502,
+        "commit": 227955.0989,
+        "itemAdded": 227955.3172,
+        "judgeSent": 228267.1373,
+        "judgeFirstDelta": 228908.163,
+        "judgeDone": 228939.137,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 228674.8186
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 27,
+        "input_tokens": 0,
+        "output_tokens": 27,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 27,
+          "audio_tokens": 0,
+          "reasoning_tokens": 22
+        }
+      },
+      "outputTokens": 27,
+      "reasoningTokens": 22,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 984,
+        "ordinaryLatencyMs": null,
+        "asrMs": 719.7,
+        "commitToJudgeSentMs": 312
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-hardrule-5",
+      "class": "hardRule",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 4960,
+      "takeMs": 4980,
+      "trimmedMs": 20,
+      "fragments": 3,
+      "t": {
+        "streamStart": 228939.5145,
+        "speechEnd": 234221.9593,
+        "commit": 234235.0872,
+        "itemAdded": 234237.6067,
+        "judgeSent": 234254.5785,
+        "judgeFirstDelta": 234873.7568,
+        "judgeDone": 234905.9742,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 235152.7937
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 31,
+        "input_tokens": 0,
+        "output_tokens": 31,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 31,
+          "audio_tokens": 0,
+          "reasoning_tokens": 26
+        }
+      },
+      "outputTokens": 31,
+      "reasoningTokens": 26,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 670.9,
+        "ordinaryLatencyMs": null,
+        "asrMs": 917.7,
+        "commitToJudgeSentMs": 19.5
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-07",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2400,
+      "takeMs": 3600,
+      "trimmedMs": 1200,
+      "fragments": 1,
+      "t": {
+        "streamStart": 235153.161,
+        "speechEnd": 237918.6614,
+        "commit": 237948.0051,
+        "itemAdded": 237948.5265,
+        "judgeSent": 237960.2753,
+        "judgeFirstDelta": 238491.7176,
+        "judgeDone": 238521.2562,
+        "replySent": 238521.4985,
+        "firstReplyAudio": 239249.5151,
+        "transcriptionDone": 241852.6645
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 24,
+        "input_tokens": 0,
+        "output_tokens": 24,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 24,
+          "audio_tokens": 0,
+          "reasoning_tokens": 19
+        }
+      },
+      "outputTokens": 24,
+      "reasoningTokens": 19,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 573.3,
+        "ordinaryLatencyMs": 1330.9,
+        "asrMs": 3904.7,
+        "commitToJudgeSentMs": 12.3
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-company-3",
+      "class": "company",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 4600,
+      "takeMs": 4620,
+      "trimmedMs": 20,
+      "fragments": 2,
+      "t": {
+        "streamStart": 241853.6725,
+        "speechEnd": 246743.0254,
+        "commit": 246776.2872,
+        "itemAdded": 246776.8805,
+        "judgeSent": 246799.5763,
+        "judgeFirstDelta": 247341.4318,
+        "judgeDone": 247373.7141,
+        "replySent": 247373.9915,
+        "firstReplyAudio": 248018.1674,
+        "transcriptionDone": 247494.568
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 597.4,
+        "ordinaryLatencyMs": 1275.1,
+        "asrMs": 718.3,
+        "commitToJudgeSentMs": 23.3
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-23",
+      "class": "smallTalk",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2940,
+      "takeMs": 3720,
+      "trimmedMs": 780,
+      "fragments": 2,
+      "t": {
+        "streamStart": 248086.422,
+        "speechEnd": 251397.6222,
+        "commit": 251427.6531,
+        "itemAdded": 251427.7579,
+        "judgeSent": 251446.3724,
+        "judgeFirstDelta": 251989.1563,
+        "judgeDone": 252019.5565,
+        "replySent": 252019.8655,
+        "firstReplyAudio": 252852.8599,
+        "transcriptionDone": 252156.4056
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 28,
+        "input_tokens": 0,
+        "output_tokens": 28,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 28,
+          "audio_tokens": 0,
+          "reasoning_tokens": 23
+        }
+      },
+      "outputTokens": 28,
+      "reasoningTokens": 23,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 591.9,
+        "ordinaryLatencyMs": 1455.2,
+        "asrMs": 728.8,
+        "commitToJudgeSentMs": 18.7
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-08",
+      "class": "fact",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3620,
+      "takeMs": 4320,
+      "trimmedMs": 700,
+      "fragments": 1,
+      "t": {
+        "streamStart": 252923.4798,
+        "speechEnd": 256875.6189,
+        "commit": 256909.6752,
+        "itemAdded": 256909.9549,
+        "judgeSent": 256924.8289,
+        "judgeFirstDelta": 257620.6273,
+        "judgeDone": 257652.7956,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 259444.6088
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 743.1,
+        "ordinaryLatencyMs": null,
+        "asrMs": 2534.9,
+        "commitToJudgeSentMs": 15.2
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-crisis-4",
+      "class": "crisis",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 900,
+      "takeMs": 2400,
+      "trimmedMs": 1500,
+      "fragments": 1,
+      "t": {
+        "streamStart": 259445.2438,
+        "speechEnd": 260726.4374,
+        "commit": 260757.2002,
+        "itemAdded": 260757.3407,
+        "judgeSent": 260775.8294,
+        "judgeFirstDelta": 261330.924,
+        "judgeDone": 261331.5705,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 261335.0883
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 28,
+        "input_tokens": 0,
+        "output_tokens": 28,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 28,
+          "audio_tokens": 0,
+          "reasoning_tokens": 23
+        }
+      },
+      "outputTokens": 28,
+      "reasoningTokens": 23,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 574.4,
+        "ordinaryLatencyMs": null,
+        "asrMs": 577.9,
+        "commitToJudgeSentMs": 18.6
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-quiet-3",
+      "class": "quiet",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 5040,
+      "takeMs": 5040,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 261335.471,
+        "speechEnd": 266675.223,
+        "commit": 266707.6608,
+        "itemAdded": 266707.9719,
+        "judgeSent": 266716.4261,
+        "judgeFirstDelta": 267435.3413,
+        "judgeDone": 267438.3267,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 267146.5689
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 34,
+        "input_tokens": 0,
+        "output_tokens": 34,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 34,
+          "audio_tokens": 0,
+          "reasoning_tokens": 29
+        }
+      },
+      "outputTokens": 34,
+      "reasoningTokens": 29,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 730.7,
+        "ordinaryLatencyMs": null,
+        "asrMs": 438.9,
+        "commitToJudgeSentMs": 8.8
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-crisis-1",
+      "class": "crisis",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2680,
+      "takeMs": 4320,
+      "trimmedMs": 1640,
+      "fragments": 1,
+      "t": {
+        "streamStart": 267438.8346,
+        "speechEnd": 270479.9551,
+        "commit": 270511.3596,
+        "itemAdded": 270511.5539,
+        "judgeSent": 270530.5701,
+        "judgeFirstDelta": 271192.9647,
+        "judgeDone": 271250.1549,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 270989.1846
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 28,
+        "input_tokens": 0,
+        "output_tokens": 28,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 28,
+          "audio_tokens": 0,
+          "reasoning_tokens": 23
+        }
+      },
+      "outputTokens": 28,
+      "reasoningTokens": 23,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 738.8,
+        "ordinaryLatencyMs": null,
+        "asrMs": 477.8,
+        "commitToJudgeSentMs": 19.2
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-hardrule-3",
+      "class": "hardRule",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 6180,
+      "takeMs": 6180,
+      "trimmedMs": 0,
+      "fragments": 3,
+      "t": {
+        "streamStart": 271250.96,
+        "speechEnd": 277737.4145,
+        "commit": 277767.8119,
+        "itemAdded": 277767.9434,
+        "judgeSent": 277772.0647,
+        "judgeFirstDelta": 278968.7931,
+        "judgeDone": 279005.6914,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 278415.962
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 61,
+        "input_tokens": 0,
+        "output_tokens": 61,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 61,
+          "audio_tokens": 0,
+          "reasoning_tokens": 56
+        }
+      },
+      "outputTokens": 61,
+      "reasoningTokens": 56,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1237.9,
+        "ordinaryLatencyMs": null,
+        "asrMs": 648.2,
+        "commitToJudgeSentMs": 4.3
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-crisis-5",
+      "class": "crisis",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3640,
+      "takeMs": 4500,
+      "trimmedMs": 860,
+      "fragments": 1,
+      "t": {
+        "streamStart": 279006.0139,
+        "speechEnd": 282973.2728,
+        "commit": 283003.1855,
+        "itemAdded": 283003.4363,
+        "judgeSent": 283015.119,
+        "judgeFirstDelta": 283715.679,
+        "judgeDone": 283716.6682,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 283488.1864
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 27,
+        "input_tokens": 0,
+        "output_tokens": 27,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 27,
+          "audio_tokens": 0,
+          "reasoning_tokens": 22
+        }
+      },
+      "outputTokens": 27,
+      "reasoningTokens": 22,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 713.5,
+        "ordinaryLatencyMs": null,
+        "asrMs": 485,
+        "commitToJudgeSentMs": 11.9
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-10",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2200,
+      "takeMs": 3180,
+      "trimmedMs": 980,
+      "fragments": 1,
+      "t": {
+        "streamStart": 283717.453,
+        "speechEnd": 286288.8186,
+        "commit": 286318.7191,
+        "itemAdded": 286318.8506,
+        "judgeSent": 286337.2442,
+        "judgeFirstDelta": 287018.758,
+        "judgeDone": 287057.8956,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 286728.1992
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 39,
+        "input_tokens": 0,
+        "output_tokens": 39,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 39,
+          "audio_tokens": 0,
+          "reasoning_tokens": 34
+        }
+      },
+      "outputTokens": 39,
+      "reasoningTokens": 34,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 739.2,
+        "ordinaryLatencyMs": null,
+        "asrMs": 409.5,
+        "commitToJudgeSentMs": 18.5
+      },
+      "errors": []
+    },
+    {
+      "lineId": "o-27",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3640,
+      "takeMs": 3900,
+      "trimmedMs": 260,
+      "fragments": 1,
+      "t": {
+        "streamStart": 287058.3666,
+        "speechEnd": 291070.8284,
+        "commit": 291104.5595,
+        "itemAdded": 291104.6936,
+        "judgeSent": 291119.3307,
+        "judgeFirstDelta": 291656.4951,
+        "judgeDone": 291684.7894,
+        "replySent": 291685.0608,
+        "firstReplyAudio": 292600.1159,
+        "transcriptionDone": 291694.6183
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 580.2,
+        "ordinaryLatencyMs": 1529.3,
+        "asrMs": 590.1,
+        "commitToJudgeSentMs": 14.8
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-forget-4",
+      "class": "forget",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 6780,
+      "takeMs": 6780,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 292666.1542,
+        "speechEnd": 299778.3662,
+        "commit": 299808.4081,
+        "itemAdded": 299813.0112,
+        "judgeSent": 299836.9665,
+        "judgeFirstDelta": 300738.1522,
+        "judgeDone": 300792.4315,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 300536.1812
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 39,
+        "input_tokens": 0,
+        "output_tokens": 39,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 39,
+          "audio_tokens": 0,
+          "reasoning_tokens": 34
+        }
+      },
+      "outputTokens": 39,
+      "reasoningTokens": 34,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 984,
+        "ordinaryLatencyMs": null,
+        "asrMs": 727.8,
+        "commitToJudgeSentMs": 28.6
+      },
+      "errors": []
+    },
+    {
+      "lineId": "c-forget-1",
+      "class": "forget",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 5820,
+      "takeMs": 5820,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 300792.8829,
+        "speechEnd": 306959.5496,
+        "commit": 306991.4108,
+        "itemAdded": 306992.2518,
+        "judgeSent": 306993.2359,
+        "judgeFirstDelta": 307634.0253,
+        "judgeDone": 307667.522,
+        "replySent": null,
+        "firstReplyAudio": null,
+        "transcriptionDone": 307468.3217
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 40,
+        "input_tokens": 0,
+        "output_tokens": 40,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 40,
+          "audio_tokens": 0,
+          "reasoning_tokens": 35
+        }
+      },
+      "outputTokens": 40,
+      "reasoningTokens": 35,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "transcript": null,
+      "derived": {
+        "judgeMs": 676.1,
+        "ordinaryLatencyMs": null,
+        "asrMs": 476.9,
+        "commitToJudgeSentMs": 1.8
+      },
+      "errors": []
+    }
+  ]
+}

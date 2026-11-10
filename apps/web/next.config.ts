@@ -24,15 +24,18 @@ export const nextConfig: NextConfig = {
 };
 
 export const BASE_PAGE_EXTENSIONS = ["tsx", "ts", "jsx", "js"];
+/** Development-only route files: `page.dev.tsx` pages and `route.dev.ts` handlers. */
+export const DEV_PAGE_EXTENSIONS = ["dev.tsx", "dev.ts"];
 
 /**
  * The config is a function of the phase (lab-ui-foundation R20.3). Only the development server adds the
- * `dev.tsx` page extension, so `app/specimens/page.dev.tsx` is a route under `next dev` and no route at all
- * in `next build` and `next start`, whatever the shell's NODE_ENV.
+ * `dev.tsx` and `dev.ts` page extensions, so `app/specimens/page.dev.tsx`, `app/recorder/page.dev.tsx` and
+ * `app/api/dev/takes/route.dev.ts` are routes under `next dev` and no route at all in `next build` and
+ * `next start`, whatever the shell's NODE_ENV.
  */
 export default function config(phase: string): NextConfig {
   return {
     ...nextConfig,
-    pageExtensions: phase === PHASE_DEVELOPMENT_SERVER ? [...BASE_PAGE_EXTENSIONS, "dev.tsx"] : BASE_PAGE_EXTENSIONS,
+    pageExtensions: phase === PHASE_DEVELOPMENT_SERVER ? [...BASE_PAGE_EXTENSIONS, ...DEV_PAGE_EXTENSIONS] : BASE_PAGE_EXTENSIONS,
   };
 }

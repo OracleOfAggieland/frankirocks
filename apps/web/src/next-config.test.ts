@@ -12,10 +12,11 @@ import config, { BASE_PAGE_EXTENSIONS, nextConfig } from "../next.config";
 const PHASES = [PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_BUILD, PHASE_PRODUCTION_SERVER, PHASE_EXPORT, PHASE_TEST, PHASE_INFO];
 
 describe("next.config phase (R20.3)", () => {
-  it("adds dev.tsx only for the development server", () => {
+  it("adds dev.tsx and dev.ts only for the development server", () => {
     for (const phase of PHASES) {
       const ext = config(phase).pageExtensions ?? [];
       expect(ext.includes("dev.tsx"), phase).toBe(phase === PHASE_DEVELOPMENT_SERVER);
+      expect(ext.includes("dev.ts"), phase).toBe(phase === PHASE_DEVELOPMENT_SERVER);
       for (const base of BASE_PAGE_EXTENSIONS) expect(ext, phase).toContain(base);
     }
     expect(BASE_PAGE_EXTENSIONS).toEqual(["tsx", "ts", "jsx", "js"]);

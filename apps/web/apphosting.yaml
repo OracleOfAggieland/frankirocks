@@ -21,6 +21,9 @@ env:
     value: text-embedding-3-small
   - variable: FRANKI_TRANSCRIBE_MODEL
     value: gpt-4o-mini-transcribe
+  # Text-to-speech for the judge spike's synthetic probe audio (brief 006). Not used by the app at runtime.
+  - variable: FRANKI_TTS_MODEL
+    value: gpt-4o-mini-tts
 
   # Not a secret. The Admin SDK is initialized with this project ID explicitly.
   - variable: FRANKI_FIREBASE_PROJECT_ID

@@ -1,8 +1,9 @@
 {
-  "description": "Clock_Port implementation files: the only source files allowed to read wall-clock time (R2.1). Shared by the Guard_Hook and the static check.",
+  "description": "Clock_Port implementation files: the only source files allowed to read wall-clock time (R2.1). Shared by the Guard_Hook and the static check. scripts/judge-spike/clock.ts is the judge spike harness's clock (brief 006), a tool outside the app.",
   "files": [
     "packages/server/src/clock/live-clock.ts",
     "apps/web/src/client/clock.ts",
-    "functions/src/clock.ts"
+    "functions/src/clock.ts",
+    "scripts/judge-spike/clock.ts"
   ]
 }

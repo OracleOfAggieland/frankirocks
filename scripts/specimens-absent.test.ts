@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { REPO_ROOT } from "./clock-check.mjs";
-import { SENTINEL, checkBuild } from "./specimens-absent.mjs";
+import { RECORDER_SENTINEL, SENTINEL, checkBuild } from "./specimens-absent.mjs";
 
 let root: string | null = null;
 afterEach(() => {
@@ -54,6 +54,34 @@ describe("specimens-absent", () => {
     const problems = checkBuild(next);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatch(/static\/chunks\/c\.js: Fixture sentinel$/);
+  });
+
+  it("fails the recorder page and the /api/dev/takes route", () => {
+    const next = fakeNext({
+      "app-path-routes-manifest.json": JSON.stringify({ ...CLEAN_ROUTES, "/recorder/page": "/recorder", "/api/dev/takes/route": "/api/dev/takes" }),
+      "routes-manifest.json": JSON.stringify({ staticRoutes: [{ page: "/api/dev/takes" }] }),
+    });
+    expect(checkBuild(next)).toEqual([
+      "app-path-routes-manifest.json: route /recorder/page",
+      "app-path-routes-manifest.json: route /api/dev/takes/route",
+      "routes-manifest.json: /api/dev/takes",
+    ]);
+  });
+
+  it("fails a file with the recorder sentinel", () => {
+    const problems = checkBuild(fakeNext({ "server/chunks/r.js": `x="${RECORDER_SENTINEL}"` }));
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/server\/chunks\/r\.js: Recorder sentinel$/);
+  });
+
+  it("passes routes that only resemble the dev names", () => {
+    const next = fakeNext({ "app-path-routes-manifest.json": JSON.stringify({ ...CLEAN_ROUTES, "/api/devices/route": "/api/devices", "/recorders-guide/page": "/x" }) });
+    expect(checkBuild(next)).toEqual([]);
+  });
+
+  it("the recorder exports the sentinel the check looks for", () => {
+    const source = readFileSync(join(REPO_ROOT, "apps/web/src/app/recorder/_recorder/Recorder.tsx"), "utf8");
+    expect(source).toContain(RECORDER_SENTINEL);
   });
 
   it("fails when there is no build output", () => {

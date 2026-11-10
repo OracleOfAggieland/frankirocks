@@ -111,6 +111,29 @@ describe("UI boundary rules on fake trees", () => {
     ).toEqual(["apps/web/src/app/secret/page.dev.tsx: .dev.tsx"]);
   });
 
+  it("allows the recorder page and the dev takes route, and fails any other .dev.ts file", () => {
+    expect(
+      tree({
+        "apps/web/src/app/recorder/page.dev.tsx": 'import { Recorder } from "./_recorder/Recorder";\n',
+        "apps/web/src/app/recorder/_recorder/Recorder.tsx": "export const Recorder = 1;\n",
+        "apps/web/src/app/api/dev/takes/route.dev.ts": "export const GET = 1;\n",
+        "apps/web/src/app/api/other/route.dev.ts": "export const GET = 1;\n",
+      }),
+    ).toEqual(["apps/web/src/app/api/other/route.dev.ts: .dev.ts"]);
+  });
+
+  it("fails a recorder module reachable from the Main_Screen or imported from elsewhere", () => {
+    expect(
+      tree({
+        "apps/web/src/app/page.tsx": 'import { Recorder } from "./recorder/_recorder/Recorder";\n',
+        "apps/web/src/app/recorder/_recorder/Recorder.tsx": "export const Recorder = 1;\n",
+      }),
+    ).toEqual([
+      "apps/web/src/app/page.tsx: apps/web/src/app/recorder/_recorder/Recorder.tsx",
+      "apps/web/src/app/page.tsx: ./recorder/_recorder/Recorder",
+    ]);
+  });
+
   it("rule 3 passes pure imports and fails other imports and browser globals", () => {
     expect(
       tree({
