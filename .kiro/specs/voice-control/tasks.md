@@ -230,9 +230,10 @@ Machine properties 2, 4, 7 and 12 are expected red on the current machine. The o
   - Witness: the property file, 1,000 runs plus the exhaustive enum part. Expected green (task 8 is done).
   - Commit: `test(admission): property 8, the seam is total and closed`
 
-- [ ] 23. **[property]** P9 Priority is stable
+- [x] 23. **[property]** P9 Priority is stable
   - Requirements: R20.1.9; R10.2, R10.6, R10.7, R12.1
-  - Depends on: 13 · Estimate: 0.5 h · Actual:
+  - Depends on: 13 · Estimate: 0.5 h · Actual: 0.2 h
+  - Notes: Green on first run (1,000 runs). Draws the wave as well, and checks the crisis care reply with no live call so wave B's crisis-with-company row (which also answers the care reply) is covered without the swap flag.
   - Files: `packages/core/src/intents/priority-stable.property.test.ts` (new)
   - Witness: the property file, 1,000 runs. Expected green.
   - Commit: `test(intents): property 9, priority is stable`
