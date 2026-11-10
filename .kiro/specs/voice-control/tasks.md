@@ -200,9 +200,10 @@ Machine properties 2, 4, 7 and 12 are expected red on the current machine. The o
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 6, every wait ends`
 
-- [ ] 20. **[property]** P7 `fastO` needs a fresh ack
+- [x] 20. **[property]** P7 `fastO` needs a fresh ack
   - Requirements: R20.1.7; R4.1–R4.4, KV13
-  - Depends on: 12 · Estimate: 0.75 h · Actual:
+  - Depends on: 12 · Estimate: 0.75 h · Actual: 0.3 h
+  - Notes: Green vacuously: today's machine issues no `fastO`. Outstanding turns and the last turn answer are read from the trace, not from machine fields, so the property doesn't trust the machine's own bookkeeping. An issued `fastO` is one whose permitId first appears as the pending or active reply's Permit.
   - Files: `packages/core/src/voice/fast-o-fresh-ack.property.test.ts` (new)
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 7, fastO needs a fresh ack`
