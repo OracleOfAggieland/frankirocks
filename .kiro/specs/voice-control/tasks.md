@@ -192,9 +192,10 @@ Machine properties 2, 4, 7 and 12 are expected red on the current machine. The o
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 5, stale events are inert`
 
-- [ ] 19. **[property]** P6 Every wait ends
+- [x] 19. **[property]** P6 Every wait ends
   - Requirements: R20.1.6; R7.3, KV06
-  - Depends on: 12 · Estimate: 1 h · Actual:
+  - Depends on: 12 · Estimate: 1 h · Actual: 0.3 h
+  - Notes: **Red on the current machine, as expected.** Seed `-944006138`, path `8:1:1:0:0:…` (fast-check printout in the report). Shrunk counterexample: `[[commit (dt 300), itemAdded pick 0 (dt 40), transcript pick 0 (dt 0)]]`: the turn is posted `final` and the machine sits in HELD with no armed deadline, because today's `permit` timer is armed only when a `hold` answer arrives. A `/api/turn` that never answers leaves the call stuck. Fix in task 27: arm `permit` at post + `TURN_RESPONSE_LIMIT_MS` on every post. Expected next red: SPEAKING has no deadline (contracts §6 States "45scap"); task 28 adds the cap. Keep-alive timers (poll, refresh, stateRetry, stateRetryUi) are not fired by the property.
   - Files: `packages/core/src/voice/every-wait-ends.property.test.ts` (new)
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 6, every wait ends`
