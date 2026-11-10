@@ -428,9 +428,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
 
 ### Group A16
 
-- [ ] 44. Wave A checks and report
+- [x] 44. Wave A checks and report
   - Requirements: R23.1–R23.5, R24.1–R24.3
-  - Depends on: 1–43 · Estimate: 1.5 h · Actual:
+  - Depends on: 1–43 · Estimate: 1.5 h · Actual: 0.6 h
+  - Notes: `npm test` (161 files, 1,464 tests), `npm run lint`, `npm run typecheck` and `npm run build` exit 0 with the telemetry variables set. `npm run test:emulator` was not run: it fetches firebase-tools through `npx -y`, and this build makes no network call; CI hasn't run it either, since nothing was pushed. No command called OpenAI. The report also covers the questions up to Q92 (Q91 and Q92 came after the witness was written).
   - Files: `docs/briefs/011-report.md` (new)
   - Witness: `npm test`, `npm run lint`, `npm run typecheck`, `npm run build` exit 0 (with the telemetry variables set); `npm run test:emulator` runs in CI and its result is in the report; no command called OpenAI. The report has what was built and where, Q52–Q90 with the ones marked Owner, the requirement changes, every red property's seed, sequence and fix, what couldn't be checked (the two-response concurrency on the data channel, live latency, the live Decisions deadline share), the local Decisions timing note of R23.5, and the live-check steps of R24.2: an ordinary question (path `fastO`, its LatencyRow), "forget what I said about…" (the Fixed_Line), a false hold, an interruption mid-reply, and two fragments said with a pause, each with what the Debug_Panel should show and what design §"If two out-of-band responses can't run at once" would look like.
   - Commit: `docs: brief 011 report, wave A`
