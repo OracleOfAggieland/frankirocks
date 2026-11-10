@@ -1,4 +1,4 @@
-import type { CoreBundle, DebugItem, DebugPage, DebugSection, Evidence } from "@franki/core";
+import { type CoreBundle, type DebugItem, type DebugPage, type DebugSection, type Evidence, type LatencyRow, emptyTimes, finishRow } from "@franki/core";
 import { T0, sampleCoreDocs, sampleEvidence, sampleHead, sampleJob, sampleLedgerDecision, sampleMemory, sampleSlice, sampleTurn, testId } from "@franki/core/testing";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -32,12 +32,12 @@ function bundleWith(head: CoreBundle["head"]): CoreBundle {
   return head === null ? b : { ...b, state: "clean", bundleRev: 1, head, headHash: "a".repeat(64), compiledAt: T0, expiresAt: T0 };
 }
 
-const pageOf = (section: DebugSection, items: DebugItem[]): DebugPage => ({
+const pageOf = (section: DebugSection, items: DebugItem[], session: DebugPage["session"] = null): DebugPage => ({
   section,
   items,
   nextCursor: null,
   coverage: { state: "complete", from: null, to: null, missingRanges: [], generation: 0 },
-  session: null,
+  session,
 });
 
 interface Store {
@@ -47,6 +47,7 @@ interface Store {
   jobs: DebugItem[];
   ledger: DebugItem[];
   head: CoreBundle | null;
+  session?: DebugPage["session"];
 }
 
 const baseStore = (): Store => ({
@@ -82,7 +83,7 @@ function fakeDebugApi(store: Store) {
       if (failing !== null) return failing as ApiResult<T>;
       const section = options.query?.section as DebugSection;
       const items: DebugItem[] = section === "head" ? (store.head === null ? [] : [{ kind: "head", id: "bundle", record: store.head }]) : store[section];
-      return { ok: true, status: 200, body: pageOf(section, items) } as ApiResult<T>;
+      return { ok: true, status: 200, body: pageOf(section, items, section === "turns" ? (store.session ?? null) : null) } as ApiResult<T>;
     },
   };
   return { api, fail: (r: ApiResult<unknown>) => (failing = r) };
@@ -99,8 +100,8 @@ async function loaded(store = baseStore()) {
 }
 
 /** Static markup with React's text-boundary comments removed, so assertions read as the visible text. */
-const render = (state: DebugState, selected: string | null = null) =>
-  renderToStaticMarkup(<DebugPanel state={state} selectedMemoryId={selected} onSelectMemory={() => {}} onRefresh={() => {}} />).replaceAll("<!-- -->", "");
+const render = (state: DebugState, selected: string | null = null, latency: LatencyRow[] = []) =>
+  renderToStaticMarkup(<DebugPanel state={state} selectedMemoryId={selected} onSelectMemory={() => {}} onRefresh={() => {}} latency={latency} />).replaceAll("<!-- -->", "");
 
 describe("DebugPanel", () => {
   it("turns in seq order with 'none' marker", async () => {
@@ -226,5 +227,92 @@ describe("DebugPanel", () => {
     await Promise.all([a, b, c]);
     // Six sections per load, two loads.
     expect(calls).toBe(12);
+  });
+});
+
+// voice-control task 43: latency, audience and admission.
+describe("DebugPanel for the judge in the call (voice-control R13.4, R13.5, R18.2, R18.6, R18.7)", () => {
+  const row = (turnId: string, over: Partial<Parameters<typeof finishRow>[0]>): LatencyRow =>
+    finishRow({ ...emptyTimes(testId(turnId)), lastLoud: 1_000, commit: 1_400, ...over });
+  const latency: LatencyRow[] = [
+    row("a", { path: "fastO", verdict: "O", audible: 2_100 }),
+    row("b", { path: "fastO", verdict: "O", audible: 2_300 }),
+    row("c", { path: "slow", verdict: "H", refused: "verdict", permitAt: 4_200, audible: 4_400 }),
+    row("d", { path: "regenerated", verdict: "O", refused: "staleAck", audible: 3_000 }),
+  ];
+
+  it("the last LatencyRow with its path and refused reason; per-path p50 and p95; counts per refused reason and late turns", async () => {
+    const { model } = await loaded();
+    const html = render(model.getSnapshot(), null, latency);
+    const last = html.match(/data-testid="latency-last"[\s\S]*?<\/p>/)![0];
+    expect(last).toContain(testId("d"));
+    expect(last).toContain("path regenerated");
+    expect(last).toContain("refused staleAck");
+    expect(last).toContain("end of speech to audible 2000 ms");
+    const paths = html.match(/data-testid="latency-path"[\s\S]*?<\/tr>/g)!;
+    expect(paths[0]).toMatch(/fastO<\/td><td[^>]*>2<\/td><td[^>]*>1100 ms<\/td><td>1300 ms</);
+    expect(paths[2]).toMatch(/slow<\/td><td[^>]*>1<\/td><td[^>]*>3400 ms<\/td><td>3400 ms</);
+    const refused = html.match(/data-testid="latency-refused"[\s\S]*?<\/p>/)![0];
+    expect(refused).toContain("verdict 1");
+    expect(refused).toContain("staleAck 1");
+    expect(refused).toContain("hash 0");
+    // Turn c's Permit came 2,800 ms after its commit: one late turn.
+    expect(refused).toContain("late turns 1");
+    // No rows, no latency block.
+    expect(render(model.getSnapshot())).not.toContain('data-testid="latency"');
+  });
+
+  it("audience, repair pending, failed parses and 'fastO off: parse gap' with the turn", async () => {
+    const session = { sessionId: testId("ses"), audience: "private" as const, repairPending: true, failedParses: 2, parseGapTurnId: testId("t3m") };
+    const { model } = await loaded({ ...baseStore(), session });
+    expect(model.getSnapshot().data!.session).toEqual(session);
+    const html = render(model.getSnapshot());
+    const block = html.match(/data-testid="audience"[\s\S]*?<\/div>/)![0];
+    expect(block).toContain("Audience unknown (repair pending) · failed parses 2");
+    expect(block).toContain(`fastO off: parse gap at turn <span class="font-mono text-xs break-all">${testId("t3m")}</span>`);
+
+    const { model: clean } = await loaded({ ...baseStore(), session: { ...session, repairPending: false, failedParses: 0, parseGapTurnId: null, audience: "company" } });
+    const cleanHtml = render(clean.getSnapshot());
+    expect(cleanHtml).toContain("Audience company · failed parses 0");
+    expect(cleanHtml).not.toContain("parse gap");
+  });
+
+  it("decisions grouped by turn with the played one marked, the false hold shown, issuer seam or browser, and no devAdmit text", async () => {
+    const decision = (label: string, turn: string, over: Record<string, unknown>) =>
+      ({
+        kind: "ledger",
+        id: testId(label),
+        record: { ...sampleLedgerDecision(), payload: { purpose: "answer", acceptedRefs: [{ type: "turn", id: testId(turn), parentId: testId("ses"), rev: 1 }], heldRefs: [], reasonCodes: [], audience: "private" } },
+        issuer: "seam",
+        permitKind: "slowOrdinary",
+        falseHold: false,
+        turnId: testId(turn),
+        played: false,
+        ...over,
+      }) as DebugItem;
+    const ledger = [
+      decision("d1", "t1u", { issuer: "browser", permitKind: "fastO", played: true }),
+      decision("d2", "t2u", { falseHold: true, played: true }),
+      decision("d3", "t1u", {}),
+    ];
+    const { model } = await loaded({ ...baseStore(), ledger });
+    const html = render(model.getSnapshot());
+    const groups = html.match(/data-testid="decision-group"[\s\S]*?<\/ul><\/li>/g)!;
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toContain(testId("t1u"));
+    expect(groups[0]!.match(/data-testid="ledger-row"/g)).toHaveLength(2);
+    expect(groups[0]).toMatch(/data-played="true">[^]*?▶ played[^]*?issuer browser \(fastO\)/);
+    expect(groups[0]).toMatch(/data-played="false">[^]*?permit slowOrdinary · issuer seam/);
+    expect(groups[1]).toContain("false hold");
+    expect(html).not.toContain("devAdmit");
+  });
+
+  it("escapes stored text in the new blocks", async () => {
+    const evil = "<img src=x onerror=alert(1)>";
+    const session = { sessionId: testId("ses"), audience: "private" as const, repairPending: false, failedParses: 0, parseGapTurnId: null };
+    const { model } = await loaded({ ...baseStore(), session });
+    const html = render(model.getSnapshot(), null, [row("e", { path: "fastO", turnId: evil, audible: 2_000 })]);
+    expect(html).not.toContain(evil);
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
   });
 });

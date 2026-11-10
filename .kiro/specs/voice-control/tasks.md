@@ -418,9 +418,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
 
 ### Group A15
 
-- [ ] 43. Debug_Panel
+- [x] 43. Debug_Panel
   - Requirements: R13.4, R13.5, R18.2, R18.6, R18.7
-  - Depends on: 39, 40 · Estimate: 2.5 h · Actual:
+  - Depends on: 39, 40 · Estimate: 2.5 h · Actual: 0.8 h
+  - Notes: The latency block reads `voice.latency.rows` (passed from `App.tsx`) and core `summarize`; it renders nothing with no rows. The audience block reads `DebugPage.session` from the turns section, kept by the model as `DebugData.session`. Decisions are regrouped by Turn across pages (`decisionsByTurn`), since the route groups only within a page. A blocked decision with no kind shows "hold"; a `postCommitControl` decision shows "class: not recorded" (R13.3); issuer reads "seam" or "browser (fastO)". Not built: the count of Realtime `error` events that design §"If two out-of-band responses can't run at once" mentions; the machine records a refused judge or spec on its state but keeps no count, so the panel has none to show.
   - Files: `apps/web/src/components/DebugPanel.tsx`, `apps/web/src/components/DebugPanel.test.tsx`, `apps/web/src/client/debug-panel.ts`
   - Witness: `DebugPanel.test.tsx` › the last LatencyRow with path and refused reason; per-path p50 and p95; counts per refused reason and late turns; audience and failed parses; "fastO off: parse gap" with the turn; decisions grouped by turn with the played one marked; no "devAdmit" text; all text escaped.
   - Commit: `feat(web): debug panel for latency, audience and admission`

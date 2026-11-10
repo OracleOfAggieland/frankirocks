@@ -8,6 +8,7 @@ import {
   type DebugItem,
   DebugPage,
   type DebugSection,
+  type DebugSessionView,
   type Evidence,
   type Infer,
   type Job,
@@ -35,6 +36,8 @@ export interface DebugData {
   jobs: Item<"job">[];
   ledger: Item<"ledger">[];
   head: CoreBundle | null;
+  /** The current Session's audience and parses, from the turns section (voice-control R13.5). */
+  session: DebugSessionView | null;
   /** Sections with more pages than were loaded. */
   truncated: DebugSection[];
 }
@@ -89,6 +92,29 @@ export function jobSource(job: Job, evidenceById: ReadonlyMap<string, Evidence>)
   return { eid, turnId: eid === null ? null : (evidenceById.get(eid)?.turnId ?? null) };
 }
 
+/**
+ * Decisions grouped by their Turn, in the order each Turn first appears (voice-control R13.4). The route already
+ * groups each page; this keeps the groups whole across pages. Entries with no turn Ref stay on their own.
+ */
+export function decisionsByTurn(items: readonly Item<"ledger">[]): { turnId: string | null; items: Item<"ledger">[] }[] {
+  const groups: { turnId: string | null; items: Item<"ledger">[] }[] = [];
+  const byTurn = new Map<string, { turnId: string | null; items: Item<"ledger">[] }>();
+  for (const item of items) {
+    const turnId = item.turnId ?? ledgerTurnId(item.record as unknown as Ledger);
+    const existing = turnId === null ? undefined : byTurn.get(turnId);
+    if (existing !== undefined) existing.items.push(item);
+    else {
+      const g = { turnId, items: [item] };
+      groups.push(g);
+      if (turnId !== null) byTurn.set(turnId, g);
+    }
+  }
+  return groups;
+}
+
+/** The issuer as the panel names it (R13.4). */
+export const issuerLabel = (issuer: Item<"ledger">["issuer"]): string => (issuer === "browser" ? "browser (fastO)" : issuer === "seam" ? "seam" : "—");
+
 // ---------------------------------------------------------------------------------------------
 // Loader
 
@@ -134,6 +160,7 @@ export class DebugPanelModel {
     this.set({ loading: true });
     const out: Partial<Record<DebugSection, DebugItem[]>> = {};
     const truncated: DebugSection[] = [];
+    let session: DebugSessionView | null = null;
     for (const section of SECTIONS) {
       const r = await this.section(section);
       if (typeof r === "string") {
@@ -142,6 +169,7 @@ export class DebugPanelModel {
         return;
       }
       out[section] = r.items;
+      if (section === "turns") session = r.session;
       if (r.truncated) truncated.push(section);
     }
     const headItem = (out.head ?? []).find((i): i is Item<"head"> => i.kind === "head");
@@ -152,13 +180,15 @@ export class DebugPanelModel {
       jobs: (out.jobs ?? []).filter((i): i is Item<"job"> => i.kind === "job"),
       ledger: (out.ledger ?? []).filter((i): i is Item<"ledger"> => i.kind === "ledger"),
       head: headItem?.record ?? null,
+      session,
       truncated,
     };
     this.set({ data, loading: false, stale: false, error: null, lastLoadedAt: tsFromMs(this.deps.clock.read().opsClock.now) });
   }
 
-  private async section(section: DebugSection): Promise<{ items: DebugItem[]; truncated: boolean } | string> {
+  private async section(section: DebugSection): Promise<{ items: DebugItem[]; truncated: boolean; session: DebugSessionView | null } | string> {
     const items: DebugItem[] = [];
+    let session: DebugSessionView | null = null;
     let cursor: string | null = null;
     for (let n = 0; n < MAX_PAGES; n++) {
       const r = await this.deps.api.call<unknown>("/api/debug/memory", { query: { section, cursor }, timeoutMs: DEBUG_TIMEOUT_MS });
@@ -171,10 +201,11 @@ export class DebugPanelModel {
       if (!parsed.ok) return `The ${section} fetch returned an unexpected page (${parsed.path}).`;
       const page = parsed.value as Infer<typeof DebugPage>;
       items.push(...page.items);
+      session ??= page.session;
       cursor = page.nextCursor;
-      if (cursor === null) return { items, truncated: false };
+      if (cursor === null) return { items, truncated: false, session };
     }
-    return { items, truncated: true };
+    return { items, truncated: true, session };
   }
 
   private set(patch: Partial<DebugState>): void {
