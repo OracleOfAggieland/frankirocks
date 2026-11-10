@@ -750,13 +750,16 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
     case "turnOk":
       onTurn(s, event.turnId, event.response);
       break;
-    case "turnFailed":
+    case "turnFailed": {
       // The client already retried the same requestId; the Session's clientSeq is unknown now, so reconnect,
-      // which opens a fresh Session (design "Session timing").
+      // which opens a fresh Session (design "Session timing"). That holds for any post of this Session, current
+      // or not, and whether or not the permit wait fired first (review of wave A, item 6).
+      const ours = state.outstanding.some((o) => o.turnId === event.turnId) || (state.turn?.turnId === event.turnId && state.turn.posted !== null);
       s.set({ outstanding: state.outstanding.filter((o) => o.turnId !== event.turnId), lastTurnResponseAt: now });
       if (s.st.ack !== null) s.set({ ack: null, ackDroppedStale: true });
-      if (state.turn?.turnId === event.turnId && state.turn.posted !== null && state.session !== null) connectionRecovery(s, true);
+      if (ours && state.session !== null) connectionRecovery(s, true);
       break;
+    }
     case "toolOk":
       onTool(s, event.callId, event.response);
       break;
@@ -1103,29 +1106,39 @@ function pushTurn(s: Step, body: TurnBody, supersedesTurnId: string | null = nul
 
 function onTurn(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void {
   // Every answer ends its request's wait and dates the next StateAck: an ack requested before it can't grant fastO.
+  const wasOutstanding = s.st.outstanding.some((o) => o.turnId === turnId);
   s.set({ outstanding: s.st.outstanding.filter((o) => o.turnId !== turnId), lastTurnResponseAt: s.now });
   if (s.st.ack !== null) s.set({ ack: null, ackDroppedStale: true });
   const st = s.st;
   const turn = st.turn;
-  if (turn === null || turn.turnId !== turnId || turn.posted === null || st.session === null) return;
-  if (res.stamp.turnId !== turnId || res.stamp.sessionId !== st.session.sessionId || res.stamp.generation !== st.session.generation) return;
+  if (st.session === null || res.stamp.sessionId !== st.session.sessionId || res.stamp.generation !== st.session.generation) return;
+  const current = turn !== null && turn.turnId === turnId && turn.posted !== null && res.stamp.turnId === turnId;
+  if (!current) {
+    // An answer for a turn that is no longer current still carries a Deck (design rows), and if nothing was
+    // recorded the Session's clientSeq is behind ours: reconnect (review of wave A, item 6).
+    adoptDeck(s, res.deck);
+    const unrecorded = res.error !== null || res.status === "stale" || (res.status === "hold" && res.permit === null && res.retryAfterMs > 0);
+    if (unrecorded && wasOutstanding && s.st.session !== null) connectionRecovery(s, true);
+    return;
+  }
   adoptDeck(s, res.deck);
-  if (s.st.turn?.turnId !== turnId) return;
+  if (s.st.turn?.turnId !== turnId || turn === null || turn.posted === null) return;
+  // Nothing recorded: the Session's clientSeq is behind ours. Resend a stale Turn once with the current revisions;
+  // after that, or on an error, reconnect (review of wave A, item 6). A playing reply is left alone by the resend.
+  if (res.error !== null) return connectionRecovery(s, true);
+  if (res.status === "stale") {
+    if (turn.staleRetried) return connectionRecovery(s, true);
+    const body: TurnBody = { ...turn.posted, epoch: res.stamp.epoch, policyRev: res.stamp.policyRev, bundleRev: res.stamp.bundleRev, rulesRev: res.stamp.rulesRev };
+    s.set({ turn: { ...turn, posted: body, staleRetried: true } });
+    pushTurn(s, body);
+    return;
+  }
   if (s.st.admittedTurnId === turnId) {
     // A reply of this Turn is already admitted. Only a route that changes what is said cuts it (R11.6; question 92).
     const cut = res.permit !== null && res.error === null && (res.status === "ready" || res.status === "clarify");
     if (!cut) return;
     cancelAll(s, false);
     s.set({ admittedTurnId: null, phase: "HELD" });
-  }
-  if (res.error !== null) return noReply(s);
-  if (res.status === "stale") {
-    // Nothing was recorded; send the same Turn once more with the current revisions.
-    if (turn.staleRetried) return noReply(s);
-    const body: TurnBody = { ...turn.posted, epoch: res.stamp.epoch, policyRev: res.stamp.policyRev, bundleRev: res.stamp.bundleRev, rulesRev: res.stamp.rulesRev };
-    s.set({ turn: { ...turn, posted: body, staleRetried: true } });
-    pushTurn(s, body);
-    return;
   }
   if (res.status === "hold" && res.permit === null) {
     if (res.retryAfterMs > 0) s.arm("turnRetry", s.now + res.retryAfterMs);

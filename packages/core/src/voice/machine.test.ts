@@ -905,9 +905,11 @@ describe("turn responses, cuts and tools by scope (task 26)", () => {
   it("after the permit wait ends, a turnOk only adopts its Deck", () => {
     const r = listening();
     speak(r);
+    // The answer as the server built it, before the wait ended.
+    const answer = admitted(r, "slowOrdinary");
     r.timer("permit", TURN_RESPONSE_LIMIT_MS);
     expect(r.st.phase).toBe("RECOVERY");
-    const cmds = r.ev({ type: "turnOk", turnId: turnBody(r).turnId, response: admitted(r, "slowOrdinary") }, 10);
+    const cmds = r.ev({ type: "turnOk", turnId: turnBody(r).turnId, response: answer }, 10);
     expect(cmds.some((c) => c.kind === "verifyPermit")).toBe(false);
   });
 });
@@ -1090,11 +1092,12 @@ describe("wave A review fixes, Part 2", () => {
     r.rt({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_1", transcript: "My dog is called Pip" }, 100);
     expect(r.st.phase).toBe("HELD");
     const body = turnBody(r);
+    const answer = admitted(r, "slowOrdinary");
     r.rt({ type: "input_audio_buffer.speech_started", item_id: "item_2", audio_start_ms: 5000 }, 100);
     expect(r.st.phase).toBe("LISTENING");
     expect(r.st.pending).toBeNull();
     expect(r.st.deadlines.permit).toBeUndefined();
-    const cmds = r.ev({ type: "turnOk", turnId: body.turnId, response: admitted(r, "slowOrdinary") }, 300);
+    const cmds = r.ev({ type: "turnOk", turnId: body.turnId, response: answer }, 300);
     expect(cmds.some((c) => c.kind === "verifyPermit")).toBe(false);
     expect(r.st.outputMuted).toBe(true);
   });
@@ -1137,5 +1140,45 @@ describe("wave A review fixes, items 5 and 6", () => {
     r.rt({ type: "conversation.item.added", item: { id: "item_2" } }, 20);
     r.timer("permit", TURN_RESPONSE_LIMIT_MS);
     expect(r.st.turn?.turnId).toBe(testId("turn-2"));
+  });
+
+  it("item 6: a failed post of a turn that is no longer current reconnects", () => {
+    const r = listening();
+    const old = heldPosted(r);
+    r.rt({ type: "input_audio_buffer.committed", item_id: "item_2" }, 10, testId("turn-2"));
+    r.ev({ type: "turnFailed", turnId: old.turnId }, 100);
+    expect(r.st.recovery?.kind).toBe("connection");
+    expect(r.log.some((c) => c.kind === "teardown")).toBe(true);
+  });
+
+  it("item 6: a stale answer for a turn that is no longer current reconnects", () => {
+    const r = listening();
+    const old = heldPosted(r);
+    const stale = { ...admitted(r, "slowOrdinary"), status: "stale" as const, permit: null };
+    r.rt({ type: "input_audio_buffer.committed", item_id: "item_2" }, 10, testId("turn-2"));
+    r.ev({ type: "turnOk", turnId: old.turnId, response: stale }, 100);
+    expect(r.st.recovery?.kind).toBe("connection");
+  });
+
+  it("item 6: the permit deadline and the request's own timeout give the same result in either order", () => {
+    for (const order of ["permitFirst", "failedFirst"] as const) {
+      const r = listening();
+      const old = heldPosted(r);
+      r.now += TURN_RESPONSE_LIMIT_MS;
+      if (order === "permitFirst") r.timer("permit");
+      r.ev({ type: "turnFailed", turnId: old.turnId });
+      if (order === "failedFirst") r.timer("permit");
+      expect(r.st.recovery?.kind).toBe("connection");
+    }
+  });
+
+  it("item 6: a non-current turn's answer still adopts a higher Deck", () => {
+    const r = listening();
+    const old = heldPosted(r);
+    const res = admitted(r, "slowOrdinary");
+    r.rt({ type: "input_audio_buffer.committed", item_id: "item_2" }, 10, testId("turn-2"));
+    const higher = { ...res.deck!, policyRev: res.deck!.policyRev + 1 };
+    r.ev({ type: "turnOk", turnId: old.turnId, response: { ...res, deck: higher, stamp: { ...res.stamp, policyRev: higher.policyRev } } }, 100);
+    expect(r.st.deck!.policyRev).toBe(higher.policyRev);
   });
 });
