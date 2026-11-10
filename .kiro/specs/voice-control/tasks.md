@@ -284,9 +284,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `machine.test.ts` › "held turn posts missing at t0 + 2500 and plays the neutral line"; "admitted turn posts missing at t0 + 5000 and keeps playing"; "a late transcript sends one superseding post with the same turnId and clientSeq and speaks nothing"; "posting drops the ack; an ack sent before the last turn response can't grant fastO"; "poll every 1000 ms, never two in flight"; "speech start cancels judge, spec and active, clears, drops Permits". Properties 5 and 6 green.
   - Commit: `feat(voice): deadlines, missing posts and the superseding post`
 
-- [ ] 28. Latency rows and the avatar
+- [x] 28. Latency rows and the avatar
   - Requirements: R6.4, R18.1, R18.3, R18.6, R18.7
-  - Depends on: 27 · Estimate: 1.5 h · Actual:
+  - Depends on: 27 · Estimate: 1.5 h · Actual: in task 24
+  - Notes: Code and witnesses in `2563adf`. Witness: describe "latency rows and the avatar (task 28)", 3 cases. A row closes when the Turn returns to LISTENING (or the next Turn starts). All machine properties (1–7, 12) green.
   - Files: same as 24
   - Witness: `machine.test.ts` › "a fastO turn's LatencyRow has every time and path fastO"; "regenerated, slow and recovery paths"; "refused reason recorded"; "`avatarState` is thinking for WAIT_ITEM, JUDGING, SPECULATING, HELD, TOOL_WAIT and speaking only while unmuted". All machine properties (1–7, 12) green.
   - Commit: `feat(voice): latency rows and avatar mapping`
