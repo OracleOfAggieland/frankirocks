@@ -251,3 +251,57 @@ The review was committed as is (`50b1874`). The reviewer's property 7 change is 
 - `npm test`: 163 files, 1,507 tests.
 - `npm run lint`, `npm run typecheck` and `npm run build`: exit 0.
 - The wave A properties (P1 to P9, P11, P12) and P13 (12 files, 13 tests) passed five full runs in a row.
+
+## Live run, Nov 10 (`docs/briefs/011-review-live-run.md`)
+
+The review was committed as is (`07e69c0`). The reviewer ran the Harness live on the owner's 60 takes: parallel, stagger 0, uncapped, effort `minimal`, seed 7, `--judge judge_v2`, slow parse live. The run files are committed in `420c807`.
+
+**The review's numbers, checked against the run file.** The ones the file can show are right:
+- `judge_v2` held 30 of 30 control lines at any time (5 of 5 in every class).
+- False holds: 2 of 30 (o-05 "What do you remember about me?", o-10 "I'm allergic to Mondays.").
+- Judge time from send: p50 754 ms, p95 972 ms.
+- Parse time: p50 460 ms, p95 743 ms, largest 1,304 ms. 49 of 60 parses were over 350 ms, and 1 was over 1,000.
+- Invalid parses: 5 (`c-hardrule-2`, `o-30`, `c-correction-4`, `c-crisis-4`, `o-10`).
+- Control lines: 30 of 30 were not ordinary to the parse, and none was missed by both nets.
+- Ordinary lines: 17 of 30 were not ordinary to the parse. `alone` was 0.20 or more on 11, `company` on 4, `forget` on 1.
+- The quoted lines: "Hang on, Alex just walked in." scored `company` 0.03 and `rushed` 0.97; "We broke up this morning and I'm a mess." chose `alone` at 0.75; "It's so windy out today." scored `alone` 0.41; "Hey Franki, how's it going?" scored `company` 0.92; "I deleted an old game…" scored `forget` 0.21.
+- Latency from the last loud frame: p50 1,553 ms over 28 lines. The reply's first audio came p50 937 ms after send.
+- Control takes: 9 had their tails trimmed and 14 came in as more than one fragment. On 25 control lines the judge was sent 101 to 1,224 ms after the commit.
+
+The run (c) comparisons (28 of 30, 1 of 30, 718 and 1,103 ms, 1,317 ms, about 800 ms) are from an earlier run file that I didn't recheck. The file stores no transcripts for the owner's takes, by design, so I read the quoted lines' text from `lines.json`.
+
+| Item | Commit | Test that failed first |
+|---|---|---|
+| 1. Keep the run's record | `420c807` | (files only) |
+| 2. `judge_v2` becomes the app's judge | `300820c` | `judge.test.ts` `APP_JUDGE_SETTINGS`, `machine.test.ts` judge `metadata.contract`. Q52's judge half answered; R16.4 updated. |
+| 3. The Decisions deadline is 1,000 ms on a call | `2fa2649` | `turn.typed-no-call.test.ts` "is 1,000 ms: an answer at 800 ms is used". `DECISIONS_CONTRACT_DEADLINE_MS` keeps 350 as the contract's literal; Q94 added; R11.2 and R17.5 updated; the emulator test answers at 1,000 ms. |
+| 4. Say why a parse was invalid, and repair it | `73642b7` | `parse.test.ts` "names the check and the question", `slow-parse.test.ts` "an invalid answer says which check failed", `repair.test.ts` (an invalid answer wasn't repaired), `harness.test.ts` "each row says which check". |
+| 5. A route that changes what is said needs both nets, or one very sure net | `52296b1` | `route.test.ts`, `admission.test.ts` "a route that changes what is said needs both nets", `turn.test.ts` "a recorded fastO counts as judge O", `repair.test.ts` "a weak late hit with judge O raises no policyRev". Q95 added; R8.6 and the design updated. |
+| 6. The Harness reports what the routes would do | `30a23b5` | `harness.test.ts` "what the routes would do" (three cases) |
+
+**Notes on the items.**
+- **Item 2.** R16.4 said `judge_v2` would replace `judge_v1` only if "nothing else" went down. The false holds went from 1 to 2, so the switch is the review's decision, not that criterion. R16.4 now says so. The Harness keeps `judge_v1` as its default, so a run without `--judge` is still the contract's judge.
+- **Item 3, the slow path's worst case.** I didn't measure it, since the emulator wasn't run. Counting round trips at 75 ms each:
+  - Since item 23, the parse runs while `ensureCoreDocs`, the request-ledger read and the request transaction run (about 4 round trips, 300 ms). So the wait before the main transaction is the parse itself, up to 1,000 ms.
+  - The main transaction is then about 10 sequential round trips (750 ms): the Session, the five core documents in parallel, the `fastO` decision, the earlier turns and up to 4 of their Evidence, the request entry, and the commit.
+  - From a commit 500 ms before the post, that puts the worst case on time near 500 + 1,000 + 750 ≈ 2,250 ms, against the 2.5 s line. With a 350 ms parse it was near 1,600 ms.
+  - So the margin goes from about 900 ms to about 250 ms. The emulator test, which now answers at 1,000 ms, is the measurement; an answer right at the deadline may land on either side, and its printed `kinds` says which.
+- **Item 4.**
+  - The Turn has no failure-reason field, so the reason goes to the log (`turn.parseInvalid`, with the reason, the index and the question name) and to the Harness row and summary, not to the Turn.
+  - The Nov 10 run file predates this, so its 5 invalid rows show "not recorded".
+  - An invalid parse now opens the 2,500 ms repair lease. `oversize` still stores `unknown` with no repair.
+- **Item 5.**
+  - **What the judge value means.** The server uses the request's judge value, except that a recorded `fastO` decision makes it `O`. A turn posted before its verdict says `timeout`, which counts as not `O`, so a route fires at 0.20. That is the safe side, since it can only cut or narrow more often. The one unsafe-looking case is a `fastO` reply whose `admitted` receipt hasn't reached the server yet: a weak `forget` would cut it, which is what happened before this change.
+  - **One change beyond the review's text.** The Parse_Repair and the Superseding_Post raised `policyRev` on any hit, and a raised `policyRev` cancels speech through the next Deck. That is a cut by another path, so they now raise it only when `changesWhatIsSaid` holds. They still write the held decision for every hit. This also removes an older inconsistency with Q92, where a late `rushed` hit could cancel speech.
+  - **Properties.** Properties 8 and 9 stayed green. Their generators (plain modules) now give each candidate a probability, and the exhaustive half enumerates 41,472 inputs (16 parse shapes) instead of 36,288.
+- **Item 6, run on the Nov 10 file.** Under the item 5 rule, counting wave B's routes:
+  - 1 ordinary line would cut or swap: "Hey Franki, how's it going?", where `company` reached 0.92 with judge O.
+  - 20 control lines would fire: forget 5, company 6, quiet 4, alone 3, crisis 2. `correction` and `hardRule` have no route that changes what is said.
+  - At the old 0.20 line, the ordinary count would have been much higher: `alone` alone was at 0.20 or more on 11 ordinary lines, and all of those had judge O.
+  - `--predicates contract` is the only set, and the run file records it.
+
+**Still open for the owner.**
+- **The wording of the `company` and `alone` predicates.** Even under the route rule, "Hey Franki, how's it going?" would hang up in wave B, and the parse misread "Hang on, Alex just walked in." as `rushed`. A candidate set goes into `PREDICATE_SETS` and is measured with `--predicates` the way `judge_v2` was.
+- **Whether the 1.5 s latency stop line holds.** This run measured p50 1,553 ms from the last loud frame, over the line; run (c) measured 1,317 ms, under it.
+
+No item was declined. Wave B has not started.
