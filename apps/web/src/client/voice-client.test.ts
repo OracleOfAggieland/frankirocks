@@ -594,7 +594,13 @@ describe("Voice_Client with the judge (voice-control R2.8, R3.7, R4.5, R7.5, R7.
     await until(() => routeCalls("/api/turn").length === 1 && routeCalls("/api/turn")[0]!.res !== undefined, "the missing post");
     const first = routeCalls("/api/turn")[0]!;
     expect(first.body).toMatchObject({ transcriptState: "missing", transcript: "", supersedesRequestId: null });
-    const createsBefore = replyCreates(ctx.sent()).length;
+    // The missing post's own answer plays the Neutral_Line once its hash check returns, which under full-suite load
+    // can come after this point. Wait for that check, and assert it is that line, before counting.
+    await until(() => vc.getSnapshot().pending === null, "the missing post's Neutral_Line check");
+    const lines = replyCreates(ctx.sent());
+    expect(lines).toHaveLength(1);
+    expect(lines[0].response).toMatchObject({ instructions: 'Say exactly this and nothing else: "Sorry, say that again?"', tools: [], metadata: { turnId: first.body.turnId } });
+    const createsBefore = lines.length;
     ch.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_1", transcript: "my dog loves the park" });
     await until(() => routeCalls("/api/turn").length === 2 && routeCalls("/api/turn")[1]!.res !== undefined, "the superseding post");
     const late = routeCalls("/api/turn")[1]!;
