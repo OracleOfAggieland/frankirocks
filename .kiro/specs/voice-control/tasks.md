@@ -184,9 +184,10 @@ Machine properties 2, 4, 7 and 12 are expected red on the current machine. The o
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 4, no clipped suffix`
 
-- [ ] 18. **[property]** P5 Stale events are inert
+- [x] 18. **[property]** P5 Stale events are inert
   - Requirements: R20.1.5; R7.1, R7.2, KV05
-  - Depends on: 12 · Estimate: 0.75 h · Actual:
+  - Depends on: 12 · Estimate: 0.75 h · Actual: 0.3 h
+  - Notes: Green on the current machine. Stale events are: `response.created` of another generation; `output_audio_buffer.started` or `response.done` for an unknown response; `started` for a cancelled response; and `response.done` for a cancelled judge. A `response.done` for a cancelled speech reply is left out on purpose: it rightly sends that reply's transcript receipt.
   - Files: `packages/core/src/voice/stale-inert.property.test.ts` (new)
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 5, stale events are inert`
