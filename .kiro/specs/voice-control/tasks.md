@@ -208,9 +208,10 @@ Machine properties 2, 4, 7 and 12 are expected red on the current machine. The o
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 7, fastO needs a fresh ack`
 
-- [ ] 21. **[property]** P12 A late Permit plays; a timed-out request doesn't
+- [x] 21. **[property]** P12 A late Permit plays; a timed-out request doesn't
   - Requirements: R20.1.12; R7.5, R18.7
-  - Depends on: 12 · Estimate: 0.75 h · Actual:
+  - Depends on: 12 · Estimate: 0.75 h · Actual: 0.3 h
+  - Notes: Green on the current machine. Today a late Permit in HELD is already checked; the change task 26/27 makes is that the 2.5 s `permit` wait becomes post + 5 s, so (b) covers more answers. Part (c) is vacuous until task 28 records latency rows. (b) skips answers whose Deck differs, whose stamp is not current or whose Permit has expired, since those are rightly refused.
   - Files: `packages/core/src/voice/late-permit.property.test.ts` (new)
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 12, a late permit plays`
