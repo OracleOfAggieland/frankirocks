@@ -305,3 +305,5 @@ The run (c) comparisons (28 of 30, 1 of 30, 718 and 1,103 ms, 1,317 ms, about 80
 - **Whether the 1.5 s latency stop line holds.** This run measured p50 1,553 ms from the last loud frame, over the line; run (c) measured 1,317 ms, under it.
 
 No item was declined. Wave B has not started.
+
+**Checks** (telemetry variables set, no network call, nothing with `--live`): `npm test` three runs in a row, 164 files and 1,527 tests each; `npm run lint`, `npm run typecheck` and `npm run build` exit 0.
