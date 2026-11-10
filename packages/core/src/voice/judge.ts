@@ -69,8 +69,12 @@ export const JUDGE_CONTRACT_SETTINGS: JudgeSettings = {
   deadlineMs: JUDGE_DEADLINE_MS,
 };
 
-/** What the Browser_Client sends (question 51 points 2 and 3; voice-control design question 82). */
-export const APP_JUDGE_SETTINGS: JudgeSettings = { contract: "judge_v1", maxOutputTokens: "inf", effort: "minimal", deadlineMs: 1_200 };
+/**
+ * What the Browser_Client sends (question 51 points 2 and 3; design question 82). `judge_v2` since the live run of
+ * Nov 10 (question 52): it held 30 of 30 control lines at any time against `judge_v1`'s 28, with 2 false holds in 30
+ * against 1. `judge_v1` stays as contracts §5's literal.
+ */
+export const APP_JUDGE_SETTINGS: JudgeSettings = { contract: "judge_v2", maxOutputTokens: "inf", effort: "minimal", deadlineMs: 1_200 };
 
 export const isJudgeOutputCap = (v: unknown): v is JudgeOutputCap => v === "inf" || (typeof v === "number" && Number.isSafeInteger(v) && v > 0);
 export const isJudgeEffort = (v: unknown): v is JudgeEffort => typeof v === "string" && (JUDGE_EFFORTS as readonly string[]).includes(v);

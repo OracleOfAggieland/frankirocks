@@ -301,7 +301,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 1. THE Core_Library SHALL export `JUDGE_V2_INSTRUCTIONS` beside `judge_v1` in `packages/core/src/voice/judge.ts`, equal to the `judge_v1` literal with this sentence added on its own line after the `H:` line: `Another person present, arriving, listening, on speaker or being addressed is company: H, even when said as small talk.`
 2. A test SHALL assert the exact text of `JUDGE_V2_INSTRUCTIONS`, and a test SHALL assert that no line of `scripts/judge-spike/lines.json`, and no close copy of one, appears in it.
 3. THE `judgeCreate` function SHALL take the contract name as part of the Judge_Setting and SHALL put it in `metadata.contract`.
-4. THE app's Judge_Setting SHALL stay `judge_v1`; `judge_v2` SHALL replace it only after a measured run shows company recall up and nothing else down.
+4. THE app's Judge_Setting SHALL be `judge_v2`, after the measured run of Nov 10 (company recall 1 of 5 to 5 of 5; false holds 1 of 30 to 2 of 30, which the review of the live run accepted; design question 52). `judge_v1` SHALL stay in the Core_Library as the contract's literal.
 5. THE Core_Library SHALL keep contracts §5's values as `JUDGE_CONTRACT_SETTINGS`, and SHALL add the app's Judge_Setting as a separate constant.
 
 ### Requirement 17: The Harness measures the slow parse

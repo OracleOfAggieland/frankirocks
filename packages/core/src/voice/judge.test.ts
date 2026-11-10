@@ -112,7 +112,7 @@ describe("judgeCreate", () => {
 
   it("takes the output cap and effort as settings, contracts §5's by default", () => {
     expect(JUDGE_CONTRACT_SETTINGS).toEqual({ contract: "judge_v1", maxOutputTokens: 16, effort: "minimal", deadlineMs: 600 });
-    expect(APP_JUDGE_SETTINGS).toEqual({ contract: "judge_v1", maxOutputTokens: "inf", effort: "minimal", deadlineMs: 1200 });
+    expect(APP_JUDGE_SETTINGS).toEqual({ contract: "judge_v2", maxOutputTokens: "inf", effort: "minimal", deadlineMs: 1200 });
     const uncapped = judgeCreate(REQ, APP_JUDGE_SETTINGS).response as Record<string, unknown>;
     expect(uncapped.max_output_tokens).toBe("inf");
     expect(uncapped.reasoning).toEqual({ effort: "minimal" });
@@ -124,7 +124,7 @@ describe("judgeCreate", () => {
   });
 
   it("picks the instructions by contract and names it in metadata", () => {
-    const v1 = judgeCreate(REQ, APP_JUDGE_SETTINGS).response as Record<string, unknown>;
+    const v1 = judgeCreate(REQ, { ...APP_JUDGE_SETTINGS, contract: "judge_v1" }).response as Record<string, unknown>;
     expect(v1.instructions).toBe(JUDGE_V1_INSTRUCTIONS);
     expect((v1.metadata as Record<string, string>).contract).toBe("judge_v1");
     const v2 = judgeCreate(REQ, { ...APP_JUDGE_SETTINGS, contract: "judge_v2" }).response as Record<string, unknown>;

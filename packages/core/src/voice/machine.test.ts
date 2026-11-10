@@ -700,7 +700,7 @@ describe("judge and speculative reply at the commit (task 24)", () => {
   it("sends both in one step, muted, with event IDs, and arms the judge deadline at t0 + 1,200", () => {
     const r = listening();
     const { t0, cmds, judge, spec } = commitTurn(r);
-    expect(judge).toMatchObject({ event_id: expect.stringMatching(/^judge:/), response: { max_output_tokens: "inf", reasoning: { effort: "minimal" }, metadata: { purpose: "judge", contract: "judge_v1" } } });
+    expect(judge).toMatchObject({ event_id: expect.stringMatching(/^judge:/), response: { max_output_tokens: "inf", reasoning: { effort: "minimal" }, metadata: { purpose: "judge", contract: "judge_v2" } } });
     expect(spec).toMatchObject({ event_id: expect.stringMatching(/^spec:/), response: { conversation: "none", input: [{ type: "item_reference", id: "item_1" }], metadata: { purpose: "speculative" } } });
     expect(cmds).toContainEqual(expect.objectContaining({ kind: "hashPayload", eventId: spec!.event_id }));
     expect(cmds).toContainEqual({ kind: "armTimer", name: "judge", at: t0 + JUDGE_LIMIT_MS });
