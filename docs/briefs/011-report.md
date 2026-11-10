@@ -218,6 +218,7 @@ The review was committed as is (`50b1874`). The reviewer's property 7 change is 
 | 21. A pasted turn's tool output is S0 | `c1fc2f5` | `tool.test.ts` "a pasted (T) turn's tool output is limited to S0" (an S1 note came back) |
 | 22. The late-hit decision is written by the seam | `5daca01` | `seam.test.ts` "no server source outside admission/seam.ts writes a decision with purpose answer" (`intents/repair.ts` did) and "recordLateHit writes one held decision" |
 | 23. The Decisions call starts beside `ensureCoreDocs` and `beginRequest` | `f289b1d` | `turn.typed-no-call.test.ts` "the Decisions call starts beside ensureCoreDocs and beginRequest" (it started after the first transaction) |
+| 24. A typed hit with no call keeps its reply in a private audience (owner's decision, after the limit reported for item 17) | `636651b` | `turn.typed-no-call.test.ts` "a hit with no Fixed_Line, crisis included, keeps the S1 typed reply" (notes came back empty). Its other two cases (S0 in a company audience or with a gap; a Fixed_Line class shows its line) passed before and stay as guards. R8.6, R8.9, R8.12, R12.1, R12.2, design rows 7 and 12 and Q64 updated. |
 
 **Choices made while fixing.**
 - Item 4: speech start counts as a barge-in in HELD, with a check pending, or in RECOVERY waiting for the Neutral_Line, so a late Permit for the posted turn can't play over the owner. That turn gets no reply; the owner's new speech is the next turn.
@@ -232,7 +233,7 @@ The review was committed as is (`50b1874`). The reviewer's property 7 change is 
 - The typed reply is no longer discarded on a hit. Row 12 keeps it as an S0 note. A crisis line keeps it under scope `ack` (row 7, now `S0` for a typed line with no call). A Fixed_Line class shows its line instead, because the seam replaces the notes with the line.
 - A failed parse on a typed line with no call carries `RECOVERY_LINE` as an `ack` note, so it shows as text.
 - The typed client already rendered every note the Permit carries; nothing changed there.
-- One limit, from R8.6 ("a Control_Hit gets no S1+ note"): a typed reply whose Head drew on S1 Memories has `sens` S1, so on a hit it is still filtered out and nothing shows. That is the requirement as written, so I left it, but the owner should know a typed hit can still come back empty when the Head is personal. The fix would be a contract decision: either let a typed line with no call carry S1 on a hit in a private Session, or compute the typed reply's `sens` from what it actually cites.
+- One limit, from R8.6 as it then stood: a typed reply whose Head drew on S1 Memories is S1, so on a hit it was filtered out and nothing showed. **Resolved as item 24** by the owner's decision: see below.
 
 **Choices made in items 18 to 23.**
 - Item 18: up to 8 transaction attempts, as the routes use. Each attempt re-reads the Session and re-checks the lease token and window. If all fail, the lease runs out and the next request stores `unknown`, as before.
@@ -242,6 +243,8 @@ The review was committed as is (`50b1874`). The reviewer's property 7 change is 
 - Item 23: a replayed request now costs one Decisions call that nothing uses. The parse also checks the Session for an open call first, which costs one read before the parse starts.
 
 **Properties.** No property ran red in items 17 to 23. Property 8 passed after item 17's rule change, under the reviewer's new statement.
+
+**Item 24.** The owner decided that for a typed line with no call open, in a private Effective_Audience with no parse gap, a control hit whose class has no Fixed_Line keeps the typed reply whatever its Sensitivity, crisis included. That is what an ordinary parse would have shown, and no one else hears typed text. In any other audience, or with a gap, it stays S0. Rule rows 7 and 12 now return notes `all` in that case. The condition also requires `judge:"typed"`: property 8's "all notes" clause needs judge O or typed, and the enumeration found a typed source with judge H on its first run, so the rule follows it. No guarded file changed, and no property ran red apart from that one run, before the condition was added (the exhaustive half of property 8, assertion `expected [ 'O', 'typed' ] to include 'H'`; it prints no seed). Checks after item 24: `npm test` (163 files, 1,510 tests), `npm run lint` and `npm run typecheck` exit 0.
 
 **Checks after item 23** (telemetry variables set, no network call, nothing with `--live`):
 - `npm test`: 163 files, 1,507 tests.
