@@ -1263,4 +1263,17 @@ describe("wave A review fixes, items 8 and 9", () => {
     expect(r.st.heldBack).toBeNull();
     expect(r.log.some((c) => c.kind === "turn")).toBe(false);
   });
+
+  it("item 10: refresh, stateRetry and the retry button don't send a second state request while one is in flight", () => {
+    const r = listening();
+    const states = () => r.log.filter((c) => c.kind === "state").length;
+    r.timer("poll", POLL_MS);
+    const n = states();
+    r.st = { ...r.st, deadlines: { ...r.st.deadlines, refresh: r.now, stateRetry: r.now } };
+    r.timer("refresh");
+    r.timer("stateRetry");
+    r.st = { ...r.st, stateRetryVisible: true };
+    r.ev({ type: "retryPressed" });
+    expect(states()).toBe(n);
+  });
 });

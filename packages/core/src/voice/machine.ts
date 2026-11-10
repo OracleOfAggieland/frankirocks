@@ -948,6 +948,9 @@ function reconnect(s: Step): void {
 function postState(s: Step): void {
   const { session, deck, ack } = s.st;
   if (session === null || deck === null) return;
+  // R4.5: never two state requests in flight, whichever of poll, refresh, stateRetry or the retry button asks
+  // (review of wave A, item 10). An answer, a failure or STATE_STALE_MS ends the one in flight.
+  if (s.st.stateSentAt !== null && s.now - s.st.stateSentAt < STATE_STALE_MS) return;
   s.set({ stateSentAt: s.now });
   s.push({
     kind: "state",
