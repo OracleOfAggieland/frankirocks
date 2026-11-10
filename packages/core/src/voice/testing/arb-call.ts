@@ -195,6 +195,8 @@ export interface Response {
   purpose: string;
   turnId: string;
   eventId: string | null;
+  /** The step at which the machine sent this response's `response.create`. */
+  createStep: number;
   createdAt: number;
   cancelled: boolean;
   done: boolean;
@@ -430,7 +432,7 @@ export class CallDriver {
         this.pending.creates = this.pending.creates.filter((x) => x !== c);
         const m = meta(c.event);
         const id = this.fresh("resp_");
-        this.trace.responses.push({ id, purpose: m.purpose ?? "?", turnId: m.turnId ?? "?", eventId: (c.event.event_id as string | undefined) ?? null, createdAt: this.trace.steps.length, cancelled: false, done: false, started: false });
+        this.trace.responses.push({ id, purpose: m.purpose ?? "?", turnId: m.turnId ?? "?", eventId: (c.event.event_id as string | undefined) ?? null, createStep: c.step, createdAt: this.trace.steps.length, cancelled: false, done: false, started: false });
         this.rt({ type: "response.created", response: { id, metadata: m } }, dt);
         return;
       }
