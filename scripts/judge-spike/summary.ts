@@ -4,8 +4,9 @@
  * or `over the line` when the rule fails even if every missing number had come out at its best. The stop rules
  * read the judge's own verdicts within the deadline, never a hold defaulted from an invalid answer.
  */
-import type { JudgeSettings, JudgeVerdict } from "@franki/core";
+import { CANDIDATE_P, DECISIONS_DEADLINE_MS, type JudgeSettings, type JudgeVerdict } from "@franki/core";
 import { CONTROL_CLASSES } from "./lines";
+import type { DecisionsKind } from "./decisions";
 import type { HarnessOutput, Row, RunSettings } from "./harness";
 import type { AudioSource } from "./paths";
 
@@ -35,6 +36,8 @@ export interface RunMeta {
   judge: Pick<JudgeSettings, "maxOutputTokens" | "effort"> & Partial<Pick<JudgeSettings, "contract" | "deadlineMs">>;
   /** Sequential or parallel, and the stagger (brief 009). Absent in runs before it, which were all sequential. */
   run?: RunSettings;
+  /** The Decisions_Port of the slow parse per line (voice-control R17.2). Absent in runs before brief 011. */
+  decisions?: DecisionsKind;
 }
 
 export interface RunFile extends RunMeta {
@@ -140,6 +143,8 @@ export interface Summary {
   probes: { p50: number | null; measured: number; total: number };
   /** Parallel runs only (brief 009 item 4); null for a sequential run. */
   parallel: ParallelStats | null;
+  /** The slow parse beside the judge (voice-control R17.4, R17.5); null when no row has a parse. */
+  slowParse: SlowParseStats | null;
   /** Per session: its lines by kind and its judge time, so a session effect shows. */
   sessions: SessionStats[];
   stops: { verdict: StopState; latency: StopState; recall: StopState };
@@ -220,6 +225,48 @@ function shareRule(x: Ratio, fails: (share: number) => boolean): StopState {
 const dist = (values: number[]) => ({ p50: percentile(values, 50), p95: percentile(values, 95), n: values.length });
 const nums = (rows: readonly Row[], f: (r: Row) => number | null) => rows.map(f).filter((v): v is number => typeof v === "number");
 
+/** The Probe_Line class names the TurnIntents probability that should catch it. */
+export const LINE_INTENT: Record<(typeof CONTROL_CLASSES)[number], string> = { forget: "forget", company: "company", quiet: "quiet", correction: "correct", hardRule: "hardRule", crisis: "crisis" };
+
+export interface SlowParseStats {
+  /** Per control class: the judge's catch (anything but a valid O within the deadline), the parse's (its class at or above 0.20), and both missing. */
+  byClass: Record<string, { judgeRecall: Ratio; parseRecall: Ratio; jointMiss: Ratio }>;
+  /** Ordinary lines the judge held, and ordinary lines the parse didn't find ordinary. */
+  falseHolds: { judge: Ratio; parse: Ratio };
+  /** Parses over the app's 350 ms deadline, and the parse time. */
+  overDeadline: Ratio;
+  ms: { p50: number | null; p95: number | null; n: number };
+}
+
+/** A Ratio over the rows that have a parse; rows without one are `missing`. */
+function parsedRatio(rows: readonly Row[], hit: (r: Row) => boolean): Ratio {
+  const measured = rows.filter((r) => r.parse != null);
+  return { n: measured.filter(hit).length, of: measured.length, missing: rows.length - measured.length };
+}
+
+function slowParseStats(rows: readonly Row[]): SlowParseStats | null {
+  if (!rows.some((r) => r.parse != null)) return null;
+  const judgePassed = (r: Row) => judgeVerdictOf(r, "deadline") === "O";
+  const byClass: SlowParseStats["byClass"] = {};
+  for (const c of CONTROL_CLASSES) {
+    const of = rows.filter((r) => r.expect === "hold" && r.class === c);
+    const caught = (r: Row) => (r.parse?.probabilities?.[LINE_INTENT[c]] ?? 0) >= CANDIDATE_P;
+    byClass[c] = {
+      judgeRecall: ratio(of, (r) => !judgePassed(r)),
+      parseRecall: parsedRatio(of, caught),
+      jointMiss: parsedRatio(of.filter(judged), (r) => judgePassed(r) && !caught(r)),
+    };
+  }
+  const ordinary = rows.filter((r) => r.expect === "ordinary");
+  const times = nums(rows, (r) => r.parse?.ms ?? null);
+  return {
+    byClass,
+    falseHolds: { judge: ratio(ordinary, (r) => !judgePassed(r)), parse: parsedRatio(ordinary, (r) => r.parse!.ordinary !== true) },
+    overDeadline: parsedRatio(rows, (r) => r.parse!.missedDeadline),
+    ms: dist(times),
+  };
+}
+
 export function summarize(run: RunFile): Summary {
   const rows = run.rows;
   const control = rows.filter((r) => r.expect === "hold");
@@ -296,6 +343,7 @@ export function summarize(run: RunFile): Summary {
     },
     probes: { p50: percentile(probeLatencies, 50), measured: probeLatencies.length, total: probes.length },
     parallel: runModeOf(run).mode === "parallel" ? parallelStats(rows) : null,
+    slowParse: slowParseStats(rows),
     sessions: [...new Set(rows.map((r) => r.session))]
       .sort((a, b) => a - b)
       .map((session) => {
@@ -320,6 +368,9 @@ const cap = (j: Pick<JudgeSettings, "maxOutputTokens">) => (j.maxOutputTokens ==
 
 export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): string {
   const out: string[] = [];
+  // Runs before brief 011 ran judge_v1 at the contract's 600 ms.
+  const deadline = run.judge.deadlineMs ?? 600;
+  const label = (l: string) => l.replace("600 ms", `${deadline} ms`);
   out.push(`# Judge spike run, ${run.date}`);
   out.push("");
   if (run.transport === "fake") out.push("**Fake transport: these numbers come from the scripted fake server, not from OpenAI. They measure nothing.**", "");
@@ -333,7 +384,7 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
           : "sequential (the reply goes out after a valid O)"
     }`,
   );
-  out.push(`- Judge: max_output_tokens ${cap(run.judge)}, reasoning effort ${run.judge.effort}`);
+  out.push(`- Judge: ${run.judge.contract ?? "judge_v1"}, deadline ${deadline} ms, max_output_tokens ${cap(run.judge)}, reasoning effort ${run.judge.effort}`);
   out.push(`- Audio: ${run.source}${run.source === "synthetic" ? " (text-to-speech, not a person's voice)" : " (the owner's own takes)"}`);
   out.push(`- Line set: commit ${run.lineSetCommit}, hash ${run.lineSetHash.slice(0, 12)}`);
   out.push(`- Models: voice ${run.models.voice}, transcription ${run.models.transcribe}`);
@@ -341,30 +392,30 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   out.push("");
   out.push("## Spec §14 stop rules");
   out.push("");
-  out.push("These read the judge's own verdicts within the 600 ms deadline. An invalid answer or a timeout is not a verdict: it is a miss on a control line.");
+  out.push(`These read the judge's own verdicts within the ${deadline} ms deadline. An invalid answer or a timeout is not a verdict: it is a miss on a control line.`);
   out.push("");
   const vd = s.validVerdicts.deadline;
-  out.push(`- No valid verdict on real audio (fewer than 90% of lines with one): **${s.stops.verdict}** (${vd.n} of ${vd.of + vd.missing} lines had a valid verdict within 600 ms${vd.missing > 0 ? `; ${vd.missing} never judged` : ""})`);
+  out.push(`- No valid verdict on real audio (fewer than 90% of lines with one): **${s.stops.verdict}** (${vd.n} of ${vd.of + vd.missing} lines had a valid verdict within ${deadline} ms${vd.missing > 0 ? `; ${vd.missing} never judged` : ""})`);
   out.push(`- ${mode.mode === "parallel" ? "Parallel" : "Sequential"} p50 over 850 ms on 15 probes: **${s.stops.latency}** (p50 ${ms(s.probes.p50)} over ${s.probes.measured} of ${s.probes.total} probes, from the end of audible speech (the take's last loud frame) to audible time; browser playback adds about ${PLAYBACK_MS} ms)`);
-  out.push(`- Control recall under 90%: **${s.stops.recall}** (judge H or U within 600 ms: ${pct(s.views.judgeDeadline.recall)})`);
+  out.push(`- Control recall under 90%: **${s.stops.recall}** (judge H or U within ${deadline} ms: ${pct(s.views.judgeDeadline.recall)})`);
   out.push("");
   out.push("## Recall and false holds");
   out.push("");
-  out.push("*Judge verdicts*: a control line is caught only on the judge's own H or U; an ordinary line passes only on its O. *As the app would act*: an invalid answer or a timeout holds. *Within 600 ms* is what ships; *any time* counts every valid verdict whatever its time.");
+  out.push(`*Judge verdicts*: a control line is caught only on the judge's own H or U; an ordinary line passes only on its O. *As the app would act*: an invalid answer or a timeout holds. *Within ${deadline} ms* is what ships; *any time* counts every valid verdict whatever its time.`);
   out.push("");
   out.push("| View | Control recall | False holds on ordinary lines |");
   out.push("|---|---|---|");
-  for (const v of VIEWS) out.push(`| ${v.label} | ${pct(s.views[v.key].recall)} | ${pct(s.views[v.key].falseHolds)} |`);
+  for (const v of VIEWS) out.push(`| ${label(v.label)} | ${pct(s.views[v.key].recall)} | ${pct(s.views[v.key].falseHolds)} |`);
   out.push("");
-  out.push(`| Control class | ${VIEWS.map((v) => v.label).join(" | ")} |`);
+  out.push(`| Control class | ${VIEWS.map((v) => label(v.label)).join(" | ")} |`);
   out.push(`|---|${VIEWS.map(() => "---").join("|")}|`);
   for (const c of CONTROL_CLASSES) out.push(`| ${c} | ${VIEWS.map((v) => pct(s.views[v.key].recallByClass[c]!)).join(" | ")} |`);
   out.push("");
   out.push("## Judge");
   out.push("");
-  out.push(`- Valid verdicts within 600 ms: ${pct(s.validVerdicts.deadline)}`);
+  out.push(`- Valid verdicts within ${deadline} ms: ${pct(s.validVerdicts.deadline)}`);
   out.push(`- Valid verdicts at any time: ${pct(s.validVerdicts.untimed)}`);
-  out.push(`- Timeouts (no response.done within 600 ms of commit): ${s.timeouts}`);
+  out.push(`- Timeouts (no response.done within ${deadline} ms of commit): ${s.timeouts}`);
   const reasons = Object.entries(s.invalidReasons);
   out.push(`- Invalid-verdict reasons: ${reasons.length === 0 ? "none" : reasons.map(([k, v]) => `${k} ${v}`).join(", ")}${s.invalidReasons.extraText ? " (extraText includes any preamble)" : ""}`);
   out.push(`- Output tokens per judge response (reasoning included): ${tokens(s.outputTokens)}`);
@@ -395,6 +446,7 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   else out.push(`**Over ${COMMIT_TO_SEND_FLAG_MS} ms from commit to judge sent on ${g.flagged.length} line(s); their judge time includes the harness's wait:** ${g.flagged.map((f) => `${f.lineId} (${Math.round(f.ms)} ms)`).join(", ")}`);
   out.push("");
   if (s.parallel !== null) out.push(...parallelMarkdown(s.parallel, mode.staggerMs));
+  if (s.slowParse !== null) out.push(...slowParseMarkdown(s.slowParse, run.decisions ?? "fake"));
   out.push("## Sessions");
   out.push("");
   out.push(`Lines ran in a seeded order (seed ${run.seed}), up to 30 per session.`);
@@ -406,6 +458,24 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   run.sessions.forEach((ids, i) => out.push(`- Session ${i + 1}: ${ids.join(", ")}`));
   out.push("");
   return out.join("\n");
+}
+
+/** The slow parse beside the judge (voice-control R17.4, R17.5). */
+function slowParseMarkdown(p: SlowParseStats, decisions: DecisionsKind): string[] {
+  const out: string[] = [];
+  out.push("## Slow parse");
+  out.push("");
+  if (decisions === "fake") out.push("**Fake Decisions port: every probability is 0 at 0 ms. These rows measure nothing about the parse.**", "");
+  out.push(`The judge catches a control line with anything but a valid O within the deadline; the parse catches it when the line's class is at or above ${CANDIDATE_P}. A joint miss is a line both let through.`);
+  out.push("");
+  out.push("| Control class | Judge recall | Slow-parse recall | Joint miss |");
+  out.push("|---|---|---|---|");
+  for (const [c, x] of Object.entries(p.byClass)) out.push(`| ${c} | ${pct(x.judgeRecall)} | ${pct(x.parseRecall)} | ${pct(x.jointMiss)} |`);
+  out.push("");
+  out.push(`- False holds on ordinary lines: judge ${pct(p.falseHolds.judge)}, slow parse ${pct(p.falseHolds.parse)}`);
+  out.push(`- Parses over ${DECISIONS_DEADLINE_MS} ms: ${pct(p.overDeadline)}; parse time p50 ${ms(p.ms.p50)}, p95 ${ms(p.ms.p95)}, over ${p.ms.n} parse(s)`);
+  out.push("");
+  return out;
 }
 
 /** The parallel section (brief 009 item 4). */

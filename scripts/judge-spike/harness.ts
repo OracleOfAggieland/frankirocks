@@ -18,7 +18,7 @@
  * passes the fake transport on a virtual clock.
  */
 import {
-  JUDGE_DEADLINE_MS,
+  APP_JUDGE_SETTINGS,
   type JudgeInvalidReason,
   type JudgeSettings,
   type JudgeVerdict,
@@ -26,6 +26,7 @@ import {
   parseJudgeDone,
 } from "@franki/core";
 import type { HarnessClock } from "./clock";
+import type { ParseRow } from "./decisions";
 import type { ProbeLine } from "./lines";
 import { type Connect, EVENT, type ServerEvent, type Transport, base64, spikeReplyCreate, spikeSessionUpdate } from "./realtime";
 import { SPEECH_RMS_THRESHOLD, type TrimmedTake, trimTail } from "./trim";
@@ -57,7 +58,8 @@ export const MAX_RUN_LINES = 70;
  * The spike's judge settings unless the CLI says otherwise (brief 007 item 2): no output cap, by the owner's
  * ruling, because reasoning tokens count against contracts §5's 16 and the first live run never got a letter.
  */
-export const SPIKE_JUDGE_SETTINGS: JudgeSettings = { contract: "judge_v1", maxOutputTokens: "inf", effort: "minimal", deadlineMs: JUDGE_DEADLINE_MS };
+// The deadline is the app's (voice-control R17.1): runs before brief 011 ran at the contract's 600 ms.
+export const SPIKE_JUDGE_SETTINGS: JudgeSettings = { contract: "judge_v1", maxOutputTokens: "inf", effort: "minimal", deadlineMs: APP_JUDGE_SETTINGS.deadlineMs };
 
 /** Brief 009: `sequential` sends the reply after a valid `O`; `parallel` sends it beside the judge, muted. */
 export type RunMode = "sequential" | "parallel";
@@ -70,7 +72,7 @@ export interface RunSettings {
 /** The harness default from brief 009: parallel, no stagger. */
 export const DEFAULT_RUN: RunSettings = { mode: "parallel", staggerMs: 0 };
 /** The stagger flag's ceiling: past the judge deadline the reply would wait for the verdict anyway. */
-export const MAX_STAGGER_MS = JUDGE_DEADLINE_MS;
+export const MAX_STAGGER_MS = APP_JUDGE_SETTINGS.deadlineMs;
 
 export interface Times {
   streamStart: number | null;
@@ -130,7 +132,7 @@ export interface Row {
   outputTokens: number | null;
   reasoningTokens: number | null;
   judgeOtherItems: string[];
-  /** No response.done within 600 ms of commit. */
+  /** No response.done within the judge deadline of commit (600 ms in runs before brief 011). */
   timedOut: boolean;
   /** `reply` only for a valid `O` within the deadline (and, in parallel mode, no error event). */
   decision: "reply" | "held" | null;
@@ -160,6 +162,9 @@ export interface Row {
     commitToJudgeSentMs: number | null;
   };
   errors: string[];
+  /** The slow parse of the line's transcript (voice-control R17.4). Absent in runs before brief 011. */
+  regex?: ParseRow["regex"] | null;
+  parse?: ParseRow["parse"] | null;
 }
 
 interface Received {
@@ -411,7 +416,7 @@ export async function runLine(
   if (done === null) {
     row.timedOut = true;
     if (judgeId !== null) s.transport.send({ type: "response.cancel", response_id: judgeId });
-  } else recordJudgeDone(row, done);
+  } else recordJudgeDone(row, done, judge.deadlineMs);
   const admitted = !row.timedOut && row.valid === true && row.verdict === "O";
   row.decision = admitted ? "reply" : "held";
 
@@ -442,7 +447,7 @@ function judgeRequest(line: ProbeLine, ids: readonly string[]) {
 }
 
 /** Fills the row's judge fields from its `response.done`. */
-function recordJudgeDone(row: Row, done: Received) {
+function recordJudgeDone(row: Row, done: Received, deadlineMs: number) {
   row.t.judgeDone = done.at;
   const parsed = parseJudgeDone(done.event);
   row.verdict = parsed.verdict;
@@ -455,7 +460,7 @@ function recordJudgeDone(row: Row, done: Received) {
   row.judgeUsage = responseOf(done.event).usage ?? null;
   row.outputTokens = outputTokensOf(row.judgeUsage);
   row.reasoningTokens = reasoningTokensOf(row.judgeUsage);
-  row.timedOut = done.at - row.t.commit! > JUDGE_DEADLINE_MS;
+  row.timedOut = done.at - row.t.commit! > deadlineMs;
 }
 
 /**
@@ -495,7 +500,7 @@ async function respondParallel(s: SpikeSession, line: ProbeLine, ids: string[], 
   // Acts on the state after every event and every timer.
   const react = () => {
     const now = clock.now();
-    if (verdict === "pending" && now >= commit + JUDGE_DEADLINE_MS) verdict = "hold";
+    if (verdict === "pending" && now >= commit + judge.deadlineMs) verdict = "hold";
     if (reply === "unsent") {
       if (verdict === "hold") reply = "never";
       else if (verdict === "admit" || now >= staggerAt) {
@@ -548,7 +553,7 @@ async function respondParallel(s: SpikeSession, line: ProbeLine, ids: string[], 
     if (!judgeResolved && (judgeId !== null ? id === judgeId : ours("judge")(e))) {
       judgeDone = r;
       judgeResolved = true;
-      recordJudgeDone(row, r);
+      recordJudgeDone(row, r, judge.deadlineMs);
       if (verdict === "pending") verdict = !row.timedOut && row.valid === true && row.verdict === "O" ? "admit" : "hold";
     } else if (replyId !== null && id === replyId && reply === "sent") {
       if (responseOf(e).status === "failed") {
@@ -563,7 +568,7 @@ async function respondParallel(s: SpikeSession, line: ProbeLine, ids: string[], 
   while (!(judgeResolved && (reply === "never" || reply === "resolved"))) {
     const now = clock.now();
     const timers: number[] = [];
-    if (verdict === "pending") timers.push(commit + JUDGE_DEADLINE_MS);
+    if (verdict === "pending") timers.push(commit + judge.deadlineMs);
     if (!judgeResolved) timers.push(commit + JUDGE_WAIT_MS);
     if (reply === "unsent") timers.push(staggerAt);
     if (reply === "sent") timers.push(replyDeadline);
@@ -632,6 +637,8 @@ export interface HarnessInput {
   connect: Connect;
   clock: HarnessClock;
   log: (line: string) => void;
+  /** The slow parse per line, after its transcript (voice-control R17.2). */
+  parseLine?: (turnId: string, utterance: string) => Promise<ParseRow>;
 }
 
 export interface HarnessOutput {
@@ -692,6 +699,11 @@ export async function runHarness(input: HarnessInput): Promise<HarnessOutput> {
         const pcm = input.audio.get(line.id);
         if (pcm === undefined) throw new Error(`no audio for ${line.id}`);
         const row = await runLine(s, line, pcm, input.voices.get(line.id) ?? null, input.judge, input.run);
+        if (input.parseLine !== undefined) {
+          const parsed = row.transcript === null ? null : await input.parseLine(line.id, row.transcript);
+          row.regex = parsed?.regex ?? null;
+          row.parse = parsed?.parse ?? null;
+        }
         rows.push(row);
         input.log(`${row.lineId}: ${row.verdict ?? "-"}${row.invalidReason ? ` (${row.invalidReason})` : ""}${row.timedOut ? " timeout" : ""} judge ${row.derived.judgeMs ?? "-"} ms, commit to send ${row.derived.commitToJudgeSentMs ?? "-"} ms, latency ${row.derived.ordinaryLatencyFromLoudMs ?? "-"} ms from the last loud frame (${row.derived.ordinaryLatencyMs ?? "-"} ms from audio_end_ms)${row.concurrencyErrors!.length > 0 ? `, ${row.concurrencyErrors!.length} error event(s)` : ""}`);
         if (s.closed !== null) throw new Error(`session closed: ${s.closed}`);
