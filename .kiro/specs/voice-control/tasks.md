@@ -340,9 +340,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: the property file, 200 runs on the Memory_Store (both the repair and the superseded variant, design §"Correctness Properties" 11 and 11b). Expected red until tasks 37 and 38; record the seed and counterexample in **Notes**.
   - Commit: `test(turn): property 11, a repaired gap leaves no trace`
 
-- [ ] 34. `/api/session/state`: `ack:null` and the write throttle
+- [x] 34. `/api/session/state`: `ack:null` and the write throttle
   - Requirements: R4.2, R4.5, R15.2, R23.3; Q61, Q84
-  - Depends on: 32 · Estimate: 2 h · Actual:
+  - Depends on: 32 · Estimate: 2 h · Actual: 0.4 h
+  - Notes: The no-write path is a transaction with no writes rather than `readSnapshot`, which keeps one code path; it costs the same reads. The S2 check reads the last turns by `seq` with the same query shape `earlierSafeTurns` uses, so no new index. `Session.stateAck` keeps the last ack it wrote. Only property 11 is red in `npm test` (expected until tasks 37–38).
   - Files: `packages/server/src/routes/state.ts`, `packages/server/src/routes/state.test.ts`
   - Witness: `state.test.ts` › `ack:null` with an S2 user turn among the last four, with a gap, with an active lease, after an expired unrepaired lease (which also stores `unknown`); an ack otherwise; 60 polls a minute write the Session at most twice when nothing changes; status and `browserState` changes still write.
   - Commit: `feat(state): ack refusal and write throttle`

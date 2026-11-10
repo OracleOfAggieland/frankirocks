@@ -1,4 +1,4 @@
-import { type CoreBundle, type Session, StateResponse, validate } from "@franki/core";
+import { type CoreBundle, type Session, StateResponse, type Turn, validate } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { never } from "../openai/fake";
@@ -6,6 +6,7 @@ import { paths } from "../store/paths";
 import { callRoute, patchRecord, runScheduled, testRig } from "../testing/fakes";
 import { openRoute } from "./open";
 import { stateRoute } from "./state";
+import { turnRoute } from "./turn";
 
 const UID = "owner-1";
 
@@ -84,5 +85,68 @@ describe("POST /api/session/state", () => {
     const before = rig.store.countUnder(paths.collection(UID, "ledger"));
     await callRoute(rig, stateRoute, body());
     expect(rig.store.countUnder(paths.collection(UID, "ledger"))).toBe(before);
+  });
+});
+
+describe("POST /api/session/state, voice-control (task 34)", () => {
+  const typed = (sessionId: string, deck: { epoch: number; policyRev: number; bundleRev: number; rulesRev: number }, n: number, text: string) => ({
+    sessionId,
+    epoch: deck.epoch,
+    policyRev: deck.policyRev,
+    bundleRev: deck.bundleRev,
+    rulesRev: deck.rulesRev,
+    generation: 1,
+    turnId: testId(`turn-${n}`),
+    requestId: testId(`req-${n}`),
+    clientSeq: n,
+    source: "typed",
+    items: [],
+    utteredWorldAt: "2026-11-03T12:00:00.000Z",
+    transcript: text,
+    transcriptState: "final",
+    judge: "typed",
+    pendingId: null,
+    choiceId: null,
+    supersedesRequestId: null,
+    uiControl: null,
+  });
+
+  it("no ack while an S2 user Turn is among the last four (R4.2)", async () => {
+    const { rig, sessionId, deck, body } = await opened();
+    await callRoute(rig, turnRoute, typed(sessionId, deck, 1, "hello"));
+    expect((await callRoute(rig, stateRoute, body())).body.ack).not.toBeNull();
+    const path = paths.turn(UID, sessionId, testId("turn-1"));
+    const t = (await rig.store.get<Turn>(UID, path))!.data;
+    await patchRecord<Turn>(rig.store, UID, path, { rootSlices: t.rootSlices.map((s) => ({ ...s, sens: "S2" as const })) });
+    expect((await callRoute(rig, stateRoute, body())).body.ack).toBeNull();
+    for (const n of [2, 3, 4, 5]) await callRoute(rig, turnRoute, typed(sessionId, deck, n, `line ${n}`));
+    expect((await callRoute(rig, stateRoute, body())).body.ack).not.toBeNull();
+  });
+
+  it("no ack with a parse gap, or while a lease holds; an expired lease stores unknown", async () => {
+    const gap = await opened();
+    await patchRecord<Session>(gap.rig.store, UID, paths.session(UID, gap.sessionId), { lastClientSeq: 2, committedParseSeq: 1 });
+    expect((await callRoute(gap.rig, stateRoute, gap.body())).body.ack).toBeNull();
+
+    const lease = await opened();
+    const until = new Date(lease.rig.clock.read().opsClock.now + 2_500).toISOString();
+    await patchRecord<Session>(lease.rig.store, UID, paths.session(UID, lease.sessionId), { parseLease: { clientSeq: 1, token: testId("tok"), until } });
+    expect((await callRoute(lease.rig, stateRoute, lease.body())).body.ack).toBeNull();
+    lease.rig.clock.advance(3_000);
+    expect((await callRoute(lease.rig, stateRoute, lease.body())).body.ack).toBeNull();
+    const s = (await lease.rig.store.get<Session>(UID, paths.session(UID, lease.sessionId)))!.data;
+    expect([s.audience, s.parseLease]).toEqual(["unknown", null]);
+  });
+
+  it("polling once a second writes the Session only when something changes (question 84)", async () => {
+    const { rig, sessionId, body } = await opened();
+    await callRoute(rig, stateRoute, body()); // minting → active: a write
+    const rev = (await rig.store.get<Session>(UID, paths.session(UID, sessionId)))!.data.rev;
+    for (let i = 0; i < 60; i++) {
+      rig.clock.advance(1_000);
+      expect((await callRoute(rig, stateRoute, body())).body.ack).not.toBeNull();
+    }
+    const after = (await rig.store.get<Session>(UID, paths.session(UID, sessionId)))!.data.rev;
+    expect(after - rev).toBeLessThanOrEqual(2);
   });
 });
