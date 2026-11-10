@@ -6,6 +6,7 @@
  */
 import { DECISIONS_DEADLINE_MS, type Probabilities, type RuleParse, buildTurnIntents, outcomeOf, parseDecision, regexMatch } from "@franki/core";
 import type { Env } from "../config/env";
+import type { Log } from "../routes/runtime";
 import { type DecisionsPort, decisionsModel } from "./decisions-port";
 
 export interface SlowParse {
@@ -20,7 +21,7 @@ export interface SlowParse {
 export interface SlowParseDeps {
   decisions: DecisionsPort;
   env: Env;
-  log: (event: string, fields: Record<string, unknown>) => void;
+  log: Log;
 }
 
 export async function runSlowParse(deps: SlowParseDeps, input: { turnId: string; utterance: string; lastQuestion?: string | null }, deadlineMs = DECISIONS_DEADLINE_MS): Promise<SlowParse> {
