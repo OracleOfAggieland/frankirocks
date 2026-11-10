@@ -5,7 +5,9 @@
  * Effective_Audience is `unknown`; the stored audience is untouched, so a repair that succeeds leaves no trace. A
  * lease whose time ran out with no repair is a failed repair: the next request that sees it stores `unknown`.
  */
-import { type Au, type ID, type Session, msFromTs, tsFromMs } from "@franki/core";
+import { type Au, type ID, type Session, type Turn, msFromTs, tsFromMs } from "@franki/core";
+import { paths } from "./store/paths";
+import type { Tx } from "./store/port";
 
 /** A failed parse's repair window (R15.3). */
 export const REPAIR_LEASE_MS = 2_500;
@@ -33,4 +35,24 @@ export function failedParseEffect(s: Session, f: { clientSeq: number; token: ID;
   const leaseMs = f.why === "missing" ? MISSING_LEASE_MS : f.why === "deadline" || f.why === "transport" ? REPAIR_LEASE_MS : null;
   if (leaseMs === null || (s.parseLease !== null && msFromTs(s.parseLease.until) > opsNow)) return { ...s, audience: "unknown" };
   return { ...s, parseLease: { clientSeq: f.clientSeq, token: f.token, until: tsFromMs(opsNow + leaseMs) } };
+}
+
+/**
+ * The parse watermark after the Turn at `seq` commits its parse late (a Parse_Repair or a Superseding_Post): it
+ * moves over every contiguous committed user Turn from the current watermark (question 73; design "The
+ * Parse_Repair"). `seq` itself counts as committed, since its update is in the same transaction and not yet read.
+ */
+export async function advancedWatermark(tx: Pick<Tx, "query">, uid: string, sessionId: ID, s: Session, seq: number): Promise<number> {
+  let w = s.committedParseSeq;
+  if (seq !== w + 1) return w;
+  const rows = await tx.query<Turn>({
+    collection: paths.turns(uid, sessionId),
+    where: [{ field: "seq", op: ">=", value: w + 1 }],
+    orderBy: { field: "seq", dir: "asc" },
+    limit: 100,
+  });
+  const committed = new Set(rows.filter((r) => r.data.role === "user" && r.data.parseState === "committed").map((r) => r.data.seq));
+  committed.add(seq);
+  while (committed.has(w + 1) && w + 1 <= s.lastClientSeq) w++;
+  return w;
 }

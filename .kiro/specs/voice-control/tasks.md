@@ -366,9 +366,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
 
 ### Group A13 (serial; both edit `turn.ts`)
 
-- [ ] 37. The Superseding_Post
+- [x] 37. The Superseding_Post
   - Requirements: R7.8, R11.9, R15.7; Q89
-  - Depends on: 32, 33 · Estimate: 2 h · Actual:
+  - Depends on: 32, 33 · Estimate: 2 h · Actual: 0.6 h
+  - Notes: `postSupersede` in `turn.ts` runs before the compare-and-set. The superseded entry is read outside the transaction (it is complete and immutable). A hit raises `policyRev`, and the new Evidence and Extract_Job carry the raised `policyRev` so the extraction worker doesn't drop the job as stale; the response carries the new Stamp and a Deck at that `policyRev`, status `ready` (design status table). A lease past its window is expired first (a failed repair stays `unknown`); one still naming this Turn is cleared. `advancedWatermark` (new, `audience.ts`) moves `committedParseSeq` over the contiguous committed user Turns, and Task 38 reuses it; a parsed `alone` never moves it (R15.8). A failed parse commits the text and Evidence with `parseState:"failed"` and stores `unknown`, with no repair. Property 11 still red after this task, only on repair plans (expected until task 38): seed `-123574846`, path `1:0:0`, counterexample `[{kinds:["typed"],k:0,how:"deadline"}]`.
   - Files: `packages/server/src/routes/turn.ts`, `packages/server/src/routes/supersede.test.ts` (new)
   - Witness: `supersede.test.ts` › an ordinary late transcript commits the Turn, Evidence and Extract_Job, clears the lease and moves the watermark; a control hit runs the late-hit effects; no Permit and no decision; a request whose superseded entry is for another turn is PARSE; a Turn not in `transcriptMissing` is `stale` with no writes; a replay is a replay.
   - Commit: `feat(turn): superseding post for late transcripts`

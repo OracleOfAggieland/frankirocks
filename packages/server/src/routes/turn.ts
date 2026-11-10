@@ -8,8 +8,10 @@
  * compare-and-set commits nothing and is handled again against the new `nextClientSeq` (R19.11).
  */
 import {
+  type CoreEpoch,
   type Evidence,
   type Infer,
+  type Ledger,
   type RuleInput,
   type RuleOutcome,
   type SafeTurn,
@@ -17,17 +19,18 @@ import {
   type Turn,
   TurnRequest,
   type TurnResponse,
+  idParts,
   msFromTs,
   tsFromMs,
   turnRef,
 } from "@franki/core";
 import { admitRule, fastODecisionId, fastOTurnFields } from "../admission/seam";
-import { effectiveAudience, expireLease, failedParseEffect, hasParseGap } from "../audience";
+import { advancedWatermark, effectiveAudience, expireLease, failedParseEffect, hasParseGap } from "../audience";
 import { decisionsPort } from "../intents/decisions-port";
 import { runSlowParse } from "../intents/slow-parse";
 import { ensureCoreDocs, ownerClock, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck } from "../deck";
-import { completeRequest } from "../ledger/request";
+import { type RequestKey, completeRequest } from "../ledger/request";
 import { SESSION_IDLE_MS } from "../sessions";
 import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
@@ -57,6 +60,9 @@ export function checkTurnRequest(req: TurnReq): TurnReq {
   if (req.transcriptState === "final") {
     if (normalizedTranscript(req.transcript) === null) throw parseError("transcript must be 1 to 8192 code units");
   } else if (req.source !== "asr" || req.transcript !== "") throw parseError("missing or failed transcripts are ASR-only and empty");
+  // A Superseding_Post carries a late final transcript for a Turn posted `missing` (R7.8, R11.9; question 89).
+  if (req.supersedesRequestId !== null && (req.source !== "asr" || req.transcriptState !== "final" || req.items.length === 0)) throw parseError("only a final ASR turn supersedes");
+  if (req.supersedesRequestId !== null && req.supersedesRequestId === req.requestId) throw parseError("a request can't supersede itself");
   return req;
 }
 
@@ -100,6 +106,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
   const { uid, deps } = ctx;
   await ensureCoreDocs(uid, deps);
   return mutation(ctx, "turn", req.requestId, req, async (key) => {
+    if (req.supersedesRequestId !== null) return postSupersede(ctx, req, req.supersedesRequestId, key);
     const typedText = req.transcriptState === "final" ? normalizedTranscript(req.transcript)! : "";
     const cls = classifyTurn(req);
     // Every final ASR transcript and typed U line is parsed (R11.1); pasted T text never is (R8.10). With no call,
@@ -260,6 +267,112 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
       }
     }
   });
+}
+
+/**
+ * The Superseding_Post (R7.8, R11.9, R15.7; design "The Superseding_Post", question 89): a late final transcript
+ * for a Turn first posted `missing`. It keeps the Turn's `clientSeq` and skips the compare-and-set, commits the
+ * parse, the text and new Evidence (KC02) on the existing Turn, and admits nothing: no Permit and no decision.
+ */
+async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string, key: RequestKey): Promise<TurnRes> {
+  const { uid, deps } = ctx;
+  // The superseded request must be complete and for this Turn.
+  const first = await deps.store.get<Extract<Ledger, { kind: "request" }>>(uid, paths.ledger(uid, deps.hasher.id(idParts.request(uid, "turn", supersedes))));
+  const firstTurnId = (first?.data.payload.response as { stamp?: { turnId?: unknown } } | null | undefined)?.stamp?.turnId;
+  if (first === null || first.data.kind !== "request" || first.data.state !== "complete" || firstTurnId !== req.turnId) throw parseError("supersedesRequestId names no completed request for this turn");
+
+  const text = normalizedTranscript(req.transcript)!;
+  const cls = classifyTurn(req);
+  const slow = await runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log }, { turnId: req.turnId, utterance: text });
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const outcome = await deps.store.transaction(uid, async (tx) => {
+        const doc = await tx.get<Session>(paths.session(uid, req.sessionId));
+        if (doc === null) throw scopeError();
+        const s0 = doc.data;
+        if (s0.generation !== req.generation || (s0.status !== "minting" && s0.status !== "active")) throw staleError("session");
+        const core = await readCoreDocs(tx, uid);
+        if (core.epoch.data.barrier !== null) throw barrierError();
+        const pair = ownerClock(core.state.data, deps.clock);
+        const ops = pair.opsClock.now;
+        const stamp0 = { ...currentStamp(req.sessionId, s0.generation, { epoch: core.epoch.data, rules: core.rules.data, bundle: core.bundle.data }), turnId: req.turnId };
+        const head = core.bundle.data.head;
+        const base: TurnRes = {
+          requestId: req.requestId,
+          stamp: stamp0,
+          status: "ordinary",
+          deck: null,
+          permit: null,
+          notes: [],
+          cards: [],
+          pendingId: null,
+          question: null,
+          retryAfterMs: 0,
+          receiptId: null,
+          error: null,
+        };
+        const fresh = req.epoch === stamp0.epoch && req.policyRev === stamp0.policyRev && req.bundleRev === stamp0.bundleRev && req.rulesRev === stamp0.rulesRev;
+        if (!fresh) return { kind: "unrecorded" as const, response: { ...base, status: "stale" as const, deck: head === null ? null : issueDeck(stamp0, head, ops) } };
+
+        // The Turn must still wait for this transcript: same seq, same items; else stale with no writes.
+        const turnDoc = await tx.get<Turn>(paths.turn(uid, req.sessionId, req.turnId));
+        const itemIds = [...req.items].sort((a, b) => a.commitSeq - b.commitSeq).map((i) => i.itemId);
+        const t0 = turnDoc?.data;
+        const sameItems = t0 !== undefined && t0.itemIds.length === itemIds.length && t0.itemIds.every((id, n) => id === itemIds[n]);
+        if (t0 === undefined || t0.role !== "user" || t0.state !== "transcriptMissing" || t0.seq !== req.clientSeq || !sameItems) {
+          return { kind: "unrecorded" as const, response: { ...base, status: "stale" as const } };
+        }
+
+        // A hit runs as a late hit: policyRev + 1, so the next Deck cancels older speech (KV05; R15.5).
+        const hit = slow.parse.kind === "hit";
+        const epoch: CoreEpoch = hit ? { ...core.epoch.data, policyRev: core.epoch.data.policyRev + 1, updatedAt: tsFromMs(ops) } : core.epoch.data;
+        if (hit) tx.update(paths.core(uid, "epoch"), epoch);
+        const coreVals = { epoch: epoch.epoch, policyRev: epoch.policyRev };
+        const stamp = { ...currentStamp(req.sessionId, s0.generation, { epoch, rules: core.rules.data, bundle: core.bundle.data }), turnId: req.turnId };
+
+        const { evidence } = userTurnRecords({ uid, sessionId: req.sessionId, req, text, cls, clock: pair, core: coreVals, hasher: deps.hasher });
+        const ev = evidence!;
+        tx.create(paths.evidence(uid, ev.eid), ev.record);
+        const jobId = extractJobId(ev.eid, deps.hasher);
+        tx.create(paths.job(uid, jobId), extractJobRecord(uid, ev.eid, ev.record, ops, coreVals));
+
+        const parsed = slow.parse.kind !== "failed";
+        const now = tsFromMs(ops);
+        tx.update(turnDoc!.path, {
+          ...t0,
+          state: "committed",
+          text,
+          evidenceId: ev.eid,
+          final: true,
+          parseState: parsed ? "committed" : "failed",
+          uncertainSpeaker: slow.probabilities?.uncertainSpeaker ?? 0,
+          rootSlices: ev.record.fieldSlices.slice(0, 1),
+          updatedAt: now,
+        } satisfies Turn);
+
+        // A lease past its window is a failed repair; one still naming this Turn is released.
+        let s = expireLease(s0, ops);
+        if (s.parseLease !== null && s.parseLease.clientSeq === req.clientSeq) s = { ...s, parseLease: null };
+        // A committed parse closes the gap; a parsed `alone` never does (R15.4, R15.8). A failed parse is `unknown` (R15.6).
+        let committedParseSeq = s.committedParseSeq;
+        if (!parsed) s = { ...s, audience: "unknown" };
+        else if (!(slow.parse.kind === "hit" && slow.parse.chosen === "alone")) committedParseSeq = await advancedWatermark(tx, uid, req.sessionId, s, req.clientSeq);
+        tx.update(doc.path, { ...s, committedParseSeq, lastTurnAt: now, expiresAt: tsFromMs(ops + SESSION_IDLE_MS), updatedAt: now });
+
+        const safe = await earlierSafeTurns(tx, uid, req.sessionId, req.clientSeq, ctx);
+        const deck = head === null ? null : issueDeck(stamp, head, ops, safe);
+        const response: TurnRes = { ...base, stamp, status: hit ? "ready" : "ordinary", deck };
+        await completeRequest(tx, key, response, ops);
+        return { kind: "committed" as const, response, jobId };
+      });
+      if (outcome.kind === "unrecorded") throw new Unrecorded(outcome.response);
+      ctx.schedule(() => drainExtractJobs(uid, deps));
+      return outcome.response;
+    } catch (error) {
+      if (isStoreError(error, "staleRevision") && attempt < MAX_CAS_ATTEMPTS) continue;
+      throw error;
+    }
+  }
 }
 
 export const turnRoute: RouteSpec<TurnReq> = {
