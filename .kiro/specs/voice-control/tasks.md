@@ -108,10 +108,11 @@ Rules for every task:
 
 ### Group A4
 
-- [ ] 10. Core exports
+- [x] 10. Core exports
   - Requirements: R10.1 (exports for the server)
   - Depends on: 3–9
-  - Estimate: 0.25 h · Actual:
+  - Estimate: 0.25 h · Actual: 0.1 h
+  - Notes: No name collisions between the new modules and the existing exports.
   - Files: `packages/core/src/index.ts`
   - Witness: `npm run typecheck` exits 0; `scripts/import-boundaries.test.ts` passes.
   - Commit: `chore(core): export intents, lines, latency and fastO`
