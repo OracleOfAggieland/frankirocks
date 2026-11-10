@@ -216,9 +216,10 @@ Machine properties 2, 4, 7 and 12 are expected red on the current machine. The o
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 12, a late permit plays`
 
-- [ ] 22. **[property]** P8 The seam is total and closed
+- [x] 22. **[property]** P8 The seam is total and closed
   - Requirements: R20.1.8; R8.3–R8.12, R10.2, R12
-  - Depends on: 13 · Estimate: 0.75 h · Actual:
+  - Depends on: 13 · Estimate: 0.75 h · Actual: 0.4 h
+  - Notes: **Red on first run.** Seed `391587391`, path `39:1:2:2`. Shrunk counterexample: `{source:"tool", transcript:"final", judge:"error", parse:{kind:"none"}, regexMatch:false, audience:"private", narrowedHere:false, callLive:false, parseGap:false, noteSens:"none", wordsPer2s:false, allFinal:false, toolParseCommitted:true, wave:"A"}`: rule row 3 gave a tool continuation `notes:"all"` on a turn the judge didn't mark O, against R8.12. The exhaustive half fails the same way, and also on a typed source with a non-`typed` judge, where row 13 waived the judge for `source:"typed"`. Fix (separate commit after this one): row 3 and row 13 allow all notes only with `judge` O or `typed`, a private audience and no gap; row 13 waives word density and all-final for typed lines only. The exhaustive half runs about 20 s.
   - Files: `packages/core/src/intents/seam-total.property.test.ts` (new)
   - Witness: the property file, 1,000 runs plus the exhaustive enum part. Expected green (task 8 is done).
   - Commit: `test(admission): property 8, the seam is total and closed`
