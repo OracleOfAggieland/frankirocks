@@ -50,4 +50,14 @@ describe("call generators and driver", () => {
     expect(posted).toBeGreaterThan(60);
     expect(spoke).toBeGreaterThan(10);
   });
+
+  it("reaches the voice-control triggers: fastO, a held judge, a muted speculative start", () => {
+    const calls = fc.sample(arbCall, { numRuns: 300, seed: 11 }).map((s) => runCall(s));
+    const fastO = calls.filter((d) => d.trace.steps.some((x) => x.after.pending?.permit.kind === "fastO")).length;
+    const held = calls.filter((d) => d.trace.steps.some((x) => x.before.judge !== null && x.after.judge === null && x.after.phase === "HELD")).length;
+    const muted = calls.filter((d) => d.trace.steps.some((x) => x.after.spec?.mutedStarted === true)).length;
+    expect(fastO).toBeGreaterThan(10);
+    expect(held).toBeGreaterThan(10);
+    expect(muted).toBeGreaterThan(10);
+  });
 });

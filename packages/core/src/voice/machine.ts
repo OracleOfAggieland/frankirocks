@@ -16,8 +16,10 @@
  */
 import { RECOVERY_LINE, type PayloadInput } from "../admission";
 import { SEMANTIC_VAD } from "./vad";
-import { APP_JUDGE_SETTINGS, type JudgeVerdict } from "./judge";
-import { LATE_TURN_MS, type LatencyRow, type LatencyTimes } from "./latency";
+import { APP_JUDGE_SETTINGS, type JudgeVerdict, judgeCreate, parseJudgeDone } from "./judge";
+import { type FastORefusal, LATE_TURN_MS, type LatencyRow, type LatencyTimes, emptyTimes, finishRow, pushRow } from "./latency";
+import { fastOProblem, issueFastO } from "./fast-o";
+import { sayExactly } from "./lines";
 import { type Infer } from "../schema/v";
 import { type SS, type StateAck, msFromTs, tsFromMs } from "../schema/primitives";
 import type { PermitKind } from "../schema/records";
@@ -78,6 +80,10 @@ export const TURN_RESPONSE_LIMIT_MS = 5_000;
 export const MISSING_WINDOW_MS = 10_000;
 /** `/api/session/state` while a call is live, never two in flight (R4.5). */
 export const POLL_MS = 1_000;
+/** A state request with no answer after this is treated as lost, so polling can go on (the client's limit is 1.5 s). */
+export const STATE_STALE_MS = 5_000;
+/** Contracts §6 States SPEAKING "45scap": an admitted reply that hasn't ended by then is cancelled. */
+export const SPEAK_CAP_MS = 45_000;
 export { LATE_TURN_MS };
 
 // ---------------------------------------------------------------------------------------------
@@ -114,7 +120,9 @@ export type TimerName =
   | "lineDone"
   | "judge"
   | "poll"
-  | "swap";
+  | "swap"
+  /** Contracts §6 States SPEAKING "45scap": an active reply that never starts or never stops ends here. */
+  | "speakCap";
 
 export interface VoiceItem {
   itemId: string;
@@ -138,6 +146,10 @@ export interface VoiceTurn {
   /** The TurnRequest sent for this Turn, or null while it still waits for items or transcripts. */
   posted: TurnBody | null;
   staleRetried: boolean;
+  /** The judge's verdict for this Turn (invalid counts as U), sent as the TurnRequest's `judge` (R3.9). */
+  verdict?: JudgeVerdict | null;
+  /** Held by H, U, a judge timeout or a fastO refusal: a reply held never resumes, so the Turn doesn't speculate again. */
+  held?: boolean;
 }
 
 export type ReplyPurpose = "speech" | "recovery" | "tool";
@@ -161,6 +173,8 @@ export interface ActiveReply extends PendingReply {
   audioStarted: boolean;
   /** The recall call this reply made, while TOOL_WAIT waits on `/api/tool`. */
   pendingTool: ToolCallItem | null;
+  /** The client `event_id` of the `response.create` this reply waits on; matched against `metadata.eventId`. */
+  eventId?: string | null;
 }
 
 export interface VoiceConfig {
@@ -179,6 +193,8 @@ export interface JudgeState {
   verdict: JudgeVerdict | null;
   valid: boolean;
   verdictAt: number | null;
+  /** The freshId of the verdict's event, used as a fastO permitId. */
+  fastOId?: string | null;
 }
 
 /** The speculative reply, and the payload it was created from. */
@@ -190,6 +206,10 @@ export interface SpecState {
   hash: string | null;
   mutedStarted: boolean;
   heldCall: ToolCallItem | null;
+  /** Its `response.done` arrived before it was admitted. */
+  done: boolean;
+  /** An `error` event refused it: a valid O creates the reply fresh instead (question 85). */
+  failed?: boolean;
 }
 
 /** A Turn posted `missing` whose transcript may still arrive (R7.8). */
@@ -261,6 +281,8 @@ export interface VoiceState {
   latency: { current: LatencyTimes | null; rows: LatencyRow[] };
   /** Counter for client `event_id`s. */
   eventSeq: number;
+  /** Audio of a response this call doesn't own started since the last clear; the next reply clears first (R3.2). */
+  strayAudio?: boolean;
 }
 
 export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState {
@@ -373,7 +395,8 @@ export type VoiceCommand =
   | { kind: "send"; event: RealtimeClientEvent }
   | { kind: "open"; body: { initiator: "user"; previousSessionId: string | null; clientZone: string; visitId: null } }
   | { kind: "state"; body: Infer<typeof StateRequest> }
-  | { kind: "turn"; body: TurnBody }
+  /** `supersedesTurnId` names a Turn posted `missing`; the Voice_Client fills `supersedesRequestId` with that request's ID (R7.8). */
+  | { kind: "turn"; body: TurnBody; supersedesTurnId?: string }
   | { kind: "tool"; body: Omit<Infer<typeof ToolRequest>, "requestId"> }
   | { kind: "close"; body: Omit<Infer<typeof CloseRequest>, "requestId"> }
   | { kind: "receipt"; body: Omit<Infer<typeof ReceiptRequest>, "requestId"> }
@@ -425,24 +448,10 @@ function safeTurnInput(t: SafeTurn): Record<string, unknown> {
     : { type: "message", role: "assistant", content: [{ type: "output_text", text: t.text }] };
 }
 
-/** The one `response.create` a verified Permit allows (R15.3; contracts §6 Tools). */
-export function replyCreate(st: VoiceState, reply: PendingReply): RealtimeClientEvent {
+/** The reply's input: the Deck's safe turns, then this Turn's audio (or typed text), then any tool exchange. */
+function replyInput(st: VoiceState, reply: Pick<PendingReply, "toolCall" | "toolOutput">): Record<string, unknown>[] {
   const deck = st.deck!;
   const turn = st.turn!;
-  const metadata = {
-    purpose: "speech",
-    turnId: reply.permit.stamp.turnId,
-    generation: String(st.session!.generation),
-    noteIds: reply.permit.noteIds.join(","),
-  };
-  if (reply.purpose === "recovery") {
-    // recoveryOnly: the fixed neutral line, no facts and no tools (contracts §6 Admission).
-    return {
-      type: "response.create",
-      response: { conversation: "none", instructions: `Say exactly this and nothing else: "${RECOVERY_LINE}"`, input: [], tools: [], metadata },
-    };
-  }
-  const notes = reply.notes.length === 0 ? "" : `\n\nNotes:\n${reply.notes.map((n) => `- ${n.text}`).join("\n")}`;
   const input: Record<string, unknown>[] = deck.turns.map(safeTurnInput);
   if (turn.source === "asr") for (const id of audioIds(turn)) input.push({ type: "item_reference", id });
   else input.push({ type: "message", role: "user", content: [{ type: "input_text", text: turn.text ?? "" }] });
@@ -450,16 +459,65 @@ export function replyCreate(st: VoiceState, reply: PendingReply): RealtimeClient
     input.push({ type: "function_call", call_id: reply.toolCall.callId, name: reply.toolCall.name, arguments: reply.toolCall.arguments });
     input.push({ type: "function_call_output", call_id: reply.toolCall.callId, output: JSON.stringify(reply.toolOutput) });
   }
-  return {
-    type: "response.create",
-    response: { conversation: "none", instructions: deck.head.text + notes, input, tools: [RECALL_TOOL], tool_choice: "auto", metadata },
+  return input;
+}
+
+/** Adds a client `event_id` and the same ID as `metadata.eventId`, so `error` and `response.created` match it. */
+export function withEventId(e: RealtimeClientEvent, eventId: string): RealtimeClientEvent {
+  const response = (e.response ?? {}) as Record<string, unknown>;
+  const metadata = (response.metadata ?? {}) as Record<string, string>;
+  return { ...e, event_id: eventId, response: { ...response, metadata: { ...metadata, eventId } } };
+}
+
+/** The one `response.create` a verified Permit allows (R15.3; contracts §6 Tools). */
+export function replyCreate(st: VoiceState, reply: PendingReply, eventId: string | null = null): RealtimeClientEvent {
+  const deck = st.deck!;
+  const metadata = {
+    purpose: "speech",
+    turnId: reply.permit.stamp.turnId,
+    generation: String(st.session!.generation),
+    noteIds: reply.permit.noteIds.join(","),
   };
+  const tag = (e: RealtimeClientEvent) => (eventId === null ? e : withEventId(e, eventId));
+  if (reply.purpose === "recovery") {
+    // recoveryOnly: the fixed neutral line, no facts and no tools (contracts §6 Admission).
+    return tag({
+      type: "response.create",
+      response: { conversation: "none", instructions: sayExactly(RECOVERY_LINE), input: [], tools: [], metadata },
+    });
+  }
+  const ack = reply.notes.find((n) => n.kind === "ack");
+  if (ack !== undefined) {
+    // A Fixed_Line: spoken verbatim, no tools (R12.4; question 59).
+    return tag({ type: "response.create", response: { conversation: "none", instructions: sayExactly(ack.text), input: [], tools: [], metadata } });
+  }
+  const notes = reply.notes.length === 0 ? "" : `\n\nNotes:\n${reply.notes.map((n) => `- ${n.text}`).join("\n")}`;
+  const input = replyInput(st, reply);
+  // Scope `ack` (the crisis care reply) has no tools (R12.6; question 88).
+  const tools = reply.permit.scope === "ack" ? { tools: [] } : { tools: [RECALL_TOOL], tool_choice: "auto" };
+  return tag({
+    type: "response.create",
+    response: { conversation: "none", instructions: deck.head.text + notes, input, ...tools, metadata },
+  });
+}
+
+/** The speculative reply (R2.3): the Deck's Head, no notes, this Turn's audio, muted until admitted. */
+export function specCreate(st: VoiceState, eventId: string): RealtimeClientEvent {
+  const metadata = { purpose: "speculative", turnId: st.turn!.turnId, generation: String(st.session!.generation), noteIds: "" };
+  return withEventId(
+    {
+      type: "response.create",
+      response: { conversation: "none", instructions: st.deck!.head.text, input: replyInput(st, { toolCall: null, toolOutput: null }), tools: [RECALL_TOOL], tool_choice: "auto", metadata },
+    },
+    eventId,
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
 // Pure helpers
 
-const IN_CALL: readonly VoicePhase[] = ["LISTENING", "WAIT_ITEM", "HELD", "SPEAKING", "TOOL_WAIT"];
+const IN_CALL: readonly VoicePhase[] = ["LISTENING", "WAIT_ITEM", "JUDGING", "SPECULATING", "HELD", "SPEAKING", "TOOL_WAIT"];
+const JUDGE_PHASES: readonly VoicePhase[] = ["JUDGING", "SPECULATING"];
 
 /** The current Stamp: the Session, the held Deck's four revisions, the generation and the current Turn. */
 export function localStamp(st: VoiceState): Stamp | null {
@@ -521,15 +579,19 @@ const KINDS_FOR: Record<ReplyPurpose, readonly PermitKind[]> = {
 
 export type PermitProblem = "hash" | "stamp" | "expired" | "deckExpired" | "kind" | "ack";
 
-/** R17.2, R13.7, KV13: why a Permit may not play, or null. `hash` is the client's own payload hash. */
-export function permitProblem(st: VoiceState, reply: PendingReply, hash: string | null, now: number): PermitProblem | null {
+/**
+ * R17.2, R13.7, KV13: why a Permit may not play, or null. `hash` is the client's own payload hash. The `fastO`
+ * StateAck binds when the Permit is issued (KV13); later re-checks (the hash answer, unmute, a function call) pass
+ * `checkAck: false`, since the browser drops its ack when it posts the Turn (R4.3).
+ */
+export function permitProblem(st: VoiceState, reply: PendingReply, hash: string | null, now: number, checkAck = true): PermitProblem | null {
   const stamp = localStamp(st);
   const { permit } = reply;
   if (stamp === null || !sameStamp(permit.stamp, stamp)) return "stamp";
   if (msFromTs(permit.expiresAt) <= now) return "expired";
   if (st.deck === null || msFromTs(st.deck.expiresAt) <= now) return "deckExpired";
   if (!KINDS_FOR[reply.purpose].includes(permit.kind)) return "kind";
-  if (permit.kind === "fastO") {
+  if (permit.kind === "fastO" && checkAck) {
     // KV13 applies to fastO only: a StateAck matching all four revisions, younger than 2.5 s.
     const ack = st.ack;
     if (ack === null || !sameRevs(ack.stamp, st.deck) || now - msFromTs(ack.issuedOpsAt) >= FAST_ACK_AGE_MS) return "ack";
@@ -559,7 +621,8 @@ export function avatarState(st: VoiceState): AvatarState {
     case "SWAPPING":
       return "thinking";
     case "SPEAKING":
-      return "speaking";
+      // R6.4: never "speaking" while output is muted.
+      return st.outputMuted ? "thinking" : "speaking";
     case "RECOVERY":
       return "recovery";
   }
@@ -590,6 +653,7 @@ class Step {
     this.cmds.push(...c);
   }
   send(event: RealtimeClientEvent): void {
+    if (event.type === "output_audio_buffer.clear" && this.st.strayAudio) this.set({ strayAudio: false });
     this.push({ kind: "send", event });
   }
   arm(name: TimerName, at: number): void {
@@ -678,7 +742,7 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       }
       break;
     case "stateOk":
-      onState(s, event.response);
+      onState(s, event.response, event.sentAt);
       break;
     case "stateFailed":
       onStateFailed(s);
@@ -689,13 +753,15 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
     case "turnFailed":
       // The client already retried the same requestId; the Session's clientSeq is unknown now, so reconnect,
       // which opens a fresh Session (design "Session timing").
+      s.set({ outstanding: state.outstanding.filter((o) => o.turnId !== event.turnId), lastTurnResponseAt: now });
+      if (s.st.ack !== null) s.set({ ack: null, ackDroppedStale: true });
       if (state.turn?.turnId === event.turnId && state.turn.posted !== null && state.session !== null) connectionRecovery(s, true);
       break;
     case "toolOk":
       onTool(s, event.callId, event.response);
       break;
     case "toolFailed":
-      if (state.phase === "TOOL_WAIT" && state.active?.pendingTool?.callId === event.callId) toListening(s);
+      if ((state.phase === "TOOL_WAIT" || state.phase === "SPEAKING") && state.active?.pendingTool?.callId === event.callId) toListening(s);
       break;
     case "closeDone":
       s.set({ hangingUp: false });
@@ -707,6 +773,9 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
     case "permitChecked":
       onPermitChecked(s, event.permitId, event.hash);
       break;
+    case "specHashed":
+      onSpecHashed(s, event.eventId, event.hash);
+      break;
     case "typedSubmitted":
       if (state.phase === "LISTENING" && state.session !== null && state.deck !== null && event.text.trim() !== "") {
         s.set({ turn: { turnId: event.turnId, source: "typed", text: event.text, items: [], tEnd: now, posted: null, staleRetried: false } });
@@ -714,7 +783,7 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       }
       break;
     case "realtime":
-      onRealtime(s, event.event, event.freshId);
+      onRealtime(s, event.event, event.freshId, event.lastLoudAt ?? null);
       break;
     case "timer":
       onTimer(s, event.name);
@@ -766,6 +835,7 @@ function onOpen(s: Step, res: Infer<typeof OpenResponse>): void {
     pending: null,
     active: null,
     inFlight: [],
+    judge: null, spec: null, unadmitted: [], outstanding: [], missing: [], admittedTurnId: null, stateSentAt: null, afterReply: null, 
     stateFailures: null,
     stateRetryVisible: false,
   });
@@ -800,6 +870,7 @@ function closedFields(st: VoiceState): Partial<VoiceState> {
     pending: null,
     active: null,
     inFlight: [],
+    judge: null, spec: null, unadmitted: [], outstanding: [], missing: [], admittedTurnId: null, stateSentAt: null, afterReply: null, 
     deadlines: {},
     recovery: null,
     retryVisible: false,
@@ -841,6 +912,7 @@ function connectionRecovery(s: Step, closeSession: boolean): void {
     pending: null,
     active: null,
     inFlight: [],
+    judge: null, spec: null, unadmitted: [], outstanding: [], missing: [], admittedTurnId: null, stateSentAt: null, afterReply: null, 
     deadlines: {},
     recovery: { kind: "connection", since, attempts: st.recovery?.kind === "connection" ? st.recovery.attempts : 0 },
   });
@@ -868,6 +940,7 @@ function reconnect(s: Step): void {
 function postState(s: Step): void {
   const { session, deck, ack } = s.st;
   if (session === null || deck === null) return;
+  s.set({ stateSentAt: s.now });
   s.push({
     kind: "state",
     body: {
@@ -898,35 +971,46 @@ function adoptDeck(s: Step, next: Deck | null): void {
 function cancelAll(s: Step, higherStamp: boolean): void {
   const st = s.st;
   s.mute();
-  for (const id of st.inFlight) s.send({ type: "response.cancel", response_id: id });
+  // Every response this call made, including a speculative reply that already finished generating (KV04).
+  const ids = [...new Set([...st.inFlight, st.spec?.responseId, st.judge?.responseId].filter((x): x is string => x != null))];
+  for (const id of ids) s.send({ type: "response.cancel", response_id: id });
   s.send({ type: "output_audio_buffer.clear" });
   const a = st.active;
   if (a !== null && a.responseId !== null) receipt(s, a, a.audioStarted ? "playbackEnded" : "cancelled");
-  s.set({ inFlight: [], pending: null, active: null });
-  s.disarm("tool", "permit", "turnRetry");
-  if (higherStamp && (st.phase === "SPEAKING" || st.phase === "TOOL_WAIT")) {
+  s.set({ inFlight: [], pending: null, active: null, judge: null, spec: null });
+  s.disarm("tool", "permit", "turnRetry", "judge", "speakCap");
+  if (higherStamp && (st.phase === "SPEAKING" || st.phase === "TOOL_WAIT" || st.phase === "HELD" || JUDGE_PHASES.includes(st.phase))) {
     // Design table: SPEAKING goes to HELD on a higher revision; no Permit can follow for the old reply.
     s.set({ phase: "HELD" });
     s.arm("permit", s.now + HOLD_LIMIT_MS);
   }
 }
 
-function onState(s: Step, res: Infer<typeof StateResponse>): void {
+function onState(s: Step, res: Infer<typeof StateResponse>, sentAt?: number): void {
   const st = s.st;
+  const sent = sentAt ?? st.stateSentAt ?? s.now;
+  s.set({ stateSentAt: null });
   if (st.session === null || res.stamp.sessionId !== st.session.sessionId) return;
   adoptDeck(s, res.deck);
-  if (res.ack !== null && res.ack.stamp.sessionId === st.session.sessionId) s.set({ ack: res.ack });
+  // R4.2: `ack:null` refuses fastO. R4.4: an ack requested before the last /api/turn answer can't grant it.
+  if (res.ack === null) s.set({ ack: null, ackDroppedStale: false });
+  else if (res.ack.stamp.sessionId === st.session.sessionId) {
+    const stale = s.st.lastTurnResponseAt !== null && sent <= s.st.lastTurnResponseAt;
+    s.set(stale ? { ack: null, ackDroppedStale: true } : { ack: res.ack, ackDroppedStale: false });
+  }
   s.set({ stateFailures: null, stateRetryVisible: false });
   s.disarm("stateRetry", "stateRetryUi");
   s.arm("refresh", s.now + REFRESH_MS);
   if (s.st.phase === "CONFIGURING" && s.st.ack !== null && s.st.deck !== null && sameRevs(s.st.ack.stamp, s.st.deck)) {
     s.disarm("ack", "connect", "retryUi", "reconnect");
     s.set({ phase: "LISTENING", recovery: null, retryVisible: false });
+    s.arm("poll", s.now + POLL_MS);
   }
 }
 
 function onStateFailed(s: Step): void {
   const st = s.st;
+  s.set({ stateSentAt: null });
   // In CONFIGURING the 1.5 s ack limit decides (R13.9). Otherwise keep the ack and Deck unextended (R13.8).
   if (st.session === null || st.phase === "CONFIGURING" || st.phase === "CONNECTING") return;
   const f = st.stateFailures ?? { since: s.now, attempts: 0 };
@@ -974,7 +1058,7 @@ function postTurn(s: Step, transcriptState: "final" | "missing" | "failed"): voi
     utteredWorldAt: tsFromMs(turn.tEnd),
     transcript,
     transcriptState,
-    judge: turn.source === "typed" ? "typed" : "timeout",
+    judge: turn.source === "typed" ? "typed" : (turn.verdict ?? "timeout"),
     pendingId: null,
     choiceId: null,
     supersedesRequestId: null,
@@ -982,42 +1066,90 @@ function postTurn(s: Step, transcriptState: "final" | "missing" | "failed"): voi
   };
   s.set({ turn: { ...turn, items, posted: body }, nextClientSeq: st.nextClientSeq + 1, lastCommitSeq });
   s.disarm("item", "transcript");
-  s.push({ kind: "turn", body });
+  pushTurn(s, body);
+  const admitted = st.admittedTurnId === turn.turnId;
   if (transcriptState === "final") {
-    s.set({ phase: "HELD" });
+    // Posting keeps a running judge, speculative reply or admitted reply where it is (design rows "all transcripts in").
+    if (s.st.phase === "WAIT_ITEM") s.set({ phase: "HELD" });
+    // R7.5: the answer has TURN_RESPONSE_LIMIT_MS; a Permit inside it plays, however late after the commit.
+    if (!admitted) s.arm("permit", s.now + TURN_RESPONSE_LIMIT_MS);
   } else {
+    // R7.8: a transcript may still come; it is sent then as a superseding post.
+    if (transcriptState === "missing" && turn.source === "asr")
+      s.set({ missing: [...s.st.missing.filter((m) => m.until > s.now), { turnId: turn.turnId, clientSeq: body.clientSeq, body, items, until: s.now + MISSING_WINDOW_MS }].slice(-2) });
+  }
+  if (transcriptState === "final" || admitted) {
+    // R7.6: the transcript went missing after the reply was admitted: it plays on.
+  } else {
+    dropSpeculation(s);
     // R15.11: RECOVERY plays only the neutral line under a recoveryOnly Permit, then listens again.
     s.set({ phase: "RECOVERY", recovery: { kind: "line", since: s.now, attempts: 0 } });
     s.arm("lineDone", s.now + LINE_FALLBACK_MS * 2);
   }
 }
 
+/** Sends a TurnRequest: the request is outstanding and the held StateAck is dropped (R4.3, R4.4). */
+function pushTurn(s: Step, body: TurnBody, supersedesTurnId: string | null = null): void {
+  s.push(supersedesTurnId === null ? { kind: "turn", body } : { kind: "turn", body, supersedesTurnId });
+  s.set({
+    ack: null,
+    ackDroppedStale: false,
+    outstanding: [...s.st.outstanding.filter((o) => o.turnId !== body.turnId), { turnId: body.turnId, deadline: s.now + TURN_RESPONSE_LIMIT_MS }],
+  });
+}
+
 function onTurn(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void {
+  // Every answer ends its request's wait and dates the next StateAck: an ack requested before it can't grant fastO.
+  s.set({ outstanding: s.st.outstanding.filter((o) => o.turnId !== turnId), lastTurnResponseAt: s.now });
+  if (s.st.ack !== null) s.set({ ack: null, ackDroppedStale: true });
   const st = s.st;
   const turn = st.turn;
   if (turn === null || turn.turnId !== turnId || turn.posted === null || st.session === null) return;
   if (res.stamp.turnId !== turnId || res.stamp.sessionId !== st.session.sessionId || res.stamp.generation !== st.session.generation) return;
   adoptDeck(s, res.deck);
   if (s.st.turn?.turnId !== turnId) return;
-  const recovery = s.st.phase === "RECOVERY";
+  if (s.st.admittedTurnId === turnId) {
+    // A reply of this Turn is already admitted. Only a route that changes what is said cuts it (R11.6; question 92).
+    const cut = res.permit !== null && res.error === null && (res.status === "ready" || res.status === "clarify");
+    if (!cut) return;
+    cancelAll(s, false);
+    s.set({ admittedTurnId: null, phase: "HELD" });
+  }
   if (res.error !== null) return noReply(s);
   if (res.status === "stale") {
     // Nothing was recorded; send the same Turn once more with the current revisions.
     if (turn.staleRetried) return noReply(s);
     const body: TurnBody = { ...turn.posted, epoch: res.stamp.epoch, policyRev: res.stamp.policyRev, bundleRev: res.stamp.bundleRev, rulesRev: res.stamp.rulesRev };
     s.set({ turn: { ...turn, posted: body, staleRetried: true } });
-    s.push({ kind: "turn", body });
+    pushTurn(s, body);
     return;
   }
-  if (res.status === "hold") {
+  if (res.status === "hold" && res.permit === null) {
     if (res.retryAfterMs > 0) s.arm("turnRetry", s.now + res.retryAfterMs);
-    if (recovery) return;
-    if (s.st.deadlines.permit === undefined) s.arm("permit", Math.max(s.now, turn.tEnd + HOLD_LIMIT_MS));
     return;
   }
+  // Wave B gives `blocked` its swap; until then nothing plays and the permit wait ends the turn.
+  if (res.status === "blocked") return;
   if (res.permit === null) return noReply(s);
-  const reply: Omit<PendingReply, "permit"> = { purpose: recovery ? "recovery" : "speech", notes: res.notes, toolCall: null, toolOutput: null };
-  requestVerify(s, { ...reply, permit: res.permit });
+  const permit = res.permit;
+  setLatency(s, (t) => ({ ...t, permitAt: s.now }));
+  if (permit.kind === "recoveryOnly") {
+    // A missing transcript, a failed parse, or a failed parse with a regex match (R7.4, R10.2): the neutral line.
+    dropSpeculation(s);
+    if (s.st.phase !== "RECOVERY") {
+      s.set({ phase: "RECOVERY", recovery: { kind: "line", since: s.now, attempts: 0 } });
+      s.arm("lineDone", s.now + LINE_FALLBACK_MS * 2);
+    }
+    return requestVerify(s, { permit, purpose: "recovery", notes: [], toolCall: null, toolOutput: null });
+  }
+  const spec = s.st.spec;
+  const coversSpec = spec !== null && spec.turnId === turnId && !spec.failed && spec.hash !== null && permit.kind === "slowOrdinary" && res.notes.length === 0 && permit.approvedPayloadHash === spec.hash;
+  if (coversSpec) cancelJudge(s);
+  else {
+    dropSpeculation(s);
+    if (JUDGE_PHASES.includes(s.st.phase)) s.set({ phase: "HELD" });
+  }
+  requestVerify(s, { permit, purpose: "speech", notes: res.notes, toolCall: null, toolOutput: null });
 }
 
 /** No reply will come for this Turn: listen again (after the recovery screen, if one shows). */
@@ -1029,8 +1161,10 @@ function noReply(s: Step): void {
 
 function toListening(s: Step): void {
   s.mute();
-  s.disarm("permit", "turnRetry", "tool", "lineDone", "item", "transcript");
-  s.set({ phase: "LISTENING", turn: null, pending: null, active: null, recovery: s.st.recovery?.kind === "line" ? null : s.st.recovery });
+  dropSpeculation(s);
+  finishLatency(s);
+  s.disarm("permit", "turnRetry", "tool", "lineDone", "item", "transcript", "judge", "speakCap");
+  s.set({ phase: "LISTENING", turn: null, pending: null, active: null, admittedTurnId: null, recovery: s.st.recovery?.kind === "line" ? null : s.st.recovery });
 }
 
 function requestVerify(s: Step, reply: PendingReply): void {
@@ -1038,35 +1172,185 @@ function requestVerify(s: Step, reply: PendingReply): void {
   // A Permit that already fails a check needs no hash: it never plays (R17.3).
   if (payload === null || permitProblem(s.st, reply, null, s.now) !== null) return rejectReply(s);
   s.set({ pending: reply });
+  // Every check waits with a deadline (KV06): no answer to the hash, and the Turn ends (R7.5).
+  if (s.st.phase !== "RECOVERY" && s.st.deadlines.permit === undefined) s.arm("permit", s.now + TURN_RESPONSE_LIMIT_MS);
   s.push({ kind: "verifyPermit", permitId: reply.permit.permitId, payload });
 }
 
 function rejectReply(s: Step): void {
   // R17.3: play nothing and cancel any pending response of this reply.
   for (const id of s.st.inFlight) s.send({ type: "response.cancel", response_id: id });
-  s.set({ inFlight: [], pending: null, active: null });
+  s.set({ inFlight: [], pending: null, active: null, judge: null, spec: null });
   noReply(s);
+}
+
+/** Cancels the judge by ID; its verdict no longer matters. */
+function cancelJudge(s: Step): void {
+  const j = s.st.judge;
+  if (j === null) return;
+  if (j.responseId !== null && s.st.inFlight.includes(j.responseId)) {
+    s.send({ type: "response.cancel", response_id: j.responseId });
+    s.set({ inFlight: s.st.inFlight.filter((id) => id !== j.responseId) });
+  }
+  s.set({ judge: null });
+  s.disarm("judge");
+}
+
+/** A held Turn takes the slow path, recording why fastO was refused. It never speculates again (R3.3, R3.4). */
+function holdForSlowPath(s: Step, refused: FastORefusal | null): void {
+  dropSpeculation(s);
+  if (refused !== null) setLatency(s, (t) => ({ ...t, refused }));
+  const turn = s.st.turn;
+  s.set({ phase: "HELD", turn: turn === null ? turn : { ...turn, held: true } });
+}
+
+function onJudgeDone(s: Step, ev: Extract<RealtimeServerEvent, { type: "response.done" }>, freshId: string): void {
+  const j = s.st.judge!;
+  const v = parseJudgeDone(ev);
+  setLatency(s, (t) => ({ ...t, verdict: v.verdict, verdictAt: s.now }));
+  const turn = s.st.turn;
+  s.set({ judge: { ...j, verdict: v.verdict, valid: v.valid, verdictAt: s.now, fastOId: freshId }, turn: turn !== null && turn.turnId === j.turnId ? { ...turn, verdict: v.verdict } : turn });
+  // R3.4: once held, a later verdict changes nothing.
+  if (!JUDGE_PHASES.includes(s.st.phase) || turn?.turnId !== j.turnId) return;
+  s.disarm("judge");
+  // R3.3: H, U or no valid letter: the speculative reply is cancelled and never resumes.
+  if (!(v.valid && v.verdict === "O")) return holdForSlowPath(s, null);
+  // R5.1: with noteWaiting, the server's Permit and its note decide.
+  if (s.st.phase === "JUDGING") return holdForSlowPath(s, "noteWaiting");
+  tryFastO(s);
+}
+
+/** R3.1, R4: a valid O and every fastO condition: the browser issues the Permit and checks it like any other. */
+function tryFastO(s: Step): void {
+  const st = s.st;
+  const j = st.judge;
+  const spec = st.spec;
+  const turn = st.turn;
+  if (j === null || j.verdict === null || turn === null || st.session === null || st.deck === null || st.pending !== null) return;
+  const problem = fastOProblem({
+    now: s.now,
+    t0: turn.tEnd,
+    judgeDeadlineMs: JUDGE_LIMIT_MS,
+    turnId: turn.turnId,
+    generation: st.session.generation,
+    judge: { turnId: j.turnId, generation: st.session.generation, valid: j.valid, verdict: j.verdict },
+    ack: st.ack,
+    ackDroppedStale: st.ackDroppedStale,
+    deck: st.deck,
+    outstanding: st.outstanding.filter((o) => o.deadline > s.now).length,
+  });
+  if (problem !== null || spec === null) return holdForSlowPath(s, problem ?? "hash");
+  // The hash of the speculative payload is not back yet: issue when it is (specHashed).
+  if (spec.hash === null) return;
+  const stamp = localStamp(st)!;
+  const permit = issueFastO({ permitId: j.fastOId ?? spec.eventId, stamp, hash: spec.hash, now: s.now });
+  setLatency(s, (t) => ({ ...t, permitAt: s.now }));
+  requestVerify(s, { permit, purpose: "speech", notes: [], toolCall: null, toolOutput: null });
+}
+
+function onSpecHashed(s: Step, eventId: string, hash: string): void {
+  const spec = s.st.spec;
+  if (spec === null || spec.eventId !== eventId) return;
+  s.set({ spec: { ...spec, hash } });
+  const j = s.st.judge;
+  if (s.st.phase === "SPECULATING" && j !== null && j.valid && j.verdict === "O") tryFastO(s);
 }
 
 function onPermitChecked(s: Step, permitId: string, hash: string): void {
   const reply = s.st.pending;
   if (reply === null || reply.permit.permitId !== permitId) return;
-  const expected: VoicePhase = reply.purpose === "recovery" ? "RECOVERY" : "HELD";
-  if (s.st.phase !== expected || permitProblem(s.st, reply, hash, s.now) !== null) return rejectReply(s);
+  const phaseOk = reply.purpose === "recovery" ? s.st.phase === "RECOVERY" : (["HELD", "SPECULATING", "JUDGING"] as VoicePhase[]).includes(s.st.phase);
+  const problem = phaseOk ? permitProblem(s.st, reply, hash, s.now, false) : "stamp";
+  if (problem !== null) {
+    if (reply.permit.kind === "fastO") {
+      s.set({ pending: null });
+      return holdForSlowPath(s, problem === "hash" ? "hash" : "ack");
+    }
+    return rejectReply(s);
+  }
+  admit(s, reply);
+}
+
+/** A checked Permit admits its reply. The speculative reply plays itself if it has made no sound yet (R3.1, R3.2). */
+function admit(s: Step, reply: PendingReply): void {
+  const st = s.st;
+  const turnId = reply.permit.stamp.turnId;
   s.disarm("permit", "turnRetry");
-  s.send(replyCreate(s.st, reply));
-  s.set({ pending: null, active: { ...reply, responseId: null, audioStarted: false, pendingTool: null } });
+  cancelJudge(s);
+  const maxSeq = Math.max(0, ...(st.turn?.items.map((i) => i.commitSeq ?? 0) ?? []));
+  s.set({ pending: null, admittedTurnId: turnId, unadmitted: s.st.unadmitted.filter((f) => f.commitSeq > maxSeq) });
+  const spec = s.st.spec;
+  const fastO = reply.permit.kind === "fastO";
+  const fits = spec !== null && spec.turnId === turnId && !spec.failed && reply.purpose === "speech" && reply.notes.length === 0 && reply.toolOutput === null && spec.hash === reply.permit.approvedPayloadHash;
+  const phase: VoicePhase = s.st.phase === "RECOVERY" ? "RECOVERY" : "HELD";
+  if (fits && !spec.mutedStarted && (!spec.done || spec.heldCall !== null)) {
+    const active: ActiveReply = { ...reply, responseId: spec.responseId, audioStarted: false, pendingTool: null, eventId: spec.eventId };
+    s.set({ spec: null, phase, active });
+    setLatency(s, (t) => ({ ...t, path: fastO ? "fastO" : "slow" }));
+    if (spec.responseId !== null) {
+      replyKnown(s, active);
+      if (spec.heldCall !== null) dispatchTool(s, s.st.active!, spec.heldCall);
+    }
+  } else {
+    if (spec !== null) {
+      // The muted reply already made sound: cancel, clear and regenerate; no suffix is heard (R3.2).
+      if (spec.responseId !== null) s.send({ type: "response.cancel", response_id: spec.responseId });
+      s.send({ type: "output_audio_buffer.clear" });
+      s.set({ spec: null, inFlight: s.st.inFlight.filter((id) => id !== spec.responseId) });
+    }
+    // Stray audio since the last clear is cleared before the reply is created: no suffix of it is heard (R3.2).
+    if (s.st.strayAudio === true) s.send({ type: "output_audio_buffer.clear" });
+    const eventId = nextEventId(s, "speech", turnId);
+    s.send(replyCreate(s.st, reply, eventId));
+    s.set({ phase, active: { ...reply, responseId: null, audioStarted: false, pendingTool: null, eventId } });
+    setLatency(s, (t) => ({ ...t, path: reply.purpose === "recovery" ? "recovery" : fastO ? "regenerated" : "slow" }));
+  }
+  s.arm("speakCap", s.now + SPEAK_CAP_MS);
+  // R7.6: a Turn admitted before its transcript waits ADMITTED_TRANSCRIPT_LIMIT_MS for it.
+  const turn = s.st.turn;
+  if (turn !== null && turn.posted === null && turn.source === "asr" && turn.turnId === turnId) s.arm("transcript", turn.tEnd + ADMITTED_TRANSCRIPT_LIMIT_MS);
+}
+
+/** The active reply's response ID is known: it is tracked for receipts, and a fastO admission is reported (R3.7). */
+function replyKnown(s: Step, a: ActiveReply): void {
+  const id = a.responseId!;
+  const recent: VoiceState["recent"] = [...s.st.recent, { responseId: id, stamp: a.permit.stamp, parts: [], done: false }];
+  sendHeld(s, recent.slice(0, -MAX_RECENT_RESPONSES));
+  s.set({ recent: recent.slice(-MAX_RECENT_RESPONSES), inFlight: s.st.inFlight.includes(id) ? s.st.inFlight : [...s.st.inFlight, id] });
+  if (a.permit.kind === "fastO") receipt(s, a, "admitted");
+}
+
+/** KV02: a recall call of an admitted reply goes to `/api/tool`. */
+function dispatchTool(s: Step, a: ActiveReply, call: ToolCallItem): void {
+  let args: unknown;
+  try {
+    args = JSON.parse(call.arguments);
+  } catch {
+    return;
+  }
+  // While its lead-in audio plays the reply stays SPEAKING; TOOL_WAIT starts when the audio stops (R6.1).
+  s.set({ phase: a.audioStarted ? "SPEAKING" : "TOOL_WAIT", active: { ...a, pendingTool: call } });
+  s.push({ kind: "tool", body: { stamp: a.permit.stamp, callId: call.callId, tool: { name: "recall", args } as Infer<typeof ToolRequest>["tool"] } });
+  s.arm("tool", s.now + TOOL_LIMIT_MS);
 }
 
 function onTool(s: Step, callId: string, res: Infer<typeof ToolResponse>): void {
   const st = s.st;
   const call = st.active?.pendingTool;
-  if (st.phase !== "TOOL_WAIT" || call === null || call === undefined || call.callId !== callId || res.callId !== callId) return;
+  const waiting = st.phase === "TOOL_WAIT" || st.phase === "SPEAKING";
+  if (!waiting || call === null || call === undefined || call.callId !== callId || res.callId !== callId) return;
   s.disarm("tool");
   adoptDeck(s, res.deck);
-  if (s.st.phase !== "TOOL_WAIT") return;
+  if (s.st.phase !== "TOOL_WAIT" && s.st.phase !== "SPEAKING") return;
   // R27.10: a stale result asks for no reply. Anything but a ready result with a Permit ends the turn.
   if (res.status !== "ready" || res.result === null || res.permit === null) return toListening(s);
+  // A lead-in still playing stops for the answer (R6.1: nothing is heard outside SPEAKING).
+  const a = s.st.active!;
+  s.mute();
+  if (a.audioStarted) {
+    s.send({ type: "output_audio_buffer.clear" });
+    receipt(s, a, "playbackEnded");
+  }
   s.set({ phase: "HELD", active: null });
   requestVerify(s, { permit: res.permit, purpose: "tool", notes: [], toolCall: call, toolOutput: res.result });
 }
@@ -1074,7 +1358,7 @@ function onTool(s: Step, callId: string, res: Infer<typeof ToolResponse>): void 
 // ---------------------------------------------------------------------------------------------
 // Realtime events
 
-function receipt(s: Step, a: ActiveReply, kind: "playbackStarted" | "playbackEnded" | "cancelled"): void {
+function receipt(s: Step, a: ActiveReply, kind: "admitted" | "playbackStarted" | "playbackEnded" | "cancelled"): void {
   s.push({
     kind: "receipt",
     body: {
@@ -1092,14 +1376,14 @@ function receipt(s: Step, a: ActiveReply, kind: "playbackStarted" | "playbackEnd
 
 const metaGeneration = (meta: Record<string, string> | null | undefined): string | null => meta?.generation ?? null;
 
-function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string): void {
+function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string, lastLoudAt: number | null = null): void {
   const st = s.st;
   if (st.session === null || st.phase === "CLOSED" || st.phase === "CONNECTING" || st.phase === "CONFIGURING") return;
   if (st.recovery?.kind === "connection") return;
   const gen = String(st.session.generation);
   switch (ev.type) {
     case "input_audio_buffer.speech_started": {
-      const busy = st.phase === "SPEAKING" || st.phase === "TOOL_WAIT" || st.inFlight.length > 0 || st.active !== null;
+      const busy = st.phase === "SPEAKING" || st.phase === "TOOL_WAIT" || st.inFlight.length > 0 || st.active !== null || st.judge !== null || st.spec !== null;
       if (busy) bargeIn(s);
       if (ev.item_id !== undefined) recordSpeech(s, ev.item_id, { startMs: ev.audio_start_ms ?? null });
       return;
@@ -1108,12 +1392,13 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string): void {
       if (ev.item_id !== undefined) recordSpeech(s, ev.item_id, { endMs: ev.audio_end_ms ?? null });
       return;
     case "input_audio_buffer.committed":
-      return onCommitted(s, ev.item_id, freshId);
+      return onCommitted(s, ev.item_id, freshId, lastLoudAt);
     case "conversation.item.added":
       return onItemAdded(s, ev.item.id);
     case "conversation.item.input_audio_transcription.completed": {
+      if (onLateTranscript(s, ev.item_id, ev.transcript)) return;
       const turn = st.turn;
-      // A transcript for a Turn already posted is dropped (R15.11).
+      // A transcript for a Turn already posted `final` is dropped (R15.11).
       if (turn === null || turn.posted !== null || !turn.items.some((i) => i.itemId === ev.item_id)) return;
       s.set({ turn: { ...turn, items: turn.items.map((i) => (i.itemId === ev.item_id ? { ...i, transcript: ev.transcript } : i)) } });
       return maybeAdmit(s);
@@ -1125,17 +1410,31 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string): void {
     }
     case "response.created": {
       const meta = ev.response.metadata;
+      const eventId = meta?.eventId;
+      if (metaGeneration(meta) === gen && eventId !== undefined) {
+        // The judge and the speculative reply are matched by the event_id they carry in metadata (question 85).
+        const j = st.judge;
+        if (j !== null && j.responseId === null && eventId === j.eventId) {
+          s.set({ judge: { ...j, responseId: ev.response.id }, inFlight: [...st.inFlight, ev.response.id] });
+          return;
+        }
+        const sp = st.spec;
+        if (sp !== null && sp.responseId === null && eventId === sp.eventId) {
+          s.set({ spec: { ...sp, responseId: ev.response.id }, inFlight: [...st.inFlight, ev.response.id] });
+          return;
+        }
+      }
       const a = st.active;
-      const ours = a !== null && a.responseId === null && metaGeneration(meta) === gen && meta?.turnId === a.permit.stamp.turnId;
+      const matches = a !== null && (eventId !== undefined && a.eventId != null ? eventId === a.eventId : meta?.turnId === a.permit.stamp.turnId && meta?.purpose !== "judge" && meta?.purpose !== "speculative");
+      const ours = a !== null && a.responseId === null && metaGeneration(meta) === gen && matches;
       if (!ours) {
         // R15.5, R15.7: a response of another Turn or generation is cancelled and changes nothing else.
         s.send({ type: "response.cancel", response_id: ev.response.id });
         return;
       }
-      const recent: VoiceState["recent"] = [...st.recent, { responseId: ev.response.id, stamp: a.permit.stamp, parts: [], done: false }];
-      // A response pushed out before its response.done sends what it held now; later events for it find nothing.
-      sendHeld(s, recent.slice(0, -MAX_RECENT_RESPONSES));
-      s.set({ active: { ...a, responseId: ev.response.id }, inFlight: [...st.inFlight, ev.response.id], recent: recent.slice(-MAX_RECENT_RESPONSES) });
+      const active = { ...a, responseId: ev.response.id };
+      s.set({ active });
+      replyKnown(s, active);
       return;
     }
     case "response.done": {
@@ -1149,6 +1448,11 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string): void {
       }
       if (!st.inFlight.includes(ev.response.id) || metaGeneration(ev.response.metadata) !== gen) return;
       s.set({ inFlight: st.inFlight.filter((id) => id !== ev.response.id) });
+      if (st.judge !== null && st.judge.responseId === ev.response.id) return onJudgeDone(s, ev, freshId);
+      if (st.spec !== null && st.spec.responseId === ev.response.id) {
+        s.set({ spec: { ...st.spec, done: true } });
+        return;
+      }
       const a = s.st.active;
       // A reply that ended with no audio and no tool call: nothing will play.
       if (a !== null && a.responseId === ev.response.id && !a.audioStarted && a.pendingTool === null) {
@@ -1158,10 +1462,27 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string): void {
       return;
     }
     case "output_audio_buffer.started": {
+      const sp = st.spec;
+      if (sp !== null && sp.responseId === ev.response_id) {
+        // The speculative reply's audio, still unadmitted: it stays muted (R2.4).
+        if (!sp.mutedStarted) {
+          s.set({ spec: { ...sp, mutedStarted: true } });
+          setLatency(s, (t) => (t.firstMuted === null ? { ...t, firstMuted: s.now } : t));
+        }
+        return;
+      }
       const a = st.active;
-      if (a === null || a.responseId !== ev.response_id || a.audioStarted) return;
+      if (a === null || a.responseId !== ev.response_id) {
+        // Audio of a response this call doesn't own (ended, superseded or unknown): cancelled, and it stays muted.
+        if (a?.responseId !== ev.response_id) {
+          s.send({ type: "response.cancel", response_id: ev.response_id });
+          s.set({ strayAudio: true });
+        }
+        return;
+      }
+      if (a.audioStarted) return;
       // Re-check at unmute (R15.3, R17.2): Stamp, generation and expiry still hold.
-      if (permitProblem(st, a, null, s.now) !== null) {
+      if (permitProblem(st, a, null, s.now, false) !== null) {
         s.mute();
         s.send({ type: "response.cancel", response_id: ev.response_id });
         s.send({ type: "output_audio_buffer.clear" });
@@ -1173,6 +1494,8 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string): void {
       s.push({ kind: "unmuteOutput" });
       const active = { ...a, audioStarted: true };
       s.set({ phase: "SPEAKING", outputMuted: false, active });
+      s.arm("speakCap", s.now + SPEAK_CAP_MS);
+      setLatency(s, (t) => (t.audible === null ? { ...t, audible: s.now } : t));
       receipt(s, active, "playbackStarted");
       return;
     }
@@ -1181,8 +1504,9 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string): void {
       if (a === null || a.responseId !== ev.response_id || !a.audioStarted) return;
       s.mute();
       receipt(s, a, "playbackEnded");
-      if (st.phase === "TOOL_WAIT") {
-        s.set({ active: { ...a, audioStarted: false } });
+      if (a.pendingTool !== null) {
+        // The spoken lead-in before a recall has ended; the answer is still on its way.
+        s.set({ phase: "TOOL_WAIT", active: { ...a, audioStarted: false } });
         return;
       }
       toListening(s);
@@ -1198,23 +1522,71 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string): void {
       return;
     }
     case "response.function_call_arguments.done": {
+      const sp = st.spec;
+      if (sp !== null && sp.responseId === ev.response_id) {
+        // KV02, R6.3: a call inside an unadmitted speculative reply is held, never dispatched yet.
+        if (ev.name === "recall") s.set({ spec: { ...sp, heldCall: { callId: ev.call_id, name: "recall", arguments: ev.arguments } } });
+        return;
+      }
       const a = st.active;
       if (a === null || a.responseId !== ev.response_id || ev.name !== "recall" || a.purpose === "recovery") return;
       // KV02: no tool dispatch without a Permit that still holds.
-      if (permitProblem(st, a, null, s.now) !== null) return;
-      let args: unknown;
-      try {
-        args = JSON.parse(ev.arguments);
-      } catch {
+      if (permitProblem(st, a, null, s.now, false) !== null) return;
+      dispatchTool(s, a, { callId: ev.call_id, name: "recall", arguments: ev.arguments });
+      return;
+    }
+    case "error": {
+      // Question 85: an error names the client event that caused it.
+      const eventId = ev.error.event_id ?? null;
+      if (eventId === null) return;
+      const j = st.judge;
+      if (j !== null && j.eventId === eventId) {
+        // A refused judge counts as U (contracts §5).
+        const turn = st.turn;
+        s.set({ judge: { ...j, verdict: "U", valid: false, verdictAt: s.now }, turn: turn !== null && turn.turnId === j.turnId ? { ...turn, verdict: "U" } : turn });
+        setLatency(s, (t) => ({ ...t, verdict: "U", verdictAt: s.now }));
+        if (JUDGE_PHASES.includes(st.phase)) holdForSlowPath(s, null);
         return;
       }
-      const call: ToolCallItem = { callId: ev.call_id, name: "recall", arguments: ev.arguments };
-      s.set({ phase: "TOOL_WAIT", active: { ...a, pendingTool: call } });
-      s.push({ kind: "tool", body: { stamp: a.permit.stamp, callId: ev.call_id, tool: { name: "recall", args } as Infer<typeof ToolRequest>["tool"] } });
-      s.arm("tool", s.now + TOOL_LIMIT_MS);
+      const sp = st.spec;
+      if (sp !== null && sp.eventId === eventId) s.set({ spec: { ...sp, failed: true } });
       return;
     }
   }
+}
+
+/**
+ * R7.8: a transcript for a Turn posted `missing`. Once every item of it has a transcript, the Turn is sent again,
+ * final, as a superseding post; no reply is spoken for it. Returns true when the transcript was one of these.
+ */
+function onLateTranscript(s: Step, itemId: string, transcript: string): boolean {
+  const live = s.st.missing.filter((m) => m.until > s.now);
+  const m = live.find((x) => x.items.some((i) => i.itemId === itemId));
+  if (m === undefined) {
+    if (live.length !== s.st.missing.length) s.set({ missing: live });
+    return false;
+  }
+  const items = m.items.map((i) => (i.itemId === itemId ? { ...i, transcript } : i));
+  if (!items.every((i) => i.transcript !== null)) {
+    s.set({ missing: live.map((x) => (x === m ? { ...m, items } : x)) });
+    return true;
+  }
+  s.set({ missing: live.filter((x) => x !== m) });
+  const text = items.map((i) => i.transcript ?? "").join(" ").slice(0, 8192);
+  const deck = s.st.deck;
+  if (text.trim() === "" || deck === null || s.st.session === null) return true;
+  const body: TurnBody = {
+    ...m.body,
+    epoch: deck.epoch,
+    policyRev: deck.policyRev,
+    bundleRev: deck.bundleRev,
+    rulesRev: deck.rulesRev,
+    transcript: text,
+    transcriptState: "final",
+    items: m.body.items.map((i) => ({ ...i, final: true })),
+  };
+  pushTurn(s, body, m.turnId);
+  return true;
 }
 
 /** Barge-in (R15.4, KV04): mute before anything else, cancel by ID, clear, listen. */
@@ -1222,7 +1594,8 @@ function bargeIn(s: Step): void {
   cancelAll(s, false);
   const turn = s.st.turn;
   s.disarm("permit", "turnRetry", "tool", "lineDone");
-  s.set({ phase: "LISTENING", turn: turn !== null && turn.posted === null ? turn : null, recovery: null });
+  // An unposted Turn is kept, so the next commit judges all of its fragments (R2.6).
+  s.set({ phase: "LISTENING", turn: turn !== null && turn.posted === null ? turn : null, recovery: null, admittedTurnId: null });
 }
 
 function recordSpeech(s: Step, itemId: string, patch: { startMs?: number | null; endMs?: number | null }): void {
@@ -1236,23 +1609,32 @@ function recordSpeech(s: Step, itemId: string, patch: { startMs?: number | null;
   }
 }
 
-function onCommitted(s: Step, itemId: string, freshId: string): void {
+function onCommitted(s: Step, itemId: string, freshId: string, lastLoudAt: number | null): void {
   const st = s.st;
-  if (!(["LISTENING", "WAIT_ITEM", "HELD"] as VoicePhase[]).includes(st.phase) && !(st.phase === "RECOVERY" && st.recovery?.kind === "line")) return;
+  const phases: VoicePhase[] = ["LISTENING", "WAIT_ITEM", "HELD", "JUDGING", "SPECULATING"];
+  if (!phases.includes(st.phase) && !(st.phase === "RECOVERY" && st.recovery?.kind === "line")) return;
   if (st.phase === "RECOVERY") toListening(s);
+  // A commit after a reply of this Turn was admitted or sent for checking is new speech: as a barge-in (KV04).
+  if (s.st.active !== null || s.st.pending !== null) bargeIn(s);
+  // A commit while the judge and speculative reply run grows the Turn: both start again over every fragment (R2.6).
+  if (JUDGE_PHASES.includes(s.st.phase)) dropSpeculation(s);
   let turn = s.st.turn;
   // A new Turn starts unless the current one is still collecting items (design "Turn grouping").
   if (turn === null || turn.posted !== null || turn.source !== "asr") {
-    turn = { turnId: freshId, source: "asr", text: null, items: [], tEnd: s.now, posted: null, staleRetried: false };
+    turn = { turnId: freshId, source: "asr", text: null, items: [], tEnd: s.now, posted: null, staleRetried: false, verdict: null };
   }
   if (turn.items.length >= MAX_TURN_ITEMS || turn.items.some((i) => i.itemId === itemId)) return;
   const sp = s.st.speech.find((x) => x.itemId === itemId);
   const durationMs = sp?.startMs != null && sp.endMs != null ? sp.endMs - sp.startMs : 0;
-  turn = { ...turn, tEnd: s.now, items: [...turn.items, { itemId, commitSeq: null, committedAt: s.now, transcript: null, durationMs }] };
-  s.set({ turn, phase: "WAIT_ITEM", pending: null });
+  turn = { ...turn, tEnd: s.now, verdict: null, items: [...turn.items, { itemId, commitSeq: null, committedAt: s.now, transcript: null, durationMs }] };
+  const loud = lastLoudAt ?? s.st.lastLoudAt;
+  const cur = s.st.latency.current;
+  if (cur !== null && cur.turnId !== turn.turnId) finishLatency(s);
+  const base = s.st.latency.current ?? emptyTimes(turn.turnId);
+  s.set({ turn, phase: "WAIT_ITEM", pending: null, lastLoudAt: loud, latency: { ...s.st.latency, current: { ...base, commit: s.now, lastLoud: loud } } });
   s.arm("item", s.now + ITEM_WAIT_MS);
-  // The transcript wait counts from the last commit: t_end resets when the Turn grows.
-  s.arm("transcript", s.now + TRANSCRIPT_WAIT_MS);
+  // The transcript wait counts from the last commit: t_end resets when the Turn grows (R7.4).
+  s.arm("transcript", s.now + HELD_TRANSCRIPT_LIMIT_MS);
 }
 
 function onItemAdded(s: Step, itemId: string): void {
@@ -1262,12 +1644,82 @@ function onItemAdded(s: Step, itemId: string): void {
   if (item === undefined || item.commitSeq !== null) return;
   const commitSeq = s.st.lastCommitSeq + 1;
   const items = turn.items.map((i) => (i.itemId === itemId ? { ...i, commitSeq } : i));
-  s.set({ lastCommitSeq: commitSeq, turn: { ...turn, items } });
+  s.set({ lastCommitSeq: commitSeq, turn: { ...turn, items }, unadmitted: [...s.st.unadmitted, { itemId, commitSeq }] });
   if (s.st.phase === "WAIT_ITEM" && items.every((i) => i.commitSeq !== null)) {
     s.disarm("item");
-    s.set({ phase: "HELD" });
+    startJudge(s);
   }
   maybeAdmit(s);
+}
+
+/** KV01, R2.1: at the commit, the judge over every Unadmitted_Fragment and, beside it, the muted speculative reply. */
+function startJudge(s: Step): void {
+  const st = s.st;
+  const turn = st.turn!;
+  if (st.deck === null || st.session === null || turn.held === true) {
+    s.set({ phase: "HELD" });
+    return;
+  }
+  const fragments = [...st.unadmitted].sort((a, b) => a.commitSeq - b.commitSeq);
+  let judge: RealtimeClientEvent;
+  try {
+    judge = judgeCreate(
+      { turnId: turn.turnId, generation: st.session.generation, safeTurns: st.deck.turns.map((t) => ({ role: t.role, text: t.text })), pendingQuestion: null, fragments },
+      APP_JUDGE_SETTINGS,
+    );
+  } catch {
+    // More than 8 fragments or 4 safe turns: no fragment is dropped to fit; the slow path decides (R2.7).
+    s.set({ phase: "HELD" });
+    return;
+  }
+  const judgeEventId = nextEventId(s, "judge", turn.turnId);
+  const deadline = turn.tEnd + JUDGE_LIMIT_MS;
+  s.mute();
+  s.send(withEventId(judge, judgeEventId));
+  s.set({ judge: { turnId: turn.turnId, responseId: null, eventId: judgeEventId, sentAt: s.now, deadline, verdict: null, valid: false, verdictAt: null } });
+  s.arm("judge", deadline);
+  setLatency(s, (t) => ({ ...t, judgeSent: s.now }));
+  if (st.deck.noteWaiting) {
+    // Contracts §6 "noteWaiting+O=>HELD/nospeculation" (R2.9, R5.1).
+    s.set({ phase: "JUDGING", spec: null });
+    return;
+  }
+  const payload = replyPayload(s.st, { purpose: "speech", notes: [], toolCall: null, toolOutput: null })!;
+  const specEventId = nextEventId(s, "spec", turn.turnId);
+  s.send(specCreate(s.st, specEventId));
+  s.set({ phase: "SPECULATING", spec: { turnId: turn.turnId, responseId: null, eventId: specEventId, payload, hash: null, mutedStarted: false, heldCall: null, done: false, failed: false } });
+  s.push({ kind: "hashPayload", eventId: specEventId, payload });
+}
+
+function nextEventId(s: Step, kind: "judge" | "spec" | "speech", turnId: string): string {
+  const n = s.st.eventSeq + 1;
+  s.set({ eventSeq: n });
+  return `${kind}:${turnId}:${n}`;
+}
+
+/** Cancels the judge and the speculative reply by ID (a later `response.created` for either is cancelled too). */
+function dropSpeculation(s: Step): void {
+  const { judge, spec } = s.st;
+  if (judge === null && spec === null) return;
+  s.mute();
+  const ids = [judge?.responseId, spec?.responseId].filter((x): x is string => x != null);
+  for (const id of ids) s.send({ type: "response.cancel", response_id: id });
+  if (spec !== null) s.send({ type: "output_audio_buffer.clear" });
+  s.set({ judge: null, spec: null, inFlight: s.st.inFlight.filter((id) => !ids.includes(id)) });
+  s.disarm("judge");
+}
+
+/** Updates the current Turn's latency times, if any. */
+function setLatency(s: Step, f: (t: LatencyTimes) => LatencyTimes): void {
+  const cur = s.st.latency.current;
+  if (cur !== null) s.set({ latency: { ...s.st.latency, current: f(cur) } });
+}
+
+/** Closes the current Turn's latency row (R18.1). */
+function finishLatency(s: Step): void {
+  const cur = s.st.latency.current;
+  if (cur === null) return;
+  s.set({ latency: { current: null, rows: cur.commit === null ? s.st.latency.rows : pushRow(s.st.latency.rows, finishRow(cur)) } });
 }
 
 /** R15.2: admit only when every item is recorded and has its final transcript. */
@@ -1286,6 +1738,7 @@ function maybeAdmit(s: Step): void {
 // ---------------------------------------------------------------------------------------------
 // Timers
 
+
 function onTimer(s: Step, name: TimerName): void {
   const at = s.st.deadlines[name];
   if (at === undefined || s.now < at) return;
@@ -1303,24 +1756,37 @@ function onTimer(s: Step, name: TimerName): void {
       if (st.phase === "CONFIGURING") connectionRecovery(s, true);
       return;
     case "item":
-      // R15.10: committed with no matching item.added within 600 ms.
+      // R15.10, R2.5: committed with no matching item.added within 600 ms: no judge, the slow path.
       if (st.phase === "WAIT_ITEM" && st.turn?.items.some((i) => i.commitSeq === null && i.committedAt + ITEM_WAIT_MS <= s.now)) s.set({ phase: "HELD" });
       return;
     case "transcript": {
       const turn = st.turn;
-      // R15.11: any item still missing item.added or its transcript at t_end + 1.5 s.
-      if (turn !== null && turn.posted === null && turn.source === "asr" && s.now >= turn.tEnd + TRANSCRIPT_WAIT_MS) postTurn(s, "missing");
+      // R7.4, R7.6: no transcript by t0 + 2.5 s on a held Turn, or t0 + 5 s on a Turn already admitted.
+      const limit = st.admittedTurnId === turn?.turnId ? ADMITTED_TRANSCRIPT_LIMIT_MS : HELD_TRANSCRIPT_LIMIT_MS;
+      if (turn !== null && turn.posted === null && turn.source === "asr" && s.now >= turn.tEnd + limit) postTurn(s, "missing");
       return;
     }
     case "turnRetry":
-      if (st.turn?.posted != null && st.pending === null && st.active === null) s.push({ kind: "turn", body: st.turn.posted });
+      if (st.turn?.posted != null && st.pending === null && st.active === null) pushTurn(s, st.turn.posted);
       return;
     case "permit":
-      // Held past 2.5 s with no Permit: RECOVERY with nothing to play, then listen again.
-      if (st.phase === "HELD" && st.active === null && st.pending === null) {
+      // R7.5: no answer to the post within 5 s: RECOVERY with nothing to play, then listen again.
+      if ((["HELD", "SPECULATING", "JUDGING"] as VoicePhase[]).includes(st.phase) && st.active === null) {
+        dropSpeculation(s);
         s.disarm("turnRetry");
-        s.set({ phase: "RECOVERY", recovery: { kind: "line", since: s.now, attempts: 0 }, turn: null });
+        s.set({ phase: "RECOVERY", recovery: { kind: "line", since: s.now, attempts: 0 }, turn: null, pending: null });
         s.arm("lineDone", s.now + LINE_FALLBACK_MS);
+      }
+      return;
+    case "judge":
+      // R3.5: no verdict by t0 + 1.2 s: cancel the judge and the speculative reply; the slow path decides.
+      if (JUDGE_PHASES.includes(st.phase) && st.judge !== null && st.judge.verdict === null) holdForSlowPath(s, "verdict");
+      return;
+    case "speakCap":
+      // Contracts §6 SPEAKING "45scap": an admitted reply that never started or never ended.
+      if (st.active !== null) {
+        cancelAll(s, false);
+        toListening(s);
       }
       return;
     case "lineDone":
@@ -1328,6 +1794,13 @@ function onTimer(s: Step, name: TimerName): void {
         for (const id of st.inFlight) s.send({ type: "response.cancel", response_id: id });
         s.set({ inFlight: [] });
         toListening(s);
+      }
+      return;
+    case "poll":
+      // R4.5: one state request a second while the call is live, never two in flight.
+      if (IN_CALL.includes(st.phase) || st.phase === "RECOVERY") {
+        if (st.stateSentAt === null || s.now - st.stateSentAt >= STATE_STALE_MS) postState(s);
+        s.arm("poll", s.now + POLL_MS);
       }
       return;
     case "refresh":
@@ -1345,7 +1818,10 @@ function onTimer(s: Step, name: TimerName): void {
       return;
     case "tool":
       // TOOL_WAIT: LISTENING after TOOL_LIMIT_MS (6 s) with no result.
-      if (st.phase === "TOOL_WAIT") toListening(s);
+      if (st.phase === "TOOL_WAIT" || (st.phase === "SPEAKING" && st.active?.pendingTool != null)) toListening(s);
+      return;
+    case "swap":
+      // Wave B.
       return;
   }
 }

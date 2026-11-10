@@ -128,12 +128,16 @@ const arbSceneBase: fc.Arbitrary<Step[]> = fc
   .map(({ letter, variant, hashOk, judgeMs, asrMs, fragments, state }) => {
     const s = (action: Action, dt = 0): Step => ({ action, dt });
     const commits: Step[] = [];
-    for (let f = 0; f < fragments; f++) commits.push(s({ k: "speechStart" }, 200), s({ k: "speechStop" }, 900), s({ k: "commit" }, 300), s({ k: "itemAdded", pick: 0 }, 40));
+    for (let f = 0; f < fragments; f++) {
+      commits.push(s({ k: "speechStart" }, 200), s({ k: "speechStop" }, 900));
+      // The state poll answers about once a second in a live call; one lands just before the last commit.
+      if (f === fragments - 1) commits.push(s({ k: "stateOk", variant: state }, 100));
+      commits.push(s({ k: "commit" }, 200), s({ k: "itemAdded", pick: 0 }, 40));
+    }
     const judgeFirst = judgeMs <= asrMs;
     const judge = [s({ k: "judgeDone", pick: 0, letter }, judgeFirst ? judgeMs : 0), s({ k: "hash", pick: 0, ok: true })];
     const asr = Array.from({ length: fragments }, (_, i) => s({ k: "transcript", pick: i, fail: false, empty: false }, i === 0 ? (judgeFirst ? Math.max(0, asrMs - judgeMs) : asrMs) : 0));
     return [
-      s({ k: "stateOk", variant: state }, 100),
       ...commits,
       s({ k: "created", pick: 1 }, 20),
       s({ k: "created", pick: 0 }, 5),

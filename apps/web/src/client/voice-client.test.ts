@@ -210,6 +210,8 @@ async function setup(opts: { hang?: string[]; hash?: (p: unknown) => Promise<str
 }
 
 const ofType = (events: any[], type: string) => events.filter((e) => e.type === type);
+/** The reply creates only: the judge and the speculative reply also go out at each commit (voice-control R2.1). */
+const replyCreates = (events: any[]) => ofType(events, "response.create").filter((e) => e.response?.metadata?.purpose === "speech");
 
 describe("Voice_Client", () => {
   it("one session.update with no model or voice; the offer goes only to /api/session/sdp", async () => {
@@ -228,15 +230,15 @@ describe("Voice_Client", () => {
     expect(s.registeredCallIds).toEqual(["rtc_test1"]);
   });
 
-  it("refresh every 45 s: /api/session/state again with the held Deck's revisions", async () => {
+  it("polls /api/session/state once a second with the held Deck's revisions (voice-control R4.5)", async () => {
     const { routeCalls, connect, timers } = await setup();
     await connect();
     expect(routeCalls("/api/session/state")).toHaveLength(1);
-    await timers.advance(44_000);
+    await timers.advance(900);
     expect(routeCalls("/api/session/state")).toHaveLength(1);
-    await timers.advance(1_000);
+    await timers.advance(100);
     expect(routeCalls("/api/session/state")).toHaveLength(2);
-    await timers.advance(45_000);
+    await timers.advance(1_000);
     expect(routeCalls("/api/session/state")).toHaveLength(3);
     expect(routeCalls("/api/session/state")[2]!.body).toMatchObject({ generation: 1, seen: { epoch: 1, policyRev: 1, rulesRev: 1 } });
   });
@@ -248,7 +250,7 @@ describe("Voice_Client", () => {
     expect(routeCalls("/api/turn")).toHaveLength(1);
     expect(routeCalls("/api/turn")[0]!.body).toMatchObject({ source: "asr", judge: "timeout", transcriptState: "final", transcript: "What is my dog called", clientSeq: 1 });
     // The browser's hash of its own payload matched devAdmit's, so exactly one response.create went out.
-    const creates = ofType(sent(), "response.create");
+    const creates = replyCreates(sent());
     expect(creates).toHaveLength(1);
     expect(creates[0].response).toMatchObject({ conversation: "none", input: [{ type: "item_reference", id: "item_1" }], metadata: { purpose: "speech", generation: "1" } });
     expect(audio.muted).toBe(true);
@@ -275,7 +277,7 @@ describe("Voice_Client", () => {
     const { sent, connect, speak, audio, vc } = await setup({ hash: async () => "f".repeat(64) });
     await connect();
     await speak("item_1", "What is my dog called");
-    expect(ofType(sent(), "response.create")).toHaveLength(0);
+    expect(replyCreates(sent())).toHaveLength(0);
     expect(audio.muted).toBe(true);
     expect(vc.getSnapshot().phase).toBe("LISTENING");
   });
@@ -284,13 +286,13 @@ describe("Voice_Client", () => {
     const { vc, sent, routeCalls, connect, speak, peer } = await setup();
     await connect();
     await speak("item_1", "What is my dog called");
-    const turnId = ofType(sent(), "response.create")[0].response.metadata.turnId;
+    const turnId = replyCreates(sent())[0].response.metadata.turnId;
     peer().channel.emit({ type: "response.created", response: { id: "resp_1", metadata: { purpose: "speech", turnId, generation: "1" } } });
     const args = JSON.stringify({ purpose: "answer", query: "dog", entityRefs: [], roleTuple: null, predicate: null, asOf: null, anchorId: null, sourceMode: "canonical" });
     peer().channel.emit({ type: "response.function_call_arguments.done", response_id: "resp_1", call_id: "call_1", name: "recall", arguments: args });
-    await until(() => ofType(sent(), "response.create").length === 2 || vc.getSnapshot().phase === "LISTENING", "the tool continuation");
+    await until(() => replyCreates(sent()).length === 2 || vc.getSnapshot().phase === "LISTENING", "the tool continuation");
     expect(routeCalls("/api/tool")).toHaveLength(1);
-    const creates = ofType(sent(), "response.create");
+    const creates = replyCreates(sent());
     expect(creates).toHaveLength(2);
     const input = creates[1].response.input as { type: string; output?: string }[];
     expect(input.map((i) => i.type)).toEqual(["item_reference", "function_call", "function_call_output"]);
