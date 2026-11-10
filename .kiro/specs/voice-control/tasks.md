@@ -152,9 +152,10 @@ Rules for every task:
 
 Machine properties 2, 4, 7 and 12 are expected red on the current machine. The others may already pass. Each task records whether it ran red or green, and for red the seed, the path and the shrunk counterexample in **Notes**, then commits the property as written.
 
-- [ ] 14. **[property]** P1 No permit, no sound
+- [x] 14. **[property]** P1 No permit, no sound
   - Requirements: R20.1.1; R3.1, R6.1, KV02, KV03
-  - Depends on: 12 · Estimate: 0.75 h · Actual:
+  - Depends on: 12 · Estimate: 0.75 h · Actual: 0.3 h
+  - Notes: Ran green on the current machine (1,000 runs). The unmute-step check names the stamp, expiry and payload hash rather than calling `permitProblem`, because `permitProblem` also checks the `fastO` StateAck's age, which only binds at issue: the browser drops its ack when it posts the turn, usually before the speculative reply's audio starts.
   - Files: `packages/core/src/voice/no-permit-no-sound.property.test.ts` (new)
   - Witness: the property file itself, 1,000 runs.
   - Commit: `test(voice): property 1, no permit no sound`
