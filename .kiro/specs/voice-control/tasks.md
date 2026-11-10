@@ -160,9 +160,10 @@ Machine properties 2, 4, 7 and 12 are expected red on the current machine. The o
   - Witness: the property file itself, 1,000 runs.
   - Commit: `test(voice): property 1, no permit no sound`
 
-- [ ] 15. **[property]** P2 A held reply never resumes
+- [x] 15. **[property]** P2 A held reply never resumes
   - Requirements: R20.1.2; R3.3–R3.5
-  - Depends on: 12 · Estimate: 0.75 h · Actual:
+  - Depends on: 12 · Estimate: 0.75 h · Actual: 0.3 h
+  - Notes: Green, but vacuously: today's machine has no judge, so the trigger (the machine's current judge, `before.judge`, answering non-O, or its `judge` timer firing) never occurs. The trigger is the machine's current judge, not any judge `response.done`, so a cancelled judge's late answer can't fire it. A non-vacuity count is added with task 25. The statement implies a design choice the machine must follow: a turn held by `H`, `U` or a judge timeout sends no new speculative reply under the same turnId.
   - Files: `packages/core/src/voice/held-never-resumes.property.test.ts` (new)
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 2, a held reply never resumes`
