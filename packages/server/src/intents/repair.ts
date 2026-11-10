@@ -9,9 +9,9 @@
  *   failed    `parseState` stays `failed`, the lease clears, the audience is `unknown` until a parsed `alone`
  * A parsed `alone` never moves the watermark past a gap (R15.8).
  */
-import { type CoreEpoch, type ID, type Ledger, type Session, type Turn, msFromTs, tsFromMs } from "@franki/core";
-import { advancedWatermark, expireLease } from "../audience";
-import { cFields } from "../records";
+import { type CoreEpoch, type ID, type Session, type Turn, msFromTs, tsFromMs } from "@franki/core";
+import { lateHitDecisionId, recordLateHit } from "../admission/seam";
+import { advancedWatermark, effectiveAudience, expireLease } from "../audience";
 import type { RouteDeps } from "../routes/runtime";
 import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
@@ -85,25 +85,11 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
     if (epochDoc === null) return "hit";
     const epoch: CoreEpoch = { ...epochDoc.data, policyRev: epochDoc.data.policyRev + 1, updatedAt: now };
     tx.update(epochDoc.path, epoch);
-    // Nothing is admitted for a late hit: one held decision, cited by the Turn (design "The Parse_Repair").
-    const entry: Extract<Ledger, { kind: "decision" }> = {
-      ...cFields(uid, now, epoch.epoch, epoch.policyRev),
-      kind: "decision",
-      state: "blocked",
-      at: now,
-      retainUntil: null,
-      payload: {
-        purpose: "answer",
-        acceptedRefs: [],
-        heldRefs: [{ type: "turn", id: turnId, parentId: sessionId, rev: 1 }],
-        reasonCodes: ["time"],
-        audience: s.audience,
-      },
-    };
-    tx.create(paths.ledger(uid, repairDecisionId(deps, sessionId, turnId)), entry);
+    // Nothing is admitted for a late hit: the seam records one held decision for the Turn (item 22).
+    recordLateHit(tx, { uid, sessionId, turnId, core: { epoch: epoch.epoch, policyRev: epoch.policyRev }, opsNow: ops, audience: effectiveAudience(s, ops) }, deps);
     return "hit";
   }
 }
 
-/** The ledger ID of a late hit's held decision. */
-export const repairDecisionId = (deps: Pick<RouteDeps, "hasher">, sessionId: string, turnId: string): string => deps.hasher.id(["repair", sessionId, turnId]);
+/** The ledger ID of a late hit's held decision (kept for callers; the seam owns it). */
+export const repairDecisionId = (deps: Pick<RouteDeps, "hasher">, sessionId: string, turnId: string): string => lateHitDecisionId(deps.hasher, sessionId, turnId);

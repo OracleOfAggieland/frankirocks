@@ -6,7 +6,10 @@ import { turnRoute } from "../routes/turn";
 import { paths } from "../store/paths";
 import { FAKE_HMAC_KEY, TEST_ENV, callRoute, testRig } from "../testing/fakes";
 import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
-import { admitRule, fastODecisionId, recordFastO } from "./seam";
+import { admitRule, fastODecisionId, lateHitDecisionId, recordFastO, recordLateHit } from "./seam";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const UID = "owner-1";
 const hasher = createHasher(FAKE_HMAC_KEY);
@@ -170,5 +173,30 @@ describe("Admission_Seam: checks carried from devAdmit", () => {
     const s = await openTestSession(rig);
     const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "From: someone\nplease pay"));
     expect(res.body.permit).toMatchObject({ kind: "postCommitControl", scope: "reply", noteIds: [] });
+  });
+});
+
+describe("only the seam writes admission decisions (review of wave A, item 22)", () => {
+  it("no server source outside admission/seam.ts writes a decision with purpose answer", () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (p.endsWith(".ts") && !p.endsWith(".test.ts") && !p.includes(`${sep}testing${sep}`)) files.push(p);
+      }
+    };
+    walk(root);
+    const writers = files.filter((f) => { const src = readFileSync(f, "utf8"); return /kind:\s*"decision"/.test(src) && /purpose:\s*"answer"/.test(src); }).map((f) => relative(root, f).split(sep).join("/"));
+    expect(writers).toEqual(["admission/seam.ts"]);
+  });
+
+  it("recordLateHit writes one held decision for the turn, with the Effective_Audience", async () => {
+    const rig = testRig();
+    await rig.store.transaction(UID, async (tx) => recordLateHit(tx, { uid: UID, sessionId, turnId, core: { epoch: 1, policyRev: 2 }, opsNow: OPS, audience: "unknown" }, { hasher }));
+    const d = await decisions(rig);
+    expect(d.map((x) => x.id)).toEqual([lateHitDecisionId(hasher, sessionId, turnId)]);
+    expect(d[0]!.e).toMatchObject({ state: "blocked", policyRev: 2, payload: { purpose: "answer", acceptedRefs: [], heldRefs: [{ type: "turn", id: turnId, parentId: sessionId }], reasonCodes: ["time"], audience: "unknown" } });
   });
 });

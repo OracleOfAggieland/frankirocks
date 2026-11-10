@@ -133,3 +133,28 @@ export async function recordFastO(
  * Turn. The response ID is not among them: the closed decision payload can't carry it for the turn-first order.
  */
 export const fastOTurnFields = (opsNow: number) => ({ judge: "O" as const, admittedAt: tsFromMs(opsNow) });
+
+/** The ledger ID of a late control hit's held decision. */
+export const lateHitDecisionId = (hasher: Hasher, sessionId: string, turnId: string): string => hasher.id(["repair", sessionId, turnId]);
+
+/**
+ * A late control hit (a Parse_Repair that found one): nothing is admitted, so one `blocked` decision holds the Turn,
+ * with the Effective_Audience at commit (design "The Parse_Repair"; review of wave A, item 22). `reasonCodes` has no
+ * late-hit code, so it says `time`.
+ */
+export function recordLateHit(
+  tx: Tx,
+  input: { uid: string; sessionId: string; turnId: string; core: { epoch: number; policyRev: number }; opsNow: number; audience: Au },
+  deps: { hasher: Hasher },
+): void {
+  const now = tsFromMs(input.opsNow);
+  const entry: Extract<Ledger, { kind: "decision" }> = {
+    ...cFields(input.uid, now, input.core.epoch, input.core.policyRev),
+    kind: "decision",
+    state: "blocked",
+    at: now,
+    retainUntil: null,
+    payload: { purpose: "answer", acceptedRefs: [], heldRefs: [{ type: "turn", id: input.turnId as ID, parentId: input.sessionId as ID, rev: 1 }], reasonCodes: ["time"], audience: input.audience },
+  };
+  tx.create(paths.ledger(input.uid, lateHitDecisionId(deps.hasher, input.sessionId, input.turnId)), entry);
+}
