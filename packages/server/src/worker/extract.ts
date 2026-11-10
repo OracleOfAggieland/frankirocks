@@ -293,6 +293,12 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
     // Lost the lease (Q18 requeued it and another worker claimed it): commit nothing (R22.9).
     if (leased === null) return "requeued";
     const epoch = await tx.get<CoreEpoch>(paths.core(uid, "epoch"));
+    if (epoch !== null && epoch.data.epoch === job.epoch && epoch.data.policyRev > job.policyRev) {
+      // A policyRev rise (a late control hit, wave B's audience changes) must never lose an extraction: the job
+      // runs again at the new policyRev, with nothing written from this call (review of wave A, item 16; Q93).
+      tx.update(leased.path, { ...leased.job, status: "queued", policyRev: epoch.data.policyRev, error: null, leaseToken: null, leaseUntil: null, updatedAt: now });
+      return "requeued";
+    }
     if (epoch === null || epoch.data.epoch !== job.epoch || epoch.data.policyRev !== job.policyRev) {
       // The captured epoch or policyRev changed: mark failed with an ErrorCode, write no Memory (KS06).
       tx.update(leased.path, { ...leased.job, status: "failed", error: "STALE", leaseToken: null, leaseUntil: null, updatedAt: now });
