@@ -601,7 +601,8 @@ export function permitProblem(st: VoiceState, reply: PendingReply, hash: string 
     const ack = st.ack;
     if (ack === null || !sameRevs(ack.stamp, st.deck) || now - msFromTs(ack.issuedOpsAt) >= FAST_ACK_AGE_MS) return "ack";
   }
-  if (hash !== null && hash !== permit.approvedPayloadHash) return "hash";
+  // An empty hash (a failed hash command) never matches, even an empty approved hash (review of wave A, item 13).
+  if (hash !== null && (hash === "" || hash !== permit.approvedPayloadHash)) return "hash";
   return null;
 }
 
@@ -1315,6 +1316,8 @@ function tryFastO(s: Step): void {
     outstanding: st.outstanding.filter((o) => o.deadline > s.now && o.turnId !== turn.turnId).length,
   });
   if (problem !== null || spec === null) return holdForSlowPath(s, problem ?? "hash");
+  // A speculative payload whose hash failed can't back a fastO Permit: the slow path decides (item 13).
+  if (spec.failed === true && spec.hash === null) return holdForSlowPath(s, "hash");
   // The hash of the speculative payload is not back yet: issue when it is (specHashed).
   if (spec.hash === null) return;
   const stamp = localStamp(st)!;
@@ -1326,6 +1329,14 @@ function tryFastO(s: Step): void {
 function onSpecHashed(s: Step, eventId: string, hash: string): void {
   const spec = s.st.spec;
   if (spec === null || spec.eventId !== eventId) return;
+  // A hash that failed to compute is "", and "" never matches anything: the speculative reply can't be admitted
+  // as is, and a valid O creates the reply fresh (review of wave A, item 13).
+  if (hash === "") {
+    s.set({ spec: { ...spec, hash: null, failed: true } });
+    const jj = s.st.judge;
+    if (s.st.phase === "SPECULATING" && jj !== null && jj.valid && jj.verdict === "O") tryFastO(s);
+    return;
+  }
   s.set({ spec: { ...spec, hash } });
   const j = s.st.judge;
   if (s.st.phase === "SPECULATING" && j !== null && j.valid && j.verdict === "O") tryFastO(s);

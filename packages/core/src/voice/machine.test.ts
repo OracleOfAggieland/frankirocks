@@ -1313,3 +1313,23 @@ describe("wave A review fixes, items 8 and 9", () => {
     expect(r.st.strayAudio).toBe(false);
   });
 });
+
+describe("wave A review fixes, items 13 to 15", () => {
+  it("item 13: an empty hash never matches", () => {
+    const r = listening();
+    const t = commitTurn(r);
+    created(r, t.judge!, "resp_j");
+    created(r, t.spec!, "resp_s");
+    const c = r.log.filter((x) => x.kind === "hashPayload").at(-1)!;
+    if (c.kind !== "hashPayload") throw new Error("no hashPayload");
+    r.ev({ type: "specHashed", eventId: c.eventId, hash: "" });
+    judgeDone(r, "resp_j", "O", 200);
+    const verify = r.last.find((x) => x.kind === "verifyPermit");
+    if (verify !== undefined && verify.kind === "verifyPermit") r.ev({ type: "permitChecked", permitId: verify.permitId, hash: "" });
+    expect(r.st.active).toBeNull();
+    expect(r.st.outputMuted).toBe(true);
+    // The slow path decides, with the refusal recorded.
+    expect(r.st.phase).toBe("HELD");
+    expect(r.st.latency.current!.refused).toBe("hash");
+  });
+});
