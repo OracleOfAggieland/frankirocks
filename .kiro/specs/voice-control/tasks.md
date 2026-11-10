@@ -348,9 +348,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `state.test.ts` › `ack:null` with an S2 user turn among the last four, with a gap, with an active lease, after an expired unrepaired lease (which also stores `unknown`); an ack otherwise; 60 polls a minute write the Session at most twice when nothing changes; status and `browserState` changes still write.
   - Commit: `feat(state): ack refusal and write throttle`
 
-- [ ] 35. `/api/receipt` records `fastO`
+- [x] 35. `/api/receipt` records `fastO`
   - Requirements: R9.1, R9.2, R3.7
-  - Depends on: 30, 32 · Estimate: 1 h · Actual:
+  - Depends on: 30, 32 · Estimate: 1 h · Actual: 0.3 h
+  - Notes: Both orders give the Turn `judge:"O"` and `admittedAt`; `spokenResponseId` isn't set by either (task 32's notes say why).
   - Files: `packages/server/src/routes/receipt.ts`, `packages/server/src/routes/receipt.test.ts`
   - Witness: `receipt.test.ts` › an accepted `admitted` + `fastO` receipt writes the `fastO` decision once; receipt-then-turn and turn-then-receipt give the same Turn and ledger; a stale stamp writes nothing.
   - Commit: `feat(receipt): record fastO admissions`

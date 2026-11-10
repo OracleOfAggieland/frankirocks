@@ -25,6 +25,8 @@ import {
   sensFloor,
   tsFromMs,
 } from "@franki/core";
+import { recordFastO } from "../admission/seam";
+import { effectiveAudience } from "../audience";
 import { ensureCoreDocs, ownerClock, readCoreDocs } from "../core-docs";
 import { currentStamp, sameStamp } from "../deck";
 import { completeRequest } from "../ledger/request";
@@ -169,6 +171,11 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
           tx.create(turnPath, turn);
         }
         if (live) tx.update(doc.path, { ...s, lastTurnAt: now, expiresAt: tsFromMs(ops + SESSION_IDLE_MS), updatedAt: now });
+        // A browser-issued fastO is recorded by the seam from its `admitted` receipt (R9.1).
+        if (req.kind === "admitted" && req.permitKind === "fastO") {
+          const coreVals = { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev };
+          await recordFastO(tx, { uid, stamp: req.stamp, responseId: req.responseId, opsNow: ops, core: coreVals, audience: effectiveAudience(s, ops) }, deps);
+        }
         await completeRequest(tx, key, accepted, ops);
         return accepted;
       }),
