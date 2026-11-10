@@ -1,13 +1,17 @@
-import { FORGET_NOT_YET, RECOVERY_LINE } from "@franki/core";
+import { FORGET_NOT_YET, RECOVERY_LINE, type Session } from "@franki/core";
+import { testId } from "@franki/core/testing";
+import { paths } from "../store/paths";
+import { commitUserTurnForTest, insertMemoryForTest } from "../testing/extract-fixtures";
 import { describe, expect, it } from "vitest";
 import { never, ok } from "../openai/fake";
 import { completed } from "../openai/responses";
 import { decisionAnswer } from "../testing/decisions";
-import { callRoute, settle, testRig } from "../testing/fakes";
+import { callRoute, patchRecord, settle, testRig } from "../testing/fakes";
 import { openTestSession, typedTurn } from "../testing/session-fixtures";
 import { DECISIONS_NO_CALL_DEADLINE_MS } from "../intents/slow-parse";
 import { turnRoute } from "./turn";
 
+const UID = "owner-1";
 type Rig = ReturnType<typeof testRig>;
 const post = (rig: Rig, body: unknown) => settle(callRoute(rig, turnRoute, body), rig.clock, rig.timers);
 const texts = (body: { notes: { text: string }[] }) => body.notes.map((n) => n.text);
@@ -88,5 +92,49 @@ describe("a typed line with no call open (review of wave A, item 17)", () => {
     const { value: res } = await post(rig, typedTurn(s.stamp, 1, "what's a good dog name"));
     expect(res.body).toMatchObject({ status: "ordinary", permit: { kind: "slowOrdinary" } });
     expect(texts(res.body)).toEqual(["Pip is a good name."]);
+  });
+});
+
+describe("a typed hit keeps its reply whatever its sensitivity, when no one else can see it (review of wave A, item 24)", () => {
+  /** A Session whose Head holds an S1 Memory, so the typed reply note is S1. */
+  async function s1Head() {
+    const rig = testRig();
+    await openTestSession(rig, "warmup");
+    const prior = await commitUserTurnForTest(rig.store, UID, testId("t0"), "My sister works at the bank", rig.clock, rig.deps.hasher);
+    await insertMemoryForTest(rig.store, UID, prior, rig.deps.hasher, { sens: "S1" });
+    const s = await openTestSession(rig, "open2");
+    return { rig, s };
+  }
+
+  it("a hit with no Fixed_Line, crisis included, keeps the S1 typed reply in a private audience with no gap", async () => {
+    for (const p of [{ rushed: 0.5 }, { crisis: 0.7 }]) {
+      const { rig, s } = await s1Head();
+      rig.openai.script("decisions.create", ok(decisionAnswer(p)));
+      rig.openai.script("responses.create", ok(completed("Your sister is at the bank today.")));
+      const { value: res } = await post(rig, typedTurn(s.stamp, 1, "quick, where is my sister"));
+      expect(res.body.notes.map((n: { sens: string }) => n.sens), JSON.stringify(p)).toEqual(["S1"]);
+      expect(texts(res.body)).toEqual(["Your sister is at the bank today."]);
+    }
+  });
+
+  it("in another audience, or with a parse gap, it stays limited to S0", async () => {
+    for (const patch of [{ audience: "company" as const }, { lastClientSeq: 1, committedParseSeq: 0, nextClientSeq: 2 }]) {
+      const { rig, s } = await s1Head();
+      await patchRecord<Session>(rig.store, UID, paths.session(UID, s.sessionId), patch);
+      const seq = "nextClientSeq" in patch ? 2 : 1;
+      rig.openai.script("decisions.create", ok(decisionAnswer({ rushed: 0.5 })));
+      rig.openai.script("responses.create", ok(completed("Your sister is at the bank today.")));
+      const { value: res } = await post(rig, typedTurn(s.stamp, seq, "quick, where is my sister"));
+      expect(res.body.permit.kind, JSON.stringify(patch)).toBe("postCommitControl");
+      expect(res.body.notes, JSON.stringify(patch)).toEqual([]);
+    }
+  });
+
+  it("a Fixed_Line class still shows its line", async () => {
+    const { rig, s } = await s1Head();
+    rig.openai.script("decisions.create", ok(decisionAnswer({ forget: 0.9 })));
+    rig.openai.script("responses.create", ok(completed("Sure.")));
+    const { value: res } = await post(rig, typedTurn(s.stamp, 1, "forget what I said about my sister"));
+    expect(texts(res.body)).toEqual([FORGET_NOT_YET]);
   });
 });

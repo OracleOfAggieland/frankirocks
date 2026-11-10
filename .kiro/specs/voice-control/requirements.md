@@ -185,13 +185,13 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 3. THE Server_Rule SHALL return exactly one Permit kind or a hold for every combination of Turn source, transcript state, `judge` value, Slow_Parse result and Effective_Audience.
 4. WHEN a voice Turn has a final transcript and an Ordinary_Parse, THE Server_Rule SHALL issue `slowOrdinary`, whatever the `judge` value (contracts §6 Admission).
 5. WHERE a `slowOrdinary` Permit would carry an S1+ note, THE Server_Rule SHALL also require `judge:"O"`, at least one ASR word per 2 s of total `audioDurationMs`, every item `final:true`, no Parse_Gap and an Effective_Audience of `private`; otherwise it SHALL issue the Permit without the note.
-6. WHEN a Turn has a Control_Hit, THE Server_Rule SHALL issue the Permit its route names (Requirement 12) and no S1+ note.
+6. WHEN a Turn has a Control_Hit, THE Server_Rule SHALL issue the Permit its route names (Requirement 12) and no S1+ note, EXCEPT that for a typed U line with no call open, in an Effective_Audience of `private` with no Parse_Gap, a Control_Hit whose class has no Fixed_Line (`crisis` included) SHALL keep the typed reply whatever its Sensitivity, as an Ordinary_Parse would; in any other audience, or with a Parse_Gap, the typed reply SHALL stay limited to S0 (review of wave A, item 24).
 7. WHEN a voice Turn's transcript is `missing` or `failed`, or its Slow_Parse fails, THE Server_Rule SHALL issue `recoveryOnly` with no notes and no tool output. THE Server_Rule SHALL take no input from the server clock compared with a browser timestamp.
 8. WHEN a typed U line has an Ordinary_Parse, THE Server_Rule SHALL issue `slowOrdinary` as today, with no judge; WHEN it has a Control_Hit, THE Server_Rule SHALL route it as a voice Control_Hit.
-9. WHEN a typed U line arrives with no call open, THE Server_Library SHALL run the Decisions call at the same time as the typed reply's Responses call, with a 2,000 ms deadline; THE typed reply SHALL be shown for every class except those with a Fixed_Line, which show their line (a crisis line shows the typed reply, scope `ack`, as an S0 note), and a failed parse SHALL show the Neutral_Line as text (review of wave A, item 17).
+9. WHEN a typed U line arrives with no call open, THE Server_Library SHALL run the Decisions call at the same time as the typed reply's Responses call, with a 2,000 ms deadline; THE typed reply SHALL be shown for every class except those with a Fixed_Line, which show their line (a crisis line shows the typed reply, scope `ack`; its Sensitivity limit is criterion 6's), and a failed parse SHALL show the Neutral_Line as text (review of wave A, item 17).
 10. WHEN a pasted (T) line arrives, THE Server_Rule SHALL keep today's behaviour: no Slow_Parse, `postCommitControl`, scope `reply`, no S1+ note.
 11. WHEN a tool continuation is admitted, THE Server_Rule SHALL issue `slowOrdinary` only after the Turn's Slow_Parse has committed, waiting at most 1.5 s, and otherwise hold.
-12. THE Server_Rule SHALL never issue an S1+ note on a Turn whose `judge` is not `O`.
+12. THE Server_Rule SHALL never issue an S1+ note on a Turn whose `judge` is not `O`, except a typed line (`judge:"typed"`) as criteria 5 and 6 allow.
 13. THE `/api/health` output SHALL stay unchanged.
 
 ### Requirement 9: Recording `fastO` on the server
@@ -241,8 +241,8 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 
 #### Acceptance Criteria
 
-1. WHEN `crisis` is a retained candidate at or above 0.20, whichever class wins the priority order, THE Server_Rule SHALL issue `postCommitControl`, scope `ack`, with no notes, and THE reply SHALL be the crisis care reply, created with `tools:[]`.
-2. WHEN the chosen class is `forget`, `correct`, `transition`, `hardRule`, `food`, `action`, `why` or `answer`, and `crisis` is not a candidate, THE Server_Rule SHALL issue `postCommitControl` with no S1+ note, scope `reply`, or scope `ack` when the reply is a Fixed_Line.
+1. WHEN `crisis` is a retained candidate at or above 0.20, whichever class wins the priority order, THE Server_Rule SHALL issue `postCommitControl`, scope `ack`, with no notes (except a typed line's own reply with no call open, Requirement 8.6 and 8.9), and THE reply SHALL be the crisis care reply, created with `tools:[]`.
+2. WHEN the chosen class is `forget`, `correct`, `transition`, `hardRule`, `food`, `action`, `why` or `answer`, and `crisis` is not a candidate, THE Server_Rule SHALL issue `postCommitControl` with no S1+ note (except as Requirement 8.6 allows), scope `reply`, or scope `ack` when the reply is a Fixed_Line.
 3. WHEN the chosen class is `forget` and `crisis` is not a candidate, THE reply SHALL be the Fixed_Line "I can't forget things yet.", never model-worded.
 4. THE Server_Library SHALL deliver a Fixed_Line as one `W` note of kind `ack`, sensitivity S0, covered by the Permit's `noteIds` and payload hash, under a Permit of scope `ack`, and THE Voice_Machine SHALL speak an `ack` note's text verbatim with `tools:[]`.
 5. In wave A, WHEN the chosen class is `company`, `quiet`, `alone` or `rushed`, or the Turn is held by `uncertainSpeaker` alone, THE Server_Rule SHALL issue `postCommitControl`, scope `reply`, with no S1+ note. In wave B, `company`, `quiet` and `alone` take the routes of Requirements 14 and 15.

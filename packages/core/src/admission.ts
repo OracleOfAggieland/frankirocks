@@ -103,6 +103,9 @@ export function serverRule(i: RuleInput): RuleOutcome {
   }
   const p = i.parse;
   if (p.kind === "hit") {
+    // A typed line with no call open, in a private audience with no gap: no one else sees the typed reply, so a hit
+    // with no Fixed_Line keeps it whatever its Sensitivity, as an ordinary parse would (review of wave A, item 24).
+    const typedPrivate: NotesAllowed = i.source === "typed" && i.judge === "typed" && !i.callLive && i.audience === "private" && !i.parseGap ? "all" : "S0";
     const crisis = p.candidates.includes("crisis");
     const narrows = p.candidates.includes("company") || p.candidates.includes("quiet");
     const quietReason: ReasonCode[] = p.candidates.includes("quiet") ? ["quiet"] : [];
@@ -110,7 +113,7 @@ export function serverRule(i: RuleInput): RuleOutcome {
     if (crisis && i.wave === "B" && narrows && i.callLive) return permit("postCommitControl", "ack", "none", true, { swap: "afterReply", reasons: ["audience", ...quietReason] });
     // 7. Crisis always takes the reply (R12.1). A typed line with no call open has no spoken care reply: its typed
     // reply, which the Head's crisis instruction governs, travels as an S0 note, still with scope ack (item 17).
-    if (crisis) return permit("postCommitControl", "ack", i.source === "typed" && !i.callLive ? "S0" : "none", true);
+    if (crisis) return permit("postCommitControl", "ack", i.source === "typed" && !i.callLive ? typedPrivate : "none", true);
     if (i.wave === "B" && (p.chosen === "company" || p.chosen === "quiet")) {
       const reasons: ReasonCode[] = p.chosen === "quiet" ? ["audience", "quiet"] : ["audience"];
       // 8. Narrow with a live call: hang up and swap (R14.1).
@@ -122,9 +125,10 @@ export function serverRule(i: RuleInput): RuleOutcome {
     if (i.wave === "B" && p.chosen === "alone") return permit("postCommitControl", "ack", "none", true, { line: ALONE_LINE, reasons: ["audience"] });
     // 11. Forget before forget exists (R12.3).
     if (p.chosen === "forget") return permit("postCommitControl", "ack", "none", true, { line: FORGET_NOT_YET });
-    // 12. Every other hit keeps its tools, no S1+ note (R12.2, R12.5, R12.7). Its route doesn't change what is
+    // 12. Every other hit keeps its tools, no S1+ note except a typed line's own reply with no call open in a private
+    // audience with no gap (R12.2, R12.5, R12.7; item 24). Its route doesn't change what is
     // said, so a reply already playing under fastO is not cut (design review of the build; question 92).
-    return permit("postCommitControl", "reply", "S0", false);
+    return permit("postCommitControl", "reply", typedPrivate, false);
   }
   // 13. Ordinary: slowOrdinary; an S1+ note only with judge O, density, all final, no gap, private (R8.4, R8.5).
   // Typed text substitutes for audio and the judge (contracts §6), so a typed line skips the density checks.
