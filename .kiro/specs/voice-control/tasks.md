@@ -294,9 +294,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
 
 ### Group A9: server foundations (parallel; may run beside A5–A8, files are disjoint)
 
-- [ ] 29. Decisions_Port, live adapter and fake
+- [x] 29. Decisions_Port, live adapter and fake
   - Requirements: R10.8, R11.2, R11.8; Q72
-  - Depends on: 10 · Estimate: 2 h · Actual:
+  - Depends on: 10 · Estimate: 2 h · Actual: 0.4 h
+  - Notes: The port is a thin `decide(body, deadlineMs)` over the OpenAIPort's new `decisions.create` endpoint (Fake_OpenAI scripts it like the others); the live adapter calls `sdk().decisions.create` with `maxRetries: 0`, since the caller owns the deadline. The type check is assignment-based, so it is enforced by `npm run typecheck`, not by vitest.
   - Files: `packages/server/src/openai/fake.ts`, `packages/server/src/openai/live.ts` (endpoint `decisions.create` → `POST /v1/decisions`), `packages/server/src/intents/decisions-port.ts` (new), `packages/server/src/intents/decisions-port.test.ts` (new), `packages/server/src/intents/decisions-types.test.ts` (new)
   - Witness: `decisions-types.test.ts` › the core builder's return type is assignable to `DecisionCreateParams` and `parseDecision` accepts a `Decision` (type-level, against `node_modules/openai`); `decisions-port.test.ts` › the fake records requests and answers from a script; the deadline gives `{ok:false, why:"deadline"}` on the fake timers; a thrown transport error gives `why:"transport"`; the model comes from `FRANKI_BG_MODEL`. `scripts/model-literals.test.ts` passes.
   - Commit: `feat(intents): decisions port`

@@ -2,7 +2,7 @@
  * The live OpenAIPort. Server-only; never constructed in tests (tests/setup/setup.ts blocks the network anyway).
  * `responses.create` takes Responses API params and returns the normalized ResponsesResult.
  * `realtime.calls.create` posts the SDP offer to `/v1/realtime/calls` and returns the answer and `Location`;
- * `realtime.calls.hangup` posts to `/v1/realtime/calls/{id}/hangup`.
+ * `realtime.calls.hangup` posts to `/v1/realtime/calls/{id}/hangup`. `decisions.create` posts to `/v1/decisions`.
  */
 import OpenAI from "openai";
 import { type Env, openaiApiKey } from "../config/env";
@@ -48,6 +48,9 @@ export function liveOpenAI(env: Env = process.env): OpenAIPort {
           await sdk().post(`/realtime/calls/${encodeURIComponent(callId)}/hangup`, { maxRetries: 0, timeout: HANGUP_CALL_DEADLINE_MS });
           return null;
         }
+        case "decisions.create":
+          // POST /v1/decisions (TurnIntents, voice-control R11.2). The caller owns the 350 ms deadline, so no SDK retries.
+          return sdk().decisions.create(body as never, { maxRetries: 0 });
         case "realtime.calls.create": {
           // Multipart `sdp` + `session` (the SDK encodes it); the answer is the SDP body, the call ID is in Location.
           const { offerSdp, session } = body as CreateCallBody;
