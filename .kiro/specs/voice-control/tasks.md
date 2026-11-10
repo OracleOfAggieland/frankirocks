@@ -356,9 +356,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `receipt.test.ts` › an accepted `admitted` + `fastO` receipt writes the `fastO` decision once; receipt-then-turn and turn-then-receipt give the same Turn and ledger; a stale stamp writes nothing.
   - Commit: `feat(receipt): record fastO admissions`
 
-- [ ] 36. `/api/tool` through the server rule
+- [x] 36. `/api/tool` through the server rule
   - Requirements: R8.11, R12.7
-  - Depends on: 30 · Estimate: 1 h · Actual:
+  - Depends on: 30 · Estimate: 1 h · Actual: 0.4 h
+  - Notes: The rule's notes level is applied to the recall result's notes (they are the tool output, not Permit notes), before hashing. A Turn's stored `judge` (O/H/U, else typed for a turn with no items) feeds the rule. One existing assertion now expects the decision to also cite the request entry.
   - Files: `packages/server/src/routes/tool.ts`, `packages/server/src/routes/tool.test.ts`
   - Witness: `tool.test.ts` › the continuation gets `slowOrdinary` after the parse commits, holds after 1.5 s without it, and carries only S0 notes while the Effective_Audience isn't private; existing recall tests pass.
   - Commit: `feat(tool): tool continuations through the server rule`

@@ -35,6 +35,8 @@ import {
   recallNotes,
   recallRequest,
   recallResult,
+  type RuleInput,
+  serverRule,
   tsFromMs,
   turnRef,
 } from "@franki/core";
@@ -44,7 +46,8 @@ import { ensureCoreDocs, ownerClock, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck, sameStamp } from "../deck";
 import { foregroundEC, readAllMemories, snapshotFor, storeReader } from "../head-build";
 import { completeRequest } from "../ledger/request";
-import { admit } from "../admission/seam";
+import { admitRule } from "../admission/seam";
+import { effectiveAudience, hasParseGap } from "../audience";
 import type { ResponsesResult } from "../openai/responses";
 import { paths } from "../store/paths";
 import { barrierError, scopeError } from "./errors";
@@ -170,11 +173,32 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       const turn = check.turn;
       const safe = await earlierSafeTurns(tx, uid, req.stamp.sessionId, turn.seq, ctx);
       const deck = head === null ? null : issueDeck(current, head, ops, safe);
-      const admitted = admit(
+      // Row 3 of the Server_Rule: the Turn's parse has committed (the wait above). Recall notes are limited to S0
+      // unless the Turn could carry S1+ (judge O or typed, private audience, no gap) (R8.11, R12.7).
+      const rule: RuleInput = {
+        source: "tool",
+        transcript: "final",
+        judge: turn.judge ?? (turn.itemIds.length === 0 ? "typed" : "timeout"),
+        parse: { kind: "none" },
+        regexMatch: false,
+        audience: effectiveAudience(s, ops),
+        narrowedHere: false,
+        callLive: s.registeredCallIds.length > 0,
+        parseGap: hasParseGap(s),
+        noteSens: "none",
+        wordsPer2s: true,
+        allFinal: true,
+        toolParseCommitted: true,
+        wave: "A",
+      };
+      const planned = serverRule(rule);
+      const output: typeof result = planned.kind === "permit" && planned.notes !== "all" ? { ...result, notes: result.notes.filter((n) => n.sens === "S0") } : result;
+      const admitted = admitRule(
         tx,
         {
           uid,
           requestId: req.requestId,
+          requestEntryId: key.keyHash,
           turnRef: turnRef(req.stamp.turnId, req.stamp.sessionId, turn.rev),
           core: { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev },
           stamp: req.stamp,
@@ -182,15 +206,15 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
           notes: [],
           turns: deck?.turns ?? [],
           audioIds: turn.itemIds,
-          toolOutput: result,
-          turn: { kind: "tool" },
+          toolOutput: output,
           opsNow: ops,
+          rule,
         },
         deps,
       );
       const response: ToolRes =
         admitted.kind === "permit"
-          ? { stamp: req.stamp, callId: req.callId, status: "ready", result, deck, permit: admitted.permit }
+          ? { stamp: req.stamp, callId: req.callId, status: "ready", result: output, deck, permit: admitted.permit }
           : { ...empty, status: "hold", deck };
       await completeRequest(tx, key, response, ops);
       return response;

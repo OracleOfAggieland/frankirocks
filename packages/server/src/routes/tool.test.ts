@@ -42,6 +42,21 @@ const statement = (text: string, citations: unknown[]) => ({ text, citations, me
 const output = (...statements: unknown[]) => ok(completed(JSON.stringify({ kind: "supported", statements, alternatives: [] })));
 
 describe("POST /api/tool (recall)", () => {
+  it("S1 recall notes need a judge-O turn in a private audience with no gap (voice-control R12.7, R8.11)", async () => {
+    for (const [judge, kept] of [["O", true], ["timeout", false]] as const) {
+      const rig = testRig();
+      rig.openai.respond("responses.create", (body) => (isRecall(body) ? output(statement("Your sister works at the bank.", [{ type: "memory", id: memId, rev: 1 }])) : fail(new Error("no extraction"))));
+      const t = await commitUserTurnForTest(rig.store, UID, testId("src0"), "My sister works at the bank", rig.clock, rig.deps.hasher);
+      const memId = await insertMemoryForTest(rig.store, UID, t, rig.deps.hasher, { sens: "S1" }, "m0");
+      const s = await openTestSession(rig);
+      await callRoute(rig, turnRoute, { ...asrTurn(s.stamp, 1, "Where does my sister work", [{ itemId: "item_1", commitSeq: 1 }]), judge });
+      const stamp = { ...s.stamp, turnId: testId("turn-1") };
+      const res = await callRoute(rig, toolRoute, { requestId: testId("tool1"), stamp, callId: "call_1", tool: { name: "recall", args: { ...ARGS, query: "sister work" } } });
+      expect(res.body.status).toBe("ready");
+      expect(res.body.result.notes.some((n: { sens: string }) => n.sens !== "S0"), judge).toBe(kept);
+    }
+  });
+
   it("answers well before the browser stops waiting for it, with a second to spare for the network", () => {
     expect(TOOL_RESULT_LIMIT_MS + 1_000).toBeLessThanOrEqual(TOOL_LIMIT_MS);
   });
@@ -75,7 +90,7 @@ describe("POST /api/tool (recall)", () => {
     expect(permit).toMatchObject({ kind: "slowOrdinary", scope: "reply", stamp, noteIds: [] });
     expect(permit.approvedPayloadHash).toBe(payloadHash({ stamp, head: deck.head, notes: [], turns: deck.turns, audioIds: ["item_1"], toolOutput: result }, rig.deps.hasher));
     const decision = (await rig.store.get<Ledger>(UID, paths.ledger(UID, permit.permitId)))!.data;
-    expect(decision).toMatchObject({ kind: "decision", state: "complete", payload: { purpose: "answer", acceptedRefs: [{ type: "turn", id: stamp.turnId }] } });
+    expect(decision).toMatchObject({ kind: "decision", state: "complete", payload: { purpose: "answer", acceptedRefs: [{ type: "turn", id: stamp.turnId }, expect.objectContaining({ type: "ledger" })] } });
   });
 
   it("parse wait capped at 1.5 s → hold, with no read", async () => {
