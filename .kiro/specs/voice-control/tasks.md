@@ -88,10 +88,11 @@ Rules for every task:
   - Witness: `regex.test.ts` › each of RX1–RX7 matches its cue words after the normalization of design §"The Regex_Table"; "forgot", "forgets", "forgetting" and "deleted" don't match RX1; `regexMatch` returns the IDs and never a class. `scripts/regex-copy.test.ts` › no 4-word window of any `lines.json` line appears in the rendered table.
   - Commit: `feat(intents): regex table`
 
-- [ ] 8. `serverRule`
+- [x] 8. `serverRule`
   - Requirements: R8.3–R8.12, R10.2, R12.1–R12.7, R14.1, R14.7, R15.1; Q54, Q60, Q64, Q65, Q67, Q68, Q87, Q88
   - Depends on: 4, 5
-  - Estimate: 3 h · Actual:
+  - Estimate: 3 h · Actual: 0.6 h
+  - Notes: Choices within the design table: a hold outcome carries `blocked` and `swap` (rows 1 and 8), and a permit outcome carries `reasons` (so a quiet hit writes `quiet` on its decision). A parse of kind `none` on a final ASR or typed turn (never expected) is treated as a failed parse with `missingDependency`, so the rule stays total. Row 4 gives `recoveryOnly` the reason `missingDependency`.
   - Files: `packages/core/src/admission.ts` (add `RuleInput`, `RuleOutcome`, `serverRule`; `devPermitKind` stays until task 39), `packages/core/src/admission.test.ts` (new)
   - Witness: `admission.test.ts` › one case per rule row 1–13 of design §"The Server_Rule", both waves; crisis retained beats every chosen class with scope `ack` and notes none; row 5a vs 5b differ only in `cut`; flipping `regexMatch` changes nothing when the parse did not fail; no input names a clock.
   - Commit: `feat(admission): the server rule`
