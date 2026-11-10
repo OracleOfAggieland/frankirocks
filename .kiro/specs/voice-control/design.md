@@ -531,6 +531,7 @@ Scheduled with `ctx.schedule` after the `/api/turn` response is sent, only for `
 
 ### `/api/session/state`
 
+- The Deck carries the Session's current safe turns (the last four user and assistant turns, S2 left out), computed by `safeTurnsOf` from the rows of the S2 check below, as `/api/turn` computes them for the next turn. This is how the browser learns Franki's last reply: the assistant Turn stored from the transcript receipt reaches the next reply within a second (review of wave A, item 2). A poll whose request went out before the last `/api/turn` answer gives the browser only a higher Deck.
 - `ack` is null when `Effective_Audience = unknown`, when `committedParseSeq < lastClientSeq` (a Parse_Gap), or when an S2 user Turn is among the last four: one query on the Session's turns with `seq ≥ lastClientSeq - 3`, ordered by `seq`, limit 16, keeping `role:"user"` rows and reading `rootSlices[0].sens` (R4.2). Otherwise as today.
 - The route writes the Session only when its `status` or `browserState` would change or its `expiresAt` would move by at least 30 s; on other polls it reads through `readSnapshot` and writes nothing (question 84). `Session.stateAck` is updated only on those writes; nothing reads it for admission.
 
@@ -573,8 +574,8 @@ The parse wait is unchanged (100 ms polls, 1.5 s). The Permit comes from `admit`
 | Source | Per minute of call | Notes |
 |---|---|---|
 | `/api/session/state` | 60 requests | one per second, never two in flight (R4.5, R23.3) |
-| Firestore reads per state request | ≤ 15 | `core/epoch` fast path 1, Session 1, five core documents 5, the last-four turns query ≤ 8 |
-| Firestore reads from polling | ≤ 900 | |
+| Firestore reads per state request | ≤ 23 | `core/epoch` fast path 1, Session 1, five core documents 5, the last-four turns query ≤ 8 (read once for the S2 check and the Deck's safe turns), the safe turns' Evidence ≤ 8 (review of wave A, item 2) |
+| Firestore reads from polling | ≤ 1,380 | |
 | Session writes from polling | ≈ 2 | only when `expiresAt` moves 30 s or the status changes |
 | `/api/turn` | one per user turn (about 6 to 10) | reads as today, plus 1 (`fastO` decision lookup) |
 | Decisions calls | one per final voice transcript and typed U line, plus at most one repair or one Superseding_Post per failed turn | 0 for pasted lines and missing transcripts |

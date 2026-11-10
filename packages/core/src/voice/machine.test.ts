@@ -1031,3 +1031,41 @@ describe("wave A review fixes", () => {
     expect(r.st.latency.current!.refused).toBe("outstanding");
   });
 });
+
+describe("wave A review fixes, item 2: the poll's Deck carries the safe turns", () => {
+  const safe = (turnId: string, role: "user" | "assistant", text: string) => ({ turnId: testId(turnId), role, text, sens: "S0" as const, rootKeys: [], dependsOn: [], policyRev: 1 });
+  const withTurns = (d: Deck, turns: ReturnType<typeof safe>[]): Deck => ({ ...d, turns });
+
+  it("after a turn answer and a poll, the next commit's judge and speculative reply carry the earlier user turn and Franki's reply", () => {
+    const r = listening();
+    speak(r);
+    const sentBefore = r.now;
+    r.ev({ type: "turnOk", turnId: turnBody(r).turnId, response: admitted(r, "slowOrdinary") }, 50);
+    const turns = [safe("t1", "user", "My dog is called Pip"), safe("a1", "assistant", "Pip is a lovely name. How old is Pip?")];
+    // A poll sent before the answer carries the old Deck: it doesn't replace the newer one.
+    const d0 = r.st.deck!;
+    r.ev({ type: "stateOk", sentAt: sentBefore, response: { stamp: ss(d0), state: "LISTENING", deck: d0, ack: null, barrierReceiptId: null, proactive: null } }, 10);
+    const d = withTurns(r.st.deck!, turns);
+    r.ev({ type: "stateOk", sentAt: r.now, response: { stamp: ss(d), state: "LISTENING", deck: d, ack: ackAt(d, r.now), barrierReceiptId: null, proactive: null } }, 10);
+    // The reply ends and the owner answers.
+    r.st = { ...r.st, phase: "LISTENING", turn: null, active: null, pending: null };
+    const t = commitTurn(r, "item_2");
+    expect(JSON.stringify(t.judge)).toContain("How old is Pip?");
+    const input = (t.spec!.response as { input: Record<string, unknown>[] }).input;
+    expect(JSON.stringify(input)).toContain("My dog is called Pip");
+    expect(JSON.stringify(input)).toContain("How old is Pip?");
+  });
+
+  it("a poll sent before the last turn answer doesn't replace that answer's Deck at the same revisions", () => {
+    const r = listening();
+    speak(r);
+    const sentBefore = r.now;
+    const answer = admitted(r, "slowOrdinary");
+    const turns = [safe("t1", "user", "My dog is called Pip")];
+    r.ev({ type: "turnOk", turnId: turnBody(r).turnId, response: { ...answer, deck: withTurns(answer.deck!, turns) } }, 50);
+    expect(r.st.deck!.turns).toHaveLength(1);
+    const old = withTurns(r.st.deck!, []);
+    r.ev({ type: "stateOk", sentAt: sentBefore, response: { stamp: ss(old), state: "LISTENING", deck: old, ack: null, barrierReceiptId: null, proactive: null } }, 10);
+    expect(r.st.deck!.turns).toHaveLength(1);
+  });
+});

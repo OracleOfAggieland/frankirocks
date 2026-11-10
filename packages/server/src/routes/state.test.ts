@@ -88,28 +88,29 @@ describe("POST /api/session/state", () => {
   });
 });
 
+const typed = (sessionId: string, deck: { epoch: number; policyRev: number; bundleRev: number; rulesRev: number }, n: number, text: string) => ({
+  sessionId,
+  epoch: deck.epoch,
+  policyRev: deck.policyRev,
+  bundleRev: deck.bundleRev,
+  rulesRev: deck.rulesRev,
+  generation: 1,
+  turnId: testId(`turn-${n}`),
+  requestId: testId(`req-${n}`),
+  clientSeq: n,
+  source: "typed",
+  items: [],
+  utteredWorldAt: "2026-11-03T12:00:00.000Z",
+  transcript: text,
+  transcriptState: "final",
+  judge: "typed",
+  pendingId: null,
+  choiceId: null,
+  supersedesRequestId: null,
+  uiControl: null,
+});
+
 describe("POST /api/session/state, voice-control (task 34)", () => {
-  const typed = (sessionId: string, deck: { epoch: number; policyRev: number; bundleRev: number; rulesRev: number }, n: number, text: string) => ({
-    sessionId,
-    epoch: deck.epoch,
-    policyRev: deck.policyRev,
-    bundleRev: deck.bundleRev,
-    rulesRev: deck.rulesRev,
-    generation: 1,
-    turnId: testId(`turn-${n}`),
-    requestId: testId(`req-${n}`),
-    clientSeq: n,
-    source: "typed",
-    items: [],
-    utteredWorldAt: "2026-11-03T12:00:00.000Z",
-    transcript: text,
-    transcriptState: "final",
-    judge: "typed",
-    pendingId: null,
-    choiceId: null,
-    supersedesRequestId: null,
-    uiControl: null,
-  });
 
   it("no ack while an S2 user Turn is among the last four (R4.2)", async () => {
     const { rig, sessionId, deck, body } = await opened();
@@ -148,5 +149,22 @@ describe("POST /api/session/state, voice-control (task 34)", () => {
     }
     const after = (await rig.store.get<Session>(UID, paths.session(UID, sessionId)))!.data.rev;
     expect(after - rev).toBeLessThanOrEqual(2);
+  });
+});
+
+describe("POST /api/session/state, the Deck's safe turns (review of wave A, item 2)", () => {
+  it("the Deck carries the Session's current safe turns, the last four, without S2", async () => {
+    const { rig, sessionId, deck, body } = await opened();
+    expect((await callRoute(rig, stateRoute, body())).body.deck.turns).toEqual([]);
+    for (const n of [1, 2, 3, 4, 5]) await callRoute(rig, turnRoute, typed(sessionId, deck, n, `line ${n}`));
+    const res = await callRoute(rig, stateRoute, body());
+    expect(validate(StateResponse, res.body).ok).toBe(true);
+    expect(res.body.deck.turns.map((t: { text: string }) => t.text)).toEqual(["line 2", "line 3", "line 4", "line 5"]);
+    // An S2 line leaves the Deck (and the ack goes, as before).
+    await callRoute(rig, turnRoute, typed(sessionId, deck, 6, "my diagnosis came back"));
+    const after = await callRoute(rig, stateRoute, body());
+    // The window is the last four turns (3 to 6), and turn 6 is S2.
+    expect(after.body.deck.turns.map((x: { text: string }) => x.text)).toEqual(["line 3", "line 4", "line 5"]);
+    expect(after.body.ack).toBeNull();
   });
 });

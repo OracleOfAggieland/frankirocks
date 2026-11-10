@@ -77,6 +77,14 @@ export async function earlierSafeTurns(tx: Pick<Tx, "get" | "query">, uid: strin
     orderBy: { field: "seq", dir: "asc" },
     limit: 100,
   });
+  return safeTurnsOf(tx, uid, rows, beforeSeq, ctx);
+}
+
+/**
+ * The SafeTurns among rows already read (the Session's turns with `seq ≥ beforeSeq - 4`, in any order): those with
+ * `seq < beforeSeq`, in Turn order, the last four. The state route passes the rows of its S2 check (review item 2).
+ */
+export async function safeTurnsOf(tx: Pick<Tx, "get">, uid: string, rows: readonly { id: string; data: Turn }[], beforeSeq: number, ctx: RouteContext): Promise<SafeTurn[]> {
   const out: SafeTurn[] = [];
   for (const row of [...rows].sort((a, b) => turnOrder(a.data, b.data))) {
     if (row.data.seq >= beforeSeq || row.data.evidenceId === null) continue;

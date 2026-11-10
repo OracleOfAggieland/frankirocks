@@ -991,7 +991,11 @@ function onState(s: Step, res: Infer<typeof StateResponse>, sentAt?: number): vo
   const sent = sentAt ?? st.stateSentAt ?? s.now;
   s.set({ stateSentAt: null });
   if (st.session === null || res.stamp.sessionId !== st.session.sessionId) return;
-  adoptDeck(s, res.deck);
+  // A poll sent before the last turn answer carries an older Deck's safe turns: only a higher Deck is taken from it
+  // (review of wave A, item 2).
+  const asked = sentAt ?? st.stateSentAt;
+  const staleRequest = asked !== null && st.lastTurnResponseAt !== null && asked <= st.lastTurnResponseAt;
+  if (!staleRequest || st.deck === null || res.deck === null || isHigher(res.deck, st.deck)) adoptDeck(s, res.deck);
   // R4.2: `ack:null` refuses fastO. R4.4: an ack requested before the last /api/turn answer can't grant it.
   if (res.ack === null) s.set({ ack: null, ackDroppedStale: false });
   else if (res.ack.stamp.sessionId === st.session.sessionId) {
