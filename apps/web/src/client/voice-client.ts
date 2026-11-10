@@ -311,6 +311,12 @@ export class VoiceClient {
     for (let attempt = 0; ; attempt++) {
       const r = await this.deps.api.call<unknown>("/api/turn", { body: { ...body, requestId, supersedesRequestId }, timeoutMs: Math.max(1, left()) });
       const res = parsed(TurnResponse, r);
+      // A Superseding_Post that arrived before its `missing` post completed answers a retryable hold: resend it
+      // inside the same budget. The machine sees only the final answer (review of wave A, item 19).
+      if (res !== null && supersedesTurnId !== null && res.status === "hold" && res.permit === null && res.retryAfterMs > 0 && left() - res.retryAfterMs > 0) {
+        await this.sleep(res.retryAfterMs);
+        continue;
+      }
       if (res !== null) return this.dispatch({ type: "turnOk", turnId: body.turnId, response: res });
       // Same requestId on a transient failure: a request the server did commit is replayed, not written twice.
       const transient = !r.ok && (r.kind === "timeout" || r.kind === "network" || (r.kind === "http" && r.retryAfterMs > 0));

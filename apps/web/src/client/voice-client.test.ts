@@ -550,6 +550,40 @@ describe("Voice_Client with the judge (voice-control R2.8, R3.7, R4.5, R7.5, R7.
     for (const a of asked) expect(a.at - start2 + a.timeoutMs).toBeLessThanOrEqual(5_000);
   });
 
+  it("a superseding post that is answered hold is resent inside the turn budget, with no reconnect (review item 19)", async () => {
+    let held = false;
+    const sup: string[] = [];
+    const ctx = await setup({
+      wrapApi: (api) => ({
+        call: (path, o) => {
+          const body = o?.body as { supersedesRequestId?: string | null } | undefined;
+          if (path === "/api/turn" && body?.supersedesRequestId != null) {
+            sup.push(body.supersedesRequestId);
+            // The first try names a request the server can't see yet, as when the missing post is still running.
+            if (!held) {
+              held = true;
+              return api.call(path, { ...o!, body: { ...body, supersedesRequestId: testId("not-visible-yet") } });
+            }
+          }
+          return api.call(path, o);
+        },
+      }),
+    });
+    const { vc, routeCalls, timers, connect } = ctx;
+    await connect();
+    const { ch } = await commit(ctx, "item_1");
+    await timers.advance(2_500);
+    await until(() => routeCalls("/api/turn").length === 1 && routeCalls("/api/turn")[0]!.res !== undefined, "the missing post");
+    ch.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_1", transcript: "my dog loves the park" });
+    await until(() => routeCalls("/api/turn").length === 2, "the first superseding post");
+    expect(routeCalls("/api/turn")[1]!.res).toMatchObject({ status: "hold", retryAfterMs: 250 });
+    await timers.advance(300);
+    await until(() => routeCalls("/api/turn").length === 3 && routeCalls("/api/turn")[2]!.res !== undefined, "the resent superseding post");
+    expect(routeCalls("/api/turn")[2]!.res).toMatchObject({ status: "ordinary", permit: null });
+    expect(sup).toHaveLength(2);
+    expect(vc.getSnapshot().recovery?.kind).not.toBe("connection");
+  });
+
   it("a superseding post goes to /api/turn with the first request's ID and speaks nothing", async () => {
     const ctx = await setup();
     const { vc, routeCalls, timers, connect } = ctx;

@@ -7,7 +7,9 @@ import { decisionAnswer } from "../testing/decisions";
 import { callRoute, settle, testRig } from "../testing/fakes";
 import { asrTurn, openTestSession } from "../testing/session-fixtures";
 import { extractJobId } from "../worker/extract-jobs";
-import { turnRoute } from "./turn";
+import { requestKey } from "../ledger/request";
+import { cFields } from "../records";
+import { HOLD_RETRY_MS, turnRoute } from "./turn";
 
 const UID = "owner-1";
 const items = (n: number) => [{ itemId: `item_${n}`, commitSeq: n }];
@@ -94,8 +96,9 @@ describe("the Superseding_Post (R7.8, R11.9, R15.7; question 89)", () => {
     await post(rig, asrTurn(s.stamp, 2, "and the weather is nice", items(2)));
     const other = await post(rig, { ...late(s.stamp, 1, "my dog loves the park"), supersedesRequestId: testId("req-2") });
     expect(other.body.error).toBe("PARSE");
+    // A request entry that isn't visible yet is not an error: the browser retries (review of wave A, item 19).
     const none = await post(rig, { ...late(s.stamp, 1, "my dog loves the park"), supersedesRequestId: testId("req-nope") });
-    expect(none.body.error).toBe("PARSE");
+    expect(none.body).toMatchObject({ status: "hold", permit: null, retryAfterMs: HOLD_RETRY_MS, error: null });
     expect((await turn(rig, s.sessionId, 1)).state).toBe("transcriptMissing");
   });
 
@@ -132,5 +135,24 @@ describe("the Superseding_Post (R7.8, R11.9, R15.7; question 89)", () => {
     const again = await post(rig, body);
     expect(again.body).toEqual(first.body);
     expect(rig.openai.requestsTo("decisions.create")).toHaveLength(calls);
+  });
+});
+
+describe("a Superseding_Post that arrives early (review of wave A, item 19)", () => {
+  it("while the missing post is still pending, it answers a retryable hold with no writes, and works once that post completes", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    // The missing post's request entry is taken but not yet complete, as while its transaction runs.
+    const key = requestKey(UID, "turn", testId("req-1"), {}, rig.deps.hasher);
+    await rig.store.transaction(UID, async (tx) => {
+      tx.create(key.path, { ...cFields(UID, "2026-11-03T12:00:00.000Z", 1, 1), kind: "request", state: "pending", at: "2026-11-03T12:00:00.000Z", retainUntil: "2026-11-04T12:00:00.000Z", payload: { route: "turn", keyHash: key.keyHash, requestHash: key.requestHash, response: null, error: null } });
+    });
+    const evidence = rig.store.countUnder(paths.collection(UID, "evidence"));
+    const early = await post(rig, late(s.stamp, 1, "my dog loves the park"));
+    expect(early.body).toMatchObject({ status: "hold", permit: null, retryAfterMs: HOLD_RETRY_MS, error: null });
+    expect(rig.store.countUnder(paths.collection(UID, "evidence"))).toBe(evidence);
+    // The same request again is not a replay of the hold: nothing was recorded.
+    const ledger = await rig.store.get(UID, paths.ledger(UID, requestKey(UID, "turn", testId("req-1-late"), {}, rig.deps.hasher).keyHash));
+    expect(ledger === null || (ledger.data as { state: string }).state !== "complete").toBe(true);
   });
 });

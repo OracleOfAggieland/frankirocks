@@ -308,7 +308,12 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
   // The superseded request must be complete and for this Turn.
   const first = await deps.store.get<Extract<Ledger, { kind: "request" }>>(uid, paths.ledger(uid, deps.hasher.id(idParts.request(uid, "turn", supersedes))));
   const firstTurnId = (first?.data.payload.response as { stamp?: { turnId?: unknown } } | null | undefined)?.stamp?.turnId;
-  if (first === null || first.data.kind !== "request" || first.data.state !== "complete" || firstTurnId !== req.turnId) throw parseError("supersedesRequestId names no completed request for this turn");
+  // The missing post may still be running, or not be visible yet: a retryable hold, nothing recorded (review item 19).
+  if (first === null || (first.data.kind === "request" && first.data.state === "pending")) {
+    const ss = { sessionId: req.sessionId, epoch: req.epoch, policyRev: req.policyRev, bundleRev: req.bundleRev, rulesRev: req.rulesRev, generation: req.generation, turnId: req.turnId };
+    throw new Unrecorded({ requestId: req.requestId, stamp: ss, status: "hold", deck: null, permit: null, notes: [], cards: [], pendingId: null, question: null, retryAfterMs: HOLD_RETRY_MS, receiptId: null, error: null });
+  }
+  if (first.data.kind !== "request" || first.data.state !== "complete" || firstTurnId !== req.turnId) throw parseError("supersedesRequestId names no completed request for this turn");
 
   const text = normalizedTranscript(req.transcript)!;
   const cls = classifyTurn(req);
