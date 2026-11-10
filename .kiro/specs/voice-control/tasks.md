@@ -79,10 +79,11 @@ Rules for every task:
 
 ### Group A3: pure core, second layer (parallel)
 
-- [ ] 7. Regex_Table
+- [x] 7. Regex_Table
   - Requirements: R10.2, R10.3; Q70, Q90
   - Depends on: 3 (`close-copy.mjs`)
-  - Estimate: 1.5 h · Actual:
+  - Estimate: 1.5 h · Actual: 0.3 h
+  - Notes: The table is exactly design §"The Regex_Table". The copy test checks the joined pattern sources and each row on its own.
   - Files: `packages/core/src/intents/regex.ts` (new), `packages/core/src/intents/regex.test.ts` (new), `scripts/regex-copy.test.ts` (new)
   - Witness: `regex.test.ts` › each of RX1–RX7 matches its cue words after the normalization of design §"The Regex_Table"; "forgot", "forgets", "forgetting" and "deleted" don't match RX1; `regexMatch` returns the IDs and never a class. `scripts/regex-copy.test.ts` › no 4-word window of any `lines.json` line appears in the rendered table.
   - Commit: `feat(intents): regex table`
