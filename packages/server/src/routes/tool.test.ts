@@ -6,7 +6,7 @@ import { completed } from "../openai/responses";
 import { paths } from "../store/paths";
 import { commitUserTurnForTest, insertMemoryForTest } from "../testing/extract-fixtures";
 import { callRoute, testRig } from "../testing/fakes";
-import { asrTurn, openTestSession } from "../testing/session-fixtures";
+import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
 import { TOOL_RESULT_LIMIT_MS, toolRoute } from "./tool";
 import { turnRoute } from "./turn";
 
@@ -55,6 +55,20 @@ describe("POST /api/tool (recall)", () => {
       expect(res.body.status).toBe("ready");
       expect(res.body.result.notes.some((n: { sens: string }) => n.sens !== "S0"), judge).toBe(kept);
     }
+  });
+
+  it("a pasted (T) turn's tool output is limited to S0 (review of wave A, item 21)", async () => {
+    const rig = testRig();
+    rig.openai.respond("responses.create", (body) => (isRecall(body) ? output(statement("Your sister works at the bank.", [{ type: "memory", id: memId, rev: 1 }])) : fail(new Error("no extraction"))));
+    const t = await commitUserTurnForTest(rig.store, UID, testId("src0"), "My sister works at the bank", rig.clock, rig.deps.hasher);
+    const memId = await insertMemoryForTest(rig.store, UID, t, rig.deps.hasher, { sens: "S1" }, "m0");
+    const s = await openTestSession(rig);
+    const pasted = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "From: someone@example.com\nWhere does my sister work?"));
+    expect(pasted.body.permit.kind).toBe("postCommitControl");
+    const stamp = { ...s.stamp, turnId: testId("turn-1") };
+    const res = await callRoute(rig, toolRoute, { requestId: testId("tool1"), stamp, callId: "call_1", tool: { name: "recall", args: { ...ARGS, query: "sister work" } } });
+    expect(res.body.status).toBe("ready");
+    expect(res.body.result.notes.every((n: { sens: string }) => n.sens === "S0")).toBe(true);
   });
 
   it("answers well before the browser stops waiting for it, with a second to spare for the network", () => {

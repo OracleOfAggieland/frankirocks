@@ -178,7 +178,9 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       const rule: RuleInput = {
         source: "tool",
         transcript: "final",
-        judge: turn.judge ?? (turn.itemIds.length === 0 ? "typed" : "timeout"),
+        // A pasted (T) Turn is not the Owner's own words: its tool output is limited to S0, so it never reads as a
+        // typed line here (review of wave A, item 21).
+        judge: turn.sourceClass === "T" ? "timeout" : (turn.judge ?? (turn.itemIds.length === 0 ? "typed" : "timeout")),
         parse: { kind: "none" },
         regexMatch: false,
         audience: effectiveAudience(s, ops),
