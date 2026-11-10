@@ -1250,4 +1250,17 @@ describe("wave A review fixes, items 8 and 9", () => {
     expect(next).toBeDefined();
     expect(r.st.turn!.items.map((i) => i.itemId)).toEqual(["item_1", "item_2"]);
   });
+
+  it("item 9: an empty transcript while the reply plays ends it with a cancel, a clear and its receipt", () => {
+    const r = playingUnposted();
+    r.rt({ type: "response.created", response: { id: "resp_s", metadata: { purpose: "speculative", generation: "1" } } });
+    const cmds = r.rt({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_1", transcript: "  " }, 100);
+    const sent = sends(cmds).map((e) => e.type);
+    expect(sent).toContain("response.cancel");
+    expect(sent).toContain("output_audio_buffer.clear");
+    expect(cmds).toContainEqual(expect.objectContaining({ kind: "receipt", body: expect.objectContaining({ kind: "playbackEnded" }) }));
+    expect(r.st.phase).toBe("LISTENING");
+    expect(r.st.heldBack).toBeNull();
+    expect(r.log.some((c) => c.kind === "turn")).toBe(false);
+  });
 });

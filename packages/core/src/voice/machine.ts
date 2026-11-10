@@ -1810,7 +1810,12 @@ function maybeAdmit(s: Step): void {
   if (s.st.phase === "LISTENING" && turn.source === "asr") return;
   if (!turn.items.every((i) => i.commitSeq !== null && i.transcript !== null)) return;
   if (turn.items.every((i) => i.transcript!.trim() === "")) {
-    // Nothing was said (noise the VAD committed): no Turn, no clientSeq, keep listening.
+    // Nothing was said (noise the VAD committed): no Turn, no clientSeq, keep listening. A reply already playing
+    // for it ends properly: cancelled by ID, cleared, its receipt sent (review of wave A, item 9).
+    if (s.st.active !== null || s.st.pending !== null || s.st.admittedTurnId === turn.turnId) {
+      cancelAll(s, false);
+      s.set({ admittedTurnId: null });
+    }
     toListening(s);
     return;
   }
