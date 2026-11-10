@@ -408,9 +408,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `harness.test.ts` (fake transport, fake Decisions, virtual clock) › `--judge judge_v2` sends the v2 instructions with `metadata.contract`; each row has `regex`, the probabilities, `ms` and `missedDeadline`; the summary prints per class judge recall, slow-parse recall, joint miss and false holds, and the share over 350 ms with p50 and p95; the run file records deadline and contract name; `lines.json` is unchanged (`git diff --exit-code scripts/judge-spike/lines.json`).
   - Commit: `feat(spike): judge_v2 option and slow-parse scoring`
 
-- [ ] 42. Emulator timing test for the slow path
+- [x] 42. Emulator timing test for the slow path
   - Requirements: R23.2
-  - Depends on: 32 · Estimate: 1.5 h · Actual:
+  - Depends on: 32 · Estimate: 1.5 h · Actual: 0.4 h
+  - Notes: Written, typechecked (`npx tsc --noEmit -p tests`), not run locally. Java 21 is installed on this machine, but `npm run test:emulator` starts `npx -y firebase-tools@15.34.2`, which may reach the npm registry and download the emulator, and this build makes no network call; the result comes from CI. One Session, 20 held (judge `H`) ASR turns in sequence; each run waits 500 ms after its "commit", posts, and measures to the response; extraction and any repair finish before the next turn. The fake Decisions answer takes exactly 350 ms against the 350 ms deadline, so a run can land on either side of it; the printed `kinds` says which (a miss is `hold` with `recoveryOnly`, still a response). It prints max, p95 and p50, and fails on any run over 2,500 ms from the commit.
   - Files: `tests/firestore/slow-path-timing.test.ts` (new)
   - Witness: the test itself under `npm run test:emulator` (CI, Java 21), with 75 ms added per round trip and a fake Decisions answer at 350 ms: the `/api/turn` response for a held turn is ready within 2,500 ms of a commit 500 ms before the post, on 20 runs; the max and p95 are printed. Over 2.5 s is a stop and report (R23.2).
   - Commit: `test(firestore): slow path timing`
