@@ -129,8 +129,9 @@ export function serverRule(i: RuleInput): RuleOutcome {
     if (i.wave === "B" && p.chosen === "alone") return permit("postCommitControl", "ack", "none", true, { line: ALONE_LINE, reasons: ["audience"] });
     // 11. Forget before forget exists (R12.3).
     if (p.chosen === "forget") return permit("postCommitControl", "ack", "none", true, { line: FORGET_NOT_YET });
-    // 12. Every other hit keeps its tools, no S1+ note (R12.2, R12.5, R12.7).
-    return permit("postCommitControl", "reply", "S0", true);
+    // 12. Every other hit keeps its tools, no S1+ note (R12.2, R12.5, R12.7). Its route doesn't change what is
+    // said, so a reply already playing under fastO is not cut (design review of the build; question 92).
+    return permit("postCommitControl", "reply", "S0", false);
   }
   // 13. Ordinary: slowOrdinary; an S1+ note only with judge O, density, all final, no gap, private (R8.4, R8.5).
   // Typed text substitutes for audio and the judge (contracts §6), so a typed line skips the density checks.

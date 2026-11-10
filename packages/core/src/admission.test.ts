@@ -84,11 +84,19 @@ describe("serverRule, one case per design row", () => {
     expect(rule({ parse: hit("forget") })).toMatchObject({ permit: "postCommitControl", scope: "ack", notes: "none", line: FORGET_NOT_YET, cut: true });
   });
 
-  it("12: every other hit, and wave A audience classes, keep their tools with S0 notes", () => {
+  it("12: every other hit, and wave A audience classes, keep their tools with S0 notes and cut nothing", () => {
     for (const chosen of ["correct", "transition", "hardRule", "food", "action", "why", "answer", "rushed", "company", "quiet", "alone"] as const) {
-      expect(rule({ parse: hit(chosen) })).toMatchObject({ permit: "postCommitControl", scope: "reply", notes: "S0", line: null, cut: true });
+      expect(rule({ parse: hit(chosen) })).toMatchObject({ permit: "postCommitControl", scope: "reply", notes: "S0", line: null, cut: false });
     }
-    expect(rule({ parse: hit(null, [], true) })).toMatchObject({ permit: "postCommitControl", scope: "reply", notes: "S0" });
+    expect(rule({ parse: hit(null, [], true) })).toMatchObject({ permit: "postCommitControl", scope: "reply", notes: "S0", cut: false });
+  });
+
+  it("only routes that change what is said cut a playing reply", () => {
+    expect(rule({ parse: hit("crisis") })).toMatchObject({ cut: true });
+    expect(rule({ parse: hit("forget") })).toMatchObject({ cut: true });
+    expect(rule({ wave: "B", parse: hit("alone") })).toMatchObject({ cut: true });
+    expect(rule({ parse: { kind: "failed", why: "deadline" }, regexMatch: true })).toMatchObject({ cut: true });
+    for (const chosen of ["company", "quiet", "alone", "rushed", "why"] as const) expect(rule({ wave: "A", parse: hit(chosen) })).toMatchObject({ cut: false });
   });
 
   it("13: ordinary is slowOrdinary whatever the judge, with all notes only when every S1+ condition holds", () => {
