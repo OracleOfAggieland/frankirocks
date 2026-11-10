@@ -99,8 +99,9 @@ export function serverRule(i: RuleInput): RuleOutcome {
   if (i.narrowedHere) return hold(["audience"], true);
   // 2. Pasted T text: no parse, postCommitControl, never an S1+ note (R8.10).
   if (i.source === "pasted") return i.noteSens === "S1+" ? hold(["sensitivity"]) : permit("postCommitControl", "reply", "S0", false);
-  // 3. A tool continuation, once the Turn's parse has committed (R8.11, R12.7).
-  if (i.source === "tool") return i.toolParseCommitted ? permit("slowOrdinary", "reply", i.audience === "private" ? "all" : "S0", false) : hold(["missingDependency"]);
+  // 3. A tool continuation, once the Turn's parse has committed (R8.11, R12.7). All notes only on a judge-O (or
+  // typed) turn in a private audience with no gap (R8.12; property 8).
+  if (i.source === "tool") return i.toolParseCommitted ? permit("slowOrdinary", "reply", (i.judge === "O" || i.judge === "typed") && i.audience === "private" && !i.parseGap ? "all" : "S0", false) : hold(["missingDependency"]);
   // 4. No transcript: the neutral line; a playing reply finishes (R7.4, R7.6, R8.7).
   if (i.transcript !== "final") return permit("recoveryOnly", "reply", "none", false, { reasons: ["missingDependency"] });
   // 5. The parse failed: the regex decides whether a playing reply is cut (R10.2, R11.7).
@@ -132,8 +133,9 @@ export function serverRule(i: RuleInput): RuleOutcome {
     return permit("postCommitControl", "reply", "S0", true);
   }
   // 13. Ordinary: slowOrdinary; an S1+ note only with judge O, density, all final, no gap, private (R8.4, R8.5).
+  // Typed text substitutes for audio and the judge (contracts §6), so a typed line skips the density checks.
   const typed = i.source === "typed";
-  const full = (i.judge === "O" || typed) && (typed || (i.wordsPer2s && i.allFinal)) && !i.parseGap && i.audience === "private";
+  const full = (i.judge === "O" || i.judge === "typed") && (typed || (i.wordsPer2s && i.allFinal)) && !i.parseGap && i.audience === "private";
   return permit("slowOrdinary", "reply", full ? "all" : "S0", false);
 }
 

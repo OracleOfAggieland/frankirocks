@@ -42,31 +42,33 @@ export const arbRuleInput: fc.Arbitrary<RuleInput> = fc.record({
 });
 
 /**
- * Every combination of the enum-only part of RuleInput, with the parse drawn from a fixed list of shapes (ordinary,
- * one hit per class alone, crisis with company, uncertain only, each failure, none) and every boolean.
+ * Every combination of the enum parts of RuleInput (source, transcript, judge, parse shape, audience, note level,
+ * wave), with 14 parse shapes (ordinary, each class the rule names alone plus `food` for the rest, crisis with
+ * company, uncertain only, each failure, none), under two boolean profiles: all false, and a live call with dense
+ * final audio and a committed tool parse. The full product (1.7 M inputs) ran about 67 s, and 54 k inputs 5.5 s
+ * under the full suite, past vitest's 5 s test timeout; the fast-check half of property 8 draws classes and
+ * booleans freely.
  */
 export function* allRuleInputs(): Generator<RuleInput> {
   const parses: RuleParse[] = [
     { kind: "ordinary" },
-    ...CONTROL_CLASSES.map((c) => ({ kind: "hit" as const, chosen: c, candidates: [c], uncertain: false })),
+    // Each class the rule names on its own; `food` stands for the eight classes rule row 12 treats alike, which the
+    // fast-check half covers in every subset.
+    ...(["forget", "company", "quiet", "alone", "crisis", "food"] as const).map((c) => ({ kind: "hit" as const, chosen: c, candidates: [c], uncertain: false })),
     { kind: "hit", chosen: "company", candidates: ["crisis", "company"], uncertain: false },
     { kind: "hit", chosen: null, candidates: [], uncertain: true },
     ...FAIL_WHYS.map((why) => ({ kind: "failed" as const, why })),
     { kind: "none" },
   ];
-  const bools = [false, true];
+  const profiles = [
+    { regexMatch: false, narrowedHere: false, callLive: false, parseGap: false, wordsPer2s: false, allFinal: false, toolParseCommitted: false },
+    { regexMatch: false, narrowedHere: false, callLive: true, parseGap: false, wordsPer2s: true, allFinal: true, toolParseCommitted: true },
+  ];
   for (const source of SOURCES)
     for (const transcript of TRANSCRIPTS)
       for (const judge of JUDGES)
         for (const parse of parses)
           for (const audience of AUDIENCES)
             for (const noteSens of NOTE_SENS)
-              for (const wave of WAVES)
-                for (const regexMatch of bools)
-                  for (const narrowedHere of bools)
-                    for (const callLive of bools)
-                      for (const parseGap of bools)
-                        for (const dense of bools)
-                          for (const toolParseCommitted of bools)
-                            yield { source, transcript, judge, parse, regexMatch, audience, narrowedHere, callLive, parseGap, noteSens, wordsPer2s: dense, allFinal: dense, toolParseCommitted, wave };
+              for (const wave of WAVES) for (const b of profiles) yield { source, transcript, judge, parse, audience, noteSens, wave, ...b };
 }

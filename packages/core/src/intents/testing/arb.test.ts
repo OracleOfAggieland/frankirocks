@@ -26,10 +26,10 @@ describe("intents and rule-input generators", () => {
     expect(seen((x) => x.parse.kind)).toEqual(new Set(["ordinary", "hit", "failed", "none"]));
   });
 
-  it("the enum-only part enumerates exhaustively", () => {
+  it("the enum part enumerates exhaustively under two boolean profiles", () => {
     let n = 0;
     for (const _ of allRuleInputs()) n++;
-    // 4 sources × 3 transcripts × 6 judges × 21 parses × 3 audiences × 3 note levels × 2 waves × 2^6 booleans
-    expect(n).toBe(4 * 3 * 6 * 21 * 3 * 3 * 2 * 2 ** 6);
+    // 4 sources × 3 transcripts × 6 judges × 14 parses × 3 audiences × 3 note levels × 2 waves × 2 profiles
+    expect(n).toBe(4 * 3 * 6 * 14 * 3 * 3 * 2 * 2);
   });
 });

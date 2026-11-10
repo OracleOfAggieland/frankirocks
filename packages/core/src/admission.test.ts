@@ -37,6 +37,8 @@ describe("serverRule, one case per design row", () => {
     expect(rule({ source: "tool", toolParseCommitted: false })).toMatchObject({ kind: "hold", reasons: ["missingDependency"] });
     expect(rule({ source: "tool", toolParseCommitted: true })).toMatchObject({ permit: "slowOrdinary", notes: "all" });
     expect(rule({ source: "tool", toolParseCommitted: true, audience: "unknown" })).toMatchObject({ permit: "slowOrdinary", notes: "S0" });
+    expect(rule({ source: "tool", toolParseCommitted: true, judge: "H" })).toMatchObject({ permit: "slowOrdinary", notes: "S0" });
+    expect(rule({ source: "tool", toolParseCommitted: true, parseGap: true })).toMatchObject({ permit: "slowOrdinary", notes: "S0" });
   });
 
   it("4: a missing or failed transcript gets recoveryOnly and cuts nothing", () => {
