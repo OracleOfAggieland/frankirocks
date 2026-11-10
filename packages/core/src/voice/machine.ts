@@ -1629,6 +1629,8 @@ function onCommitted(s: Step, itemId: string, freshId: string, lastLoudAt: numbe
   // A new Turn starts unless the current one is still collecting items (design "Turn grouping").
   if (turn === null || turn.posted !== null || turn.source !== "asr") {
     turn = { turnId: freshId, source: "asr", text: null, items: [], tEnd: s.now, posted: null, staleRetried: false, verdict: null };
+    // The old Turn's waits don't carry over: their handlers don't know which Turn they belong to (review item 5).
+    s.disarm("permit", "turnRetry");
   }
   if (turn.items.length >= MAX_TURN_ITEMS || turn.items.some((i) => i.itemId === itemId)) return;
   const sp = s.st.speech.find((x) => x.itemId === itemId);

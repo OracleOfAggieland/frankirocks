@@ -1109,3 +1109,33 @@ describe("wave A review fixes, Part 2", () => {
     expect(r.st.deadlines.lineDone).toBeUndefined();
   });
 });
+
+/** A turn the judge held, posted final, waiting in HELD for its Permit. */
+function heldPosted(r: Rig) {
+  const t = commitTurn(r);
+  created(r, t.judge!, "resp_j");
+  created(r, t.spec!, "resp_s");
+  answerHash(r);
+  judgeDone(r, "resp_j", "H", 200);
+  r.rt({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_1", transcript: "My dog is called Pip" }, 100);
+  expect(r.st.phase).toBe("HELD");
+  return turnBody(r);
+}
+
+describe("wave A review fixes, items 5 and 6", () => {
+  it("item 5: a new turn doesn't inherit the old turn's permit and turnRetry deadlines", () => {
+    const r = listening();
+    heldPosted(r);
+    expect(r.st.deadlines.permit).toBeDefined();
+    r.ev({ type: "turnOk", turnId: turnBody(r).turnId, response: { ...admitted(r, "slowOrdinary"), status: "hold", permit: null, retryAfterMs: 250 } }, 50);
+    expect(r.st.deadlines.turnRetry).toBeDefined();
+    // A commit with no speech_started first (the VAD sent none) starts a new turn.
+    r.rt({ type: "input_audio_buffer.committed", item_id: "item_2" }, 10, testId("turn-2"));
+    expect(r.st.turn!.turnId).toBe(testId("turn-2"));
+    expect(r.st.deadlines.permit).toBeUndefined();
+    expect(r.st.deadlines.turnRetry).toBeUndefined();
+    r.rt({ type: "conversation.item.added", item: { id: "item_2" } }, 20);
+    r.timer("permit", TURN_RESPONSE_LIMIT_MS);
+    expect(r.st.turn?.turnId).toBe(testId("turn-2"));
+  });
+});
