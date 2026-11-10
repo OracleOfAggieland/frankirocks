@@ -1074,7 +1074,8 @@ function postTurn(s: Step, transcriptState: "final" | "missing" | "failed"): voi
   const admitted = st.admittedTurnId === turn.turnId;
   if (transcriptState === "final") {
     // Posting keeps a running judge, speculative reply or admitted reply where it is (design rows "all transcripts in").
-    if (s.st.phase === "WAIT_ITEM") s.set({ phase: "HELD" });
+    // A final post from LISTENING (a typed line) waits in HELD for its Permit (review of wave A, item 3).
+    if (s.st.phase === "WAIT_ITEM" || s.st.phase === "LISTENING") s.set({ phase: "HELD" });
     // R7.5: the answer has TURN_RESPONSE_LIMIT_MS; a Permit inside it plays, however late after the commit.
     if (!admitted) s.arm("permit", s.now + TURN_RESPONSE_LIMIT_MS);
   } else {

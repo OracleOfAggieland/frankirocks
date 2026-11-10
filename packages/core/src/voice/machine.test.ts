@@ -1069,3 +1069,14 @@ describe("wave A review fixes, item 2: the poll's Deck carries the safe turns", 
     expect(r.st.deck!.turns).toHaveLength(1);
   });
 });
+
+describe("wave A review fixes, Part 2", () => {
+  it("item 3: a typed line during a call gets its reply", () => {
+    const r = listening();
+    r.ev({ type: "typedSubmitted", turnId: testId("typed-1"), text: "What is my dog called?" });
+    expect(turnBody(r)).toMatchObject({ source: "typed", transcriptState: "final" });
+    expect(r.st.phase).toBe("HELD");
+    r.ev({ type: "turnOk", turnId: testId("typed-1"), response: admitted(r, "slowOrdinary") }, 400);
+    expect(sends(answerVerify(r)).map((e) => e.type)).toContain("response.create");
+  });
+});
