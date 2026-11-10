@@ -193,6 +193,7 @@ Machine properties 2, 4, 7 and 12 are expected red on the current machine. The o
     - Seed `192887172`, path `47:1:2:0:…`. Shrunk counterexample: `[[connectionLost (0), timer due (100), timer due (100), commit (300), itemAdded 0 (40), transcript 0 (0), turnOk 0 ordinary hashOk (400), hash 0 ok (0), created 0 (30), started 0 (300)]]`, failing with `expected 'SPEAKING' to be 'HELD'`.
     - Seed `1882653300`: the same shape after a `connectionLost`.
     - Cause: the property's `cancelledBefore(id, i)` counts any `teardown` command before step i as cancelling the response, even a teardown that happened before the response was created. After a reconnect, the new call's first permitted reply is wrongly treated as a cancelled response, so its legitimate `output_audio_buffer.started` (which rightly moves the machine to SPEAKING) is judged stale. The machine is right; the statement is wrong. The fix is one condition (`s.i > createdAt` for the teardown), but the file is committed and guarded, so it was not edited, and the build stopped here as the rules require.
+    - **Corrected by the reviewer in `d607111`** (`docs/briefs/011-review-build-a.md`): only a cancel or teardown after the response was created counts as cancelling it. What the property claims is unchanged. It passed 6,000 runs, including the three seeds above.
   - Files: `packages/core/src/voice/stale-inert.property.test.ts` (new)
   - Witness: the property file, 1,000 runs.
   - Commit: `test(voice): property 5, stale events are inert`
