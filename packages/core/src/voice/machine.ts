@@ -1387,7 +1387,10 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string, lastLoudA
   const gen = String(st.session.generation);
   switch (ev.type) {
     case "input_audio_buffer.speech_started": {
-      const busy = st.phase === "SPEAKING" || st.phase === "TOOL_WAIT" || st.inFlight.length > 0 || st.active !== null || st.judge !== null || st.spec !== null;
+      // KV04: speech start also drops a posted turn's wait for its Permit, in HELD or waiting for the Neutral_Line
+      // in RECOVERY, so a late Permit can't play over the owner (review of wave A, item 4).
+      const waiting = st.pending !== null || st.phase === "HELD" || (st.phase === "RECOVERY" && st.recovery?.kind === "line");
+      const busy = st.phase === "SPEAKING" || st.phase === "TOOL_WAIT" || st.inFlight.length > 0 || st.active !== null || st.judge !== null || st.spec !== null || waiting;
       if (busy) bargeIn(s);
       if (ev.item_id !== undefined) recordSpeech(s, ev.item_id, { startMs: ev.audio_start_ms ?? null });
       return;

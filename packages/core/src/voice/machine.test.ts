@@ -1079,4 +1079,33 @@ describe("wave A review fixes, Part 2", () => {
     r.ev({ type: "turnOk", turnId: testId("typed-1"), response: admitted(r, "slowOrdinary") }, 400);
     expect(sends(answerVerify(r)).map((e) => e.type)).toContain("response.create");
   });
+
+  it("item 4: speech start while HELD with nothing in flight drops the wait; the late Permit doesn't play over the owner", () => {
+    const r = listening();
+    const t = commitTurn(r);
+    created(r, t.judge!, "resp_j");
+    created(r, t.spec!, "resp_s");
+    answerHash(r);
+    judgeDone(r, "resp_j", "H", 200);
+    r.rt({ type: "conversation.item.input_audio_transcription.completed", item_id: "item_1", transcript: "My dog is called Pip" }, 100);
+    expect(r.st.phase).toBe("HELD");
+    const body = turnBody(r);
+    r.rt({ type: "input_audio_buffer.speech_started", item_id: "item_2", audio_start_ms: 5000 }, 100);
+    expect(r.st.phase).toBe("LISTENING");
+    expect(r.st.pending).toBeNull();
+    expect(r.st.deadlines.permit).toBeUndefined();
+    const cmds = r.ev({ type: "turnOk", turnId: body.turnId, response: admitted(r, "slowOrdinary") }, 300);
+    expect(cmds.some((c) => c.kind === "verifyPermit")).toBe(false);
+    expect(r.st.outputMuted).toBe(true);
+  });
+
+  it("item 4: speech start in RECOVERY waiting for the Neutral_Line drops that wait too", () => {
+    const r = listening();
+    r.rt({ type: "input_audio_buffer.committed", item_id: "item_1" });
+    r.timer("transcript", HELD_TRANSCRIPT_LIMIT_MS);
+    expect(r.st.phase).toBe("RECOVERY");
+    r.rt({ type: "input_audio_buffer.speech_started", item_id: "item_2", audio_start_ms: 5000 }, 100);
+    expect(r.st.phase).toBe("LISTENING");
+    expect(r.st.deadlines.lineDone).toBeUndefined();
+  });
 });
