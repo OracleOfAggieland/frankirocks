@@ -527,7 +527,7 @@ Scheduled with `ctx.schedule` after the `/api/turn` response is sent, only for `
    - **ordinary:** Turn `parseState:"committed"`, `uncertainSpeaker`; clear `parseLease`; advance `committedParseSeq` over every contiguous committed user Turn (a query on the Session's turns by `seq`, as `earlierSafeTurns` does); audience untouched (R15.4).
    - **hit:** the same parse commit, then the late-hit effects: `policyRev + 1` (so the next state poll's higher Deck cancels any speech, KV05) and, in wave B, the audience effects of the hit; a company hit with a live call writes the hangup Job (R15.5). No late reply is spoken for reply-only classes; the ledger gets one `decision` with `heldRefs:[turnRef]`.
    - **failed:** `parseState` stays `failed`; clear the lease; `audience:"unknown"` (R15.6).
-3. A parsed `alone` sets `private` but never moves `committedParseSeq` past a gap (R15.8).
+3. A parsed `alone` sets `private` and, like any committed parse, closes its own Turn's gap; it never moves `committedParseSeq` past another Turn's gap (R15.8; review of wave A, item 20).
 
 ### `/api/session/state`
 

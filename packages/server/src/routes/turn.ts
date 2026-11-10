@@ -387,10 +387,11 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
         // A lease past its window is a failed repair; one still naming this Turn is released.
         let s = expireLease(s0, ops);
         if (s.parseLease !== null && s.parseLease.clientSeq === req.clientSeq) s = { ...s, parseLease: null };
-        // A committed parse closes the gap; a parsed `alone` never does (R15.4, R15.8). A failed parse is `unknown` (R15.6).
+        // A committed parse closes this Turn's own gap, `alone` included; it never closes another Turn's (R15.8;
+        // review of wave A, item 20). A failed parse is `unknown` (R15.6).
         let committedParseSeq = s.committedParseSeq;
         if (!parsed) s = { ...s, audience: "unknown" };
-        else if (!(slow.parse.kind === "hit" && slow.parse.chosen === "alone")) committedParseSeq = await advancedWatermark(tx, uid, req.sessionId, s, req.clientSeq);
+        else committedParseSeq = await advancedWatermark(tx, uid, req.sessionId, s, req.clientSeq);
         tx.update(doc.path, { ...s, committedParseSeq, lastTurnAt: now, expiresAt: tsFromMs(ops + SESSION_IDLE_MS), updatedAt: now });
 
         const safe = await earlierSafeTurns(tx, uid, req.sessionId, req.clientSeq, ctx);

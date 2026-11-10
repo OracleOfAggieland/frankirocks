@@ -106,12 +106,24 @@ describe("the Parse_Repair (R15.3–R15.6, R15.8; question 80)", () => {
     expect(await turn(rig, s.sessionId, 1)).toEqual(t);
   });
 
-  it("a parsed alone never moves the watermark past a gap", async () => {
+  it("a parsed alone closes its own turn's gap (review of wave A, item 20)", async () => {
     const { rig, s } = await failedFirst(never(), ok(decisionAnswer({ alone: 0.9 })));
     await runScheduled(rig);
     const after = await session(rig, s.sessionId);
-    expect([after.committedParseSeq, after.lastClientSeq, after.parseLease]).toEqual([0, 1, null]);
+    expect([after.committedParseSeq, after.lastClientSeq, after.parseLease]).toEqual([1, 1, null]);
     expect((await turn(rig, s.sessionId, 1)).parseState).toBe("committed");
+  });
+
+  it("a parsed alone never moves the watermark past another turn's gap (R15.8)", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    // Turn 1's transcript is missing and never arrives; turn 2's parse misses its deadline, and its repair says alone.
+    await post(rig, asrTurn(s.stamp, 1, "", items(1), "missing"));
+    rig.openai.script("decisions.create", never(), ok(decisionAnswer({ alone: 0.9 })));
+    await post(rig, asrTurn(s.stamp, 2, "it's just us now", items(2)));
+    await runScheduled(rig);
+    const after = await session(rig, s.sessionId);
+    expect([after.committedParseSeq, after.lastClientSeq]).toEqual([0, 2]);
   });
 
   it("a typed U line is repaired too", async () => {

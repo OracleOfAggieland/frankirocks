@@ -156,3 +156,12 @@ describe("a Superseding_Post that arrives early (review of wave A, item 19)", ()
     expect(ledger === null || (ledger.data as { state: string }).state !== "complete").toBe(true);
   });
 });
+
+describe("a superseding alone (review of wave A, item 20)", () => {
+  it("closes its own turn's gap", async () => {
+    const { rig, s } = await missingFirst();
+    rig.openai.script("decisions.create", ok(decisionAnswer({ alone: 0.9 })));
+    await post(rig, late(s.stamp, 1, "it's just us now"));
+    expect((await session(rig, s.sessionId)).committedParseSeq).toBe(1);
+  });
+});

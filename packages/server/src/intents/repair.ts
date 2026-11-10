@@ -75,8 +75,9 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
       return "failed";
     }
     tx.update(turnPath, { ...turn.data, parseState: "committed", uncertainSpeaker: slow.probabilities?.uncertainSpeaker ?? 0, updatedAt: now } satisfies Turn);
-    const alone = slow.parse.kind === "hit" && slow.parse.chosen === "alone";
-    const committedParseSeq = alone ? s.committedParseSeq : await advancedWatermark(tx, uid, sessionId, s, turn.data.seq);
+    // The Turn's own committed parse closes its own gap, `alone` included; R15.8 only says `alone` doesn't close
+    // another Turn's gap, and advancedWatermark moves only over contiguous committed Turns (review item 20).
+    const committedParseSeq = await advancedWatermark(tx, uid, sessionId, s, turn.data.seq);
     tx.update(doc.path, { ...s, committedParseSeq, updatedAt: now });
     if (slow.parse.kind !== "hit") return "ordinary";
 
