@@ -121,21 +121,28 @@ export function wordsPer2s(transcript: string, items: TurnReq["items"]): boolean
 
 export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes> {
   const { uid, deps } = ctx;
+  const typedText = req.transcriptState === "final" ? normalizedTranscript(req.transcript)! : "";
+  const cls = classifyTurn(req);
+  // Every final ASR transcript and typed U line is parsed (R11.1); pasted T text never is (R8.10). The Decisions
+  // call is the slow path's longest wait, so it starts beside ensureCoreDocs and beginRequest (design "One voice
+  // turn"; review of wave A, item 23). A replayed request wastes one Decisions call; that is the price.
+  const parses = req.supersedesRequestId === null && req.transcriptState === "final" && cls.cls === "U";
+  const slowP = parses
+    ? (async () => {
+        // With no call open, a typed line's parse runs beside its typed reply, which takes longer than 350 ms
+        // anyway, so the parse gets 2,000 ms (review of wave A, item 17).
+        const noCall = req.source !== "asr" && (await noCallOpen(ctx, req.sessionId));
+        const deadlineMs = noCall ? DECISIONS_NO_CALL_DEADLINE_MS : DECISIONS_DEADLINE_MS;
+        return runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log }, { turnId: req.turnId, utterance: typedText }, deadlineMs);
+      })()
+    : Promise.resolve(null);
+  // A request that fails before it awaits the parse must not leave an unhandled rejection behind.
+  slowP.catch(() => {});
   await ensureCoreDocs(uid, deps);
   return mutation(ctx, "turn", req.requestId, req, async (key) => {
     if (req.supersedesRequestId !== null) return postSupersede(ctx, req, req.supersedesRequestId, key);
-    const typedText = req.transcriptState === "final" ? normalizedTranscript(req.transcript)! : "";
-    const cls = classifyTurn(req);
-    // Every final ASR transcript and typed U line is parsed (R11.1); pasted T text never is (R8.10). With no call,
-    // the typed reply's Responses call runs beside it (R8.9).
-    const parses = req.transcriptState === "final" && cls.cls === "U";
-    const decisions = decisionsPort(deps);
-    // With no call open, a typed line's parse runs beside its typed reply, which takes longer than 350 ms anyway,
-    // so the parse gets 2,000 ms (review of wave A, item 17).
-    const noCall = req.source !== "asr" && (await noCallOpen(ctx, req.sessionId));
-    const deadlineMs = noCall ? DECISIONS_NO_CALL_DEADLINE_MS : DECISIONS_DEADLINE_MS;
     const [slow, reply] = await Promise.all([
-      parses ? runSlowParse({ decisions, env: deps.env, log: deps.log }, { turnId: req.turnId, utterance: typedText }, deadlineMs) : Promise.resolve(null),
+      slowP,
       typedReplyNote(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx)),
     ]);
     for (let attempt = 1; ; attempt++) {

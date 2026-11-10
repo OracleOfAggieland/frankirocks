@@ -65,6 +65,20 @@ describe("a typed line with no call open (review of wave A, item 17)", () => {
     expect(texts(res.body)).toEqual([RECOVERY_LINE]);
   });
 
+  it("the Decisions call starts beside ensureCoreDocs and beginRequest, not after them (review of wave A, item 23)", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    const order: string[] = [];
+    const store = rig.deps.store;
+    rig.deps.store = { ...store, get: (u, p) => (order.push("get"), store.get(u, p)), query: (u, q) => store.query(u, q), transaction: (u, fn) => (order.push("tx"), store.transaction(u, fn)) };
+    const openai = rig.deps.openai;
+    rig.deps.openai = { call: (e, b) => (e === "decisions.create" && order.push("decide"), openai.call(e, b)) };
+    const { value: res } = await post(rig, typedTurn(s.stamp, 1, "what's a good dog name"));
+    expect(res.status).toBe(200);
+    expect(order.indexOf("decide")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("decide")).toBeLessThan(order.indexOf("tx"));
+  });
+
   it("the Decisions deadline is 2,000 ms, not 350 ms", async () => {
     expect(DECISIONS_NO_CALL_DEADLINE_MS).toBe(2_000);
     const rig = testRig();
