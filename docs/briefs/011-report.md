@@ -156,9 +156,14 @@ Run on localhost with the Debug_Panel open (`?debug=1`). This is the first time 
 
 1. **An ordinary question.** Say: "What's a good name for a small dog?"
    - Hear an answer in about a second and a half.
-   - Latency: last turn path `fastO`, verdict O, refused —, end of speech to audible near 1,300 ms; the `fastO` row of the table gains one.
+   - Latency: last turn path `fastO`, verdict O, refused —, end of speech to audible near 1,300 ms; the `fastO` row of the table gains one. (Before the wave A fixes, most turns showed refused `outstanding` or `ack` here: the turn's own post refused its own `fastO`.)
+   - From the second turn of the call on, the turn's reply has the earlier turns in context: the Deck from the state poll carries the last four safe turns, Franki's own replies included.
    - Decisions: one group for the turn with two rows: `▶ played … permit fastO · issuer browser (fastO)`, and `permit slowOrdinary · issuer seam`, not played.
-   - Audience private, failed parses 0, no "fastO off" line.
+   - Audience private, failed parses 0, no "fastO off" line. Realtime errors 0.
+1b. **A follow-up.** Right after step 1's answer ends, wait a second, then ask: "What did I just ask you?"
+   - Hear Franki repeat your question about a dog's name, and refer to its own answer if asked.
+   - Latency: path `fastO`, as in step 1.
+   - If the answer is "I don't know" or a guess, the safe turns did not reach the reply: note the Turns section (the assistant turn from step 1 should be there) and report it.
 2. **A line that holds.** Say: "Forget what I said about work."
    - Hear exactly "I can't forget things yet."
    - Latency: path `slow` (or `regenerated` if the judge said O and the cut came after), verdict H or U, refused `verdict`.
@@ -178,7 +183,53 @@ Run on localhost with the Debug_Panel open (`?debug=1`). This is the first time 
    - The judge refused: every turn takes path `slow`, and every decision is `slowOrdinary` with verdict U.
    - One response cancels the other: a judge `response.done` with status `cancelled`, which parses invalid and holds, so every turn reads like step 3.
    - No error count is shown on the panel (see "Not built" above). Read the effect from the paths.
+   - Since the wave A fixes, the panel's "Realtime errors" line counts every Realtime `error` event by the client event it names (judge, spec, reply, other) with the last code. Any count above 0 during steps 1 to 5 is the R23.1 signal; read the code.
 
 ## Stop
 
 Wave A ends here. Wave B (tasks 45 to 53: Head compile by audience, company and quiet, the swap, `alone`, property 10) starts only after the live check and answers to Q54, Q68 and Q79.
+
+## Wave A fixes (`docs/briefs/011-review-wave-a.md`)
+
+The review was committed as is (`50b1874`). The reviewer's property 7 change is `704d3de`. Each item has its own commit and a test that failed on the code before it. **The run stopped at item 17**: its crisis sub-item needs an edit to property 8, which is guarded (see item 17 below). Items 18 to 23 were not started.
+
+| Item | Commit | Test that failed first |
+|---|---|---|
+| 1. A turn's own post doesn't refuse its own `fastO` | `8acb55e` | `machine.test.ts` "item 1: a turn's own post doesn't refuse its own fastO" (the post had dropped the ack). R4.1, R4.3, R20.1.7, design §"The FastO_Rule" and Q61 updated. |
+| 2. The poll's Deck carries the safe turns | `5796201` | `state.test.ts` "the Deck carries the Session's current safe turns" (it was `[]`); `machine.test.ts` "a poll sent before the last turn answer doesn't replace that answer's Deck". The state route reads the last turns once for the S2 check and the safe turns (`safeTurnsOf`, shared with `/api/turn`), no new index; the design's budget now says up to 23 reads per poll. |
+| 3. A typed line during a call gets its reply | `1bbfc13` | "item 3" (stayed in LISTENING) |
+| 4. Speech start in HELD or waiting for the Neutral_Line drops the wait | `1b968e5` | "item 4" (two cases) |
+| 5. A new turn doesn't inherit the old turn's deadlines | `8fb9522` | "item 5" (`permit` still armed) |
+| 6. An unrecorded post of this Session reconnects, current or not | `d4be34d` | "item 6" (four cases: failed post of a non-current turn, stale answer of a non-current turn, the permit deadline and the request timeout in either order, a non-current answer's higher Deck) |
+| 7. An admitted turn whose reply ended is still posted | `8454238` | "item 7" (three cases) and the new property 13 (below) |
+| 8. A turn kept after barge-in waits for the next commit | `208f313` | "item 8" (`transcript` deadline still armed) |
+| 9. An empty transcript ends a playing reply through `cancelAll` | `c51a8df` | "item 9" (no cancel, no clear) |
+| 10. One in-flight check for every state request | `d967b9e` | "item 10" (5 state requests where 2 were expected) |
+| 11. An early timer tick re-arms its deadline | `cce1a5d` | "item 11" |
+| 12. Stray audio rules out playing the speculative reply as is | `feae6e9` | "item 12: stray audio is cleared before a fastO reply". Its second case (a rejected reply clears) passes on the old code too, because the turn answer's `dropSpeculation` already clears; it stays as a guard for the new clear in `rejectReply`. |
+| 13. An empty hash never matches | `3fee5ac` | "item 13" (a `fastO` reply was admitted on two empty hashes) |
+| 14. A refused reply create ends the reply in RECOVERY | `7b62827` | "item 14" (waited for the 45 s cap) |
+| 15. Realtime `error` events counted and shown | `91e2027` | "item 15" in `machine.test.ts` and `DebugPanel.test.tsx` |
+| 16. A `policyRev` rise requeues extraction | `4c88ee5` | `extract.test.ts` "a raised policyRev runs the job again at the new one" (the job was failed STALE). Contract question 93 proposes the KS06 amendment: a changed epoch still fails STALE; a raised `policyRev` requeues at the new one. |
+| 17. Typed lines with no call open | **not built** | see below |
+| 18 to 23 | not started | |
+
+**Choices made while fixing.**
+- Item 4: speech start counts as a barge-in in HELD, with a check pending, or in RECOVERY waiting for the Neutral_Line, so a late Permit for the posted turn can't play over the owner. That turn gets no reply; the owner's new speech is the next turn.
+- Item 6: an unrecorded answer (`stale`, an error, or a retry `hold`) for a turn that is no longer current reconnects. The current turn's second `stale` and any error answer now reconnect too, instead of dropping the reply and leaving `nextClientSeq` ahead of the server.
+- Item 7: the turn is kept as `heldBack`. It is posted `final` when its transcript arrives, `missing` at t0 + 5 s (then a late transcript sends the Superseding_Post), or `missing` just before a newer turn's post, so `clientSeq` keeps commit order.
+- Item 14: "recovery, as for a failed slow reply" is read as the same RECOVERY the 5 s permit timeout uses: nothing plays, then listen again.
+
+**Property that ran red.** New property 13, "an admitted turn is posted" (`packages/core/src/voice/admitted-turn-posted.property.test.ts`, helper `drainAll` in `testing/trace.ts`). It fires every armed timer after the trace. Every turn whose reply was admitted must be posted at most once, and exactly once unless the call ended or the turn is still collecting audio. Run on the code before item 7, it failed: seed `-231391213`, shrunk counterexample `[speechStop 900, stateOk fresh 100, commit 200, itemAdded 0 40, created 1 20, judgeDone 0 O 0, hash 0 ok 0, hash 0 ok 0, created 0 30, started 0 300, stopped 1500]`. The `fastO` reply ended before the transcript, and the turn was never posted. It is green since item 7. No other property ran red.
+
+**Item 17: stopped.** Most of item 17 needs no property change: the 2,000 ms Decisions deadline with no call open, the Fixed_Line for `forget`, the typed reply on other hits (row 12 allows S0 notes), the Neutral_Line as text on a failed parse, and the typed client rendering any note. One sub-item does: "A crisis line shows the typed reply". With no call open, the typed reply reaches the browser only as a `W` note under the Permit. Property 8 (`seam-total.property.test.ts`) states that for an `asr` or `typed` source, any parse hit with a `crisis` candidate gets a Permit with `notes: "none"`. The seam filters notes by that outcome, so a crisis Permit can carry no typed reply. Building this needs property 8's crisis clause to exempt a typed line with no call open, or to say that the care reply on that path is the typed reply. That is an edit to a guarded file, so the run stopped here, as the review says.
+- Moving the text into `toolOutput`, or letting the route skip the rule's notes level, would make the claim true in name only, so neither was done.
+- Proposed change, for the reviewer: in property 8, read "crisis replies carry no notes" as "no notes except the typed reply when `source` is typed and no call is live". Then the Server_Rule gets a typed-no-call crisis row that allows that one `result` note, still with scope `ack`.
+- The rest of item 17 can land in the same commit once the property decides. It wasn't built on its own, so the crisis line wouldn't stay as the one hit with no reply.
+
+**Not started:** item 18 (the Parse_Repair transaction retry), item 19 (a Superseding_Post that arrives before its `missing` post completes), item 20 (a late `alone` leaves a permanent gap), item 21 (a pasted turn's tool continuation), item 22 (the repair's decision written outside the seam), item 23 (start the Decisions call earlier).
+
+**Checks after item 16** (telemetry variables set, no network call, nothing with `--live`):
+- `npm test`: 162 files, 1,492 tests.
+- `npm run lint`, `npm run typecheck` and `npm run build`: exit 0.
+- The wave A properties (P1 to P9, P11, P12) and the new P13 (12 files, 13 tests) passed five full runs in a row.
