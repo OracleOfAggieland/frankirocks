@@ -260,9 +260,10 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `machine.test.ts` › "judge and speculative reply at item.added" (both `send` commands in one step, `event_id`s, `hashPayload`, muted, `judge` timer at t0 + 1200); "noteWaiting sends the judge alone"; "more than 8 fragments takes the slow path"; "no item.added within 600 ms sends no judge"; "speech start cancels both and the next commit judges all fragments".
   - Commit: `feat(voice): judge and speculative reply at the commit`
 
-- [ ] 25. Verdicts, `fastO` admission and regeneration
+- [x] 25. Verdicts, `fastO` admission and regeneration
   - Requirements: R3.1–R3.7, R3.9, R4.3, R6.1–R6.3; KV02, KV03, KV13; Q56, Q76
-  - Depends on: 24 · Estimate: 3.5 h · Actual:
+  - Depends on: 24 · Estimate: 3.5 h · Actual: in task 24
+  - Notes: Code and witnesses landed in `2563adf` (task 24's notes say why). Witness: describe "verdicts and fastO admission (task 25)" in `machine.test.ts`, 7 cases. The `permitProblem` StateAck check now binds at issue only (`checkAck`), since posting drops the ack; the existing KV13 test of `permitProblem` is unchanged and passes. Properties 1–4 and 7 green.
   - Files: same as 24
   - Witness: `machine.test.ts` › "valid O with a fresh ack unmutes at the spec's start"; "O after muted audio cancels, clears and regenerates"; "H, U, invalid and judge error cancel and hold; a later O changes nothing"; "judge timeout cancels both"; "a refused fastO records its reason"; "a held function call dispatches after admission and drops on a hold"; "`admitted` receipt before `playbackStarted`"; "the post carries the known verdict or timeout". Properties 1–4 and 7 green; any still red is reported.
   - Commit: `feat(voice): verdicts and fastO admission`
