@@ -81,7 +81,12 @@ export const MAX_QUESTIONS = 22;
 export const MAX_DOORS = MAX_QUESTIONS - INTENT_NAMES.length;
 /** Contracts §5 "Over800: hold", counted in UTF-16 code units over prefix, utterance and last question (question 71). */
 export const MAX_INPUT_UNITS = 2_400;
-/** The Decisions call's deadline (contracts §5 table). */
-export const DECISIONS_DEADLINE_MS = 350;
+/** Contracts §5 table's Decisions deadline. Assumed, not measured (question 94); kept as the contract's literal. */
+export const DECISIONS_CONTRACT_DEADLINE_MS = 350;
+/**
+ * The Decisions call's deadline on a call. The live run of Nov 10 measured the parse at p50 460 ms, p95 743 ms,
+ * largest 1,304 ms: 350 ms missed 49 of 60, 1,000 ms covers 59 of 60 (review of the live run, item 3).
+ */
+export const DECISIONS_DEADLINE_MS = 1_000;
 /** The Parse_Repair's deadline (R15.3). */
 export const REPAIR_DEADLINE_MS = 2_000;

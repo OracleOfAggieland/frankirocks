@@ -1,4 +1,4 @@
-import { FORGET_NOT_YET, RECOVERY_LINE, type Session } from "@franki/core";
+import { DECISIONS_CONTRACT_DEADLINE_MS, DECISIONS_DEADLINE_MS, FORGET_NOT_YET, RECOVERY_LINE, type Session } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { paths } from "../store/paths";
 import { commitUserTurnForTest, insertMemoryForTest } from "../testing/extract-fixtures";
@@ -7,7 +7,7 @@ import { never, ok } from "../openai/fake";
 import { completed } from "../openai/responses";
 import { decisionAnswer } from "../testing/decisions";
 import { callRoute, patchRecord, settle, testRig } from "../testing/fakes";
-import { openTestSession, typedTurn } from "../testing/session-fixtures";
+import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
 import { DECISIONS_NO_CALL_DEADLINE_MS } from "../intents/slow-parse";
 import { turnRoute } from "./turn";
 
@@ -136,5 +136,22 @@ describe("a typed hit keeps its reply whatever its sensitivity, when no one else
     rig.openai.script("responses.create", ok(completed("Sure.")));
     const { value: res } = await post(rig, typedTurn(s.stamp, 1, "forget what I said about my sister"));
     expect(texts(res.body)).toEqual([FORGET_NOT_YET]);
+  });
+});
+
+describe("the Decisions deadline on a call (review of the live run, item 3)", () => {
+  it("is 1,000 ms: an answer at 800 ms is used, one at 1,100 ms is a missed deadline", async () => {
+    expect(DECISIONS_DEADLINE_MS).toBe(1_000);
+    expect(DECISIONS_CONTRACT_DEADLINE_MS).toBe(350);
+    for (const [ms, status] of [
+      [800, "ordinary"],
+      [1_100, "hold"],
+    ] as const) {
+      const rig = testRig();
+      const s = await openTestSession(rig);
+      slowDecisions(rig, ms, decisionAnswer());
+      const { value: res } = await post(rig, asrTurn(s.stamp, 1, "my dog loves the park", [{ itemId: "item_1", commitSeq: 1 }]));
+      expect(res.body.status, `${ms} ms`).toBe(status);
+    }
   });
 });

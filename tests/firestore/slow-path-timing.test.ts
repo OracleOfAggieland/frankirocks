@@ -4,7 +4,7 @@
  *
  * A held voice Turn (judge H) waits for its server Permit. The browser posts it about 500 ms after the commit, once
  * the transcript is in. Every Firestore read and commit costs 75 ms more (a laptop to us-central1, as in
- * open-retry.test.ts), and the fake Decisions answer takes 350 ms. The `/api/turn` response must be ready within
+ * open-retry.test.ts), and the fake Decisions answer takes 1,000 ms, the deadline on a call. The `/api/turn` response must be ready within
  * 2,500 ms of the commit, so within 2,000 ms of the post, on each of 20 runs. Over 2.5 s is a stop and report.
  */
 import type { SS } from "@franki/core";
@@ -27,7 +27,8 @@ import { asrTurn } from "../../packages/server/src/testing/session-fixtures";
 
 const PROJECT = "demo-franki";
 const RTT_MS = 75;
-const DECISIONS_MS = 350;
+/** The fake Decisions answer lands at the 1,000 ms deadline on a call, the worst case that is still on time (review of the live run, item 3). */
+const DECISIONS_MS = 1_000;
 /** The browser posts the Turn this long after the commit (the transcript's arrival). */
 const COMMIT_TO_POST_MS = 500;
 /** The held Turn's Permit must be ready by the commit + this (R23.2). */
@@ -81,7 +82,7 @@ function distantStore(inner: StorePort, rttMs: number): StorePort {
   };
 }
 
-/** Fake_OpenAI with the Decisions answer at 350 ms. */
+/** Fake_OpenAI with the Decisions answer at DECISIONS_MS. */
 function timedOpenAI(fake: FakeOpenAI): OpenAIPort {
   return {
     async call(endpoint, body) {

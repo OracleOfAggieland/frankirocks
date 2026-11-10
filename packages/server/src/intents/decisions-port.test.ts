@@ -24,8 +24,8 @@ describe("Decisions_Port", () => {
     const rig = testRig();
     rig.openai.script("decisions.create", never());
     const { value, elapsedMs } = await settle(decisionsPort(rig.deps).decide(body(), DECISIONS_DEADLINE_MS), rig.clock, rig.timers);
-    expect(value).toEqual({ ok: false, why: "deadline", ms: 350 });
-    expect(elapsedMs).toBe(350);
+    expect(value).toEqual({ ok: false, why: "deadline", ms: DECISIONS_DEADLINE_MS });
+    expect(elapsedMs).toBe(DECISIONS_DEADLINE_MS);
   });
 
   it("a thrown error is `transport`", async () => {

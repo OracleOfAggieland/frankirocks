@@ -1,6 +1,6 @@
 /**
  * The slow parse (TurnIntents, contracts §5; voice-control R10, R11; design "The slow parse"): the Regex_Table,
- * then one Decisions call with the 350 ms deadline. Failure is never a guess: a refusal, a bad answer, a missed
+ * then one Decisions call with the caller's deadline (1,000 ms on a call). Failure is never a guess: a refusal, a bad answer, a missed
  * deadline or a transport error is `failed`, and the Server_Rule decides from that (R11.2). A regex match is
  * recorded and returned; it decides only when the parse failed (R10.2; question 90).
  */

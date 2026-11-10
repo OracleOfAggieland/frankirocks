@@ -226,7 +226,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 #### Acceptance Criteria
 
 1. WHEN `/api/turn` receives an `asr` Turn with a final transcript, THE Server_Library SHALL run the Slow_Parse on it, whatever the `judge` value; and WHEN it receives a typed U line, THE Server_Library SHALL run the Slow_Parse on it (spec §3 step 5).
-2. THE Slow_Parse SHALL call the Decisions API through the Decisions_Port with the model from `FRANKI_BG_MODEL` and a 350 ms opsClock deadline enforced by the caller; a failure, refusal or missed deadline SHALL mean the parse failed.
+2. THE Slow_Parse SHALL call the Decisions API through the Decisions_Port with the model from `FRANKI_BG_MODEL` and an opsClock deadline enforced by the caller: 1,000 ms on a call, 2,000 ms for a typed line with no call open (contracts §5's 350 ms was assumed; the live run of Nov 10 measured p95 743 ms; design question 94); a failure, refusal or missed deadline SHALL mean the parse failed.
 3. THE Slow_Parse result SHALL commit in the same transaction as the Turn, and a failed parse or a missing or failed transcript SHALL advance `nextClientSeq` without advancing `committedParseSeq` (contracts §6 "Failedsequence advances processing only").
 4. WHEN the Turn has an Ordinary_Parse while its reply is already playing under `fastO`, THE Server_Library SHALL change nothing about that reply.
 5. WHEN the Turn has an Ordinary_Parse and the Turn is held, THE Server_Library SHALL return a `slowOrdinary` Permit and a plain reply with no S1+ note, and the false hold and the judge's Verdict SHALL be recorded as Requirement 13 says.
@@ -314,7 +314,7 @@ Forget and its fence (KV07, KV08). `FastSlotsV1`, `applyCorrection`, `applyTrans
 2. WHEN a line's transcript arrives, THE Harness SHALL run the Slow_Parse on it with the same Core_Library functions and a Decisions_Port that is the fake unless `--live` is given.
 3. THE Harness SHALL record per line the regex hit, every probability and the parse time.
 4. THE Harness summary SHALL add, per control class, recall for the Judge, for the Slow_Parse and their joint miss, and false holds for each.
-5. THE Harness summary SHALL report the share of parses that miss the 350 ms deadline, and the parse time's p50 and p95.
+5. THE Harness summary SHALL report the share of parses that miss the app's deadline on a call (1,000 ms since the live run of Nov 10), and the parse time's p50 and p95.
 6. THE Harness SHALL record the judge deadline and contract name of each run in its run file, so runs at 600 ms and 1,200 ms stay comparable.
 7. THE file `scripts/judge-spike/lines.json` SHALL not change.
 

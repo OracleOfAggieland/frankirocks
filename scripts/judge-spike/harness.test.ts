@@ -790,10 +790,10 @@ describe("judge spike, judge_v2 and the slow parse per line (voice-control R17)"
     expect(fast.parse).toMatchObject({ chosen: null, ordinary: true, ms: 0, missedDeadline: false, failure: null });
     expect(Object.values(fast.parse.probabilities!).every((p) => p === 0)).toBe(true);
 
-    // A port that answers in 400 ms: on the Harness's wait, but past the app's 350 ms.
-    const slowPort = { decide: async (body: Parameters<ReturnType<typeof fakeDecisionsPort>["decide"]>[0]) => ({ ...(await fakeDecisionsPort().decide(body, HARNESS_PARSE_WAIT_MS)), ms: 400 }) };
+    // A port that answers in 1,100 ms: on the Harness's wait, but past the app's 1,000 ms.
+    const slowPort = { decide: async (body: Parameters<ReturnType<typeof fakeDecisionsPort>["decide"]>[0]) => ({ ...(await fakeDecisionsPort().decide(body, HARNESS_PARSE_WAIT_MS)), ms: 1_100 }) };
     const late = await lineParser(slowPort, {}, false)("o-01", "my dog loves the park");
-    expect(late.parse).toMatchObject({ ms: 400, missedDeadline: true, ordinary: true });
+    expect(late.parse).toMatchObject({ ms: 1_100, missedDeadline: true, ordinary: true });
     expect(late.regex).toEqual({ hit: false, ids: [] });
 
     const clock = new VirtualClock();
@@ -807,28 +807,28 @@ describe("judge spike, judge_v2 and the slow parse per line (voice-control R17)"
 
   it("the summary prints judge recall, slow-parse recall and joint miss per class, false holds for each, and the parse time", () => {
     const probs = (p: Record<string, number>) => ({ forget: 0, quiet: 0, correct: 0, transition: 0, hardRule: 0, crisis: 0, company: 0, alone: 0, why: 0, rushed: 0, food: 0, action: 0, answer: 0, uncertainSpeaker: 0, ...p });
-    const parse = (p: Record<string, number>, ms: number, ordinary: boolean) => ({ probabilities: probs(p), chosen: ordinary ? null : Object.keys(p)[0]!, ordinary, ms, missedDeadline: ms > 350, failure: null });
+    const parse = (p: Record<string, number>, ms: number, ordinary: boolean) => ({ probabilities: probs(p), chosen: ordinary ? null : Object.keys(p)[0]!, ordinary, ms, missedDeadline: ms > 1_000, failure: null });
     const rows = [
       // company: the judge passes 2 of 3; the parse catches 2; one line both miss.
       row({ lineId: "c-company-1", class: "company", expect: "hold", verdict: "H", decision: "held", parse: parse({ company: 0.9 }, 200, false) }),
       row({ lineId: "c-company-2", class: "company", expect: "hold", verdict: "O", decision: "reply", parse: parse({ company: 0.5 }, 300, false) }),
-      row({ lineId: "c-company-3", class: "company", expect: "hold", verdict: "O", decision: "reply", parse: parse({}, 400, true) }),
+      row({ lineId: "c-company-3", class: "company", expect: "hold", verdict: "O", decision: "reply", parse: parse({}, 1_100, true) }),
       // ordinary: the judge holds one, the parse finds one not ordinary.
       row({ lineId: "o-01", verdict: "H", decision: "held", parse: parse({}, 100, true) }),
-      row({ lineId: "o-02", parse: parse({ food: 0.3 }, 500, false) }),
+      row({ lineId: "o-02", parse: parse({ food: 0.3 }, 1_500, false) }),
     ];
     const r = run(rows);
     const s = summarize(r);
     expect(s.slowParse!.byClass.company).toEqual({ judgeRecall: { n: 1, of: 3, missing: 0 }, parseRecall: { n: 2, of: 3, missing: 0 }, jointMiss: { n: 1, of: 3, missing: 0 } });
     expect(s.slowParse!.falseHolds).toEqual({ judge: { n: 1, of: 2, missing: 0 }, parse: { n: 1, of: 2, missing: 0 } });
     expect(s.slowParse!.overDeadline).toEqual({ n: 2, of: 5, missing: 0 });
-    expect(s.slowParse!.ms).toEqual({ p50: 300, p95: 500, n: 5 });
+    expect(s.slowParse!.ms).toEqual({ p50: 300, p95: 1_500, n: 5 });
     const md = summaryMarkdown({ ...r, decisions: "fake" });
     expect(md).toContain("## Slow parse");
     expect(md).toContain("**Fake Decisions port");
     expect(md).toContain("| company | 33.3% (1 of 3) | 66.7% (2 of 3) | 33.3% (1 of 3) |");
     expect(md).toContain("- False holds on ordinary lines: judge 50.0% (1 of 2), slow parse 50.0% (1 of 2)");
-    expect(md).toContain("- Parses over 350 ms: 40.0% (2 of 5); parse time p50 300 ms, p95 500 ms, over 5 parse(s)");
+    expect(md).toContain("- Parses over 1000 ms: 40.0% (2 of 5); parse time p50 300 ms, p95 1500 ms, over 5 parse(s)");
     expect(summaryMarkdown({ ...r, decisions: "live" })).not.toContain("**Fake Decisions port");
     // A run from before brief 011 has no parse and no section.
     expect(summarize(run([row({})])).slowParse).toBeNull();
