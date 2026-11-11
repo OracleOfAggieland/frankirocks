@@ -922,6 +922,52 @@ function openFailed(s: Step): void {
   s.set({ ...closedFields(s.st), error: "open" });
 }
 
+/**
+ * The reset table: what each exit does to each field. A new VoiceState field gets a cell in every column here.
+ *   closed    closedFields, as hangUp and openFailed (outside connection recovery) apply it; phase CLOSED.
+ *   recovery  connectionRecovery; phase RECOVERY, kind "connection". (openFailed inside connection recovery resets
+ *             nothing: it stays in RECOVERY and schedules the next reconnect.)
+ *   open      onOpen with a usable answer: the start of every Session, first call or reconnect.
+ *   press     startOpen: Call pressed, or a reconnect from RECOVERY; phase CONNECTING.
+ * "keep" and "-" both leave the field as it was: "keep" where a reset might be expected, "-" where the exit has
+ * nothing to do with the field.
+ *
+ *   field                     closed                    recovery                       open            press
+ *   session, deck, ack        null                      null                           the answer's    -
+ *   lastSessionId             the Session's, or keep    the Session's, or keep         the answer's    -
+ *   turn, pending, active     null                      null                           null            -
+ *   inFlight, unadmitted      []                        []                             []              -
+ *   judge, spec, heldBack     null                      null                           null            -
+ *   missing                   []                        []                             []              -
+ *   admittedTurnId            null                      null                           null            -
+ *   stateSentAt, afterReply   null                      null                           null            -
+ *   outstanding               keep                      keep                           keep            -
+ *   speech                    []                        keep                           []              -
+ *   instructions              null                      keep                           null            -
+ *   nextClientSeq             keep                      keep                           1               -
+ *   lastCommitSeq             keep                      keep                           0               -
+ *   deadlines                 {}                        {}, then retryUi, reconnect    -openWait,      +openWait
+ *                                                                                      +connect
+ *   recovery                  null                      connection; since and          -               retrying: keep;
+ *                                                       attempts kept if already in                    else null
+ *                                                       one, else now and 0
+ *   retryVisible              false                     keep                           -               retrying: keep;
+ *                                                                                                      else false
+ *   stateFailures             null                      keep                           null            -
+ *   stateRetryVisible         false                     keep                           false           -
+ *   micMuted                  false                     keep                           -               false
+ *   outputMuted               true                      true (mute)                    -               -
+ *   awaitingOpen              false (set by caller)     keep                           false           true
+ *   hangingUp                 hangUp: a Session was     keep                           -               -
+ *                             held; openFailed: keep
+ *   error                     hangUp: null;             keep                           -               null
+ *                             openFailed: "open"
+ *   recent                    hangUp: flushed, marked   flushed, marked done           -               -
+ *                             done; openFailed: keep
+ *   zone                      -                         -                              -               the press's
+ * Never reset by any exit: config, lastTurnResponseAt, ackDroppedStale, lastLoudAt, latency, eventSeq, strayAudio,
+ * realtimeErrors.
+ */
 function closedFields(st: VoiceState): Partial<VoiceState> {
   return {
     phase: "CLOSED",
