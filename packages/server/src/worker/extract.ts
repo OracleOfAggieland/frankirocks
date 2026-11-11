@@ -58,6 +58,7 @@ import {
   relevantOpen,
   renderedMemory,
   sameClaim,
+  statusTransition,
   tsFromMs,
   wantsOpen,
 } from "@franki/core";
@@ -380,14 +381,20 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
         }
       }
       // A correction says the old value was an error (`wrong`); anything else says it stopped being true (`history`).
-      const status = plan.change === "correct" ? "wrong" : "history";
+      // `statusTransition` (design 6.5) is the one function that decides it; a row it refuses is left as it is.
+      const event = plan.change === "correct" ? "correct" : "transition";
       for (const [id, old] of replaced) {
+        const status = statusTransition(old.data.status, event);
+        if (status === "refuse") continue;
         closed.add(id);
         tx.update(old.path, { ...old.data, status, validTo: m.validFrom, updatedAt: now });
       }
       // An earlier Item of this same output with the same single-valued key is closed the same way.
       if (plan.single) {
-        for (const w of written) if (w.memory.key === m.key && w.memory.status === "active") w.memory = { ...w.memory, status, validTo: m.validFrom };
+        for (const w of written) {
+          const status = statusTransition(w.memory.status, event);
+          if (w.memory.key === m.key && w.memory.status === "active" && status !== "refuse") w.memory = { ...w.memory, status, validTo: m.validFrom };
+        }
       }
       written.push({ id: plan.id, memory: { ...m, replacesIds: [...new Set([...m.replacesIds, ...replaced.keys()])].slice(0, 16) } });
     }

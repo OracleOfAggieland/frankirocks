@@ -11,4 +11,7 @@ export * from "./rule-state";
 export * from "./hard-rule";
 export * from "./not-allergy";
 export * from "./slots-phase";
+export * from "./keys";
+export * from "./bundle";
+export * from "./spans";
 export * from "./fast-slots";
