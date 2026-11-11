@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { arbCall, runCall } from "./testing/arb-call";
+import { arbWideCall, runWideCall } from "./testing/arb-call-wide";
 import { type Corpus, type CorpusSpec, type GoldenFile, corpusDiff, goldenFileText, recordCorpus } from "./testing/golden";
 
 const FIXTURE = fileURLToPath(new URL("./testing/golden-traces.json", import.meta.url));
@@ -15,6 +16,7 @@ const RECORD = process.env.VOICE_GOLDEN === "record";
 /** The corpora, by name. Seeds and sizes are part of the corpus: changing them is a re-record. */
 const SPECS: Record<string, CorpusSpec<any>> = {
   arbCall: { generator: "arbCall", arbitrary: arbCall, seeds: [101, 202, 303, 404, 505], perSeed: 120, play: (steps) => runCall(steps).trace },
+  arbCallWide: { generator: "arbWideCall", arbitrary: arbWideCall, seeds: [11, 22, 33, 44, 55], perSeed: 100, play: (steps) => runWideCall(steps).trace },
 };
 
 const now: Record<string, Corpus> = {};
