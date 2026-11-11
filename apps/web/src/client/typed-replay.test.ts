@@ -58,20 +58,23 @@ async function retryAfterLostResponse() {
   typed.setText("My dog is called Pip");
   const first = await typed.submit();
   const afterFirst = typed.getSnapshot();
+  const sessionId = afterFirst.sessionId!;
+  // newId gave the open request 1, the turn request 2 and the turn 3.
+  const savedTurn = async () => (await rig.store.get<Turn>(UID, paths.turn(UID, sessionId, testId("typed-3"))))?.data.role ?? null;
+  // Read before the retry, so the first request is shown committed on its own.
+  const savedBeforeRetry = await savedTurn();
   rig.clock.advance(1_000);
   const second = await typed.submit();
-  const sessionId = typed.getSnapshot().sessionId!;
-  // newId gave the open request 1, the turn request 2 and the turn 3.
-  const saved = await rig.store.get<Turn>(UID, paths.turn(UID, sessionId, testId("typed-3")));
-  return { first, afterFirst, second, typed, bodies: fetch.turnBodies, savedRole: saved?.data.role ?? null };
+  return { first, afterFirst, second, typed, bodies: fetch.turnBodies, savedBeforeRetry, savedRole: await savedTurn() };
 }
 
 describe("typed line retried after a lost response", () => {
   it("today: the retry on an advancing clock differs only in utteredWorldAt and answers HASH", async () => {
-    const { first, afterFirst, second, typed, bodies, savedRole } = await retryAfterLostResponse();
+    const { first, afterFirst, second, typed, bodies, savedBeforeRetry, savedRole } = await retryAfterLostResponse();
     expect(first).toBe(false);
     expect(afterFirst.error).toBe("Not sent: could not reach the server.");
-    expect(savedRole).toBe("user"); // the server saved the line
+    expect(savedBeforeRetry).toBe("user"); // the server saved the line before the retry
+    expect(savedRole).toBe("user");
     expect(bodies).toHaveLength(2);
     const [a, b] = bodies.map((s) => JSON.parse(s) as Record<string, unknown>);
     expect(Object.keys(a!).filter((k) => JSON.stringify(a![k]) !== JSON.stringify(b![k]))).toEqual(["utteredWorldAt"]);
@@ -80,8 +83,9 @@ describe("typed line retried after a lost response", () => {
   });
 
   it.fails("a retry on an advancing clock sends a byte-identical body and replays", async () => {
-    const { first, second, typed, bodies, savedRole } = await retryAfterLostResponse();
+    const { first, second, typed, bodies, savedBeforeRetry, savedRole } = await retryAfterLostResponse();
     expect(first).toBe(false);
+    expect(savedBeforeRetry).toBe("user"); // the retry can only replay what was committed
     expect(bodies).toHaveLength(2);
     expect(bodies[1]).toBe(bodies[0]);
     expect(second).toBe(true);
