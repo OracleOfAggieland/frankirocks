@@ -44,10 +44,10 @@ Three fields of the Session decide whether the room is trusted:
 
 | Writer | Changes |
 |---|---|
-| `routes/open.ts` (`openSession`) | `activeSessionId` to the new Session, `activeCallId` to null |
-| `sessions.ts` (`beginCloseInTx`) | clears `activeSessionId` and `activeCallId` when they name the closing Session |
-| `routes/turn.ts`, a Superseding_Post with a hit that changes what is said | `policyRev + 1` |
-| `intents/repair.ts` (`runParseRepair`), a repaired hit that cuts | `policyRev + 1` |
+| `packages/server/src/routes/open.ts` (`openSession`) | `activeSessionId` to the new Session, `activeCallId` to null |
+| `packages/server/src/sessions.ts` (`beginCloseInTx`) | clears `activeSessionId` and `activeCallId` when they name the closing Session |
+| `packages/server/src/routes/turn.ts`, a Superseding_Post with a hit that changes what is said | `policyRev + 1` |
+| `packages/server/src/intents/repair.ts` (`runParseRepair`), a repaired hit that cuts | `policyRev + 1` |
 
 A raised `policyRev` makes every Deck issued before it lower than the next one, so the browser cancels older speech. An Extract_Job written before the raise is requeued at the new `policyRev`; one whose epoch changed fails `STALE` (see [server-jobs](server-jobs.md)).
 

@@ -55,7 +55,7 @@ stateDiagram-v2
   note right of SWAPPING : in the union and in avatarState; no transition enters it on this branch
 ```
 
-**What always holds** (the header of `machine.ts`, and the tests above):
+**What always holds** (the header of `packages/core/src/voice/machine.ts`, and the tests above):
 
 - Output audio is muted unless the phase is SPEAKING under a Permit that passed its checks. `avatarState` never says `speaking` while output is muted.
 - Every wait is an `armTimer` command plus a deadline in `deadlines`. A `timer` event whose deadline is absent does nothing; one that arrives before its deadline re-arms the same deadline.

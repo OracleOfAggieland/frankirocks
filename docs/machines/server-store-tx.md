@@ -10,11 +10,30 @@ Every server write goes through the Store_Port (`packages/server/src/store/port.
 | File | `packages/server/src/store/port.ts` |
 | Tests | `packages/server/src/store/memory-store.test.ts`, `tests/firestore/store-conformance.test.ts` |
 
-**Three rules.**
+**Rules.** Both engines enforce these in `transaction`.
 
 1. **One attempt.** A transaction buffers its writes and applies them at commit, all or nothing. Neither engine retries: the Firestore_Store runs with `maxAttempts: 1` and maps contention and an existing record on create to `staleRevision`. The caller decides what a lost race means.
-2. **Checked at commit.** Every write is validated against its closed schema and size cap, its `uid` must be the caller's, and every record read and every expected `rev` must still match. The store sets `rev`: 1 on create, prior + 1 on update.
-3. **Helpers take the transaction.** Functions that take a `Tx` (`beginCloseInTx`, `finishCloseInTx`, `ensureHangupJob`, `completeRequest`) read and write only through it, so their writes commit or fail with the caller's.
+2. **A path is written once per transaction.** A second `create` or `update` of the same path throws `invalidInput` ("record written twice in one transaction") at the call. Two helpers that write the same record cannot share a transaction.
+3. **An update needs a read or an expected rev.** `update` without `expectRev` on a path not read in this transaction throws `invalidInput` at the call.
+4. **A read returns the stored record, never a pending write.** `get` and `query` inside a transaction do not see that transaction's own `create` or `update`. The one exception is the lineage check at commit, which finds Evidence created in the same transaction.
+5. **Checked at commit, in this order; the first failure is the error.** Nothing is applied until every check passes.
+   1. Every write: its closed schema (`invalidInput`), the 512 KiB cap (`oversize`), its `uid` against the caller's (`tenantMismatch`), in `checkRecord` (`packages/server/src/store/checks.ts`).
+   2. Every Memory write: the lineage check (`invalidInput`, naming the failed checks).
+   3. A path read twice with different revs (`staleRevision`).
+   4. Each write in turn: a create on a path that exists, an update on a path that does not, an `expectRev` that does not match, a read rev that does not match (`staleRevision`); then the same record checks with its new `rev`, and the check that Evidence content and Memory value and args did not change in place (`invalidInput`).
+6. **The store sets `rev`**: 1 on create, prior + 1 on update.
+7. **Helpers take the transaction.** Functions that take a `Tx` (`beginCloseInTx`, `finishCloseInTx`, `ensureHangupJob`, `completeRequest`) read and write only through it, so their writes commit or fail with the caller's.
+
+**How the two engines differ.** The conformance suite holds both to the rules above; these are the places where they work differently.
+
+| | Memory_Store (`packages/server/src/store/memory-store.ts`) | Firestore_Store (`packages/server/src/store/firestore-store.ts`) |
+|---|---|---|
+| A second `get` of a path in one transaction | Reads the live record again; a changed rev is "record changed between two reads" at commit | Returns the snapshot the transaction already holds |
+| Paths only read, never written | Each read rev is compared with the stored rev at commit, before the per-write checks | Not compared by the store's code; Firestore's own transaction aborts on contention, mapped to `staleRevision` |
+| `query` in a transaction | Runs over the live records on each call | Runs in the Firestore transaction on each call; a returned document is kept for later `get`s only if its path was not read before |
+| Written paths never read | Looked up in the map at commit | Fetched together in one `getAll` before any write |
+| `snapshot` | Plain reads of the live records | A read-only Firestore transaction: one consistent point in time, no locks |
+| Error text | Its own `staleRevision` messages | Firestore's `ABORTED` and `ALREADY_EXISTS` become `staleRevision` ("transaction contention or existing record") |
 
 **What each site does with a lost race (`staleRevision`):**
 

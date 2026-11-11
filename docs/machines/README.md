@@ -2,7 +2,7 @@
 
 Every piece of code that holds state and moves it between named states is listed here: one row per machine, by its `area.thing` name, with what it alone decides, the file that owns it and the page that describes it. Look here before adding a status field, an in-progress boolean or a nullable that means "waiting": the machine may already exist.
 
-`scripts/machines-index.test.ts` keeps this index and the pages true. It checks that every row has a block on its page with the same status and file, that every file a page names exists, that the functions and types named by an `explicit`, `table` or `view` block are exported by its file and that the tests it lists exist, that a diagram's states equal the union its block names, and that every source file named `*-phase.ts` or `*machine*.ts`, or exporting a function `step`, `*Step` or `next*`, is the home file of some row.
+`scripts/machines-index.test.ts` keeps this index and the pages true; the checker is `scripts/machines-index.mjs`. It checks that every row has one block, on its page, with the same status and file, that every file a page names exists, that the functions and types a block names are exported by its file (or by a file the same cell names) and that the tests it lists exist, that an `explicit`, `table` or `view` block names its deciding function and its tests, that a diagram's states equal the union its block names, and that every source file named `*-phase.ts` or `*machine*.ts`, or exporting a function `step`, `*Step` or `next*`, is the home file of some row.
 
 ## Statuses
 

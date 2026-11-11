@@ -48,7 +48,7 @@ At most once per ops minute per Owner, three steps:
 | Q17 `runDueJobs` | Runs due `hangup` Jobs one by one, then the extract drain | logged per Job, next Job runs |
 
 - The gate is `takeTickSlot`: a map per Store_Port instance and Owner, holding the last ops minute. The slot is taken before any work, in this process only; a run in another process is not seen. Every step is a compare-and-set on the rows it touches.
-- `startTick` returns the Q13 promise and schedules Q18 and Q17 after it. `routes/open.ts` awaits that promise before the rest of the open; `routes/state.ts` calls `scheduleTick`, which runs the whole tick after the response.
+- `startTick` returns the Q13 promise and schedules Q18 and Q17 after it. `packages/server/src/routes/open.ts` awaits that promise before the rest of the open; `packages/server/src/routes/state.ts` calls `scheduleTick`, which runs the whole tick after the response.
 
 ### `server.sdp`
 
