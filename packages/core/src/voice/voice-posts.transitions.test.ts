@@ -81,7 +81,9 @@ describe("post transitions", () => {
     // Past the judge's limit, so the slow path decides and the reply is created fresh.
     const cmds = after(d, 1_500, { k: "turnOk", pick: 0, variant: "ordinary", hashOk: true });
     expect(cmds.some((c) => c.kind === "verifyPermit")).toBe(true);
+    expect(d.st.phase).toBe("HELD");
     expect(creates(play(d, { k: "hash", pick: 0, ok: true }))).toHaveLength(1);
+    expect(d.st.phase).toBe("HELD");
     expect(d.st.active?.permit.stamp.turnId).toBe(turnId);
   });
 

@@ -2,7 +2,7 @@
 // read `<FROM> + <event> -> <TO> (<why>)`, so `vitest -t "CONFIGURING +"` lists every exit from a state. A case
 // written `it.fails` is today's behaviour against the rule in its title; its fix removes `.fails`.
 import { describe, expect, it } from "vitest";
-import { ACK_LIMIT_MS, CONNECT_LIMIT_MS, OPEN_LIMIT_MS, type VoiceCommand } from "./machine";
+import { ACK_LIMIT_MS, CONNECT_LIMIT_MS, OPEN_LIMIT_MS, type VoiceCommand, callButton } from "./machine";
 import { type WideAction, WideDriver } from "./testing/arb-call-wide";
 
 const play = (d: WideDriver, action: WideAction, dt = 0) => {
@@ -43,6 +43,7 @@ describe("call setup transitions", () => {
     const d = new WideDriver().start();
     play(d, { k: "openFailed" }, 400);
     expect(d.st).toMatchObject({ phase: "CLOSED", error: "open", awaitingOpen: false });
+    expect(callButton(d.st)).toEqual({ form: "start", disabled: false });
   });
 
   it("CONNECTING + channelOpen -> CONFIGURING (session.update, one state request, the ack limit armed)", () => {
@@ -50,6 +51,7 @@ describe("call setup transitions", () => {
     play(d, { k: "openOk" }, 300);
     const cmds = play(d, { k: "channelOpen" }, 300);
     expect(d.st.phase).toBe("CONFIGURING");
+    expect(cmds.filter((c) => c.kind === "send" && c.event.type === "session.update")).toHaveLength(1);
     expect(cmds.filter((c) => c.kind === "state")).toHaveLength(1);
     expect(d.st.deadlines.ack).toBe(d.now + ACK_LIMIT_MS);
     expect(d.st.deadlines.connect).toBeUndefined();
@@ -65,7 +67,10 @@ describe("call setup transitions", () => {
     const d = new WideDriver().start();
     play(d, { k: "openOk" }, 300);
     play(d, { k: "channelOpen" }, 300);
+    const updatedAt = d.now;
     play(d, { k: "fire", name: "ack" });
+    expect(d.now - updatedAt).toBe(1_500);
+    expect(ACK_LIMIT_MS).toBe(1_500);
     expect(d.st.phase).toBe("RECOVERY");
     expect(d.st.recovery?.kind).toBe("connection");
   });
