@@ -2,6 +2,9 @@
 // reducer's four reply slots. Over the wide generator and arbCall, no step leaves the machine in an illegal stage,
 // except the stages in ALLOWED, each named by the invariant it breaks. The allow-list is empty today and only
 // shrinks, so any illegal stage fails here.
+// Each generator runs two passes of 1,000 calls: a fixed-seed pass, which replays the same calls every run so the
+// known shapes are caught every time, and an unseeded pass, which draws new calls every run to explore rare paths.
+// fast-check prints the seed and path of any failure, so an unseeded failure reproduces from its message.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { arbCall, runCall } from "./testing/arb-call";
@@ -19,17 +22,23 @@ const check = (states: Iterable<Parameters<typeof replyStage>[0]>) => {
 };
 
 describe("the voice reply is only ever at a legal stage", () => {
-  it("over the wide generator, every step's reply stage is legal or allow-listed", () => {
+  it.each([
+    ["fixed seed 20261111", 20261111],
+    ["fresh seed", undefined],
+  ] as const)("over the wide generator (%s), every step's reply stage is legal or allow-listed", (_pass, seed) => {
     fc.assert(
       fc.property(arbWideCall, (steps) => check(runWideCall(steps).trace.steps.map((s) => s.after))),
-      { numRuns: 1_000, seed: 20261111 },
+      { numRuns: 1_000, seed },
     );
   });
 
-  it("over arbCall, every step's reply stage is legal or allow-listed", () => {
+  it.each([
+    ["fixed seed 20261112", 20261112],
+    ["fresh seed", undefined],
+  ] as const)("over arbCall (%s), every step's reply stage is legal or allow-listed", (_pass, seed) => {
     fc.assert(
       fc.property(arbCall, (steps) => check(runCall(steps).trace.steps.map((s) => s.after))),
-      { numRuns: 1_000, seed: 20261112 },
+      { numRuns: 1_000, seed },
     );
   });
 });
