@@ -226,17 +226,24 @@ describe("Q13 inside a session open", () => {
     const { sessionId } = await openTestSession(rig, "open1");
     rig.clock.advance(SESSION_IDLE_MS + MINUTE_MS);
     const now = rig.clock.read().opsClock.now;
-    const beganClose = (result: unknown) => withRival && typeof result === "object" && result !== null && "closed" in result && "callIds" in result;
+    // Q13's begin-close transaction returns { closed, callIds }; the open's own transaction returns { response, prior }.
+    let begun = 0;
+    const beganClose = (result: unknown) => {
+      const hit = typeof result === "object" && result !== null && "closed" in result && "callIds" in result;
+      if (hit) begun++;
+      return withRival && hit;
+    };
     const { store, raced } = rivalStore(rig.store, beganClose, (u) => patchRecord<Session>(rig.store, u, paths.session(u, sessionId), { updatedAt: tsFromMs(now) }));
     const deps = { ...rig.deps, store };
     const res = await callRoute({ ...rig, deps }, openRoute, { requestId: testId("open2"), initiator: "user", previousSessionId: null, clientZone: "UTC", visitId: null });
     const status = async () => (await rig.store.get<Session>(UID, paths.session(UID, sessionId)))!.data.status;
-    return { res, raced, status };
+    return { res, raced, status, begun: () => begun };
   }
 
   it("with no rival, the second open closes the expired Session in Q13 and succeeds", async () => {
-    const { res, raced, status } = await staleQ13Open(false);
+    const { res, raced, status, begun } = await staleQ13Open(false);
     expect(raced()).toBe(false);
+    expect(begun()).toBe(1);
     expect(res.status).toBe(200);
     expect(await status()).toBe("closed");
   });
