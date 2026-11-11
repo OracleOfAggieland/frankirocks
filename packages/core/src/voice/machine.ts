@@ -103,6 +103,53 @@ export type VoicePhase =
   | "SWAPPING"
   | "RECOVERY";
 
+/**
+ * Every wait of the call. A wait is an `armTimer` command plus its deadline in `deadlines`; a `timer` event acts only
+ * when that deadline is present and reached (onTimer), and each handler re-checks the phase, because leaving a phase
+ * does not always disarm. What each name means, by the phase it is armed in (and the function that arms it); a live
+ * phase is one of IN_CALL:
+ *
+ *   openWait      CONNECTING (startOpen): /api/session/open has OPEN_LIMIT_MS to answer. Fires: openFailed, which
+ *                 closes with error "open", or inside connection recovery schedules the next reconnect.
+ *   connect       CONNECTING (onOpen): SDP and the data channel have CONNECT_LIMIT_MS from the open answer (R15.8).
+ *                 Fires in CONNECTING: connection recovery.
+ *   ack           CONFIGURING (channelOpen): a StateAck matching the Deck within ACK_LIMIT_MS of `session.update`
+ *                 (R13.9). Fires in CONFIGURING: connection recovery.
+ *   item          WAIT_ITEM (onCommitted): every commit's `conversation.item.added` within ITEM_WAIT_MS (R15.10).
+ *                 Fires in WAIT_ITEM: HELD, the slow path, with no judge.
+ *   transcript    WAIT_ITEM onward (onCommitted): the last commit + HELD_TRANSCRIPT_LIMIT_MS (R7.4). Re-armed at
+ *                 admission (admit) to t0 + ADMITTED_TRANSCRIPT_LIMIT_MS (R7.6). Fires: the unposted ASR Turn is
+ *                 posted `missing`.
+ *   permit        Two meanings under one name; whichever arm came last sets the deadline.
+ *                 (1) The answer wait. HELD, JUDGING or SPECULATING (postTurn "final"): the post +
+ *                 TURN_RESPONSE_LIMIT_MS (R7.5). Any phase but RECOVERY (requestVerify, only when none is armed): the
+ *                 hash check of a pending Permit has TURN_RESPONSE_LIMIT_MS (KV06).
+ *                 (2) The hold. HELD, entered from SPEAKING, TOOL_WAIT, HELD, JUDGING or SPECULATING when a higher
+ *                 Stamp cancels the reply (cancelAll): now + HOLD_LIMIT_MS for a Permit under the new Deck.
+ *                 Fires in HELD, JUDGING or SPECULATING with no active reply: RECOVERY with nothing to play, then
+ *                 `lineDone`.
+ *   turnRetry     Whichever phase the posted Turn waits in (onTurn): a `hold` answer with `retryAfterMs`. Fires with
+ *                 no Permit pending or active: the same post is sent again.
+ *   refresh       Any phase with a Session (onState): the next state request REFRESH_MS after an answer. Fires in a
+ *                 live phase or RECOVERY.
+ *   stateRetry    Any phase with a Session after CONFIGURING (onStateFailed): a failed state request is retried after
+ *                 1, 2 and 5 s. Fires in a live phase or RECOVERY.
+ *   stateRetryUi  As stateRetry, armed at the first failure: show the state retry button RETRY_UI_MS after it.
+ *   reconnect     RECOVERY, connection (connectionRecovery, openFailed): the next open after 1, 2 and 5 s.
+ *   retryUi       RECOVERY, connection (connectionRecovery): show "Try again" RETRY_UI_MS after recovery began.
+ *   tool          TOOL_WAIT, or SPEAKING while the lead-in plays (dispatchTool): /api/tool has TOOL_LIMIT_MS.
+ *                 Fires: LISTENING.
+ *   lineDone      RECOVERY, line (postTurn `missing`, onTurn `recoveryOnly`, the permit wait, a refused
+ *                 `response.create`): the fallback end of a recovery with no neutral line playing. Disarmed when
+ *                 audio starts. Fires with no audio started: cancel what is in flight, LISTENING.
+ *   judge         JUDGING or SPECULATING (startJudge): a verdict by t0 + JUDGE_LIMIT_MS (R3.5). Fires: the slow path.
+ *   poll          LISTENING onward and RECOVERY (onState on reaching LISTENING, then itself): one state request per
+ *                 POLL_MS, never two in flight (R4.5).
+ *   swap          Never armed yet (wave B). Its handler does nothing.
+ *   speakCap      HELD or RECOVERY at admission (admit), re-armed in SPEAKING when audio starts: SPEAK_CAP_MS.
+ *   heldBack      LISTENING (toListening): an admitted Turn whose reply ended before its transcript, until
+ *                 t0 + ADMITTED_TRANSCRIPT_LIMIT_MS. Fires: posted `missing`.
+ */
 export type TimerName =
   | "openWait"
   | "connect"
