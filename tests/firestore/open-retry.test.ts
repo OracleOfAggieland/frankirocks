@@ -27,6 +27,7 @@ import { FirestoreStore } from "../../packages/server/src/store/firestore-store"
 import { paths } from "../../packages/server/src/store/paths";
 import { type Reader, type StorePort, readSnapshot } from "../../packages/server/src/store/port";
 import { commitUserTurnForTest, extractOutput, factItem } from "../../packages/server/src/testing/extract-fixtures";
+import { FakeFastSlots } from "../../packages/server/src/testing/fake-fast-slots";
 import { FAKE_HMAC_KEY, TEST_ENV, fakeRequest, fakeTokenVerifier, patchRecord } from "../../packages/server/src/testing/fakes";
 
 const PROJECT = "demo-franki";
@@ -174,6 +175,7 @@ function rig(s: Scenario): Rig {
     timers: liveTimers,
     tokens: fakeTokenVerifier(),
     log,
+    fastSlots: new FakeFastSlots(),
   };
   return {
     deps,
