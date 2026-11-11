@@ -266,8 +266,11 @@ export interface VoiceState {
   spec: SpecState | null;
   /** Unadmitted_Fragments of this generation, in commit order (KV01). */
   unadmitted: { itemId: string; commitSeq: number }[];
-  /** Outstanding_Turns: posted, no answer yet. */
-  outstanding: { turnId: string; deadline: number }[];
+  /**
+   * Outstanding_Turns: posted, no answer yet, until the 5 s wait ends. A reconnect keeps them: the server may still
+   * commit a post sent before it, so it refuses fastO on the new connection too (Property 7; R4; KV13).
+   */
+  outstanding: { turnId: string; sessionId: string; deadline: number }[];
   missing: MissingTurn[];
   /** An admitted Turn whose reply ended before its transcript came; posted `final` or `missing` (review item 7). */
   heldBack: VoiceTurn | null;
@@ -762,7 +765,7 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       // The client already retried the same requestId; the Session's clientSeq is unknown now, so reconnect,
       // which opens a fresh Session (design "Session timing"). That holds for any post of this Session, current
       // or not, and whether or not the permit wait fired first (review of wave A, item 6).
-      const ours = state.outstanding.some((o) => o.turnId === event.turnId) || (state.turn?.turnId === event.turnId && state.turn.posted !== null);
+      const ours = state.outstanding.some((o) => o.turnId === event.turnId && o.sessionId === state.session?.sessionId) || (state.turn?.turnId === event.turnId && state.turn.posted !== null);
       s.set({ outstanding: state.outstanding.filter((o) => o.turnId !== event.turnId), lastTurnResponseAt: now });
       if (s.st.ack !== null) s.set({ ack: null, ackDroppedStale: true });
       if (ours && state.session !== null) connectionRecovery(s, true);
@@ -846,7 +849,7 @@ function onOpen(s: Step, res: Infer<typeof OpenResponse>): void {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: [], missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null, 
+    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null, 
     stateFailures: null,
     stateRetryVisible: false,
   });
@@ -881,7 +884,7 @@ function closedFields(st: VoiceState): Partial<VoiceState> {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: [], missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null, 
+    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null, 
     deadlines: {},
     recovery: null,
     retryVisible: false,
@@ -923,7 +926,7 @@ function connectionRecovery(s: Step, closeSession: boolean): void {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: [], missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null, 
+    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null, 
     deadlines: {},
     recovery: { kind: "connection", since, attempts: st.recovery?.kind === "connection" ? st.recovery.attempts : 0 },
   });
@@ -1135,7 +1138,7 @@ function postTurn(s: Step, transcriptState: "final" | "missing" | "failed"): voi
 function pushTurn(s: Step, body: TurnBody, supersedesTurnId: string | null = null): void {
   s.push(supersedesTurnId === null ? { kind: "turn", body } : { kind: "turn", body, supersedesTurnId });
   s.set({
-    outstanding: [...s.st.outstanding.filter((o) => o.turnId !== body.turnId), { turnId: body.turnId, deadline: s.now + TURN_RESPONSE_LIMIT_MS }],
+    outstanding: [...s.st.outstanding.filter((o) => o.turnId !== body.turnId && o.deadline > s.now), { turnId: body.turnId, sessionId: body.sessionId, deadline: s.now + TURN_RESPONSE_LIMIT_MS }],
   });
 }
 
