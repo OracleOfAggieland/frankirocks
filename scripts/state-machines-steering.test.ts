@@ -1,20 +1,11 @@
 // State-machine steering check (brief 014, task A1): the steering file's front matter, length and source, and that
 // its file pattern covers every home file in the machine index. Also that the voice-control steering file covers
 // every file in the voice folder, so a new machine file there loads the voice rules.
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { REPO_ROOT } from "./clock-check.mjs";
-
-/** The index rows' names and home files. Kept here so this file does not import another test file's suites. */
-function indexRows(text: string): { name: string; file: string }[] {
-  const rows: { name: string; file: string }[] = [];
-  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
-    const m = /^\| `([a-z]+\.[A-Za-z]+)` \| [a-z]+ \| .+ \| `([^`]+)` \| \[[^\]]+\]\([^)]+\) \|$/.exec(line);
-    if (m) rows.push({ name: m[1]!, file: m[2]! });
-  }
-  return rows;
-}
+import { indexTableLines, parseIndex } from "./machines-index.mjs";
 
 const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
 const linesOf = (text: string) => text.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n");
@@ -69,17 +60,24 @@ describe("state-machine steering file", () => {
 
   it("covers every home file in the machine index", () => {
     const pattern = globToRegExp(patternOf(front));
-    const rows = indexRows(read("docs/machines/README.md"));
-    expect(rows.length).toBeGreaterThan(60);
+    const index = read("docs/machines/README.md");
+    const rows = parseIndex(index);
+    // The same parser as the index test, and every table line must parse, so no row is skipped unseen.
+    expect(rows.length).toBe(indexTableLines(index).length);
+    expect(rows.length).toBeGreaterThan(0);
     const uncovered = rows.filter((r) => !pattern.test(r.file)).map((r) => `${r.name}: ${r.file}`);
     expect(uncovered).toEqual([]);
   });
 
-  it("states the eight rules and the four shapes", () => {
+  it("names the eight rules and the four shapes, and no others", () => {
     for (const rule of ["One place", "Pure", "Closed unions", "Effects and timers are data", "An answer names its request", "Exits are listed", "Fields other code reads keep their shape", "Never throw in a transition"]) {
       expect(text).toContain(`**${rule}.**`);
     }
     for (const shape of ["Decision", "Table", "View", "Reducer"]) expect(text).toMatch(new RegExp(`^\\| ${shape} \\|`, "m"));
+    expect(lines.filter((l) => /^\d+\. \*\*/.test(l))).toHaveLength(8);
+    const shapes = lines.slice(lines.indexOf("## Four shapes") + 1);
+    const shapeRows = shapes.slice(0, shapes.findIndex((l) => l.startsWith("## "))).filter((l) => /^\| [A-Z]/.test(l) && !l.startsWith("| Shape |"));
+    expect(shapeRows).toHaveLength(4);
   });
 });
 
@@ -87,9 +85,14 @@ describe("voice-control steering file pattern", () => {
   const pattern = globToRegExp(patternOf(frontMatter(linesOf(read(".kiro/steering/voice-control.md")))));
 
   it("covers every file in the voice folder, including ones not written yet", () => {
-    for (const f of ["packages/core/src/voice/machine.ts", "packages/core/src/voice/fast-o.ts", "packages/core/src/voice/turn-answer.ts", "packages/core/src/voice/testing/arb-call.ts"]) {
-      expect(pattern.test(f), f).toBe(true);
-    }
+    const voice = "packages/core/src/voice";
+    const files = readdirSync(join(REPO_ROOT, voice), { recursive: true, withFileTypes: true })
+      .filter((e) => e.isFile())
+      .map((e) => relative(REPO_ROOT, join(e.parentPath, e.name)).split(sep).join("/"));
+    expect(files).toContain(`${voice}/machine.ts`);
+    const unseen = [`${voice}/zz-not-written.ts`, `${voice}/testing/zz-not-written.ts`, `${voice}/zz/deeper/not-written.ts`];
+    const uncovered = [...files, ...unseen].filter((f) => !pattern.test(f));
+    expect(uncovered).toEqual([]);
   });
 
   it("still covers the voice files outside that folder", () => {
