@@ -74,8 +74,14 @@ describe("voice Turn transitions", () => {
   it("SPEAKING + transcript -> SPEAKING (the admitted Turn is posted final and its reply plays on)", () => {
     const d = fastOSpeaking();
     const turnId = d.st.turn!.turnId;
-    play(d, { k: "transcript", pick: 0, fail: false, empty: false }, 300);
+    const cmds = play(d, { k: "transcript", pick: 0, fail: false, empty: false }, 300);
+    const posts = cmds.filter((c) => c.kind === "turn" && c.body.turnId === turnId);
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ kind: "turn", body: { turnId, transcriptState: "final" } });
+    expect(posts[0]).not.toHaveProperty("supersedesTurnId");
     expect(d.st.phase).toBe("SPEAKING");
+    expect(d.st.outputMuted).toBe(false);
+    expect(d.st.active?.audioStarted).toBe(true);
     expect(postSeqs(drainedCommands(d.trace), turnId).size).toBe(1);
   });
 
@@ -85,7 +91,16 @@ describe("voice Turn transitions", () => {
     play(d, { k: "higherDeck" });
     play(d, { k: "fire", name: "poll" }, 100);
     play(d, { k: "stateOk", variant: "fresh" }, 100);
-    expect(d.st).toMatchObject({ phase: "HELD", active: null, admittedTurnId: turnId, turn: { turnId, posted: null } });
+    expect(d.st).toMatchObject({ phase: "HELD", active: null, turn: { turnId, posted: null } });
+  });
+
+  it("SPEAKING + stateOk (higher Deck) -> HELD (today the cut leaves admittedTurnId naming the cut Turn)", () => {
+    const d = fastOSpeaking();
+    const turnId = d.st.turn!.turnId;
+    play(d, { k: "higherDeck" });
+    play(d, { k: "fire", name: "poll" }, 100);
+    play(d, { k: "stateOk", variant: "fresh" }, 100);
+    expect(d.st).toMatchObject({ phase: "HELD", active: null, admittedTurnId: turnId });
   });
 
   it.fails("HELD + timer permit -> RECOVERY (an admitted Turn cut by a higher Deck before its transcript is still posted once)", () => {
