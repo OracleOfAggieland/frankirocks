@@ -45,6 +45,7 @@ describe("ApiClient token step", () => {
     vi.useRealTimers();
   });
 
+  // Today's side of the red case "a rejecting getToken resolves network": the change that removes its `.fails` deletes this case.
   it("today: a rejecting getToken rejects the call instead of resolving an ApiResult", async () => {
     const fetch = hangingFetch();
     const api = createApiClient({ getToken: () => Promise.reject(new Error("auth/network-request-failed")), fetch });

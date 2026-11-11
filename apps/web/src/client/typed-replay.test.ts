@@ -69,6 +69,7 @@ async function retryAfterLostResponse() {
 }
 
 describe("typed line retried after a lost response", () => {
+  // Today's side of the red case "a retry on an advancing clock sends a byte-identical body and replays": the change that removes its `.fails` deletes this case.
   it("today: the retry on an advancing clock differs only in utteredWorldAt and answers HASH", async () => {
     const { first, afterFirst, second, typed, bodies, savedBeforeRetry, savedRole } = await retryAfterLostResponse();
     expect(first).toBe(false);

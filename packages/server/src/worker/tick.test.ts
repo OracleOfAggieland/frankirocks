@@ -248,6 +248,7 @@ describe("Q13 inside a session open", () => {
     expect(await status()).toBe("closed");
   });
 
+  // Today's side of the red case "a stale Q13 does not fail open": the change that removes its `.fails` deletes this case.
   it("today: a Q13 close that loses its race fails the open with 409 STALE", async () => {
     const { res, raced, status } = await staleQ13Open();
     expect(raced()).toBe(true);
