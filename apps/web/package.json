@@ -9,7 +9,7 @@
     "predev": "node ../../scripts/sync-local-env.mjs",
     "dev": "next dev",
     "build": "next build",
-    "postbuild": "node ../../scripts/specimens-absent.mjs",
+    "postbuild": "node ../../scripts/specimens-absent.mjs && node ../../scripts/three-chunk-check.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit"
