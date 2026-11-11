@@ -127,7 +127,32 @@ describe("tick order", () => {
     expect(collapse(labels)).toEqual(["q13 sessions", "q18 expired leases", "due jobs", "leased jobs", "due jobs"]);
   });
 
-  it("the scheduled steps wait for Q13 and run even when Q13 rejected", async () => {
+  it("the scheduled steps do not start while Q13 is still running", async () => {
+    const rig = testRig();
+    const { store: recording, labels } = recordingStore(rig.store);
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    let q13Reads = 0;
+    const store: StorePort = {
+      ...recording,
+      query: async (u, q) => {
+        // Q13's first Sessions read is held open until the test releases it.
+        if (q.collection.endsWith("/sessions") && ++q13Reads === 1) await held;
+        return recording.query(u, q);
+      },
+    };
+    const expiry = startTick(ctxOf(rig, store))!;
+    // The scheduled work starts while Q13 is pending.
+    const tail = rig.sched.runAll();
+    for (let i = 0; i < 50; i++) await new Promise<void>((r) => setImmediate(r));
+    expect(labels).toEqual([]);
+    release();
+    await settle(expiry, rig.clock, rig.timers);
+    await settle(tail, rig.clock, rig.timers);
+    expect(collapse(labels)).toEqual(["q13 sessions", "q18 expired leases", "due jobs", "leased jobs", "due jobs"]);
+  });
+
+  it("the scheduled steps run even when Q13 rejected", async () => {
     const rig = testRig();
     const { store: recording, labels } = recordingStore(rig.store);
     let q13Reads = 0;
