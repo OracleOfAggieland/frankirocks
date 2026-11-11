@@ -130,7 +130,8 @@ describe("oneShotStep", () => {
   const cut: OneShotCommand = { wake: "none", celebrate: "cut" };
   const startWake: OneShotCommand = { wake: "start", celebrate: "none" };
   const startCeleb: OneShotCommand = { wake: "none", celebrate: "start" };
-  const e = (oneShot: OneShot | null, skipped: boolean): EdgeState => ({ oneShot, skipped });
+  const cutWake: OneShotCommand = { wake: "cut", celebrate: "none" };
+  const e =(oneShot: OneShot | null, skipped: boolean): EdgeState => ({ oneShot, skipped });
 
   // Every (previous, next, running), for both values of the previous skipped flag.
   const ROWS: Row[] = [];
@@ -142,12 +143,13 @@ describe("oneShotStep", () => {
       [null, skipped, "wake", true, e("wake", false), startWake],
       [null, skipped, "celebrate", false, e("celebrate", true), none],
       [null, skipped, "celebrate", true, e("celebrate", false), startCeleb],
-      ["wake", skipped, null, false, e(null, false), none],
-      ["wake", skipped, null, true, e(null, false), none],
+      // Leaving a wake that started cuts it; a skipped wake never played, so it needs no cut.
+      ["wake", skipped, null, false, e(null, false), skipped ? none : cutWake],
+      ["wake", skipped, null, true, e(null, false), skipped ? none : cutWake],
       ["wake", skipped, "wake", false, e("wake", skipped), none],
       ["wake", skipped, "wake", true, e("wake", skipped), none],
-      ["wake", skipped, "celebrate", false, e("celebrate", true), none],
-      ["wake", skipped, "celebrate", true, e("celebrate", false), startCeleb],
+      ["wake", skipped, "celebrate", false, e("celebrate", true), skipped ? none : cutWake],
+      ["wake", skipped, "celebrate", true, e("celebrate", false), skipped ? startCeleb : { wake: "cut", celebrate: "start" }],
       ["celebrate", skipped, null, false, e(null, false), cut],
       ["celebrate", skipped, null, true, e(null, false), cut],
       ["celebrate", skipped, "wake", false, e("wake", true), cut],
@@ -185,5 +187,14 @@ describe("oneShotStep", () => {
     expect(s).toEqual({ oneShot: "wake", skipped: true });
     const left = oneShotStep(s, null, true);
     expect(left).toEqual({ state: { oneShot: null, skipped: false }, command: NO_COMMAND });
+  });
+
+  it("a wake that started and is left early (a first call that fails at once) is cut", () => {
+    let s: EdgeState = INITIAL_EDGE;
+    const entered = oneShotStep(s, "wake", true);
+    expect(entered.command).toEqual({ wake: "start", celebrate: "none" });
+    s = entered.state;
+    expect(oneShotStep(s, null, true).command).toEqual({ wake: "cut", celebrate: "none" });
+    expect(oneShotStep(s, null, false).command).toEqual({ wake: "cut", celebrate: "none" });
   });
 });

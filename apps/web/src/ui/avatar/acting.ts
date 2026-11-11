@@ -69,7 +69,7 @@ export function actingFor(look: AvatarLook): Acting {
 
 /** What the engine must do with its one-shot playback at this look change. */
 export interface OneShotCommand {
-  wake: "none" | "start";
+  wake: "none" | "start" | "cut";
   celebrate: "none" | "start" | "cut";
 }
 
@@ -86,13 +86,18 @@ export const INITIAL_EDGE: Readonly<EdgeState> = Object.freeze({ oneShot: null, 
 /**
  * One pure step per look. `running` is `seesOneShots(rendererState)`: true exactly in waiting, fading-in, three
  * and fading-out. Entering a one-shot gives `start` when running, otherwise `skipped`. Leaving celebrate gives
- * `cut`, always. Staying in the same one-shot keeps `skipped`. Any non-one-shot clears it.
+ * `cut`, always. Leaving a wake that started (not skipped) gives `cut`. Staying in the same one-shot keeps
+ * `skipped`. Any non-one-shot clears it.
  */
 export function oneShotStep(s: EdgeState, next: OneShot | null, running: boolean): { state: EdgeState; command: OneShotCommand } {
-  // Leaving celebrate always cuts; the engine ignores a cut when nothing is playing. The wake has no cut: its
-  // tail is a glow multiplier of 1.05 to 1 and no sink, so leaving it early shows nothing.
+  // Leaving celebrate always cuts; the engine ignores a cut when nothing is playing. Leaving a wake the engine
+  // started cuts it too: Recovery and Dormant can win over Waking at any moment (a first call that fails or is
+  // cancelled at once). The engine ends the wake only before its strike, where the doze pose is identical, and
+  // lets it play out after; at the app's 1.2 s its tail is a glow multiplier of 1.05 to 1, so that shows nothing.
+  // A skipped wake never played, so it needs no cut.
   const cut = s.oneShot === "celebrate" && next !== "celebrate";
-  const command: OneShotCommand = { wake: "none", celebrate: cut ? "cut" : "none" };
+  const wakeCut = s.oneShot === "wake" && !s.skipped && next !== "wake";
+  const command: OneShotCommand = { wake: wakeCut ? "cut" : "none", celebrate: cut ? "cut" : "none" };
   if (next === null) return { state: { oneShot: null, skipped: false }, command };
   if (next === s.oneShot) return { state: { oneShot: next, skipped: s.skipped }, command };
   if (!running) return { state: { oneShot: next, skipped: true }, command };

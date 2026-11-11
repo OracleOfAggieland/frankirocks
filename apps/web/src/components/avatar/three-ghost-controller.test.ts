@@ -358,13 +358,13 @@ describe("ThreeGhostController: mount, size, ready, settle, fade", () => {
 });
 
 describe("ThreeGhostController: one-shots", () => {
-  it("starts the wake and the celebrate while running, and cuts the celebrate on leaving", async () => {
+  it("starts the wake and the celebrate while running, and cuts each on leaving", async () => {
     const h = harness();
     const e = await h.toThree(LISTENING);
     h.set(WAKING);
     expect(e.targets.at(-1)!.command).toEqual({ wake: "start", celebrate: "none" });
     h.set(CELEBRATE);
-    expect(e.targets.at(-1)!.command).toEqual({ wake: "none", celebrate: "start" });
+    expect(e.targets.at(-1)!.command).toEqual({ wake: "cut", celebrate: "start" });
     h.set(THINKING);
     expect(e.targets.at(-1)!.command).toEqual({ wake: "none", celebrate: "cut" });
     expect(h.phase()).toBe("three");

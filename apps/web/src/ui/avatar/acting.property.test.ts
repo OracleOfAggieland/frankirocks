@@ -111,7 +111,7 @@ describe("oneShotStep", () => {
         expect(s).toEqual(copy);
         expect(out).toEqual(oneShotStep(copy, next, running));
         expect(out.state.oneShot).toBe(next);
-        expect(["none", "start"]).toContain(out.command.wake);
+        expect(["none", "start", "cut"]).toContain(out.command.wake);
         expect(["none", "start", "cut"]).toContain(out.command.celebrate);
       }),
     );
@@ -132,6 +132,15 @@ describe("oneShotStep", () => {
       fc.property(arbEdge, arbOneShot, fc.boolean(), (s, next, running) => {
         const { command } = oneShotStep(s, next, running);
         expect(command.celebrate === "cut").toBe(s.oneShot === "celebrate" && next !== "celebrate");
+      }),
+    );
+  });
+
+  it("cuts the wake exactly when the look leaves a wake that was not skipped, running or not", () => {
+    fc.assert(
+      fc.property(arbEdge, arbOneShot, fc.boolean(), (s, next, running) => {
+        const { command } = oneShotStep(s, next, running);
+        expect(command.wake === "cut").toBe(s.oneShot === "wake" && !s.skipped && next !== "wake");
       }),
     );
   });

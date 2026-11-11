@@ -40,7 +40,7 @@ export interface StatePart {
 export function createState(rc: HostPart & ConfigPart & ProbesPart & RigPart & LightningPart): StatePart {
   const {
     clock, targets, STILL, URLP, audio, arcs,
-    CH, BODY_CH, POSE_CH, ST, gaze, blink, celeb, wake, fxState, triggerBlink, startCelebrate, CELEB_CUT,
+    CH, BODY_CH, POSE_CH, ST, gaze, blink, celeb, wake, fxState, triggerBlink, scheduleBlink, startCelebrate, CELEB_CUT,
   } = rc;
 
 /* =====================================================================
@@ -146,7 +146,11 @@ function applyTargets(next: Acting, command: OneShotCommand) {             // co
   Object.assign(targets, next);                                             // contract
   if (STILL) return;                                                        // contract: still frames take their one-shots from stillOverride
   if (command.celebrate === 'cut' && celeb.active && celeb.cutAt < 0) celeb.cutAt = clock.T;   // contract: the rule of 3329-3334, fade the hop out, no pop
-  if (command.wake === 'start') { wake.active = true; wake.t0 = clock.T; wake.fired.clear(); CH.doze.snap(0); }   // contract: doze hands over the identical pose
+  if (command.wake === 'cut' && wake.active && !wake.fired.has('strike')) { wake.active = false; CH.doze.snap(1); }   // contract: before the strike the doze pose is identical, so it takes over and eases to the new look; after it, the wake plays out
+  if (command.wake === 'start') {                                           // contract
+    wake.active = true; wake.t0 = clock.T; wake.fired.clear(); CH.doze.snap(0);   // contract: doze hands over the identical pose
+    blink.doubleAt = -1; scheduleBlink(clock.T, 'idle'); gaze.next = 0;     // contract: the boot's timers (3481), so no blink lands on the eye-pop
+  }                                                                         // contract
   if (command.celebrate === 'start') startCelebrate(clock.T);               // contract
 }                                                                           // contract
 
