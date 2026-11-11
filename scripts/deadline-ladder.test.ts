@@ -39,6 +39,48 @@ import { SDP_OPENAI_BUDGET_MS } from "../packages/server/src/routes/sdp";
 import { PARSE_WAIT_MS, TOOL_RESULT_LIMIT_MS } from "../packages/server/src/routes/tool";
 import { ACK_TTL_MS, DECK_TTL_MS } from "../packages/server/src/sessions";
 
+describe("deadline ladder: the imports", () => {
+  // A name a module does not export imports as undefined, and two undefined names compare equal, so the equality
+  // cases below need every import to be a real limit.
+  it("every imported limit is a finite positive number", () => {
+    const limits = {
+      ACK_LIMIT_MS,
+      ACK_TTL_MS,
+      ADMITTED_TRANSCRIPT_LIMIT_MS,
+      CLOSE_TIMEOUT_MS,
+      CONNECT_LIMIT_MS,
+      DECK_TTL_MS,
+      FAST_ACK_AGE_MS,
+      FAST_O_ACK_AGE_MS,
+      HELD_TRANSCRIPT_LIMIT_MS,
+      MISSING_LEASE_MS,
+      MISSING_WINDOW_MS,
+      OPEN_BUDGET_MS,
+      OPEN_LIMIT_MS,
+      OPEN_TIMEOUT_MS,
+      PARSE_WAIT_MS,
+      RECALL_DEADLINE_MS,
+      RECEIPT_TIMEOUT_MS,
+      REFRESH_MS,
+      REPAIR_DEADLINE_MS,
+      REPAIR_LEASE_MS,
+      REQUEST_LEASE_MS,
+      SDP_OPENAI_BUDGET_MS,
+      SDP_TIMEOUT_MS,
+      STATE_STALE_MS,
+      STATE_TIMEOUT_MS,
+      TOOL_LIMIT_MS,
+      TOOL_RESULT_LIMIT_MS,
+      TOOL_TIMEOUT_MS,
+      TURN_RESPONSE_LIMIT_MS,
+      TURN_TIMEOUT_MS,
+      TYPED_OPEN_TIMEOUT_MS,
+      TYPED_TURN_TIMEOUT_MS,
+    };
+    for (const [name, ms] of Object.entries(limits)) expect(Number.isFinite(ms) && ms > 0, name).toBe(true);
+  });
+});
+
 describe("deadline ladder: route budget, browser timeout, call's wait", () => {
   it("session open: OPEN_BUDGET_MS < OPEN_TIMEOUT_MS <= OPEN_LIMIT_MS", () => {
     expect(OPEN_BUDGET_MS).toBeLessThan(OPEN_TIMEOUT_MS);
