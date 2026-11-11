@@ -117,6 +117,8 @@ export async function createEngine(
   try {
     rig.attach();
     rig.boot();
+    await host.yieldNow();                                 // boot sizes the targets; let waiting tasks run before the warm-up
+    if (signal.aborted) throw new EngineError("aborted", "after boot");
 
     stage = "warm";
     const w0 = host.mono();

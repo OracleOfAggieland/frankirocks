@@ -88,17 +88,22 @@ export function loadEngine(): Promise<LoadedEngine> {
   return import("./three/engine");
 }
 
-interface YieldingScheduler {
-  yield?: () => Promise<void>;
+/** The part of the Prioritized Task Scheduling API the yield uses. */
+export interface PostingScheduler {
+  postTask?: (cb: () => void, options: { priority: "background" }) => Promise<unknown>;
 }
 
 /**
  * Yields to the browser between build steps, so input, the voice client's tasks and a due paint run between them.
- * scheduler.yield() where the browser has it (the build keeps its place in the queue), otherwise a zero timeout.
+ * The next step is a new task queued behind work already waiting: scheduler.postTask at background priority where
+ * the browser has it (the build runs only when nothing else is pending), otherwise a zero timeout. Not
+ * scheduler.yield(): its continuation resumes ahead of queued default-priority tasks (timers, network, data-channel
+ * messages), so the voice client's tasks would wait for the whole build.
  */
-export function yieldToBrowser(): Promise<void> {
-  const s = (globalThis as { scheduler?: YieldingScheduler }).scheduler;
-  if (s !== undefined && typeof s.yield === "function") return s.yield.call(s);
+export function yieldToBrowser(s: PostingScheduler | undefined = (globalThis as { scheduler?: PostingScheduler }).scheduler): Promise<void> {
+  if (s !== undefined && typeof s.postTask === "function") {
+    return s.postTask.call(s, () => {}, { priority: "background" }).then(() => undefined);
+  }
   return new Promise<void>((resolve) => {
     setTimeout(resolve, 0);
   });
