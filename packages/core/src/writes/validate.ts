@@ -17,7 +17,7 @@ import { protectedRow } from "./correction";
 import { scopeOf } from "./keys";
 import { sameValue } from "./plan";
 import { plainMention } from "./not-allergy";
-import { mentionEid, mentionName, hasFirstPerson, resolveSubject, type SubjectResult } from "./subject";
+import { mentionEid, mentionName, hasFirstPerson, resolveSubject, type SubjectInput, type SubjectResult } from "./subject";
 import { spanClass, verifyTurnSpan } from "./spans";
 import type { AllergyVerdict, ArgPair, CorrectionVerdict, EntityKind, FastItem, FastSlotsOut, ItemVerdict, Need, QuestionKind, Route, Subject, TransitionKind, TransitionVerdict, ValidateContext } from "./types";
 
@@ -81,8 +81,8 @@ function validateOne(item: FastItem, index: number, need: Need, ctx: ValidateCon
   }
 }
 
-const subjectOf = (s: Subject, quote: string, ctx: ValidateContext, kind: EntityKind): SubjectResult =>
-  resolveSubject({ subject: s, quote, evidence: ctx.evidence, known: ctx.known, entities: ctx.entities, kind, hasher: ctx.hasher });
+const subjectOf = (s: Subject, quote: string, ctx: ValidateContext, kind: EntityKind, reading: SubjectInput["reading"]): SubjectResult =>
+  resolveSubject({ subject: s, quote, evidence: ctx.evidence, known: ctx.known, entities: ctx.entities, kind, reading, hasher: ctx.hasher });
 
 const isEmptySubject = (s: Subject) => !s.isSelf && s.entityId === null && s.mention === null;
 
@@ -122,13 +122,15 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
   if (item.act !== "direct") return ignored("act"); // A4
 
   // Subjects; answering rule 2 for an item with none. A mention that isn't plain (longer than a name, or holding the
-  // allergy word itself: "my brother with the peanut allergy") names no one, so the item fails closed (CQ 150).
+  // allergy word itself: "my brother with the peanut allergy") names no one, so the item fails closed (CQ 150). On an
+  // answering turn "Mine." names the speaker too (CQ 159).
+  const reading = answering ? "answer" : "allergy";
   const mentionQuote = item.subject.mention === null ? null : (verifyTurnSpan(item.subject.mention, ctx.evidence)?.quote ?? null);
   let subject: SubjectResult;
   if (answering && isEmptySubject(item.subject)) {
-    subject = R !== null && R.subjectId !== null ? { kind: "resolved", id: R.subjectId, label: null } : hasFirstPerson(span.quote) ? { kind: "resolved", id: "self", label: null } : { kind: "unresolved" };
+    subject = R !== null && R.subjectId !== null ? { kind: "resolved", id: R.subjectId, label: null } : hasFirstPerson(span.quote, { kind: reading }) ? { kind: "resolved", id: "self", label: null } : { kind: "unresolved" };
   } else if (mentionQuote !== null && !plainMention(mentionQuote)) subject = { kind: "unresolved" };
-  else subject = subjectOf(item.subject, span.quote, ctx, "person");
+  else subject = subjectOf(item.subject, span.quote, ctx, "person", reading);
   const resolved = subject.kind === "resolved" ? subject : null;
 
   if (polarity === "denied") {
@@ -317,9 +319,10 @@ function transitionVerdict(item: Extract<FastItem, { kind: "transition" }>, inde
   if (!ctx.speakerCertain) return v({ kind: "defer", why: "speaker" });
   if (item.transition === "scheduledStart" || item.transition === "expire") return v({ kind: "defer", why: "scheduled" }); // T5
   const kind = item.transition;
-  const subject = subjectOf(item.subject, span.quote, ctx, "person");
+  // A transition's "my job" names the speaker; "my brother" doesn't (CQ 159).
+  const subject = subjectOf(item.subject, span.quote, ctx, "person", "transition");
   const counterpartKind: EntityKind = kind === "move" ? "place" : kind === "jobChangeOwn" || kind === "jobChangeOther" ? "organization" : "person";
-  const counterpart = item.counterpart === null ? null : subjectOf(item.counterpart, span.quote, ctx, counterpartKind);
+  const counterpart = item.counterpart === null ? null : subjectOf(item.counterpart, span.quote, ctx, counterpartKind, "transition");
   if (subject.kind === "ambiguous" || counterpart?.kind === "ambiguous") return v({ kind: "defer", why: "subject" }); // SU6
   const s = subject.kind === "resolved" ? subject.id : null;
   const c = counterpart !== null && counterpart.kind === "resolved" ? counterpart.id : null;

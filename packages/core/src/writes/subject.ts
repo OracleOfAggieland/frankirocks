@@ -29,14 +29,75 @@ const POSSESSIVE: ReadonlySet<string> = new Set(["my", "mine"]);
 const RX4 = REGEX_TABLE.find((r) => r.id === "RX4")!.pattern;
 const PRONOUNS = new Set(["he", "she", "him", "her", "they", "them", "it", "his", "hers", "their", "theirs", "this", "that", "someone", "somebody", "anyone", "everyone", "you", "we", "us"]);
 
-/** True when the text names the speaker: a first-person word, or "my"/"mine" right before an RX4 word or an alias. */
-export function hasFirstPerson(text: string): boolean {
+/**
+ * Words for another person or a pet ("my brother", "my late husband"), so "my" before them doesn't name the speaker.
+ * Read only for transitions (CQ 159); the names of known entities are added by the caller.
+ */
+export const RELATION_WORDS: ReadonlySet<string> = new Set([
+  "mother", "mom", "mum", "mommy", "mummy", "mama", "ma", "father", "dad", "daddy", "papa", "pa", "pop", "pops", "parent", "parents", "folks",
+  "brother", "sister", "sibling", "siblings", "bro", "sis", "twin", "son", "daughter", "child", "children", "kid", "kids", "baby", "babies",
+  "wife", "husband", "spouse", "partner", "boyfriend", "girlfriend", "fiance", "fiancé", "fiancee", "fiancée", "ex", "date", "crush",
+  "aunt", "auntie", "uncle", "cousin", "niece", "nephew", "grandma", "grandmother", "grandpa", "grandfather", "granny", "nana", "nan",
+  "grandson", "granddaughter", "grandchild", "grandkids", "grandparent", "grandparents", "stepmom", "stepmother", "stepdad", "stepfather",
+  "stepson", "stepdaughter", "stepbrother", "stepsister", "family", "relative", "relatives",
+  "friend", "friends", "bestie", "buddy", "pal", "mate", "roommate", "flatmate", "housemate", "neighbor", "neighbour", "neighbors", "neighbours",
+  "boss", "manager", "colleague", "colleagues", "coworker", "coworkers", "co", "teammate", "employee", "assistant", "client", "mentor",
+  "coach", "teacher", "student", "doctor", "therapist", "nurse", "landlord", "landlady", "tenant",
+  "dog", "cat", "pet", "pets", "puppy", "kitten", "horse",
+]);
+/** Words that may stand between "my" and the word it governs ("my little brother", "my new job"). */
+const MODIFIERS: ReadonlySet<string> = new Set(["little", "big", "older", "younger", "elder", "eldest", "oldest", "youngest", "best", "late", "dear", "old", "new", "own", "step", "half", "great", "favorite", "favourite", "former", "current"]);
+/** Words that only answer, so "Mine." stands alone (answering rule 2, CQ 159). */
+const ANSWER_FILLERS: ReadonlySet<string> = new Set(["oh", "um", "uh", "well", "yes", "yeah", "yep", "yup", "ok", "okay", "so"]);
+
+/**
+ * How SU2 reads "my" and "mine" (CQ 149, amended by CQ 159). `allergy`: only before the allergy itself. `answer` (an
+ * allergy item on an answering turn): also "mine" as the answer's only content word or after "it's" or "that's".
+ * `transition`: also "my" before a word that names no other person or pet ("my job", "my marriage"); `others` holds
+ * the words of every known name.
+ */
+export type SelfReading = { kind: "allergy" } | { kind: "answer" } | { kind: "transition"; others: ReadonlySet<string> };
+
+const ALLERGY_READING: SelfReading = { kind: "allergy" };
+
+/** "my" followed, past any modifiers, by a word that names no other person or pet. */
+function myOwnThing(w: readonly { word: string }[], i: number, others: ReadonlySet<string>): boolean {
+  for (let k = i + 1; k < w.length && k <= i + 3; k++) {
+    const word = w[k]!.word;
+    if (RELATION_WORDS.has(word) || others.has(word)) return false;
+    if (!MODIFIERS.has(word)) return true;
+  }
+  return false;
+}
+
+/**
+ * "Mine." alone, past answer fillers, or "it's mine", "that's mine", "it is mine", "that is mine". Tokens are in
+ * normal form, where a final 's is dropped, so "it's" reads as "it".
+ */
+function mineAnswers(w: readonly { word: string }[]): boolean {
+  const content = w.filter((t) => !ANSWER_FILLERS.has(t.word)).map((t) => t.word);
+  if (content.length === 1 && content[0] === "mine") return true;
+  const pointer = (x: string | undefined) => x === "it" || x === "that";
+  return w.some((t, i) => {
+    if (t.word !== "mine") return false;
+    const a = w[i - 1]?.word;
+    return pointer(a) || (a === "is" && pointer(w[i - 2]?.word));
+  });
+}
+
+/**
+ * True when the text names the speaker: a first-person word, or "my"/"mine" right before an RX4 word or an alias;
+ * and, by `reading`, the answer "Mine." or a transition's "my job".
+ */
+export function hasFirstPerson(text: string, reading: SelfReading = ALLERGY_READING): boolean {
   const w = wordTokens(text);
+  if (reading.kind === "answer" && mineAnswers(w)) return true;
   return w.some((t, i) => {
     if (FIRST_PERSON.has(t.word)) return true;
     const next = w[i + 1];
     if (!POSSESSIVE.has(t.word) || next === undefined) return false;
-    return RX4.test(next.word) || scanAliases(text).some((h) => h.start === next.start);
+    if (RX4.test(next.word) || scanAliases(text).some((h) => h.start === next.start)) return true;
+    return reading.kind === "transition" && t.word === "my" && myOwnThing(w, i, reading.others);
   });
 }
 
@@ -51,6 +112,8 @@ export interface SubjectInput {
   entities: readonly { id: EID; label: string; aliases: readonly string[] }[];
   /** The kind a new mention gets (a move's counterpart: place; else person). */
   kind: EntityKind;
+  /** How SU2 reads "my" and "mine": an allergy item, one on an answering turn, or a transition (CQ 159). */
+  reading: SelfReading["kind"];
   hasher: Hasher;
 }
 
@@ -67,6 +130,14 @@ function candidates(i: SubjectInput): { id: EID; label: string; names: Set<strin
   for (const e of i.known.entries) add(e.id, e.label, [e.label, ...e.aliases, e.relation]);
   for (const e of i.entities) add(e.id, e.label, [e.label, ...e.aliases]);
   return [...byId.values()];
+}
+
+/** SU2's reading for this input; a transition's carries the words of every name it could mean. */
+function readingOf(i: SubjectInput): SelfReading {
+  if (i.reading !== "transition") return { kind: i.reading };
+  const others = new Set<string>();
+  for (const c of candidates(i)) for (const n of c.names) for (const t of wordTokens(n)) others.add(t.word);
+  return { kind: "transition", others };
 }
 
 /** "my brother" becomes "your brother"; other words stay as the owner said them. */
@@ -86,7 +157,7 @@ export function resolveSubject(i: SubjectInput): SubjectResult {
     const sameEntity = !s.isSelf && s.entityId !== null && mention !== null && candidates(i).some((c) => c.id === s.entityId && c.names.has(mentionName(mention.quote)));
     if (!sameEntity) return { kind: "unresolved" };
   }
-  if (s.isSelf) return hasFirstPerson(i.quote) ? { kind: "resolved", id: "self", label: null } : { kind: "unresolved" }; // SU2, SU3
+  if (s.isSelf) return hasFirstPerson(i.quote, readingOf(i)) ? { kind: "resolved", id: "self", label: null } : { kind: "unresolved" }; // SU2, SU3
   if (s.entityId !== null) {
     const e = i.entities.find((x) => x.id === s.entityId);
     if (e !== undefined) return { kind: "resolved", id: e.id, label: e.label }; // SU4

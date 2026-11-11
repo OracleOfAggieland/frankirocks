@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { msFromTs } from "../schema/primitives";
 import type { Memory } from "../schema/records";
 import { testId } from "../testing/samples";
-import { mentionEid, mentionName, resolveSubject } from "./subject";
+import { hasFirstPerson, mentionEid, mentionName, resolveSubject } from "./subject";
 import { DAD, DAD_LIFE, KNOWN, SELF_NAME, SISTER, SISTER_REL, TURN_AT, TURN_EID, buildEvidence, hasher, row, PRIOR, PRIOR_EID, spanAt, targetsMap, turnEvidenceOf, validateContext } from "./testing/arb-writes";
 import { fixtureRule } from "./testing/arb-hard-rule";
 import type { FastItem, ItemVerdict, Need, Subject, ValidateContext } from "./types";
@@ -36,7 +36,7 @@ describe("before the tables", () => {
 
 describe("subjects", () => {
   const e = turnEvidenceOf(turn("My brother can't have peanuts and my sister can't either."), TURN_EID);
-  const input = (subject: Subject, quote = "I'm") => ({ subject, quote, evidence: e, known: KNOWN, entities: [{ id: SISTER, label: "Maya", aliases: ["sister"] }], kind: "person" as const, hasher });
+  const input = (subject: Subject, quote = "I'm") => ({ subject, quote, evidence: e, known: KNOWN, entities: [{ id: SISTER, label: "Maya", aliases: ["sister"] }], kind: "person" as const, reading: "allergy" as const, hasher });
   const mention = (w: string) => spanAt(TURN_EID, e.text, e.text.indexOf(w), e.text.indexOf(w) + w.length);
   it("SU1: more than one form is unresolved, except an entityId with its own mention", () => {
     expect(resolveSubject(input({ entityId: null, mention: mention("My brother"), isSelf: true }))).toEqual({ kind: "unresolved" });
@@ -168,6 +168,20 @@ describe("answering turns", () => {
     const s = "My brother is allergic to something too.";
     const sm = spanAt(TURN_EID, s, 0, 10);
     expect(one(run(s, [allergy(s, "something", { subject: { entityId: null, mention: sm, isSelf: false } })], { answering: { rule: R } }))).toMatchObject({ v: { kind: "unsure", subject: bro, codes: "unresolved", question: "whatItem" } });
+  });
+  it("2: \"Mine.\" answering who has it names the speaker, alone or after it's or that's (CQ 159)", () => {
+    const anon = { ...R, subjectId: null, anonymous: true };
+    for (const t of ["Mine.", "It's mine.", "Yes, that's mine."]) {
+      const span = whole(t);
+      expect(one(run(t, [allergy(t, "", { subject: SELF, span })], { answering: { rule: anon } })), t).toMatchObject({ v: { kind: "affirm", subject: "self", codes: ["peanut"] } });
+      expect(one(run(t, [allergy(t, "", { subject: NONE, span })], { answering: { rule: anon } })), t).toMatchObject({ v: { kind: "affirm", subject: "self", codes: ["peanut"] } });
+    }
+    const both = "Mine and my brother's.";
+    expect(one(run(both, [allergy(both, "", { subject: NONE })], { answering: { rule: anon } }))).toMatchObject({ v: { kind: "unsure", subject: null, question: "whoHas" } });
+    // Outside an answer, "mine" stays strict; inside one, "mine" among other words doesn't count.
+    expect(hasFirstPerson("Mine.")).toBe(false);
+    expect(hasFirstPerson("Mine.", { kind: "answer" })).toBe(true);
+    expect(hasFirstPerson("Mine is the one with the dog.", { kind: "answer" })).toBe(false);
   });
   it("6: with no asked rule, codes and subject come from the answer itself", () => {
     const a = "Shellfish and peanuts, both.";
@@ -364,6 +378,20 @@ describe("validation: the review's cases", () => {
     for (const w of ["earlier today", "this morning"]) expect(whenOf(w, { assertedAt: TURN_AT }, now), w).toEqual({ ok: true, when: now });
     const q = "I'm quitting my job tonight.";
     expect(one(run(q, [transition(q, { transition: "jobChangeOwn", subject: SELF, whenSpoken: "tonight" })]))).toMatchObject({ v: { kind: "defer", why: "time" } });
+  });
+
+  it("SU2 on a transition: \"my\" before a word that names no other person names the owner (CQ 159)", () => {
+    for (const t of ["My job ended last week.", "My contract wasn't renewed."]) {
+      expect(one(run(t, [transition(t, { transition: "jobChangeOwn", subject: SELF })])), t).toMatchObject({ v: { kind: "change", transition: "jobChangeOwn", subject: "self" } });
+    }
+    const m = "My marriage to Sam is over.";
+    const sam = mentionEid("person", "sam", hasher);
+    expect(one(run(m, [transition(m, { transition: "breakup", subject: SELF, counterpart: { entityId: null, mention: at(m, "Sam"), isSelf: false } })]))).toMatchObject({ v: { kind: "change", transition: "breakup", subject: "self", counterpart: sam } });
+    expect(one(run("I quit my job last week.", [transition("I quit my job last week.", { transition: "jobChangeOwn", subject: SELF })]))).toMatchObject({ v: { kind: "change", subject: "self" } });
+    // A wrong isSelf on someone else's change still changes nothing: a relation word, past a modifier, or a known name.
+    for (const t of ["My brother quit his job.", "My little brother quit his job.", "My Maya quit her job."]) {
+      expect(one(run(t, [transition(t, { transition: "jobChangeOwn", subject: SELF })])), t).toEqual({ kind: "ignored", index: 0, reason: "target" });
+    }
   });
 
   it("SU6 on a transition defers", () => {
