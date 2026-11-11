@@ -11,15 +11,18 @@
  *                                     Each take's trailing silence is trimmed before it is streamed (trim.ts);
  *                                     a take with no speech is refused before connecting. The mode defaults to
  *                                     parallel (the reply goes out beside the judge, muted), stagger 0 ms.
+ *           [--fast-slots]            also sends FastSlotsV1 on every line that opens a write route (fast-slots.ts):
+ *                                     through a fake port unless --live; times, results and item kinds only.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { JUDGE_CONTRACTS, JUDGE_EFFORTS, PREDICATE_SETS, type PredicateSetName, isPredicateSetName, type JudgeOutputCap, type JudgeSettings, isJudgeContract, isJudgeEffort, isJudgeOutputCap, isSpikeFormat, parseWav } from "@franki/core";
+import { FAST_SLOTS_DEADLINE_MS, JUDGE_CONTRACTS, JUDGE_EFFORTS, PREDICATE_SETS, type PredicateSetName, isPredicateSetName, type JudgeOutputCap, type JudgeSettings, isJudgeContract, isJudgeEffort, isJudgeOutputCap, isSpikeFormat, parseWav } from "@franki/core";
 import { MODEL_VARS, requireModel } from "../../packages/server/src/config/models";
 import { requireEnv } from "../../packages/server/src/config/env";
 import { type HarnessClock, liveClock, wallDateIso } from "./clock";
-import { type DecisionsKind, fakeDecisionsPort, lineParser, liveDecisionsPort } from "./decisions";
+import { type DecisionsKind, type ParseRow, fakeDecisionsPort, lineParser, liveDecisionsPort } from "./decisions";
+import { type FastSlotsRow, HARNESS_SLOTS_WAIT_MS, type SpeakerCount, fakeFastSlotsPort, liveFastSlotsPort, slotsLiner, slotsLogLine, speakerCertainCount } from "./fast-slots";
 import { fakeConnect, placeholderPcm } from "./fake-realtime";
 import { DEFAULT_RUN, DEFAULT_SEED, MAX_RUN_LINES, MAX_STAGGER_MS, NO_SPEECH, RUN_MODES, type RunMode, type RunSettings, SPIKE_JUDGE_SETTINGS, runHarness, silentTakes } from "./harness";
 import { type ProbeLine, lineSetHash, loadLines } from "./lines";
@@ -40,16 +43,19 @@ export interface CliContext {
 
 export interface Flags {
   live: boolean;
+  /** `--fast-slots`: also measure FastSlotsV1 (brief 012 task A9). */
+  fastSlots: boolean;
   lines: string[] | null;
   values: Record<string, string>;
 }
 
-/** `--live`, `--lines a,b` and `--name value` flags. Unknown positional words are an error. */
+/** `--live`, `--fast-slots`, `--lines a,b` and `--name value` flags. Unknown positional words are an error. */
 export function parseFlags(args: readonly string[]): Flags {
-  const flags: Flags = { live: false, lines: null, values: {} };
+  const flags: Flags = { live: false, fastSlots: false, lines: null, values: {} };
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (a === "--live") flags.live = true;
+    else if (a === "--fast-slots") flags.fastSlots = true;
     else if (a.startsWith("--") && i + 1 < args.length && !args[i + 1]!.startsWith("--")) {
       const name = a.slice(2);
       const value = args[++i]!;
@@ -265,11 +271,39 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
 
   // The slow parse per line: live only with --live (R17.2).
   const decisions: DecisionsKind = flags.live ? "live" : "fake";
-  const parseLine = lineParser(flags.live ? liveDecisionsPort(ctx.env) : fakeDecisionsPort(), ctx.env, flags.live, predicates);
+  const baseParse = lineParser(flags.live ? liveDecisionsPort(ctx.env) : fakeDecisionsPort(), ctx.env, flags.live, predicates);
+  // FastSlotsV1 per line, after its parse (brief 012 item 6). A dry run's transcript means nothing, so the line's own
+  // text stands in for it there; a live run sends the transcript. Neither is stored.
+  const slotRows = new Map<string, FastSlotsRow>();
+  let parseLine = baseParse;
+  if (flags.fastSlots) {
+    ctx.log(`harness: FastSlotsV1 on every line that opens a write route, through the ${flags.live ? "LIVE FastSlots port" : "fake FastSlots port (valid and empty, 0 ms)"}`);
+    const slotsLine = slotsLiner(flags.live ? liveFastSlotsPort(ctx.env) : fakeFastSlotsPort());
+    const byId = new Map(lines.map((l) => [l.id, l]));
+    parseLine = async (turnId: string, utterance: string): Promise<ParseRow> => {
+      const parsed = await baseParse(turnId, utterance);
+      const line = byId.get(turnId);
+      const row = line === undefined ? null : await slotsLine(line, flags.live ? utterance : line.text, parsed.parse);
+      if (row !== null) {
+        slotRows.set(turnId, row);
+        ctx.log(slotsLogLine(row));
+      }
+      return parsed;
+    };
+  }
   const work = runHarness({ lines, audio, voices, models, judge, run: runMode, seed, apiKey, connect, clock, log: ctx.log, parseLine });
   const out = virtual === null ? await work : await virtual.run(work);
   const date = wallDateIso();
   const run = runFile({ date, source, transport: flags.live ? "live" : "fake", lineSetCommit: set.commit + (set.dirty ? " (dirty)" : ""), lineSetHash: lineSetHash(all), models, judge, run: runMode, decisions, predicates }, out);
+  if (flags.fastSlots) {
+    run.fastSlots = {
+      port: flags.live ? "live" : "fake",
+      waitMs: HARNESS_SLOTS_WAIT_MS,
+      deadlineMs: FAST_SLOTS_DEADLINE_MS,
+      rows: out.order.flatMap((id) => (slotRows.has(id) ? [slotRows.get(id)!] : [])),
+      speakerCertain: speakerCountFor(flags.live, run.rows, ctx.spikeDir),
+    };
+  }
   const dir = flags.live ? resultsDir(ctx.spikeDir) : join(ctx.spikeDir, "dist", "dry-run");
   mkdirSync(dir, { recursive: true });
   const base = join(dir, `${date.replace(/[:.]/g, "-")}-${source}`);
@@ -281,6 +315,34 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   return 0;
 }
 
+/** The run whose parse probabilities `speakerCertain` is counted from: the Nov 10 owner run (brief 012 task A9). */
+export const SPEAKER_RUN_PREFIX = "2026-11-10";
+
+/**
+ * Speaker certainty for a FastSlots run: a live run counts its own parses; a dry run's parses are fake, so it (or a
+ * live run whose rows can't be counted) falls back to the earlier owner run.
+ */
+export function speakerCountFor(live: boolean, rows: readonly Parameters<typeof speakerCertainCount>[1][number][], spikeDir: string): SpeakerCount {
+  if (live) {
+    const here = speakerCertainCount("this run", rows);
+    if (!("unavailable" in here)) return here;
+  }
+  return earlierSpeakerCount(spikeDir);
+}
+
+/** Counts speaker certainty in the newest committed run of SPEAKER_RUN_PREFIX, or says why it can't. */
+export function earlierSpeakerCount(spikeDir: string): SpeakerCount {
+  const dir = resultsDir(spikeDir);
+  const name = existsSync(dir) ? readdirSync(dir).filter((f) => f.startsWith(SPEAKER_RUN_PREFIX) && f.endsWith(".json")).sort().at(-1) : undefined;
+  if (name === undefined) return { file: null, unavailable: "no run file" };
+  try {
+    const doc = JSON.parse(readFileSync(join(dir, name), "utf8")) as { rows?: unknown };
+    return speakerCertainCount(name, Array.isArray(doc.rows) ? doc.rows : []);
+  } catch {
+    return { file: name, unavailable: "the run file can't be read" };
+  }
+}
+
 const COMMANDS: Record<string, (flags: Flags, ctx: CliContext) => Promise<number>> = { synth: synthCommand, harness: harnessCommand };
 
 /** Runs one command and returns the exit code. */
@@ -288,7 +350,7 @@ export async function main(argv: readonly string[], ctx: CliContext): Promise<nu
   const [name, ...rest] = argv;
   const command = name === undefined ? undefined : COMMANDS[name];
   if (command === undefined) {
-    ctx.log(`usage: node scripts/judge-spike/run.mjs <${Object.keys(COMMANDS).join("|")}> [--live] [--lines id,id] [--source synthetic|owner] [--max-tokens n|inf] [--effort value] [--seed n] [--mode sequential|parallel] [--stagger-ms n] [--judge judge_v1|judge_v2] [--predicates contract]`);
+    ctx.log(`usage: node scripts/judge-spike/run.mjs <${Object.keys(COMMANDS).join("|")}> [--live] [--lines id,id] [--source synthetic|owner] [--max-tokens n|inf] [--effort value] [--seed n] [--mode sequential|parallel] [--stagger-ms n] [--judge judge_v1|judge_v2] [--predicates contract] [--fast-slots]`);
     return 2;
   }
   return command(parseFlags(rest), ctx);

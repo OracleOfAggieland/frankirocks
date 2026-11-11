@@ -34,3 +34,4 @@ export * from "./intents/route";
 export * from "./audio/wav";
 export * from "./recall";
 export * from "./memory-text";
+export * from "./writes";

@@ -7,6 +7,7 @@
 import { CANDIDATE_P, CONTROL_CLASSES as INTENT_CLASSES, type ControlClass as IntentClass, DECISIONS_DEADLINE_MS, type JudgeSettings, type JudgeValue, type JudgeVerdict, STRONG_P, changesWhatIsSaid, choose, routeFires } from "@franki/core";
 import { CONTROL_CLASSES } from "./lines";
 import type { DecisionsKind } from "./decisions";
+import type { FastSlotsRow, SlotsKind, SpeakerCount } from "./fast-slots";
 import type { HarnessOutput, Row, RunSettings } from "./harness";
 import type { AudioSource } from "./paths";
 
@@ -50,6 +51,17 @@ export interface RunFile extends RunMeta {
   sessions: string[][];
   eventNames: string[];
   rows: Row[];
+  /** The FastSlotsV1 measurement, with `--fast-slots` (brief 012 task A9). Absent otherwise. */
+  fastSlots?: FastSlotsSection;
+}
+
+/** What `--fast-slots` adds to a run file. No transcript and no item text. */
+export interface FastSlotsSection {
+  port: SlotsKind;
+  waitMs: number;
+  deadlineMs: number;
+  rows: FastSlotsRow[];
+  speakerCertain: SpeakerCount;
 }
 
 export function runFile(meta: RunMeta, out: HarnessOutput): RunFile {
@@ -466,6 +478,7 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   if (s.slowParse !== null) out.push(...slowParseMarkdown(s.slowParse, run.decisions ?? "fake"));
   if (s.routes !== null) out.push(...routesMarkdown(s.routes, run.predicates ?? "contract"));
   out.push(...caveatsMarkdown(s.caveats));
+  if (run.fastSlots !== undefined) out.push(...fastSlotsMarkdown(run.fastSlots));
   out.push("## Sessions");
   out.push("");
   out.push(`Lines ran in a seeded order (seed ${run.seed}), up to 30 per session.`);
@@ -605,4 +618,74 @@ function caveatsMarkdown(c: Caveats): string[] {
     `Only ${c.trimmed} of the ${c.control} control takes had their tails trimmed, and ${c.fragmented} came in as more than one fragment, so on ${c.lateJudge} control lines the judge was sent ${c.lateJudgeMs.min} to ${c.lateJudgeMs.max} ms after the commit. Those rows count the harness's own wait as judge time: read control recall from the "any time" column, and judge speed from "judge sent to judge done".`,
     "",
   ];
+}
+
+// ---------------------------------------------------------------------------------------------
+// FastSlotsV1 (brief 012 task A9)
+
+/** The item kind a control class's lines should produce. `transition` has no class in lines.json. */
+export const FAST_SLOTS_EXPECTED: Readonly<Record<string, string>> = { hardRule: "allergy", correction: "correction", transition: "transition" };
+
+export interface FastSlotsStats {
+  n: number;
+  p50: number | null;
+  p95: number | null;
+  max: number | null;
+  /** Lines over the deadline (a timeout included), of n. */
+  over: number;
+  byResult: Record<string, number>;
+  /**
+   * Per expected class: lines sent, lines with a valid item of the expected kind, and lines where such an item also
+   * passes the code's first checks (FastSlotsRow.checked). Null: no lines of that class.
+   */
+  perClass: Record<string, { lines: number; validExpected: number; checked: number } | null>;
+}
+
+export function fastSlotsStats(sec: FastSlotsSection): FastSlotsStats {
+  const ms = sec.rows.map((r) => r.ms);
+  const byResult: Record<string, number> = {};
+  for (const r of sec.rows) byResult[r.result] = (byResult[r.result] ?? 0) + 1;
+  const perClass: FastSlotsStats["perClass"] = {};
+  for (const [cls, kind] of Object.entries(FAST_SLOTS_EXPECTED)) {
+    const rows = sec.rows.filter((r) => r.class === cls);
+    const valid = rows.filter((r) => r.result === "valid");
+    perClass[cls] = rows.length === 0 ? null : { lines: rows.length, validExpected: valid.filter((r) => r.kinds.includes(kind)).length, checked: valid.filter((r) => (r.checked ?? []).includes(kind)).length };
+  }
+  return { n: sec.rows.length, p50: percentile(ms, 50), p95: percentile(ms, 95), max: ms.length === 0 ? null : Math.max(...ms), over: sec.rows.filter((r) => r.overDeadline).length, byResult, perClass };
+}
+
+export function fastSlotsMarkdown(sec: FastSlotsSection, s: FastSlotsStats = fastSlotsStats(sec)): string[] {
+  const out: string[] = [];
+  const msOf = (v: number | null) => (v === null ? "—" : `${Math.round(v)} ms`);
+  out.push("## FastSlotsV1");
+  out.push("");
+  if (sec.port === "fake") out.push("**Fake FastSlots port: every answer is valid and empty at 0 ms. These numbers measure nothing.**", "");
+  out.push(`Sent on every line that matched RX4, RX6 or RX7 or had \`hardRule\`, \`correct\` or \`transition\` at 0.20 or more; waited up to ${sec.waitMs} ms, on time within ${sec.deadlineMs} ms.`);
+  out.push("");
+  out.push(`- Lines sent: ${s.n}`);
+  out.push(`- Time: p50 ${msOf(s.p50)}, p95 ${msOf(s.p95)}, largest ${msOf(s.max)}`);
+  out.push(`- Over ${sec.deadlineMs} ms: ${s.n === 0 ? "—" : `${s.over} of ${s.n} (${Math.round((100 * s.over) / s.n)}%)`}`);
+  out.push(`- Results: ${Object.keys(s.byResult).length === 0 ? "none" : Object.entries(s.byResult).map(([k, v]) => `${k} ${v}`).join(", ")}`);
+  out.push("");
+  out.push("| Class | Lines sent | Valid with the expected item | Passing the code's first checks |");
+  out.push("|---|---|---|---|");
+  for (const [cls, kind] of Object.entries(FAST_SLOTS_EXPECTED)) {
+    const c = s.perClass[cls];
+    const cell = (v: number | undefined) => (c === null || c === undefined ? "no lines" : String(v));
+    out.push(`| ${cls} (${kind}) | ${cell(c?.lines)} | ${cell(c?.validExpected)} | ${cell(c?.checked)} |`);
+  }
+  out.push("");
+  out.push(
+    "First checks: the span quotes the turn exactly, an allergy names a gazetteer allergen, a correction names only targets that were sent (each correction line is sent the row it corrects). validateItems' full tables don't run here, and an event correction (c-correction-2, c-correction-5) defers by design (C5b), so a line counted here can still write nothing.",
+  );
+  out.push("");
+  const sc = sec.speakerCertain;
+  if ("unavailable" in sc) out.push(`- Speaker certainty in an earlier run: can't tell (${sc.file === null ? "no run file found" : `${sc.file}: ${sc.unavailable}`}).`);
+  else out.push(`- Speaker certainty in ${sc.file} (parse committed, uncertainSpeaker under 0.10, no company or quiet candidate): hardRule ${sc.hardRule.pass} of ${sc.hardRule.of}, correction ${sc.correction.pass} of ${sc.correction.of}.`);
+  out.push("");
+  out.push("| Line | Result | ms | Items | Routes |");
+  out.push("|---|---|---|---|---|");
+  for (const r of sec.rows) out.push(`| ${r.lineId} | ${r.result}${r.reason === null ? "" : ` (${r.reason})`} | ${r.ms} | ${r.kinds.join(", ") || "—"} | ${r.routes.join("+")} |`);
+  out.push("");
+  return out;
 }

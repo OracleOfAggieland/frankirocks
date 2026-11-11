@@ -8,6 +8,7 @@ import type { Timers } from "../clock/timers";
 import { createHasher } from "../crypto";
 import { FakeOpenAI, ok } from "../openai/fake";
 import { decisionAnswer } from "./decisions";
+import { FakeFastSlots } from "./fake-fast-slots";
 import { type HttpInput, type Log, type RouteDeps, type RouteSpec, type Schedule, runRoute } from "../routes/runtime";
 import { MemoryStore } from "../store/memory-store";
 import type { StorePort } from "../store/port";
@@ -145,6 +146,8 @@ export interface TestRig {
   clock: FakeClock;
   timers: FakeTimers;
   openai: FakeOpenAI;
+  /** Answers `transport` unless a test scripts it, so an unexpected call fails closed. */
+  fastSlots: FakeFastSlots;
   tokens: ReturnType<typeof fakeTokenVerifier>;
   logs: { event: string; fields: Record<string, unknown> }[];
   sched: RecordingSchedule;
@@ -159,15 +162,17 @@ export function testRig(env: Record<string, string> = TEST_ENV): TestRig {
   // Every transcript is parsed (voice-control R11.1): by default the fake Decisions answer is ordinary. A test
   // that needs another answer queues it with `script`, which is used first.
   openai.always("decisions.create", ok(decisionAnswer()));
+  const fastSlots = new FakeFastSlots(timers);
   const tokens = fakeTokenVerifier();
   const logs: TestRig["logs"] = [];
   const log: Log = (event, fields) => logs.push({ event, fields });
   return {
-    deps: { store, clock, hasher, openai, env, timers, tokens, log },
+    deps: { store, clock, hasher, openai, fastSlots, env, timers, tokens, log },
     store,
     clock,
     timers,
     openai,
+    fastSlots,
     tokens,
     logs,
     sched: recordingSchedule(),
