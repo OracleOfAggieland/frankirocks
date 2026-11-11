@@ -301,7 +301,7 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
       waitMs: HARNESS_SLOTS_WAIT_MS,
       deadlineMs: FAST_SLOTS_DEADLINE_MS,
       rows: out.order.flatMap((id) => (slotRows.has(id) ? [slotRows.get(id)!] : [])),
-      speakerCertain: earlierSpeakerCount(ctx.spikeDir),
+      speakerCertain: speakerCountFor(flags.live, run.rows, ctx.spikeDir),
     };
   }
   const dir = flags.live ? resultsDir(ctx.spikeDir) : join(ctx.spikeDir, "dist", "dry-run");
@@ -317,6 +317,18 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
 
 /** The run whose parse probabilities `speakerCertain` is counted from: the Nov 10 owner run (brief 012 task A9). */
 export const SPEAKER_RUN_PREFIX = "2026-11-10";
+
+/**
+ * Speaker certainty for a FastSlots run: a live run counts its own parses; a dry run's parses are fake, so it (or a
+ * live run whose rows can't be counted) falls back to the earlier owner run.
+ */
+export function speakerCountFor(live: boolean, rows: readonly Parameters<typeof speakerCertainCount>[1][number][], spikeDir: string): SpeakerCount {
+  if (live) {
+    const here = speakerCertainCount("this run", rows);
+    if (!("unavailable" in here)) return here;
+  }
+  return earlierSpeakerCount(spikeDir);
+}
 
 /** Counts speaker certainty in the newest committed run of SPEAKER_RUN_PREFIX, or says why it can't. */
 export function earlierSpeakerCount(spikeDir: string): SpeakerCount {

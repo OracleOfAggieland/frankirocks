@@ -9,7 +9,18 @@
  * text: no words from the owner's takes are stored. In a dry run the fake transport's transcript means nothing, so
  * the line's own text from lines.json stands in for it.
  */
-import { CANDIDATE_P, FAST_SLOTS_DEADLINE_MS, type FastSlotsResult, REGEX_TABLE, UNCERTAIN_SPEAKER_P, normalizeForRegex } from "@franki/core";
+import {
+  CANDIDATE_P,
+  FAST_SLOTS_DEADLINE_MS,
+  type FastItem,
+  type FastSlotsInput,
+  type FastSlotsResult,
+  REGEX_TABLE,
+  UNCERTAIN_SPEAKER_P,
+  lookupAllergen,
+  normalizeForRegex,
+  scanAliases,
+} from "@franki/core";
 import { liveClockPort } from "../../packages/server/src/clock/live-clock";
 import { liveTimers } from "../../packages/server/src/clock/timers";
 import type { Env } from "../../packages/server/src/config/env";
@@ -39,6 +50,12 @@ export interface FastSlotsRow {
   path: string | null;
   /** The kinds of the items returned, in order (never their words). */
   kinds: string[];
+  /**
+   * The kinds of the items that pass the code's own first checks against the input sent: the span quotes the turn
+   * exactly, an allergy names a gazetteer allergen, and a correction names only targets that were sent. Not
+   * validateItems' full tables. Empty when no input was given.
+   */
+  checked: string[];
   need: string | null;
   overDeadline: boolean;
 }
@@ -67,8 +84,20 @@ export function liveFastSlotsPort(env: Env): FastSlotsPort {
   return fastSlotsPort({ openai: liveOpenAI(env), timers: liveTimers, clock: liveClockPort, env });
 }
 
-/** The row for one answer. */
-export function rowOf(line: Pick<ProbeLine, "id" | "class">, opened: ReturnType<typeof slotsRoutes>, r: FastSlotsResult): FastSlotsRow {
+/** Whether one item passes the code's first checks against the input it answered (see FastSlotsRow.checked). */
+export function passesFirstChecks(item: FastItem, input: FastSlotsInput): boolean {
+  const s = item.span;
+  if (s.eid !== input.turn.eid || s.end > input.turn.text.length || input.turn.text.slice(s.start, s.end) !== s.quote) return false;
+  if (item.kind === "allergy") return lookupAllergen(item.item).some((c) => c !== "none") || scanAliases(input.turn.text, s.start, s.end).length > 0;
+  if (item.kind === "correction") {
+    const sent = new Set(input.targets.map((t) => t.id));
+    return item.targetIds.length > 0 && item.targetIds.every((id) => sent.has(id));
+  }
+  return true;
+}
+
+/** The row for one answer; `input` is what was sent, for the first checks. */
+export function rowOf(line: Pick<ProbeLine, "id" | "class">, opened: ReturnType<typeof slotsRoutes>, r: FastSlotsResult, input: FastSlotsInput | null = null): FastSlotsRow {
   return {
     lineId: line.id,
     class: line.class,
@@ -79,6 +108,7 @@ export function rowOf(line: Pick<ProbeLine, "id" | "class">, opened: ReturnType<
     reason: r.kind === "invalid" ? r.reason : null,
     path: r.kind === "invalid" ? r.path : null,
     kinds: r.kind === "valid" ? r.out.items.map((i) => i.kind) : [],
+    checked: r.kind === "valid" && input !== null ? r.out.items.filter((i) => passesFirstChecks(i, input)).map((i) => i.kind) : [],
     need: r.kind === "valid" ? r.out.need : null,
     overDeadline: r.kind === "timeout" || r.ms > FAST_SLOTS_DEADLINE_MS,
   };
@@ -89,7 +119,8 @@ export function slotsLiner(port: FastSlotsPort): (line: ProbeLine, utterance: st
   return async (line, utterance, parse) => {
     const opened = slotsRoutes(utterance, parse);
     if (opened.routes.length === 0) return null;
-    return rowOf(line, opened, await port.slots(fixtureInput(line.id, utterance, opened.routes), HARNESS_SLOTS_WAIT_MS));
+    const input = fixtureInput(line.id, utterance, opened.routes);
+    return rowOf(line, opened, await port.slots(input, HARNESS_SLOTS_WAIT_MS), input);
   };
 }
 

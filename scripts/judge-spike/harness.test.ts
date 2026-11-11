@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { APP_JUDGE_SETTINGS, JUDGE_V1_INSTRUCTIONS, JUDGE_V2_INSTRUCTIONS, type JudgeSettings, encodeWav } from "@franki/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { earlierSpeakerCount, judgeSettings, main, parseFlags, predicateSettings, runSettings, seedOf } from "./cli";
+import { earlierSpeakerCount, judgeSettings, main, parseFlags, predicateSettings, runSettings, seedOf, speakerCountFor } from "./cli";
 import { HARNESS_PARSE_WAIT_MS, fakeDecisionsPort, lineParser } from "./decisions";
 import { HARNESS_SLOTS_WAIT_MS, fakeFastSlotsPort, rowOf, slotsLiner, slotsRoutes, speakerCertainCount } from "./fast-slots";
 import { FIXTURE_TARGETS, fixtureInput } from "./fast-slots-fixture";
@@ -941,8 +941,15 @@ describe("judge spike, FastSlotsV1 (brief 012 task A9)", () => {
 
   it("sends the synthetic context, with targets only for the correct and transition routes", () => {
     expect(fixtureInput("c-hardrule-1", "text", ["hardRule"]).targets).toEqual([]);
-    expect(fixtureInput("c-correction-1", "text", ["correct"]).targets).toEqual(FIXTURE_TARGETS);
+    expect(fixtureInput("x", "text", ["correct"]).targets).toEqual(FIXTURE_TARGETS);
     expect(fixtureInput("x", "text", ["transition"]).entities.length).toBeGreaterThan(0);
+    // Each correction line is sent the row it corrects, ahead of the shared set.
+    for (const id of ["c-correction-1", "c-correction-2", "c-correction-3", "c-correction-4", "c-correction-5"]) {
+      const sent = fixtureInput(id, "text", ["correct"]).targets;
+      expect(sent.slice(1)).toEqual(FIXTURE_TARGETS);
+      expect(FIXTURE_TARGETS.map((t) => t.id)).not.toContain(sent[0]!.id);
+    }
+    expect(fixtureInput("c-correction-1", "text", ["hardRule"]).targets).toEqual([]);
   });
 
   it("a row holds the time, the result, why it was invalid and the item kinds, never words", async () => {
@@ -956,7 +963,7 @@ describe("judge spike, FastSlotsV1 (brief 012 task A9)", () => {
       out: { items: [{ kind: "allergy", subject: { entityId: null, mention: null, isSelf: true }, item: "shellfish", severity: "allergy", polarity: "affirmed", act: "direct", span }], need: "none" },
       ms: 400,
     });
-    expect(valid).toMatchObject({ result: "valid", kinds: ["allergy"], need: "none", overDeadline: false });
+    expect(valid).toMatchObject({ result: "valid", kinds: ["allergy"], checked: [], need: "none", overDeadline: false });
     expect(JSON.stringify(valid)).not.toContain("shellfish");
     expect(rowOf(line, opened, { kind: "timeout", ms: HARNESS_SLOTS_WAIT_MS }).overDeadline).toBe(true);
     let waited = 0;
@@ -971,21 +978,44 @@ describe("judge spike, FastSlotsV1 (brief 012 task A9)", () => {
     expect(await slotsLiner(fakeFastSlotsPort())(lines.find((l) => l.id === "o-01")!, "Hello.", null)).toBeNull();
   });
 
+  it("counts an item as checked only when its span, allergen and targets hold against the input sent", () => {
+    const line = lines.find((l) => l.id === "c-correction-1")!;
+    const opened = slotsRoutes(line.text, null);
+    const input = fixtureInput(line.id, line.text, ["correct"]);
+    const at = (quote: string, eid = input.turn.eid) => ({ eid, fieldPath: "text" as const, start: line.text.indexOf(quote), end: line.text.indexOf(quote) + quote.length, quote });
+    const fix = (targetIds: string[], span = at("her name is Mara")) => ({ kind: "correction" as const, targetIds, predicate: "identity.alias" as const, replacementValue: { kind: "text" as const, text: "Mara" }, args: null, act: "direct" as const, span });
+    const answer = (items: ReturnType<typeof fix>[]) => rowOf(line, opened, { kind: "valid", out: { items, need: "none" }, ms: 300 }, input);
+    expect(answer([fix([input.targets[0]!.id])]).checked).toEqual(["correction"]);
+    expect(answer([fix(["made-up-id"])]).checked).toEqual([]);
+    expect(answer([fix([])]).checked).toEqual([]);
+    expect(answer([fix([input.targets[0]!.id], { ...at("her name is Mara"), quote: "her name is Maya" })]).checked).toEqual([]);
+    expect(answer([fix([input.targets[0]!.id], at("her name is Mara", "another-turn"))]).checked).toEqual([]);
+    const text = "I'm allergic to shellfish.";
+    const aLine = { id: "c-hardrule-x", class: "hardRule" as const };
+    const aInput = fixtureInput(aLine.id, text, ["hardRule"]);
+    const allergy = (item: string, quote: string) => ({ kind: "allergy" as const, subject: { entityId: null, mention: null, isSelf: true }, item, severity: "allergy" as const, polarity: "affirmed" as const, act: "direct" as const, span: { eid: aInput.turn.eid, fieldPath: "text" as const, start: text.indexOf(quote), end: text.indexOf(quote) + quote.length, quote } });
+    const aRow = (item: string, quote: string) => rowOf(aLine, slotsRoutes(text, null), { kind: "valid", out: { items: [allergy(item, quote)], need: "none" }, ms: 1 }, aInput).checked;
+    expect(aRow("shellfish", "allergic to shellfish")).toEqual(["allergy"]);
+    expect(aRow("the thing", "I'm allergic")).toEqual([]);
+  });
+
   it("summarizes p50, p95, the largest, the share over 900 ms, and per class the valid expected items", () => {
-    const row = (lineId: string, cls: string, ms: number, kinds: string[], result: "valid" | "timeout" = "valid") =>
-      ({ lineId, class: cls, routes: [], triggers: [], ms, result, reason: null, path: null, kinds, need: "none", overDeadline: result === "timeout" || ms > 900 }) as FastSlotsSection["rows"][number];
+    const row = (lineId: string, cls: string, ms: number, kinds: string[], result: "valid" | "timeout" = "valid", checked: string[] = kinds) =>
+      ({ lineId, class: cls, routes: [], triggers: [], ms, result, reason: null, path: null, kinds, checked, need: "none", overDeadline: result === "timeout" || ms > 900 }) as FastSlotsSection["rows"][number];
     const sec: FastSlotsSection = {
       port: "live",
       waitMs: HARNESS_SLOTS_WAIT_MS,
       deadlineMs: 900,
-      rows: [row("c-hardrule-1", "hardRule", 300, ["allergy"]), row("c-hardrule-2", "hardRule", 1200, []), row("c-correction-1", "correction", 500, ["correction"]), row("c-correction-2", "correction", 5000, [], "timeout")],
+      rows: [row("c-hardrule-1", "hardRule", 300, ["allergy"]), row("c-hardrule-2", "hardRule", 1200, []), row("c-correction-1", "correction", 500, ["correction"], "valid", []), row("c-correction-2", "correction", 5000, [], "timeout")],
       speakerCertain: { file: "x.json", hardRule: { pass: 4, of: 5 }, correction: { pass: 3, of: 5 } },
     };
     const s = fastSlotsStats(sec);
     expect(s).toMatchObject({ n: 4, p50: 500, p95: 5000, max: 5000, over: 2, byResult: { valid: 3, timeout: 1 } });
-    expect(s.perClass).toEqual({ hardRule: { lines: 2, validExpected: 1 }, correction: { lines: 2, validExpected: 1 }, transition: null });
+    expect(s.perClass).toEqual({ hardRule: { lines: 2, validExpected: 1, checked: 1 }, correction: { lines: 2, validExpected: 1, checked: 0 }, transition: null });
     const md = fastSlotsMarkdown(sec).join("\n");
-    expect(md).toContain("| transition (transition) | no lines | no lines |");
+    expect(md).toContain("| transition (transition) | no lines | no lines | no lines |");
+    expect(md).toContain("| correction (correction) | 2 | 1 | 0 |");
+    expect(md).toContain("validateItems' full tables don't run here");
     expect(md).toContain("Over 900 ms: 2 of 4 (50%)");
     expect(md).toContain("hardRule 4 of 5, correction 3 of 5");
   });
@@ -998,6 +1028,12 @@ describe("judge spike, FastSlotsV1 (brief 012 task A9)", () => {
       const name = "2026-11-10T06-32-11-722Z-owner.json";
       copyFileSync(new URL(`./results/${name}`, import.meta.url), join(d, "results", name));
       expect(earlierSpeakerCount(d)).toEqual({ file: name, hardRule: { pass: 4, of: 5 }, correction: { pass: 3, of: 5 } });
+      // A live run counts its own parses; a dry run, or live rows with no probabilities, falls back to the earlier run.
+      const p = { probabilities: { uncertainSpeaker: 0, company: 0, quiet: 0 }, failure: null };
+      const own = [{ class: "hardRule", parse: p }, { class: "correction", parse: { ...p, probabilities: { ...p.probabilities, uncertainSpeaker: 0.5 } } }];
+      expect(speakerCountFor(true, own, d)).toEqual({ file: "this run", hardRule: { pass: 1, of: 1 }, correction: { pass: 0, of: 1 } });
+      expect(speakerCountFor(false, own, d)).toMatchObject({ file: name });
+      expect(speakerCountFor(true, [{ class: "hardRule" }], d)).toMatchObject({ file: name });
     } finally {
       rmSync(d, { recursive: true, force: true });
     }

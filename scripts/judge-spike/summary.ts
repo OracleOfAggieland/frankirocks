@@ -634,8 +634,11 @@ export interface FastSlotsStats {
   /** Lines over the deadline (a timeout included), of n. */
   over: number;
   byResult: Record<string, number>;
-  /** Per expected class: lines sent, and lines with a valid item of the expected kind. Null: no lines of that class. */
-  perClass: Record<string, { lines: number; validExpected: number } | null>;
+  /**
+   * Per expected class: lines sent, lines with a valid item of the expected kind, and lines where such an item also
+   * passes the code's first checks (FastSlotsRow.checked). Null: no lines of that class.
+   */
+  perClass: Record<string, { lines: number; validExpected: number; checked: number } | null>;
 }
 
 export function fastSlotsStats(sec: FastSlotsSection): FastSlotsStats {
@@ -645,7 +648,8 @@ export function fastSlotsStats(sec: FastSlotsSection): FastSlotsStats {
   const perClass: FastSlotsStats["perClass"] = {};
   for (const [cls, kind] of Object.entries(FAST_SLOTS_EXPECTED)) {
     const rows = sec.rows.filter((r) => r.class === cls);
-    perClass[cls] = rows.length === 0 ? null : { lines: rows.length, validExpected: rows.filter((r) => r.result === "valid" && r.kinds.includes(kind)).length };
+    const valid = rows.filter((r) => r.result === "valid");
+    perClass[cls] = rows.length === 0 ? null : { lines: rows.length, validExpected: valid.filter((r) => r.kinds.includes(kind)).length, checked: valid.filter((r) => (r.checked ?? []).includes(kind)).length };
   }
   return { n: sec.rows.length, p50: percentile(ms, 50), p95: percentile(ms, 95), max: ms.length === 0 ? null : Math.max(...ms), over: sec.rows.filter((r) => r.overDeadline).length, byResult, perClass };
 }
@@ -663,12 +667,17 @@ export function fastSlotsMarkdown(sec: FastSlotsSection, s: FastSlotsStats = fas
   out.push(`- Over ${sec.deadlineMs} ms: ${s.n === 0 ? "—" : `${s.over} of ${s.n} (${Math.round((100 * s.over) / s.n)}%)`}`);
   out.push(`- Results: ${Object.keys(s.byResult).length === 0 ? "none" : Object.entries(s.byResult).map(([k, v]) => `${k} ${v}`).join(", ")}`);
   out.push("");
-  out.push("| Class | Lines sent | Valid with the expected item |");
-  out.push("|---|---|---|");
+  out.push("| Class | Lines sent | Valid with the expected item | Passing the code's first checks |");
+  out.push("|---|---|---|---|");
   for (const [cls, kind] of Object.entries(FAST_SLOTS_EXPECTED)) {
     const c = s.perClass[cls];
-    out.push(`| ${cls} (${kind}) | ${c === null || c === undefined ? "no lines" : c.lines} | ${c === null || c === undefined ? "no lines" : c.validExpected} |`);
+    const cell = (v: number | undefined) => (c === null || c === undefined ? "no lines" : String(v));
+    out.push(`| ${cls} (${kind}) | ${cell(c?.lines)} | ${cell(c?.validExpected)} | ${cell(c?.checked)} |`);
   }
+  out.push("");
+  out.push(
+    "First checks: the span quotes the turn exactly, an allergy names a gazetteer allergen, a correction names only targets that were sent (each correction line is sent the row it corrects). validateItems' full tables don't run here, and an event correction (c-correction-2, c-correction-5) defers by design (C5b), so a line counted here can still write nothing.",
+  );
   out.push("");
   const sc = sec.speakerCertain;
   if ("unavailable" in sc) out.push(`- Speaker certainty in an earlier run: can't tell (${sc.file === null ? "no run file found" : `${sc.file}: ${sc.unavailable}`}).`);
