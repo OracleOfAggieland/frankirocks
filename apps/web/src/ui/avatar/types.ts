@@ -83,7 +83,7 @@ export interface AvatarLook {
   label: string;
 }
 
-/** The Avatar_Contract (R4.1). Every renderer implements it; the Rive renderer will too. */
+/** The Avatar_Contract (R4.1). Every renderer implements it: the three.js ghost (the default) and the SVG ghost. */
 export interface AvatarRendererProps {
   look: AvatarLook;
   input: AvatarInput;

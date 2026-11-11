@@ -71,6 +71,24 @@ body {
   background: var(--color-night-0);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  /* The three.js ghost's canvas layer is wider than the stage; it never adds horizontal scroll (brief 013). */
+  overflow-x: clip;
+}
+
+/* While the three.js ghost shows, its canvas covers the stage's CSS halo and floor, whose float it does not share.
+   visibility, because their keyframes animate opacity. They return at the start of the fade back to the SVG ghost,
+   while the canvas still covers them (brief 013, design note 4.3 item 7). */
+[data-stage]:has([data-three-phase="three"]) > [data-part="halo"],
+[data-stage]:has([data-three-phase="three"]) > [data-part="floor"] {
+  visibility: hidden;
+}
+
+/* Signed out, the Wordmark sits about 24 px above the stage, inside the canvas layer's top spill. The radial mask is
+   intersected with a vertical one that is clear down to the Wordmark's bottom edge (9% of the canvas at the 240 px
+   stage) and opaque by 17%, above the ghost's hair (about 19%). Computed from CANVAS_FRAME, not yet measured. */
+[data-screen="signed-out"] [data-three-layer="canvas"] {
+  mask-image: radial-gradient(closest-side, black 72%, transparent), linear-gradient(to bottom, transparent 9%, black 17%);
+  mask-composite: intersect;
 }
 
 .font-mono {

@@ -420,7 +420,7 @@ All six demo beats work, but beat 4 loses the walked-in tap and the recruiter li
 | # | Add | h |
 |---:|---|---:|
 | 1 | Restore the floor's cuts: Osteria chip and `restore`, move-the-interview chip, recruiter line, full bulk seed, `prepare` and `ask` | 3 |
-| 2 | Rive, real jar and strip, Head tuning, warmth floor, stated style | 12 |
+| 2 | three.js avatar, real jar and strip, Head tuning, warmth floor, stated style | 12 |
 | 3 | Doors | 3.5 |
 | 4 | Walked-in tap, Friend Test 13, on-screen ask, isolation probes | 6 |
 | 5 | Friend Tests 3, 8, 10, 22; sensitivity and gravity proposals; `story` on good news | 4.5 |
