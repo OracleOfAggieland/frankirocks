@@ -24,7 +24,9 @@ Every server write goes through the Store_Port (`packages/server/src/store/port.
 6. **The store sets `rev`**: 1 on create, prior + 1 on update.
 7. **Helpers take the transaction.** Functions that take a `Tx` (`beginCloseInTx`, `finishCloseInTx`, `ensureHangupJob`, `completeRequest`) read and write only through it, so their writes commit or fail with the caller's.
 
-**How the two engines differ.** The conformance suite holds both to the rules above; these are the places where they work differently.
+**What the tests cover.** Both engines implement these rules in `transaction`. The conformance suite covers rules 1, 3 and 6 and the error kinds in rule 5, except a read rev that does not match in 5.4, which only the Memory_Store's own cases in `packages/server/src/store/memory-store.test.ts` check. No test covers rule 2, rule 4 apart from its lineage exception, rule 5.3, or the order of the checks in rule 5.
+
+**How the two engines differ.** These are the places where they work differently.
 
 | | Memory_Store (`packages/server/src/store/memory-store.ts`) | Firestore_Store (`packages/server/src/store/firestore-store.ts`) |
 |---|---|---|
