@@ -37,7 +37,7 @@ Read first, in full:
 ## Rules that apply here
 
 - One commit per task, with a plain message. These commits are Claude's and never carry `Built-with: Kiro`.
-- `three` is the only new dependency.
+- `three` is the only new dependency, with its type package at the matching version if TypeScript needs one.
 - No network call from a test. No push or deploy.
 - New state is explicit: a status or phase is a closed union with one pure function that decides every transition, never a set of loose flags.
 
