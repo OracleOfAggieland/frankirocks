@@ -84,7 +84,7 @@ A fake extraction run (`node scripts/extract-check/run.mjs`) passes 9 of 30: exa
 
 ### Contract questions raised
 
-CQs 130 to 155 are in the design note's section 8. 130 the turn is never cut; 131 a global denial's ledger codes; 132 cross-slot resolution only on a newly active rule; 133 answering rule 5 keeps the asked rule pending (the owner's call, with 128); 134 past words place a change at the turn; 135 `SubjectIndex.seen`; 136 row A10's reason; 137 `RuleEvent.install`; 138 no `subjectLabel` until wave B; 139 the care row's subject and topic; 140 a correction with another current row on its key is refused; 141 a change meeting a later-asserted row ends at now; 142 what `--fast-slots` sends; 143 the extraction check's single call. From the wave A review: 144 cross-slot reach only where the new rule answers the pending one; 145 row A9 and A7's codes exactly `[none]`; 146 answering rule 5 only for R's own subject; 147 an answer's rule depends on both Evidences, root keys the proof's; 148 an uncertain speaker's denial carries only verified codes; 149 SU2's "my" and "mine"; 150 subjects only from a plain mention, and notAllergy over the whole U text; 151 a change said for the turn's own day defers unless past; 152 a death stands, a reunion brings back only a partner; 153 an asked rule landing on an active slot stays (the owner's call); 154 `targets[].line` and the planner signatures; 155 row C5b's `preference.*`.
+CQs 130 to 155 are in the design note's section 8. 130 the turn is never cut; 131 a global denial's ledger codes; 132 cross-slot resolution only on a newly active rule; 133 answering rule 5 keeps the asked rule pending (the owner's call, with 128); 134 past words place a change at the turn; 135 `SubjectIndex.seen`; 136 row A10's reason; 137 `RuleEvent.install`; 138 no `subjectLabel` until wave B; 139 the care row's subject and topic; 140 a correction with another current row on its key is refused; 141 a change meeting a later-asserted row ends at now; 142 what `--fast-slots` sends; 143 the extraction check's single call. From the wave A review: 144 cross-slot reach only where the new rule answers the pending one; 145 row A9 and A7's codes exactly `[none]`; 146 answering rule 5 only for R's own subject; 147 an answer's rule depends on both Evidences, root keys the proof's; 148 an uncertain speaker's denial carries only verified codes; 149 SU2's "my" and "mine"; 150 subjects only from a plain mention, and notAllergy over the whole U text; 151 a change said for the turn's own day defers unless past; 152 a death stands, a reunion brings back only a partner; 153 an asked rule landing on an active slot stays (the owner's call); 154 `targets[].line` and the planner signatures; 155 row C5b's `preference.*`. From the second review: 156 answering rules 1 and 3 take the asked rule's code only for an item that names nothing of its own; 157 `notAllergy` reads outside the cue sentences only for a cue with no object (amends 150); 158 a certain denial holding "I" answering the anonymous `unresolved` rule (the owner's call); 159 SU2's readings for transitions and the answer "Mine." (amends 149).
 
 ### Review fixes
 
@@ -125,11 +125,27 @@ P4b is green after `67fee10`, over 12 repeated runs alongside P1, P2, P4 and P8.
 
 **Seen, not fixed here.** `voice-control` Property 13 failed once under a full `npm test` (seed `-1393276649`) and passed on rerun. It is outside brief 012's files and belongs to another wave.
 
+### Second review fixes
+
+The re-check of the review fixes at `dc3b0c3` confirmed three more findings. Each is fixed in code, one commit each; no committed property file was edited.
+
+| Commit | What it fixes |
+|---|---|
+| `c36829c` | On an answering turn an item found in its span that the gazetteer doesn't know ("durian", "something") took the asked rule's code: "I'm not allergic to durian" removed the owner's asked peanut rule, "Nobody here is allergic to durian, no" cleared an anonymous one through A9, and "I'm allergic to durian" or "My brother is allergic to something too" made an active peanut rule. R's code is now taken only for an empty item, one not in the span, or reference and answer words (`REFERENCE_WORDS`); A9 refuses a denial whose item names something of its own (CQ 156). |
+| `5cf9c01` | CQ 150 failed G3's code half on an alias anywhere in the turn, so "I'm allergic to Mondays. Can you order eggs for breakfast?" and three like it wrote the all-food filter and asked. The check is back over the RX4 sentences, and reads the whole U text only when a cue has no object of its own (`cueHasNoObject`, CQ 157). |
+| `ba2bd7d` | CQ 149's strict "my" also stopped transitions ("My job ended last week.", "My contract wasn't renewed.", "My marriage to Sam is over.") and the answer "Mine.". `hasFirstPerson` takes a closed `SelfReading`: `allergy` (strict), `answer` ("Mine." alone or after it's or that's) and `transition` ("my" before a word that names no other person or pet) (CQ 159). |
+
+**Property 4c, red first.** `packages/core/src/writes/hard-rule-off-table.property.test.ts` (1,000 runs) uses P4b's generator, which now also makes "durian", "something" and "My brother isn't allergic to X". It checks that an allergy item naming something off the table never gives a verdict carrying the asked rule's code or a denial answering it, and that an asked pending rule with a gazetteer code stays when every allergy item is such an item. Run against the old `validate.ts` (restored to `dc3b0c3`'s copy for one run, then put back; nothing of it was committed) it went red at seed `1266071246`, path `4:4:3:3:3:3:3:4:4`, shrunk to "I'm definitely allergic to durian. Yes." answering an anonymous pending peanut rule: the durian item carried `peanut`. Log: `_sm/logs/f3/f1-red.log` outside the repo. Green after `c36829c`, over 5 repeated runs alongside P1, P2, P4, P4b and P8.
+
+**Read differently from the finding, with the reason.** Finding 2 suggested counting an alias outside the RX4 sentences when "the cue word is its last word". That also covers "My boss is so intolerant.", one of the four lines the same finding wants as `notAllergy`, since the boss line ends on its cue. A sentence-final cue therefore counts only when it is `allerg…`, or when the next sentence starts with "to", "of" or "with" (CQ 157).
+
 ### Disputes
 
-None. No committed property was found wrong; P4 was found weak, and P4b adds to it.
+None. No committed property was found wrong; P4 was found weak, and P4b adds to it. P4b was also weak for answers naming something off the table, since it counts only gazetteer codes in an answer's span; P4c adds to it.
 
 ### Checks
+
+After the second review fixes (`ba2bd7d`), run one at a time, logs in `_sm/logs/f3/fix2-*.log` outside the repo: `npm test` exit 0 with 184 files and 1,716 tests; `npm run lint` exit 0 (it lints `apps/web` only, from turbo's cache); `npm run typecheck` exit 0; `npm run build` exit 0, `specimens-absent` passes; `npm run test:emulator` (Java 21) exit 0 with 4 files and 42 tests.
 
 After the review fixes (`c5ca360`), run one at a time, logs in `_sm/logs/f3/fix-*.log` outside the repo: `npm test` exit 0 with 183 files and 1,709 tests; `npm run lint` exit 0; `npm run typecheck` exit 0 (packages, `scripts/judge-spike`, `scripts/extract-check`, and now `tests/`); `npm run build` exit 0, `specimens-absent` passes; `npm run test:emulator` (Java 21) exit 0 with 4 files and 42 tests.
 
