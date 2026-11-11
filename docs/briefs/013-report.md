@@ -232,3 +232,15 @@ three-chunk-check: three is in 1 async chunk(s) and not in the first load of /.
 5. During a reply that admission holds, the body must not move with any audio.
 6. End the call. Franki should drift back to Dormant: eyes close, glow dims, the head stills.
 7. Note anything that looks different from the prototype. The look comes first, so a difference is a bug in the port, not something to tune.
+
+## Browser check and close, Nov 11
+
+Review stopped here, after the first round of fixes. The recheck of those fixes was not finished, so they have been through the four checks but not through a second review.
+
+**Looked at in a browser on Nov 11** (a Chromium pane on this machine, `next dev`, not Chrome itself and not a live call):
+
+- `/`, signed out: the 3D ghost shows in place of the SVG ghost, with one `<canvas>` and no console error. So the shaders compile and link on a real GL context.
+- `/specimens`: the three.js tiles build an engine once they are on screen, and each shows its readout. With six engines running at once the tiles read about 20 fps, builds of 6.0 to 6.8 s, warm-up of 1.6 to 1.9 s and 17 of 29 programs. These are not the main screen's numbers: one engine alone was not timed.
+- **Found and fixed:** the last review fix gave `CallScreen` and `TypedLine` the same key in each auth state, and they sit side by side on the main screen, so React reported duplicate keys on every render of `/`. Each now has its own key (`0291b21`). The component tests, lint and typecheck pass after it; the full test run and the build were not repeated for this one-line change.
+
+**Still not checked,** on top of the list in "What was not checked" (only its first item, the shader compile, is now done): a live call, the reaction to a real microphone, the frame rate of one engine on the main screen, and the speaking still against the prototype after the mouth fix.
