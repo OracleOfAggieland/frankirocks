@@ -13,8 +13,8 @@
  *   posted            the Turn's TurnRequest went out (`final`, `missing` or `failed`)
  * Illegal modes (each breaks one invariant, named in the allow-list of the property):
  *   admittedWithoutReply  `admittedTurnId` names the current Turn, but no reply of it is admitted
- *   admittedWithoutTurn   `admittedTurnId` is set and there is no current Turn
  *   replyWithoutTurn      an admitted reply with no current Turn
+ *   admittedWithoutTurn   `admittedTurnId` is set, there is no current Turn and no reply is admitted
  *   unpostedInRecovery    an unposted voice Turn on the recovery screen, which ends it unposted
  *   unpostedSpeaking      an unposted, unadmitted Turn while a reply plays or a recall waits
  *   typedUnposted         a typed Turn that was not posted at once
@@ -26,8 +26,8 @@ import type { VoiceState } from "../machine";
 export const LEGAL_TURN_MODES = ["none", "heldBack", "collecting", "kept", "admittedUnposted", "posted"] as const;
 export const ILLEGAL_TURN_MODES = [
   "admittedWithoutReply",
-  "admittedWithoutTurn",
   "replyWithoutTurn",
+  "admittedWithoutTurn",
   "unpostedInRecovery",
   "unpostedSpeaking",
   "typedUnposted",
@@ -42,8 +42,10 @@ export function turnMode(st: VoiceState): TurnMode {
   const turn = st.turn;
   const outside = st.phase === "CLOSED" || st.phase === "CONNECTING" || st.phase === "CONFIGURING" || (st.phase === "RECOVERY" && st.recovery?.kind === "connection");
   if (turn === null) {
-    if (st.admittedTurnId !== null) return "admittedWithoutTurn";
+    // A reply still admitted is read first: admission always sets admittedTurnId, so testing the id first would
+    // hide a dropped Turn under a playing reply.
     if (st.active !== null) return "replyWithoutTurn";
+    if (st.admittedTurnId !== null) return "admittedWithoutTurn";
     return st.heldBack !== null ? "heldBack" : "none";
   }
   if (outside) return "turnOutsideCall";
