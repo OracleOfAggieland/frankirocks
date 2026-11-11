@@ -76,4 +76,14 @@ export function turnMode(st: VoiceState): TurnMode {
   }
 }
 
+/**
+ * Illegal modes the machine produces today, by the invariant each breaks. The list only shrinks: `turn-mode.test.ts`
+ * fails when an entry is no longer reached, so a fix that makes a mode unreachable removes its entry here.
+ */
+export const TURN_MODES_ALLOWED: Partial<Record<IllegalTurnMode, string>> = {
+  admittedWithoutReply: "admittedTurnId names the Turn whose reply is admitted now (a higher Deck or an error cuts the reply and leaves the id)",
+  admittedWithoutTurn: "admittedTurnId names the Turn whose reply is admitted now (the cut Turn is dropped and the id stays)",
+  unpostedInRecovery: "a Turn still waiting for its words is never shown the recovery screen, which ends it unposted",
+};
+
 export const isIllegalTurnMode = (m: TurnMode): m is IllegalTurnMode => (ILLEGAL_TURN_MODES as readonly string[]).includes(m);
