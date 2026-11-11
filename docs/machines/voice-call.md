@@ -1,0 +1,226 @@
+# Voice: the call
+
+The browser's call is one pure reducer, `step(state, event, now)` in `packages/core/src/voice/machine.ts`. The Voice_Client (`apps/web/src/client/voice-client.ts`) runs the commands it returns, in order, and feeds every answer back as an event. Nothing in the reducer reads a clock, a random source or the network: `now` is the browser opsClock, a new Turn's ID arrives on the event as `freshId`, and hashing is a command (`verifyPermit`, `hashPayload`) whose answer comes back as an event.
+
+Rules: `.kiro/steering/voice-control.md` (what may be heard) and `.kiro/steering/state-machines.md` (how a machine is shaped).
+
+### `voice.call`
+
+| Field | Value |
+|---|---|
+| Status | explicit |
+| File | `packages/core/src/voice/machine.ts` |
+| Decides | `step` |
+| State | `VoiceState`, `VoicePhase`, `TimerName` |
+| Events | `VoiceEvent`, `RealtimeServerEvent`, `VoiceCommand` |
+| States | `VoicePhase` |
+| Tests | `packages/core/src/voice/machine.test.ts`, `packages/core/src/voice/outstanding-reconnect.test.ts`, `packages/core/src/voice/testing/arb-call.test.ts`, `packages/core/src/voice/no-permit-no-sound.property.test.ts`, `packages/core/src/voice/every-wait-ends.property.test.ts`, `packages/core/src/voice/stale-inert.property.test.ts`, `packages/core/src/voice/held-never-resumes.property.test.ts`, `packages/core/src/voice/late-permit.property.test.ts`, `packages/core/src/voice/no-clipped-suffix.property.test.ts`, `packages/core/src/voice/no-dispatch-before-admission.property.test.ts`, `packages/core/src/voice/fast-o-fresh-ack.property.test.ts`, `packages/core/src/voice/admitted-turn-posted.property.test.ts`, `apps/web/src/client/voice-client.test.ts` |
+
+The diagram shows the transitions `step` makes between phases. Three more apply from every phase of a live call and are left out of the drawing: `hangupPressed` goes to CLOSED, a lost connection (`connectionLost`, `sdpFailed`) goes to RECOVERY, and speech that starts while a reply, a check or a wait is in progress (barge-in) goes to LISTENING.
+
+```mermaid
+stateDiagram-v2
+  [*] --> CLOSED
+  CLOSED --> CONNECTING : callPressed
+  CONNECTING --> CONFIGURING : channelOpen
+  CONNECTING --> CLOSED : open failed or no open answer in 5 s
+  CONNECTING --> RECOVERY : connect limit, or a failed open during connection recovery
+  CONFIGURING --> LISTENING : stateOk with an ack matching the Deck
+  CONFIGURING --> RECOVERY : ack limit
+  LISTENING --> WAIT_ITEM : input committed
+  LISTENING --> HELD : typed line posted
+  WAIT_ITEM --> SPECULATING : every item added, judge and speculative reply sent
+  WAIT_ITEM --> JUDGING : every item added, Deck has noteWaiting
+  WAIT_ITEM --> HELD : item limit, or the judge cannot start
+  WAIT_ITEM --> RECOVERY : transcript missing or failed
+  JUDGING --> HELD : verdict, judge limit or turn answer
+  SPECULATING --> HELD : refusal, admission or turn answer
+  JUDGING --> WAIT_ITEM : another commit
+  SPECULATING --> WAIT_ITEM : another commit
+  HELD --> WAIT_ITEM : another commit
+  HELD --> SPEAKING : admitted reply's audio starts
+  HELD --> TOOL_WAIT : recall call before any audio
+  HELD --> LISTENING : no reply, or the reply ended silent
+  HELD --> RECOVERY : permit limit, recoveryOnly Permit, or the reply's create refused
+  SPEAKING --> LISTENING : audio stopped, or the 45 s cap
+  SPEAKING --> TOOL_WAIT : lead-in ended, recall pending
+  SPEAKING --> HELD : recall result ready, or a higher Deck
+  TOOL_WAIT --> HELD : recall result ready
+  TOOL_WAIT --> LISTENING : recall failed, not ready, or the tool limit
+  RECOVERY --> CONNECTING : reconnect timer or retryPressed
+  RECOVERY --> SPEAKING : neutral line's audio starts
+  RECOVERY --> LISTENING : line done
+  RECOVERY --> WAIT_ITEM : input committed during the neutral line
+  SWAPPING
+  note right of SWAPPING : in the union and in avatarState; no transition enters it on this branch
+```
+
+**What always holds** (the header of `machine.ts`, and the tests above):
+
+- Output audio is muted unless the phase is SPEAKING under a Permit that passed its checks. `avatarState` never says `speaking` while output is muted.
+- Every wait is an `armTimer` command plus a deadline in `deadlines`. A `timer` event whose deadline is absent does nothing; one that arrives before its deadline re-arms the same deadline.
+- Realtime events are read only while a Session is held, the phase is past CONFIGURING and the call is not in connection recovery. A `response.created` is matched to the judge, the speculative reply or the active reply by the `eventId` and `generation` in its metadata; one that matches none of them is cancelled, and so is audio that starts for a response the call does not own.
+- A Deck of another generation is ignored. A higher Deck (epoch, policyRev, bundleRev or rulesRev raised) cancels every recorded response by ID and clears output audio (`adoptDeck`, `cancelAll`).
+- `mutePressed` only flips `micMuted` and sends `setMic`; it never touches output audio.
+- Never two `/api/session/state` requests in flight: `postState` sends nothing while one went out less than `STATE_STALE_MS` ago.
+
+**The exits and what they reset.** Three functions end a stretch of the call. `closedFields` (hang-up, a failed open), `connectionRecovery` (a lost connection, a failed post of this Session, the connect and ack limits) and `onOpen` (a new Session):
+
+| Field | `onOpen` | `connectionRecovery` | `closedFields` |
+|---|---|---|---|
+| `outstanding` | kept | kept | kept |
+| `turn`, `pending`, `active`, `judge`, `spec`, `heldBack`, `missing` | cleared | cleared | cleared |
+| `deadlines` | `connect` armed, others kept | cleared, then `reconnect` (and `retryUi`) armed | cleared |
+| `recovery` | kept | `connection`, attempts kept | null |
+| `retryVisible` | kept | kept | false |
+| `stateFailures`, `stateRetryVisible` | cleared | kept | cleared |
+| `micMuted` | as set by `startOpen` | kept | false |
+| `lastSessionId` | the new Session | the Session that ended | the Session that ended |
+
+`startOpen` (a press of Call, and every reconnect) sets `micMuted: false` and `error: null`, and keeps `recovery` and `retryVisible` only when it is a reconnect.
+
+**Not modelled here:** the microphone prompt. `getMicrophone` runs inside the `connect` command, so a refused microphone reaches the reducer as `sdpFailed`. The `swap` timer and `afterReply` are named but do nothing on this branch.
+
+### `voice.permit`
+
+| Field | Value |
+|---|---|
+| Status | explicit |
+| File | `packages/core/src/voice/machine.ts` |
+| Decides | `permitProblem` |
+| State | `PermitProblem` |
+| Tests | `packages/core/src/voice/machine.test.ts` |
+
+`permitProblem(state, reply, hash, now, checkAck)` returns null or the first of `stamp`, `expired`, `deckExpired`, `kind`, `ack`, `hash`. The Stamp is compared with the one the held Session and Deck make (`localStamp`). The `fastO` ack check runs only when the Permit is issued; the checks at the hash answer, at unmute and at a function call pass `checkAck: false`. An empty hash never matches.
+
+### `voice.fastO`
+
+| Field | Value |
+|---|---|
+| Status | explicit |
+| File | `packages/core/src/voice/fast-o.ts` |
+| Decides | `fastOProblem`, `issueFastO` |
+| Tests | `packages/core/src/voice/fast-o.test.ts`, `packages/core/src/voice/fast-o-fresh-ack.property.test.ts` |
+
+The browser half of admission. `fastOProblem` returns the first refusal by name, or null: `verdict` (no valid `O` for this Turn and generation before t0 plus the judge deadline), `staleAck` or `ack` (no StateAck, one whose four revisions differ from the Deck, or one 2.5 s old or more), `outstanding` (another post has no answer yet) and `noteWaiting`. The hash is checked later, at `permitChecked`. `tryFastO` in the reducer counts only the posts of other Turns, so a Turn's own post never refuses it.
+
+### `voice.judge`
+
+| Field | Value |
+|---|---|
+| Status | explicit |
+| File | `packages/core/src/voice/judge.ts` |
+| Decides | `parseJudgeDone`, `judgeCreate` |
+| Tests | `packages/core/src/voice/judge.test.ts` |
+
+`judgeCreate` builds the out-of-band judge request over the Unadmitted_Fragments and the Deck's safe turns. It throws a `RangeError` rather than truncate (more than eight fragments, more than four turns, none, or duplicates), and the reducer then holds the Turn for the slow path. `parseJudgeDone` accepts a completed response with one message whose trimmed text is `O`, `H` or `U`; anything else is invalid, with a reason, and counts as `U`. A refused judge (an `error` naming its event) also counts as `U`. Once a Turn is held, a later verdict changes nothing.
+
+### `voice.avatar`
+
+| Field | Value |
+|---|---|
+| Status | view |
+| File | `packages/core/src/voice/machine.ts` |
+| Decides | `avatarState`, `callButton`, `muteVisible` |
+| State | `AvatarState` |
+| Tests | `packages/core/src/voice/machine.test.ts`, `apps/web/src/components/CallScreen.test.tsx` |
+
+Read-only views over `VoiceState`, never written. `avatarState` maps connection recovery to `recovery` in every phase but CLOSED; CONNECTING and CONFIGURING to `connecting`; the waiting phases (WAIT_ITEM, JUDGING, SPECULATING, HELD, TOOL_WAIT, SWAPPING) to `thinking`; SPEAKING to `speaking` only while output is unmuted. `callButton` is the start form only in CLOSED, disabled while `hangingUp` or `awaitingOpen`. `muteVisible` follows `avatarState`.
+
+### `voice.turn`
+
+| Field | Value |
+|---|---|
+| Status | documented |
+| File | `packages/core/src/voice/machine.ts` |
+| State | `VoiceTurn`, `MissingTurn` |
+
+A Turn lives in four places, written by several functions:
+
+| Field | Holds | Written by |
+|---|---|---|
+| `turn` | The current Turn, from its first commit (or a typed line) until it is posted and answered | `onCommitted`, `typedSubmitted`, `postTurn`, `toListening`, `bargeIn`, the `permit` limit |
+| `heldBack` | An admitted Turn whose reply ended before its transcript came; posted `final` when the transcript arrives or `missing` at t0 + 5 s | `toListening`, `postHeldBack` |
+| `missing` | Turns posted `missing` whose transcript may still come (at most two, 10 s each); the transcript is sent as a Superseding_Post | `postTurn`, `postHeldBack`, `onLateTranscript` |
+| `admittedTurnId` | The Turn whose reply is admitted | `admit`; cleared by `toListening`, `bargeIn`, a cut in `onTurn`, a refused create |
+
+A commit while a reply is admitted or being checked is a barge-in. A commit while the judge runs grows the Turn and starts the judge again over every fragment. A Turn kept after a barge-in waits in LISTENING for the next commit. Noise with an empty transcript is no Turn and takes no clientSeq.
+
+### `voice.posts`
+
+| Field | Value |
+|---|---|
+| Status | documented |
+| File | `packages/core/src/voice/machine.ts` |
+| State | `VoiceState` |
+
+`pushTurn` sends a TurnRequest and records it in `outstanding` with the Session it was sent on and a 5 s deadline. Every answer (`turnOk`, `turnFailed`) removes it, sets `lastTurnResponseAt` and drops the held ack as stale. `outstanding` survives a reconnect: a post sent on the old connection still refuses `fastO` on the new one until it is answered or its deadline passes. `nextClientSeq` is one per Session, set to 1 by `onOpen`. For the current Turn: a `stale` answer is sent once more with the answer's revisions; a second `stale`, an `error` or a `turnFailed` for a post of this Session reconnects; `hold` with a retry hint arms `turnRetry`. An answer for a Turn that is no longer current still gives its Deck, and reconnects when the post was outstanding and nothing was recorded.
+
+### `voice.stateAck`
+
+| Field | Value |
+|---|---|
+| Status | documented |
+| File | `packages/core/src/voice/machine.ts` |
+| State | `VoiceState` |
+
+`poll` asks for state once a second while a call is live, `refresh` 45 s after the last answer, and `stateRetry` after a failure (1, 2 and 5 s, with "Try again" for the state at 30 s). An answer requested before the last `/api/turn` answer (`stateSentAt <= lastTurnResponseAt`) gives only a higher Deck, and its ack is dropped with `ackDroppedStale: true`. In CONFIGURING, the call reaches LISTENING on the first answer whose ack matches the Deck; a failure there waits for the 1.5 s ack limit.
+
+### `voice.recovery`
+
+| Field | Value |
+|---|---|
+| Status | documented |
+| File | `packages/core/src/voice/machine.ts` |
+| State | `VoiceState` |
+
+`recovery.kind` is `connection` (the connection is gone: reconnect after 1, 2 and 5 s, "Try again" at 30 s) or `line` (the neutral-line screen: RECOVERY shows, a `recoveryOnly` reply may play, then LISTENING). `retryPressed` reconnects only in connection recovery with `retryVisible`; otherwise it asks for state when `stateRetryVisible`. A failed open during connection recovery stays in RECOVERY and schedules the next attempt.
+
+### `voice.latency`
+
+| Field | Value |
+|---|---|
+| Status | documented |
+| File | `packages/core/src/voice/latency.ts` |
+| Tests | `packages/core/src/voice/latency.test.ts` |
+
+`latency.current` opens at a commit (`onCommitted`) and collects the judge, Permit and audible times through `setLatency`. `finishLatency` closes it into `latency.rows` when the call returns to LISTENING through `toListening`, or when a commit starts a different Turn.
+
+### `voice.transport`
+
+| Field | Value |
+|---|---|
+| Status | documented |
+| File | `apps/web/src/client/voice-client.ts` |
+| Tests | `apps/web/src/client/voice-client.test.ts`, `apps/web/src/client/voice-client.streams.test.ts` |
+
+The Voice_Client holds the mic stream, the peer connection and the data channel. A counter, `connection`, is raised by every `connect` and every `teardown`; a callback of an older connection does nothing. The peer connection's `failed` state and a data channel close without a hang-up dispatch `connectionLost`; any throw during setup dispatches `sdpFailed`. A timer command clears the earlier timer of the same name before arming. The reducer's state is replaced before the listeners run and before the commands run.
+
+Not modelled: the ICE `disconnected` state and a microphone track that ends; neither dispatches an event.
+
+### `voice.turnAnswer`
+
+| Field | Value |
+|---|---|
+| Status | planned |
+| File | `packages/core/src/voice/turn-answer.ts` |
+
+A pure classifier for a `/api/turn` answer and the request that asked, so the reducer reads one closed union instead of re-deriving it at each site.
+
+### `voice.turnMode`
+
+| Field | Value |
+|---|---|
+| Status | planned |
+| File | `packages/core/src/voice/testing/turn-mode.ts` |
+
+A test-side view of the Turn's mode over `VoiceState`, with a property that no illegal mode is produced.
+
+### `voice.replyStage`
+
+| Field | Value |
+|---|---|
+| Status | planned |
+| File | `packages/core/src/voice/testing/reply-stage.ts` |
+
+A test-side view of the reply's stage (speculative, pending check, admitted, playing), with the same kind of property.
