@@ -17,7 +17,7 @@ import { protectedRow } from "./correction";
 import { scopeOf } from "./keys";
 import { sameValue } from "./plan";
 import { plainMention } from "./not-allergy";
-import { mentionEid, mentionName, hasFirstPerson, resolveSubject, type SubjectInput, type SubjectResult } from "./subject";
+import { hasFirstPerson, knownNameWords, mentionEid, mentionName, namesSomeone, resolveSubject, type SubjectInput, type SubjectResult } from "./subject";
 import { spanClass, verifyTurnSpan } from "./spans";
 import type { AllergyVerdict, ArgPair, CorrectionVerdict, EntityKind, FastItem, FastSlotsOut, ItemVerdict, Need, QuestionKind, Route, Subject, TransitionKind, TransitionVerdict, ValidateContext } from "./types";
 
@@ -123,7 +123,7 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
 
   // Subjects; answering rule 2 for an item with none. A mention that isn't plain (longer than a name, or holding the
   // allergy word itself: "my brother with the peanut allergy") names no one, so the item fails closed (CQ 150). On an
-  // answering turn "Mine." names the speaker too (CQ 159).
+  // answering turn "Mine." and "Not mine." name the speaker too (CQ 159, CQ 160).
   const reading = answering ? "answer" : "allergy";
   const mentionQuote = item.subject.mention === null ? null : (verifyTurnSpan(item.subject.mention, ctx.evidence)?.quote ?? null);
   let subject: SubjectResult;
@@ -140,8 +140,11 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
     if (resolved !== null && onlyNone) return ok({ kind: "deny", subject: resolved.id, scope: "global", proof: span }); // A7
     if (resolved !== null) return ok({ kind: "deny", subject: resolved.id, scope: "specific", codes: codes.filter((c) => c !== NONE_CODE), proof: span }); // A8
     // A9: only a denial that names no other allergen answers R ("No.", "Nobody's allergic to anything"; CQ 145), and
-    // an item the gazetteer doesn't know is another allergen named ("Nobody's allergic to durian"; CQ 156).
-    if (answering && R !== null && R.anonymous && ((codes.length === 0 && !namesOwn) || onlyNone || codes.includes(R.code))) return ok({ kind: "deny", answers: R.id, proof: span }); // A9
+    // an item the gazetteer doesn't know is another allergen named ("Nobody's allergic to durian"; CQ 156). A denial
+    // whose span names a person ("My brother doesn't.", "Not her.") says only that it isn't theirs, so it never
+    // answers R (CQ 160).
+    const namesNoOne = !namesSomeone(span.quote, knownNameWords(ctx.known, ctx.entities));
+    if (answering && R !== null && R.anonymous && namesNoOne && ((codes.length === 0 && !namesOwn) || onlyNone || codes.includes(R.code))) return ok({ kind: "deny", answers: R.id, proof: span }); // A9
     // A10. The design names the reason `act`; `target` is used so a direct, matching denial is never turned away
     // for its act or its span (P2), and nothing is written either way (CQ 136).
     return ignored("target"); // A10

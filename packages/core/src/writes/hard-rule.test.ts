@@ -378,6 +378,26 @@ describe("planHardRule: a pending rule leaves only for its own slot", () => {
     ]);
   });
 
+  // CQ 160: "Not mine." is the speaker's denial, so the anonymous rule stays, as it does for "Not me.".
+  it("a negated \"mine\" answering who has it leaves the anonymous rule", () => {
+    const anon = ANSWER_PRIORS.anonPeanut;
+    for (const t of ["Not mine.", "It's not mine.", "That's not mine.", "No, not mine.", "It isn't mine.", "Not me."]) {
+      for (const subject of [SELF, NOBODY]) {
+        const p = plan(t, [item(t, t.slice(0, -1), "", "denied", subject)], rulesOf(anon), { answering: { rule: anon } });
+        expect(triples(p.rules), t).toEqual([[null, "peanut", "pending"]]);
+        expect(p.outcome, t).toMatchObject({ kind: "denialRecorded" });
+      }
+    }
+  });
+
+  it("a denial naming a person never clears the anonymous rule", () => {
+    const anon = ANSWER_PRIORS.anonPeanut;
+    for (const t of ["My brother doesn't.", "No, not my sister.", "She isn't."]) {
+      const p = plan(t, [item(t, t.slice(0, -1), "", "denied", NOBODY)], rulesOf(anon), { answering: { rule: anon } });
+      expect(p.rules.allergies.some((r) => r.id === anon.id), t).toBe(true);
+    }
+  });
+
   it("at exactly RULES_MAX rules nothing grows past the bound", () => {
     const full = { ...emptyRules(), allergies: Array.from({ length: RULES_MAX }, (_, i) => fixtureRule(`g${i}`, "self", `code${i}`, "active")) };
     const t = "I'm allergic to peanuts.";

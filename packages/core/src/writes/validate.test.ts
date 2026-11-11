@@ -183,6 +183,29 @@ describe("answering turns", () => {
     expect(hasFirstPerson("Mine.", { kind: "answer" })).toBe(true);
     expect(hasFirstPerson("Mine is the one with the dog.", { kind: "answer" })).toBe(false);
   });
+  it("2: \"mine\" among answer words names the speaker, negated too, and never after \"of\" (CQ 160)", () => {
+    const anon = { ...R, subjectId: null, anonymous: true };
+    for (const t of ["Not mine.", "It's not mine.", "That's not mine.", "No, not mine.", "It isn't mine."]) {
+      for (const subject of [SELF, NONE]) {
+        const span = whole(t);
+        expect(one(run(t, [allergy(t, "", { subject, span, polarity: "denied" })], { answering: { rule: anon } })), t).toMatchObject({ v: { kind: "deny", subject: "self", scope: "specific", codes: ["peanut"] } });
+      }
+    }
+    for (const t of ["Mine too.", "Definitely mine.", "That one's mine.", "The allergy is mine.", "Mine, actually."]) {
+      expect(one(run(t, [allergy(t, "", { subject: NONE, span: whole(t) })], { answering: { rule: anon } })), t).toMatchObject({ v: { kind: "affirm", subject: "self", codes: ["peanut"] } });
+    }
+    expect(hasFirstPerson("It's a friend of mine.", { kind: "answer" })).toBe(false);
+    expect(hasFirstPerson("Mine and my brother's.", { kind: "answer" })).toBe(false);
+  });
+  it("A9: a denial whose span names a person never answers an anonymous rule (CQ 160)", () => {
+    const anon = { ...R, subjectId: null, anonymous: true };
+    for (const t of ["My brother doesn't.", "No, not my sister.", "She isn't.", "Not Maya, no.", "No, we're fine."]) {
+      const v = one(run(t, [allergy(t, "", { subject: NONE, span: whole(t), polarity: "denied" })], { answering: { rule: anon } }));
+      expect(v.kind === "allergy" && v.v.kind === "deny" && "answers" in v.v, t).toBe(false);
+    }
+    const n = "No, nobody has it.";
+    expect(one(run(n, [allergy(n, "", { subject: NONE, polarity: "denied" })], { answering: { rule: anon } }))).toMatchObject({ v: { kind: "deny", answers: anon.id } });
+  });
   it("6: with no asked rule, codes and subject come from the answer itself", () => {
     const a = "Shellfish and peanuts, both.";
     expect(one(run(a, [allergy(a, "Shellfish", { subject: NONE })], { answering: { rule: null } }))).toMatchObject({ v: { kind: "unsure", subject: null, codes: ["shellfish"], question: "whoHas" } });

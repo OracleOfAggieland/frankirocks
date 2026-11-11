@@ -6,7 +6,7 @@
 import type { Hasher } from "../ids";
 import { REGEX_TABLE } from "../intents/regex";
 import type { EID } from "../schema/primitives";
-import { scanAliases, wordTokens } from "./gazetteer";
+import { type WordToken, scanAliases, wordTokens } from "./gazetteer";
 import { verifyTurnSpan } from "./spans";
 import type { EntityKind, Subject, SubjectIndex, TurnEvidence } from "./types";
 
@@ -47,12 +47,21 @@ export const RELATION_WORDS: ReadonlySet<string> = new Set([
 ]);
 /** Words that may stand between "my" and the word it governs ("my little brother", "my new job"). */
 const MODIFIERS: ReadonlySet<string> = new Set(["little", "big", "older", "younger", "elder", "eldest", "oldest", "youngest", "best", "late", "dear", "old", "new", "own", "step", "half", "great", "favorite", "favourite", "former", "current"]);
-/** Words that only answer, so "Mine." stands alone (answering rule 2, CQ 159). */
-const ANSWER_FILLERS: ReadonlySet<string> = new Set(["oh", "um", "uh", "well", "yes", "yeah", "yep", "yup", "ok", "okay", "so"]);
+/**
+ * The only words an answer may hold beside "mine" for "mine" to name the speaker (answering rule 2; CQ 159, amended
+ * by CQ 160): fillers, pointers, the copula, negation and a few adverbs. Any other word ("and my brother's", "of",
+ * "with the dog") means the answer may name someone else, so it fails closed. Cue words and aliases count too.
+ */
+const MINE_CONTEXT: ReadonlySet<string> = new Set([
+  "oh", "um", "uh", "well", "yes", "yeah", "yep", "yup", "ok", "okay", "so",
+  "it", "that", "this", "one", "the", "is", "was",
+  "no", "nope", "not", "never", "isn't", "wasn't",
+  "too", "also", "definitely", "actually", "really", "just", "only", "all", "sure", "honestly", "totally",
+]);
 
 /**
- * How SU2 reads "my" and "mine" (CQ 149, amended by CQ 159). `allergy`: only before the allergy itself. `answer` (an
- * allergy item on an answering turn): also "mine" as the answer's only content word or after "it's" or "that's".
+ * How SU2 reads "my" and "mine" (CQ 149, amended by CQ 159 and CQ 160). `allergy`: only before the allergy itself.
+ * `answer` (an allergy item on an answering turn): also "mine" in an answer of answer words only, negated or not.
  * `transition`: also "my" before a word that names no other person or pet ("my job", "my marriage"); `others` holds
  * the words of every known name.
  */
@@ -71,17 +80,42 @@ function myOwnThing(w: readonly { word: string }[], i: number, others: ReadonlyS
 }
 
 /**
- * "Mine." alone, past answer fillers, or "it's mine", "that's mine", "it is mine", "that is mine". Tokens are in
- * normal form, where a final 's is dropped, so "it's" reads as "it".
+ * An answer holding "mine" and otherwise only `MINE_CONTEXT` words, RX4 words or alias words: "Mine.", "Mine too.",
+ * "It's mine.", "The allergy is mine.", and negated, "Not mine.", "It isn't mine." (CQ 160). Tokens are in normal
+ * form, where a final 's is dropped, so "it's" reads as "it" and "one's" as "one".
  */
-function mineAnswers(w: readonly { word: string }[]): boolean {
-  const content = w.filter((t) => !ANSWER_FILLERS.has(t.word)).map((t) => t.word);
-  if (content.length === 1 && content[0] === "mine") return true;
-  const pointer = (x: string | undefined) => x === "it" || x === "that";
-  return w.some((t, i) => {
-    if (t.word !== "mine") return false;
-    const a = w[i - 1]?.word;
-    return pointer(a) || (a === "is" && pointer(w[i - 2]?.word));
+function mineAnswers(text: string, w: readonly WordToken[]): boolean {
+  if (!w.some((t) => t.word === "mine")) return false;
+  const aliases = scanAliases(text);
+  return w.every((t) => t.word === "mine" || MINE_CONTEXT.has(t.word) || RX4.test(t.word) || aliases.some((h) => h.start <= t.start && t.end <= h.end));
+}
+
+/** Words that name a person on their own, for row A9 (CQ 160); "it", "that" and "them" point at the item. */
+const PERSON_WORDS: ReadonlySet<string> = new Set([
+  ...FIRST_PERSON, "my", "mine", "our", "ours", "we", "us", "ourselves",
+  "he", "she", "him", "her", "his", "hers", "himself", "herself", "they", "their", "theirs", "themselves",
+]);
+
+/** The words of every name a subject could be matched by: labels, aliases and relation words of `known` and `entities`. */
+export function knownNameWords(known: SubjectIndex, entities: SubjectInput["entities"]): Set<string> {
+  const out = new Set<string>();
+  const add = (w: string | null) => {
+    if (w === null) return;
+    for (const t of wordTokens(mentionName(w))) out.add(t.word);
+  };
+  for (const e of known.entries) for (const w of [e.label, ...e.aliases, e.relation]) add(w);
+  for (const e of entities) for (const w of [e.label, ...e.aliases]) add(w);
+  return out;
+}
+
+/**
+ * True when the text names a person (row A9's guard, CQ 160): a first-person or third-person word, "my", "mine",
+ * "our", a relation or pet word, or a word of a known name. A contraction counts by its stem ("we're", "they've").
+ */
+export function namesSomeone(text: string, others: ReadonlySet<string>): boolean {
+  return wordTokens(text).some((t) => {
+    const stem = t.word.replace(/'(re|ve|ll|d|m)$/, "");
+    return PERSON_WORDS.has(t.word) || PERSON_WORDS.has(stem) || RELATION_WORDS.has(stem) || others.has(stem);
   });
 }
 
@@ -91,7 +125,7 @@ function mineAnswers(w: readonly { word: string }[]): boolean {
  */
 export function hasFirstPerson(text: string, reading: SelfReading = ALLERGY_READING): boolean {
   const w = wordTokens(text);
-  if (reading.kind === "answer" && mineAnswers(w)) return true;
+  if (reading.kind === "answer" && mineAnswers(text, w)) return true;
   return w.some((t, i) => {
     if (FIRST_PERSON.has(t.word)) return true;
     const next = w[i + 1];
