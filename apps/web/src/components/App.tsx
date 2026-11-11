@@ -173,7 +173,9 @@ function StageFor({ snap }: { snap: ScreenSnapshot }) {
  * One screen component for both auth states, so `StageFor` keeps its place in the tree and the stage
  * (with its avatar engine) stays mounted across sign-in: it glides to its signed-in place instead of
  * being replaced. The hooks run in both states through the `noSubscribe` and `SIGNED_OUT_VOICE`
- * fallbacks; each state renders the same markup it did as its own component.
+ * fallbacks; each state renders the same markup it did as its own component. Only the stage is shared: the
+ * call and typed controls carry a per-state key, so they remount on an auth change as they did when each state
+ * was its own component (a typed line opened before sign-out comes back collapsed).
  *
  * Signed out or loading (`controllers` null): Dormant, FRANKIROCKS, the sign-in button, and disabled
  * call and typed controls (R13).
@@ -202,8 +204,8 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
         auth={auth}
         soundToggle={<SoundToggle />}
         stage={stage}
-        controls={<CallScreen voice={SIGNED_OUT_VOICE} enabled={false} onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />}
-        typed={<TypedLine text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />}
+        controls={<CallScreen key="signed-out" voice={SIGNED_OUT_VOICE} enabled={false} onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />}
+        typed={<TypedLine key="signed-out" text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />}
         live={live}
       />
     );
@@ -229,6 +231,7 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
       stage={stage}
       controls={
         <CallScreen
+          key="signed-in"
           voice={v}
           enabled={voice !== null}
           configMissing={voice === null ? TRANSCRIBE_VAR : null}
@@ -240,6 +243,7 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
       }
       typed={
         <TypedLine
+          key="signed-in"
           text={t.text}
           enabled
           sending={t.sending}
