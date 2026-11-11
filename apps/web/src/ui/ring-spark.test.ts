@@ -123,7 +123,7 @@ describe("ring spark: every way a spark can end gives its grant back", () => {
     expect(budget.active()).toBe(0);
   });
 
-  it.fails("SPARKING + unmount -> grant released (sign-out swaps the screen before the spark ends)", () => {
+  it("SPARKING + unmount -> grant released (sign-out swaps the screen before the spark ends)", () => {
     const { budget, state } = sparking();
     drive(budget, state, [{ type: "unmount" }]);
     expect(budget.active()).toBe(0);

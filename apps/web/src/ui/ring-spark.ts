@@ -3,6 +3,8 @@
  * The call button's ring spark (lab-ui-foundation R10.3, R10.4): one spark around the start ring per press,
  * only with Reduced_Motion off and an Electricity grant. Pure: ringSparkStep(state, event).
  * Always: a grant is held only in `sparking`, and the spark drawn is keyed by that grant's token.
+ *         Every way out of `sparking` gives the grant back: animationend, animationcancel, the button leaving
+ *         its start form, Reduced_Motion turning on, and unmount.
  * Never:  read the budget, a clock or the DOM; throw. Asking for a grant and giving one back are commands
  *         the shell runs against the screen's Electricity budget.
  */
@@ -57,7 +59,7 @@ export function ringSparkStep(state: RingSpark, event: RingSparkEvent): RingSpar
       // Reduced_Motion removes the animation, so neither an end nor a later replay may hold the grant.
       return state.mode === "sparking" ? release(state.token) : stay(state);
     case "unmount":
-      return stay(state);
+      return state.mode === "sparking" ? release(state.token) : stay(state);
     default:
       event satisfies never;
       return stay(state);
