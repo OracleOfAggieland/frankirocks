@@ -76,6 +76,16 @@ export interface PeerLike {
   onconnectionstatechange: ((ev: unknown) => void) | null;
   ontrack: ((ev: { streams: readonly unknown[] }) => void) | null;
 }
+/**
+ * The output audio element. `muted` is the only gate on what the Owner hears, written only by the reducer's
+ * `muteOutput` and `unmuteOutput` commands; `srcObject` follows the remote track. Nothing reads the element back:
+ * there is no `play()`, `paused` or playback event here. So two things are taken, not observed:
+ *   - heard: the reducer unmutes when the Realtime server reports `output_audio_buffer.started` for an admitted
+ *     reply, and while unmuted the audio is taken as heard; a paused or blocked element, the volume and the speakers
+ *     are never checked;
+ *   - said: the text of a transcript receipt is the response's output audio transcript from the Realtime server,
+ *     not a reading of the audio that played, so it can hold more than was heard before a barge-in.
+ */
 export interface AudioLike {
   muted: boolean;
   srcObject: unknown;
