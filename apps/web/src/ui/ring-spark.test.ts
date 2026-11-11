@@ -117,7 +117,7 @@ describe("ring spark: every way a spark can end gives its grant back", () => {
     expect(budget.active()).toBe(0);
   });
 
-  it.fails("SPARKING + animationCancel -> IDLE (a cancelled animation ends the spark like a finished one)", () => {
+  it("SPARKING + animationCancel -> IDLE (a cancelled animation ends the spark like a finished one)", () => {
     const { budget, state } = sparking();
     expect(drive(budget, state, [{ type: "animationCancel", token: state.token }])).toEqual(RING_SPARK_IDLE);
     expect(budget.active()).toBe(0);

@@ -49,7 +49,7 @@ export function ringSparkStep(state: RingSpark, event: RingSparkEvent): RingSpar
     case "animationEnd":
       return state.mode === "sparking" && state.token === event.token ? release(state.token) : stay(state);
     case "animationCancel":
-      return stay(state);
+      return state.mode === "sparking" && state.token === event.token ? release(state.token) : stay(state);
     case "formLeft":
       // The click that follows the press starts a call and removes the span, so no end will come.
       return state.mode === "sparking" ? release(state.token) : stay(state);
