@@ -4,8 +4,9 @@
  * EID from the words, as extraction's `resolveMention` does. Never a merge on a name.
  */
 import type { Hasher } from "../ids";
-import type { EID, Span } from "../schema/primitives";
-import { wordTokens } from "./gazetteer";
+import { REGEX_TABLE } from "../intents/regex";
+import type { EID } from "../schema/primitives";
+import { scanAliases, wordTokens } from "./gazetteer";
 import { verifyTurnSpan } from "./spans";
 import type { EntityKind, Subject, SubjectIndex, TurnEvidence } from "./types";
 
@@ -21,12 +22,23 @@ export function mentionEid(kind: EntityKind, name: string, hasher: Hasher): EID 
   return hasher.id(["mention", kind, name]);
 }
 
-/** First-person words (row SU2). */
-export const FIRST_PERSON: ReadonlySet<string> = new Set(["i", "i'm", "i've", "i'd", "i'll", "me", "my", "mine", "myself"]);
+/** First-person words that name the speaker on their own (row SU2). */
+export const FIRST_PERSON: ReadonlySet<string> = new Set(["i", "i'm", "i've", "i'd", "i'll", "me", "myself"]);
+/** Possessives that name the speaker only when the allergy itself follows ("my allergy", "my peanut allergy"); "my brother" doesn't (CQ 149). */
+const POSSESSIVE: ReadonlySet<string> = new Set(["my", "mine"]);
+const RX4 = REGEX_TABLE.find((r) => r.id === "RX4")!.pattern;
 const PRONOUNS = new Set(["he", "she", "him", "her", "they", "them", "it", "his", "hers", "their", "theirs", "this", "that", "someone", "somebody", "anyone", "everyone", "you", "we", "us"]);
 
-/** True when the text holds a first-person word. */
-export const hasFirstPerson = (text: string): boolean => wordTokens(text).some((t) => FIRST_PERSON.has(t.word));
+/** True when the text names the speaker: a first-person word, or "my"/"mine" right before an RX4 word or an alias. */
+export function hasFirstPerson(text: string): boolean {
+  const w = wordTokens(text);
+  return w.some((t, i) => {
+    if (FIRST_PERSON.has(t.word)) return true;
+    const next = w[i + 1];
+    if (!POSSESSIVE.has(t.word) || next === undefined) return false;
+    return RX4.test(next.word) || scanAliases(text).some((h) => h.start === next.start);
+  });
+}
 
 export type SubjectResult = { kind: "resolved"; id: EID; label: string | null } | { kind: "ambiguous" } | { kind: "unresolved" };
 
@@ -94,9 +106,4 @@ export function resolveSubject(i: SubjectInput): SubjectResult {
   if (found.size === 1) return { kind: "resolved", id: [...found][0]!, label: ownerLabel(mention.quote) };
   if (found.size > 1) return { kind: "ambiguous" };
   return { kind: "resolved", id: mentionEid(i.kind, name, i.hasher), label: ownerLabel(mention.quote) };
-}
-
-/** A subject's verified mention span, for cue sentences (design 2.5). */
-export function mentionSpanOf(s: Subject, ev: TurnEvidence): Span | null {
-  return s.mention === null ? null : verifyTurnSpan(s.mention, ev);
 }

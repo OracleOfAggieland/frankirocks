@@ -6,13 +6,14 @@
  * `outOfScope` (G31). Then each table's rows run in order; the first that matches decides.
  */
 import { REGEX_TABLE, normalizeForRegex } from "../intents/regex";
-import { looksLikeTime, resolveSpoken } from "../dates";
+import { civilDateAt, looksLikeTime, resolveSpoken } from "../dates";
 import { canonicalJSON } from "../ids";
 import type { EID, Span, Value } from "../schema/primitives";
 import { checkPredicateFit } from "../schema/predicates";
 import type { Memory } from "../schema/records";
 import { msFromTs } from "../schema/primitives";
 import { NONE_CODE, findWholeWords, lookupAllergen, scanAliases, wordTokens } from "./gazetteer";
+import { plainMention } from "./not-allergy";
 import { mentionEid, mentionName, hasFirstPerson, resolveSubject, type SubjectResult } from "./subject";
 import { spanClass, verifyTurnSpan } from "./spans";
 import type { AllergyVerdict, ArgPair, CorrectionVerdict, EntityKind, FastItem, FastSlotsOut, ItemVerdict, Need, QuestionKind, Route, Subject, TransitionKind, TransitionVerdict, ValidateContext } from "./types";
@@ -73,7 +74,7 @@ const isEmptySubject = (s: Subject) => !s.isSelf && s.entityId === null && s.men
 // Allergy items (rows A1 to A16, and the answering rules)
 
 function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: number, need: Need, ctx: ValidateContext): ItemVerdict {
-  const ignored = (reason: "authority" | "span" | "act" | "speaker" | "target") => ({ kind: "ignored" as const, index, reason });
+  const ignored = (reason: "authority" | "span" | "act" | "target") => ({ kind: "ignored" as const, index, reason });
   const ok = (v: AllergyVerdict): ItemVerdict => ({ kind: "allergy", index, v });
   if (spanClass(item.span, ctx.evidence) !== "U") return ignored("authority"); // A1
   const span = verifyTurnSpan(item.span, ctx.evidence);
@@ -101,18 +102,24 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
   } else codes = lookupAllergen(item.item);
   if (item.act !== "direct") return ignored("act"); // A4
 
-  // Subjects; answering rule 2 for an item with none.
+  // Subjects; answering rule 2 for an item with none. A mention that isn't plain (longer than a name, or holding the
+  // allergy word itself: "my brother with the peanut allergy") names no one, so the item fails closed (CQ 150).
+  const mentionQuote = item.subject.mention === null ? null : (verifyTurnSpan(item.subject.mention, ctx.evidence)?.quote ?? null);
   let subject: SubjectResult;
   if (answering && isEmptySubject(item.subject)) {
     subject = R !== null && R.subjectId !== null ? { kind: "resolved", id: R.subjectId, label: null } : hasFirstPerson(span.quote) ? { kind: "resolved", id: "self", label: null } : { kind: "unresolved" };
-  } else subject = subjectOf(item.subject, span.quote, ctx, "person");
+  } else if (mentionQuote !== null && !plainMention(mentionQuote)) subject = { kind: "unresolved" };
+  else subject = subjectOf(item.subject, span.quote, ctx, "person");
   const resolved = subject.kind === "resolved" ? subject : null;
 
   if (polarity === "denied") {
-    if (!ctx.speakerCertain) return ignored("speaker"); // A6
-    if (resolved !== null && codes.includes(NONE_CODE)) return ok({ kind: "deny", subject: resolved.id, scope: "global", proof: span }); // A7
+    // A6: a ledger decision only, carrying the codes verified above (never the model's raw `item`, CQ 148).
+    if (!ctx.speakerCertain) return { kind: "ignored", index, reason: "speaker", codes: codes.filter((c) => c !== NONE_CODE) };
+    const onlyNone = codes.length > 0 && codes.every((c) => c === NONE_CODE);
+    if (resolved !== null && onlyNone) return ok({ kind: "deny", subject: resolved.id, scope: "global", proof: span }); // A7
     if (resolved !== null) return ok({ kind: "deny", subject: resolved.id, scope: "specific", codes: codes.filter((c) => c !== NONE_CODE), proof: span }); // A8
-    if (answering && R !== null && R.anonymous) return ok({ kind: "deny", answers: R.id, proof: span }); // A9
+    // A9: only a denial that names no other allergen answers R ("No.", "Nobody's allergic to anything"; CQ 145).
+    if (answering && R !== null && R.anonymous && (codes.length === 0 || onlyNone || codes.includes(R.code))) return ok({ kind: "deny", answers: R.id, proof: span }); // A9
     // A10. The design names the reason `act`; `target` is used so a direct, matching denial is never turned away
     // for its act or its span (P2), and nothing is written either way (CQ 136).
     return ignored("target"); // A10
@@ -121,8 +128,8 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
   const real = codes.filter((c) => c !== NONE_CODE);
   const codesOr = (): string[] | "unresolved" => (real.length > 0 ? real : "unresolved");
   // Answering rule 5: an answer naming the item for an unresolved rule of a known subject stays pending, unless the
-  // answer itself states the allergy (RX4).
-  if (answering && R !== null && R.code === "unresolved" && R.subjectId !== null && real.length > 0 && !RX4.test(normalizeForRegex(span.quote)) && ctx.speakerCertain) {
+  // answer itself states the allergy (RX4), or is about someone else, who gets the normal table (CQ 146).
+  if (answering && R !== null && R.code === "unresolved" && R.subjectId !== null && resolved?.id === R.subjectId && real.length > 0 && !RX4.test(normalizeForRegex(span.quote)) && ctx.speakerCertain) {
     return ok({ kind: "unsure", subject: R.subjectId, label: null, codes: real, question: null, proof });
   }
   if (polarity === "affirmed" && real.length > 0 && resolved !== null && ctx.speakerCertain && need === "none") {
@@ -265,13 +272,26 @@ export const TRUTH_ORDER: Record<Exclude<TransitionKind, "scheduledStart" | "exp
 /** Past words the date resolver reads forward and doesn't resolve (CQ 134): the change is placed at the turn. */
 const PAST_WORDS = /\b(yesterday|last (night|week|weekend|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|ago|earlier|just now|recently|this (morning|afternoon))\b/;
 
+/**
+ * Words that place a change said for the turn's own day before the turn (CQ 151). The resolver gives that day's
+ * midnight for "today", "tonight", "this evening" or "later today", which are as often still to come, so those defer.
+ */
+const SAME_DAY_PAST = /\b(earlier|just now|ago|this morning)\b/;
+
 /** When a stated change happened, or why it can't be placed now (row T6b). */
 export function whenOf(whenSpoken: string | null, ev: { assertedAt: string; zone?: string | null }, worldNow: number): { ok: true; when: number } | { ok: false } {
   const said = msFromTs(ev.assertedAt);
   if (whenSpoken === null || whenSpoken.trim() === "" || !looksLikeTime(whenSpoken)) return { ok: true, when: Math.min(said, worldNow) };
-  const r = resolveSpoken(whenSpoken, said, ev.zone ?? "UTC");
-  if (r !== null) return r.startMs <= worldNow ? { ok: true, when: r.startMs } : { ok: false };
-  return PAST_WORDS.test(whenSpoken.normalize("NFKC").toLowerCase()) ? { ok: true, when: Math.min(said, worldNow) } : { ok: false };
+  const zone = ev.zone ?? "UTC";
+  const words = whenSpoken.normalize("NFKC").toLowerCase();
+  const r = resolveSpoken(whenSpoken, said, zone);
+  if (r !== null) {
+    if (r.startMs > worldNow) return { ok: false };
+    // A day-precision time on the turn's own day: only past-reading words place it, at the turn.
+    if (r.precision === "day" && r.civilStart === civilDateAt(said, zone)) return SAME_DAY_PAST.test(words) ? { ok: true, when: Math.min(said, worldNow) } : { ok: false };
+    return { ok: true, when: r.startMs };
+  }
+  return PAST_WORDS.test(words) ? { ok: true, when: Math.min(said, worldNow) } : { ok: false };
 }
 
 function transitionVerdict(item: Extract<FastItem, { kind: "transition" }>, index: number, need: Need, ctx: ValidateContext, budget: Budget): ItemVerdict {
@@ -288,6 +308,7 @@ function transitionVerdict(item: Extract<FastItem, { kind: "transition" }>, inde
   const subject = subjectOf(item.subject, span.quote, ctx, "person");
   const counterpartKind: EntityKind = kind === "move" ? "place" : kind === "jobChangeOwn" || kind === "jobChangeOther" ? "organization" : "person";
   const counterpart = item.counterpart === null ? null : subjectOf(item.counterpart, span.quote, ctx, counterpartKind);
+  if (subject.kind === "ambiguous" || counterpart?.kind === "ambiguous") return v({ kind: "defer", why: "subject" }); // SU6
   const s = subject.kind === "resolved" ? subject.id : null;
   const c = counterpart !== null && counterpart.kind === "resolved" ? counterpart.id : null;
   if (

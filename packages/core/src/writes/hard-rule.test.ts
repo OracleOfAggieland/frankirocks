@@ -6,7 +6,8 @@ import { cueSentences, notAllergyByCode, sentencesOf } from "./not-allergy";
 import { ruleTransition } from "./rule-state";
 import { TURN_AT, TURN_EID, buildEvidence, emptyRules, hardRuleTurn, spanAt, turnEvidenceOf, validateContext } from "./testing/arb-writes";
 import { fixtureRule } from "./testing/arb-hard-rule";
-import type { FastItem, FastSlotsOut, RuleEvent, RuleSlot } from "./types";
+import { ANSWER_PRIORS, ASK_EID, BROTHER } from "./testing/arb-hard-rule-answers";
+import type { FastItem, FastSlotsOut, RuleEvent, RuleSlot, Subject } from "./types";
 import { validateItems } from "./validate";
 
 const rule = fixtureRule("r1", "self", "peanut", "pending");
@@ -197,16 +198,139 @@ describe("cue sentences and notAllergyByCode", () => {
   it("keeps only the RX4 sentences, and leaves out a verified subject mention", () => {
     const t = "We had lunch. My dog is allergic to chicken.";
     const m = { ...allergy(t, "chicken"), subject: { entityId: null, mention: spanAt(TURN_EID, t, 14, 20), isSelf: false }, span: spanAt(TURN_EID, t, 14, 43) };
-    expect(cueSentences(ev(t), { items: [m], need: "none" }, false)).toEqual([{ start: 20, end: 43 }]);
+    expect(cueSentences(ev(t), { items: [m], need: "none" }, false, new Set([0]))).toEqual([{ start: 20, end: 43 }]);
+    // Not cut when no subject was resolved from it, or when it isn't plain (CQ 150).
+    expect(cueSentences(ev(t), { items: [m], need: "none" }, false, new Set())).toEqual([{ start: 14, end: 43 }]);
+    const wide = { ...m, subject: { entityId: null, mention: spanAt(TURN_EID, t, 14, 36), isSelf: false } };
+    expect(cueSentences(ev(t), { items: [wide], need: "none" }, false, new Set([0]))).toEqual([{ start: 14, end: 43 }]);
+  });
+  it("fails the code check on an alias anywhere in the turn's U text", () => {
+    expect(notAllergyByCode(ev("I'm allergic. To shellfish."))).toBe(false);
+    expect(notAllergyByCode(ev("I'm allergic to. Shellfish and peanuts."))).toBe(false);
   });
   it("passes Mondays and the intolerant boss; fails an alias, a generic object, an allergy pill near 'this', and EpiPen", () => {
-    expect(notAllergyByCode(ev("I'm allergic to Mondays."), null)).toBe(true);
-    expect(notAllergyByCode(ev("My boss is so intolerant."), null)).toBe(true);
-    expect(notAllergyByCode(ev("I'm allergic to peanuts."), null)).toBe(false);
-    expect(notAllergyByCode(ev("I'm allergic to something in that curry."), null)).toBe(false);
-    expect(notAllergyByCode(ev("I took an allergy pill this morning."), null)).toBe(false);
-    expect(notAllergyByCode(ev("I took an allergy pill."), null)).toBe(true);
-    expect(notAllergyByCode(ev("I always carry an EpiPen."), null)).toBe(false);
-    expect(notAllergyByCode(ev("We watched a film."), null)).toBe(false);
+    expect(notAllergyByCode(ev("I'm allergic to Mondays."))).toBe(true);
+    expect(notAllergyByCode(ev("My boss is so intolerant."))).toBe(true);
+    expect(notAllergyByCode(ev("I'm allergic to peanuts."))).toBe(false);
+    expect(notAllergyByCode(ev("I'm allergic to something in that curry."))).toBe(false);
+    expect(notAllergyByCode(ev("I took an allergy pill this morning."))).toBe(false);
+    expect(notAllergyByCode(ev("I took an allergy pill."))).toBe(true);
+    expect(notAllergyByCode(ev("I always carry an EpiPen."))).toBe(false);
+    expect(notAllergyByCode(ev("We watched a film."))).toBe(false);
+  });
+});
+
+// Sequences the wave A review ran, pinned (CQs 144 to 150).
+describe("planHardRule: a pending rule leaves only for its own slot", () => {
+  const NOBODY: Subject = { entityId: null, mention: null, isSelf: false };
+  const at = (text: string, phrase: string) => spanAt(TURN_EID, text, text.indexOf(phrase), text.indexOf(phrase) + phrase.length);
+  const item = (text: string, phrase: string, word: string, polarity: "affirmed" | "denied" | "uncertain", subject: Subject = SELF, act: FastItem["act"] = "direct"): FastItem => ({
+    kind: "allergy",
+    subject,
+    item: word,
+    severity: "allergy",
+    polarity,
+    act,
+    span: at(text, phrase),
+  });
+  const rulesOf = (...rs: CoreRules["allergies"]) => ({ ...emptyRules(), allergies: rs.map((r) => ({ ...r })) });
+  const triples = (r: CoreRules) => r.allergies.map((a) => [a.subjectId, a.code, a.state]);
+
+  it("an affirm of another allergen leaves the asked peanut rule pending", () => {
+    const t = "Not sure about that. But I'm definitely allergic to shellfish.";
+    const R = { ...ANSWER_PRIORS.anonPeanut, subjectId: "self", anonymous: false };
+    const p = plan(t, [item(t, "I'm definitely allergic to shellfish", "shellfish", "affirmed")], rulesOf(R), { answering: { rule: R } });
+    expect(triples(p.rules)).toEqual([
+      ["self", "peanut", "pending"],
+      ["self", "shellfish", "active"],
+    ]);
+    expect(p.outcome.kind).toBe("ruleWritten");
+  });
+
+  it("the brother's and the anonymous kiwi rules stay when the owner states another allergy", () => {
+    const t = "I'm allergic to shellfish.";
+    const rules = rulesOf(ANSWER_PRIORS.brotherPeanut, ANSWER_PRIORS.anonKiwi);
+    for (const R of [ANSWER_PRIORS.brotherPeanut, ANSWER_PRIORS.anonKiwi]) {
+      const p = plan(t, [allergy(t, "shellfish")], rules, { answering: { rule: R } });
+      expect(triples(p.rules)).toEqual([
+        [BROTHER, "peanut", "pending"],
+        [null, "kiwi", "pending"],
+        ["self", "shellfish", "active"],
+      ]);
+    }
+  });
+
+  it("a drug allergy doesn't clear the owner's all-food filter; a food allergy does", () => {
+    const rules = rulesOf(ANSWER_PRIORS.selfUnresolved);
+    const d = "I'm allergic to penicillin.";
+    expect(triples(plan(d, [allergy(d, "penicillin")], rules).rules)).toEqual([
+      ["self", "unresolved", "pending"],
+      ["self", "penicillin", "active"],
+    ]);
+    const f = "I'm allergic to peanuts.";
+    expect(triples(plan(f, [allergy(f, "peanuts")], rules).rules)).toEqual([["self", "peanut", "active"]]);
+  });
+
+  it("a subject-less denial of another allergen doesn't clear the asked anonymous rule; a bare no does", () => {
+    const t = "Nobody here is allergic to shellfish, no.";
+    const R = ANSWER_PRIORS.anonPeanut;
+    const p = plan(t, [item(t, "Nobody here is allergic to shellfish, no", "shellfish", "denied", NOBODY)], rulesOf(R), { answering: { rule: R } });
+    expect(p.rules.allergies.some((r) => r.id === R.id)).toBe(true);
+    const bare = "No.";
+    const q = plan(bare, [item(bare, "No", "", "denied", NOBODY)], rulesOf(R), { answering: { rule: R }, regex: false });
+    expect(q.rules.allergies).toEqual([]);
+    expect(q.outcome).toMatchObject({ kind: "pendingResolved", by: "denial" });
+  });
+
+  it("an uncertain speaker's denial carries only the codes validation verified", () => {
+    const t = "No. My brother is allergic to peanuts though.";
+    const p = plan(t, [item(t, "No", "peanuts", "denied", NOBODY)], emptyRules(), { answering: { rule: null }, speakerCertain: false });
+    expect(triples(p.rules)).toEqual([[null, "peanut", "pending"]]);
+    expect(p.ledger).toContainEqual({ eid: TURN_EID, outcome: "denialRecorded", codes: [] });
+  });
+
+  it("a rule made from an answer cites both Evidences; its root keys stay the proof's", () => {
+    const anon = { ...ANSWER_PRIORS.anonPeanut };
+    const me = plan("Me.", [item("Me.", "Me", "", "affirmed", SELF)], rulesOf(anon), { answering: { rule: anon }, regex: false });
+    expect(me.rules.allergies).toMatchObject([{ subjectId: "self", code: "peanut", state: "active", proof: anon.proof, rootKeys: anon.rootKeys }]);
+    expect(me.rules.allergies[0]!.dependsOn).toEqual([`e:${TURN_EID}`, `e:${ASK_EID}`]);
+    const own = { ...ANSWER_PRIORS.selfShellfish };
+    const yes = plan("Yes.", [item("Yes.", "Yes", "", "affirmed", NOBODY)], rulesOf(own), { answering: { rule: own }, regex: false });
+    expect(yes.rules.allergies).toMatchObject([{ subjectId: "self", code: "shellfish", state: "active" }]);
+    expect(yes.rules.allergies[0]!.dependsOn).toEqual([`e:${TURN_EID}`, `e:${ASK_EID}`]);
+    // The asked rule's proof, with no answer on this turn behind it, writes nothing.
+    const e = buildEvidence(TURN_EID, "Yes.", [], ["U"], TURN_AT);
+    const forged = [{ kind: "allergy" as const, index: 3, v: { kind: "affirm" as const, subject: "self", label: null, codes: ["shellfish"], proof: own.proof! } }];
+    const rules = rulesOf(own);
+    const after = planHardRule(rules, forged, hardRuleTurn(e, { items: [], need: "none" }, { answering: { rule: own } })).rules.allergies;
+    expect(after.filter((r) => r.state === "active")).toEqual([]);
+    expect(after).toContainEqual(own);
+  });
+
+  it("a mention over the whole sentence, or over another allergen, never switches coverage off", () => {
+    const a = "My doctor thinks I might be allergic to penicillin.";
+    const whole = item(a, "My doctor thinks I might be allergic to penicillin", "penicillin", "uncertain", { entityId: null, mention: at(a, "My doctor thinks I might be allergic to penicillin"), isSelf: false }, "quoted");
+    const pa = plan(a, [whole]);
+    expect(triples(pa.rules)).toEqual([[null, "penicillin", "pending"]]);
+    expect(pa.outcome.kind).toBe("pendingWritten");
+    const b = "My brother with the peanut allergy can't have shellfish either.";
+    const wide = item(b, "My brother with the peanut allergy can't have shellfish either", "shellfish", "affirmed", { entityId: null, mention: at(b, "My brother with the peanut allergy"), isSelf: false });
+    const codes = plan(b, [wide]).rules.allergies.map((r) => [r.anonymous, r.code]);
+    expect(codes).toContainEqual([true, "peanut"]);
+    expect(codes).toContainEqual([true, "shellfish"]);
+  });
+
+  it("a denial beside a duplicate gives ruleKept denied in either order", () => {
+    const rules = rulesOf(fixtureRule("a1", "self", "shellfish", "active"), fixtureRule("a2", "self", "peanut", "active"));
+    for (const t of ["I'm allergic to shellfish. I'm not allergic to peanuts.", "I'm not allergic to peanuts. I'm allergic to shellfish."]) {
+      const p = plan(t, [item(t, "I'm allergic to shellfish", "shellfish", "affirmed"), item(t, "I'm not allergic to peanuts", "peanuts", "denied")], rules);
+      expect(p.outcome).toMatchObject({ kind: "ruleKept", why: "denied" });
+    }
+  });
+
+  it("at exactly RULES_MAX rules nothing grows past the bound", () => {
+    const full = { ...emptyRules(), allergies: Array.from({ length: RULES_MAX }, (_, i) => fixtureRule(`g${i}`, "self", `code${i}`, "active")) };
+    const t = "I'm allergic to peanuts.";
+    expect(plan(t, [allergy(t, "peanuts")], full).rules.allergies.length).toBe(RULES_MAX);
   });
 });

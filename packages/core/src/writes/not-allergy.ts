@@ -3,12 +3,14 @@
  *
  * Cue sentences: sentences split at `.`, `!`, `?`, `;` and line breaks, offsets kept. They are the sentences with an
  * RX4 match; on an answering turn, the whole text; with no RX4 match and a valid answer, the sentences holding a
- * verified allergy item span; with no RX4 match and no valid answer, the whole text. Only their U parts are scanned,
- * and the verified subject mentions of the items are left out ("my dog is allergic to chicken" doesn't count dog).
+ * verified allergy item span; with no RX4 match and no valid answer, the whole text. Only their U parts are scanned.
+ * A subject mention is left out ("my dog is allergic to chicken" doesn't count dog) only when it is plain (at most
+ * `MENTION_MAX_WORDS` words, no RX4 word) and validation resolved a subject from it; any other mention is scanned
+ * like the rest of the text, so a model-chosen mention can never switch coverage or the fallback off.
  *
- * The code's half of G3 holds when every RX4 sentence names no gazetteer alias, every cue word in it is `allerg…` or
- * `intoleran…` (never `anaphyla…`, `epipen` or `celiac`), and no generic object word stands within six words of a
- * cue, except a compound right after "allergy" ("allergy pill").
+ * The code's half of G3 holds when the turn's U text names no gazetteer alias, every cue word in an RX4 sentence is
+ * `allerg…` or `intoleran…` (never `anaphyla…`, `epipen` or `celiac`), and no generic object word stands within six
+ * words of a cue, except a compound right after "allergy" ("allergy pill").
  */
 import { REGEX_TABLE, normalizeForRegex } from "../intents/regex";
 import type { Span } from "../schema/primitives";
@@ -28,6 +30,9 @@ export const ALLERGY_COMPOUNDS = ["pill", "pills", "meds", "medicine", "medicati
 
 /** How many words on each side of a cue the generic-object check looks at. */
 export const GENERIC_WINDOW = 6;
+
+/** The longest subject mention that may be left out of the cue sentences ("my little brother's friend"). */
+export const MENTION_MAX_WORDS = 5;
 
 const RX4 = REGEX_TABLE.find((r) => r.id === "RX4")!.pattern;
 const GENERIC: ReadonlySet<string> = new Set(GENERIC_ALLERGY_OBJECTS);
@@ -78,19 +83,29 @@ function minus(ranges: readonly Range[], cut: readonly Range[]): Range[] {
   return out;
 }
 
-/** The verified subject mentions of the turn's allergy items. */
-function mentionRanges(e: TurnEvidence, out: FastSlotsOut | null): Range[] {
-  return (out?.items ?? []).flatMap((it) => {
-    if (it.kind !== "allergy" || it.subject.mention === null) return [];
+/** A mention short enough to name a person and holding no RX4 word: the only kind a subject may come from. */
+export function plainMention(quote: string): boolean {
+  const w = wordTokens(quote);
+  return w.length > 0 && w.length <= MENTION_MAX_WORDS && !w.some((t) => RX4.test(t.word));
+}
+
+/** The verified, plain subject mentions of the allergy items at `cuttable` (the items a subject was resolved from). */
+function mentionRanges(e: TurnEvidence, out: FastSlotsOut | null, cuttable: ReadonlySet<number>): Range[] {
+  return (out?.items ?? []).flatMap((it, i) => {
+    if (!cuttable.has(i) || it.kind !== "allergy" || it.subject.mention === null) return [];
     const m = verifyTurnSpan(it.subject.mention, e);
-    return m === null ? [] : [{ start: m.start, end: m.end }];
+    return m === null || !plainMention(m.quote) ? [] : [{ start: m.start, end: m.end }];
   });
 }
 
-/** The cue sentences' U ranges on the Evidence text, with verified subject mention spans left out. */
-export function cueSentences(e: TurnEvidence, out: FastSlotsOut | null, answering: boolean): { start: number; end: number }[] {
-  const u = cueSentenceRanges(e, out, answering).flatMap((s) => uParts(e.slices, s.start, s.end));
-  return minus(u, mentionRanges(e, out));
+/** The cue sentences' U ranges on the Evidence text, mention cuts not applied: the fallback's scope. */
+export function cueSentenceUParts(e: TurnEvidence, out: FastSlotsOut | null, answering: boolean): Range[] {
+  return cueSentenceRanges(e, out, answering).flatMap((s) => uParts(e.slices, s.start, s.end));
+}
+
+/** The cue sentences' U ranges on the Evidence text, with the plain mentions of the items at `cuttable` left out. */
+export function cueSentences(e: TurnEvidence, out: FastSlotsOut | null, answering: boolean, cuttable: ReadonlySet<number>): Range[] {
+  return minus(cueSentenceUParts(e, out, answering), mentionRanges(e, out, cuttable));
 }
 
 /** The first RX4 cue word inside `ranges`, as a Span quoting the Evidence text at its offsets (design 2.5). */
@@ -103,10 +118,14 @@ export function cueSpan(e: TurnEvidence, ranges: readonly Range[]): Span | null 
   return null;
 }
 
-/** The code's half of the G3 check, over the cue sentences. The model's half is the caller's. */
-export function notAllergyByCode(e: TurnEvidence, _out: FastSlotsOut | null): boolean {
+/**
+ * The code's half of the G3 check. The model's half is the caller's. An alias anywhere in the turn's U text fails it
+ * ("I'm allergic. To shellfish."), so an empty answer never decides alone that a named allergen isn't one.
+ */
+export function notAllergyByCode(e: TurnEvidence): boolean {
   const rx = rx4Sentences(e.text);
   if (rx.length === 0) return false;
+  if (uParts(e.slices, 0, e.text.length).some((r) => scanAliases(e.text, r.start, r.end).length > 0)) return false;
   for (const s of rx) {
     if (scanAliases(e.text, s.start, s.end).length > 0) return false;
     const w = wordTokens(e.text, s.start, s.end).map((t) => t.word);

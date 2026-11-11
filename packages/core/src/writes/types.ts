@@ -1,23 +1,13 @@
 /**
  * Types for the on-turn writes of brief 012 (F3): every closed union of the design note's sections 2, 4 and 6
- * (`docs/briefs/012-design.md`). Pure; nothing here reads a clock, a store or a model.
- *
- * Wave A task A2 commits these with stubs that throw `NotBuilt`, so the wave's properties compile and run red.
- * Each later task replaces one stub with the real function; the types are the contract between them.
+ * (`docs/briefs/012-design.md`). Pure; nothing here reads a clock, a store or a model. The types are the contract
+ * between validation, the planners and (from wave B) the turn route.
  */
 import type { Hasher } from "../ids";
 import type { EID, ID, Pred, Ref, Slice, Span, TS, Value } from "../schema/primitives";
 import type { AllergyRule as AllergyRuleSchema, CoreRules, Memory } from "../schema/records";
 import type { Infer } from "../schema/v";
 import type { W } from "../schema/wire";
-
-/** Thrown by a function wave A has typed but not built yet. */
-export class NotBuilt extends Error {
-  constructor(what: string) {
-    super(`not implemented: ${what}`);
-    this.name = "NotBuilt";
-  }
-}
 
 /** One `core/rules.allergies` entry (contracts §1). */
 type AllergyRule = Infer<typeof AllergyRuleSchema>;
@@ -160,7 +150,8 @@ export type TransitionVerdict =
       when: Ms;
     }
   | { kind: "careOnly" }
-  | { kind: "defer"; why: "need" | "speaker" | "scheduled" | "time" | "employer" | "bounds" };
+  /** `subject`: the subject matched two or more known entities (row SU6). */
+  | { kind: "defer"; why: "need" | "speaker" | "subject" | "scheduled" | "time" | "employer" | "bounds" };
 
 export type IgnoredReason = "authority" | "span" | "act" | "speaker" | "outOfScope" | "target" | "value";
 
@@ -168,7 +159,9 @@ export type ItemVerdict =
   | { kind: "allergy"; index: number; v: AllergyVerdict }
   | { kind: "correction"; index: number; v: CorrectionVerdict }
   | { kind: "transition"; index: number; v: TransitionVerdict }
-  | { kind: "ignored"; index: number; reason: IgnoredReason };
+  | { kind: "ignored"; index: number; reason: Exclude<IgnoredReason, "speaker"> }
+  /** Row A6: a denial from an uncertain speaker, a ledger decision only, with the codes validation verified. */
+  | { kind: "ignored"; index: number; reason: "speaker"; codes: string[] };
 
 // ---------------------------------------------------------------------------------------------
 // 4. The write a turn committed, and the reply note
@@ -272,6 +265,8 @@ export type RuleEvent =
   | { kind: "affirm"; proof: Span; deps: Dep[]; install: AllergyRule }
   | { kind: "unsure"; proof: Span | null; install: AllergyRule }
   | { kind: "deny" }
+  /** A firmer rule on another slot answers this pending one (6.3's cross-slot reach, CQ 132 and 144). */
+  | { kind: "superseded" }
   | { kind: "trustedTap" };
 
 // ---------------------------------------------------------------------------------------------

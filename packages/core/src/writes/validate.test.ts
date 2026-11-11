@@ -287,3 +287,76 @@ describe("transition items", () => {
     expect(one(run(t, [transition(t, {})]))).toEqual({ kind: "transition", index: 0, v: { kind: "change", transition: "death", subject: DAD, counterpart: null, when: msFromTs(TURN_AT) } });
   });
 });
+
+// Sequences the wave A review ran, pinned (CQs 145, 146, 148 to 151).
+describe("validation: the review's cases", () => {
+  const at = (text: string, phrase: string) => spanAt(TURN_EID, text, text.indexOf(phrase), text.indexOf(phrase) + phrase.length);
+  const BROTHER = mentionEid("person", "brother", hasher);
+
+  it("rule 5 applies only to an answer about the asked rule's own subject", () => {
+    const U = fixtureRule("selfun", "self", "unresolved", "pending");
+    const b = "My brother can't have peanuts.";
+    const v = one(run(b, [allergy(b, "peanuts", { subject: { entityId: null, mention: at(b, "My brother"), isSelf: false } })], { answering: { rule: U } }));
+    expect(v).toMatchObject({ v: { kind: "affirm", subject: BROTHER, codes: ["peanut"] } });
+  });
+
+  it("A7 is global only for codes exactly [none]; other codes make it specific", () => {
+    const t = "I'm not allergic to anything with peanuts.";
+    expect(one(run(t, [allergy(t, "anything with peanuts", { polarity: "denied" })]))).toMatchObject({ v: { kind: "deny", scope: "specific", codes: ["peanut"] } });
+  });
+
+  it("A9 answers the asked anonymous rule only when the denial names no other allergen", () => {
+    const anon = fixtureRule("anon", null, "peanut", "pending");
+    const t = "Nobody here is allergic to shellfish, no.";
+    expect(one(run(t, [allergy(t, "shellfish", { polarity: "denied", subject: NONE })], { answering: { rule: anon } }))).toEqual({ kind: "ignored", index: 0, reason: "target" });
+    const p = "Nobody here is allergic to peanuts, no.";
+    expect(one(run(p, [allergy(p, "peanuts", { polarity: "denied", subject: NONE })], { answering: { rule: anon } }))).toMatchObject({ v: { kind: "deny", answers: anon.id } });
+  });
+
+  it("A6 carries the codes validation verified, never the model's item outside its span", () => {
+    const t = "No. My brother is allergic to peanuts though.";
+    const v = one(run(t, [allergy(t, "peanuts", { polarity: "denied", subject: NONE, span: at(t, "No") })], { answering: { rule: null }, speakerCertain: false }));
+    expect(v).toEqual({ kind: "ignored", index: 0, reason: "speaker", codes: [] });
+    const d = "I'm not allergic to peanuts.";
+    expect(one(run(d, [allergy(d, "peanuts", { polarity: "denied" })], { speakerCertain: false }))).toEqual({ kind: "ignored", index: 0, reason: "speaker", codes: ["peanut"] });
+  });
+
+  it("SU2: \"my\" names the owner only before the allergy itself", () => {
+    const t = "My brother isn't allergic to anything.";
+    expect(one(run(t, [allergy(t, "anything", { polarity: "denied" })]))).toEqual({ kind: "ignored", index: 0, reason: "target" });
+    const m = "My peanut allergy is bad.";
+    expect(one(run(m, [allergy(m, "peanut")]))).toMatchObject({ v: { kind: "affirm", subject: "self", codes: ["peanut"] } });
+    const a = "My brother can't have peanuts.";
+    expect(one(run(a, [allergy(a, "peanuts")]))).toMatchObject({ v: { kind: "unsure", subject: null, codes: ["peanut"], question: "whoHas" } });
+  });
+
+  it("a mention that isn't plain names no one, so the item fails closed", () => {
+    const t = "My brother with the peanut allergy can't have shellfish either.";
+    const v = one(run(t, [allergy(t, "shellfish", { subject: { entityId: null, mention: at(t, "My brother with the peanut allergy"), isSelf: false } })]));
+    expect(v).toMatchObject({ v: { kind: "unsure", subject: null, codes: ["shellfish"], question: "whoHas" } });
+    const w = "I'm allergic to shellfish.";
+    expect(one(run(w, [allergy(w, "shellfish", { subject: { entityId: null, mention: at(w, "I'm allergic to shellfish"), isSelf: false } })]))).toMatchObject({ v: { kind: "unsure", subject: null } });
+  });
+
+  it("T6b: a change for later on the turn's own day defers; past-reading words place it at the turn", () => {
+    const now = msFromTs(TURN_AT);
+    for (const w of ["tonight", "this evening", "later today", "today"]) expect(whenOf(w, { assertedAt: TURN_AT }, now), w).toEqual({ ok: false });
+    for (const w of ["earlier today", "this morning"]) expect(whenOf(w, { assertedAt: TURN_AT }, now), w).toEqual({ ok: true, when: now });
+    const q = "I'm quitting my job tonight.";
+    expect(one(run(q, [transition(q, { transition: "jobChangeOwn", subject: SELF, whenSpoken: "tonight" })]))).toMatchObject({ v: { kind: "defer", why: "time" } });
+  });
+
+  it("SU6 on a transition defers", () => {
+    const known = { entries: [...KNOWN.entries, { id: testId("dad2"), kind: "person" as const, label: "Pops", aliases: ["dad"], relation: "parent" }] };
+    const t = "My dad passed away last night.";
+    expect(one(run(t, [transition(t, { subject: { entityId: null, mention: at(t, "My dad"), isSelf: false } })], { known }))).toMatchObject({ v: { kind: "defer", why: "subject" } });
+  });
+
+  it("C5d/T6c: a ninth distinct key defers, before the ref bound is reached", () => {
+    const t = "My uncle, my aunt, my cousin, my neighbour and my coach passed away.";
+    const who = ["My uncle", "my aunt", "my cousin", "my neighbour", "my coach"];
+    const vs = run(t, who.map((w) => transition(t, { subject: { entityId: null, mention: at(t, w), isSelf: false } })));
+    expect(vs.map((v) => (v.kind === "transition" ? v.v.kind : v.kind))).toEqual(["change", "change", "change", "change", "defer"]);
+    expect(vs[4]).toMatchObject({ v: { why: "bounds" } });
+  });
+});
