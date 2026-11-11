@@ -204,8 +204,8 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
         auth={auth}
         soundToggle={<SoundToggle />}
         stage={stage}
-        controls={<CallScreen key="signed-out" voice={SIGNED_OUT_VOICE} enabled={false} onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />}
-        typed={<TypedLine key="signed-out" text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />}
+        controls={<CallScreen key="call-signed-out" voice={SIGNED_OUT_VOICE} enabled={false} onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />}
+        typed={<TypedLine key="typed-signed-out" text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />}
         live={live}
       />
     );
@@ -231,7 +231,7 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
       stage={stage}
       controls={
         <CallScreen
-          key="signed-in"
+          key="call-signed-in"
           voice={v}
           enabled={voice !== null}
           configMissing={voice === null ? TRANSCRIBE_VAR : null}
@@ -243,7 +243,7 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
       }
       typed={
         <TypedLine
-          key="signed-in"
+          key="typed-signed-in"
           text={t.text}
           enabled
           sending={t.sending}
