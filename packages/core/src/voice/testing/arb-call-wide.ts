@@ -40,7 +40,11 @@ export type WideAction =
   | { k: "hangup" }
   | { k: "callPressed" }
   | { k: "closeDone" }
-  /** Fires the named timer at its deadline (or `dt` from now, if later), if it is armed. */
+  /**
+   * Fires the named timer at its deadline (or `dt` from now, if later), if it is armed. Timers due earlier are not
+   * fired first: a `fire` can jump past them, and they are then overdue. Tests that need a browser's order let time
+   * pass with every due timer fired, earliest first.
+   */
   | { k: "fire"; name: TimerName }
   /** The server's safe turns change at equal revisions (a turn committed); the next answer carries them. */
   | { k: "deckTurns" }
