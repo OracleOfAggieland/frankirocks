@@ -11,9 +11,10 @@ import { claimText } from "../memory-text";
 import { type Class, type EID, type ID, type Pred, type TS, type Value, msFromTs } from "../schema/primitives";
 import { checkPredicateFit } from "../schema/predicates";
 import type { Memory } from "../schema/records";
+import { statusTransition } from "./status";
 import { mentionEid, mentionName } from "./subject";
 import { rootSliceOf, spanClass, verifyTurnSpan } from "./spans";
-import type { Command, Plan, PlanEnv } from "./types";
+import type { Command, Plan, PlanEnv, StatusEvent } from "./types";
 
 export type { Command, Plan, PlanEnv, PlanError } from "./types";
 
@@ -49,8 +50,13 @@ export function negated(rows: ReadonlyMap<ID, Memory>, key: ID, value: Value, en
   return false;
 }
 
-/** A row moved to `status`, at the next revision. */
-export function moved(m: Memory, status: Memory["status"], validTo: TS | null, closeReason: Memory["closeReason"], env: PlanEnv): Command {
+/**
+ * A row moved by `event`, at the next revision, to the status `statusTransition` (6.5) gives; null when it refuses.
+ * The planners never write a status of their own.
+ */
+export function moved(m: Memory, event: StatusEvent, validTo: TS | null, closeReason: Memory["closeReason"], env: PlanEnv): Command | null {
+  const status = statusTransition(m.status, event);
+  if (status === "refuse") return null;
   return { op: "putMemory", id: m.logicalId, expectRev: m.rev, row: { ...m, status, validTo, closeReason, rev: m.rev + 1, updatedAt: env.opsNow } };
 }
 

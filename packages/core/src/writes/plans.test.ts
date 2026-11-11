@@ -103,6 +103,9 @@ describe("applyCorrection", () => {
     ]);
     expect(rows[0]!.rootSlices).toEqual(SISTER_REL.rootSlices);
     expect(rows[1]!.sayAs?.text).toBe("The owner's sister's name is Mara.");
+    // The new name's edge names the old name's row (contracts §7), never as a dependency.
+    expect(rows[1]!.replacesIds).toEqual([rows[0]!.logicalId]);
+    expect(rows[1]!.dependsOn.some((d) => d.includes(rows[0]!.logicalId))).toBe(false);
     expect(rows.some((m) => m.logicalId === SISTER_REL.logicalId)).toBe(false);
     const evidence = new Map([
       [TURN_EID, e],
@@ -156,5 +159,47 @@ describe("applyTransition", () => {
     ]);
     const role2 = { ...role, logicalId: testId("mrole2"), key: testId("k2") };
     expect(applyTransition({ kind: "change", transition: "jobChangeOwn", subject: "self", counterpart: null, when: msFromTs(TURN_AT) }, store(role, role2), envOf(turn(j), j, [role])).ok).toBe(false);
+  });
+});
+
+// Sequences the wave A review ran, pinned (CQ 152).
+describe("planners: the review's cases", () => {
+  const SAM = testId("sam");
+  const rel = (id: string, code: string, status: Memory["status"], closedAt: string | null) =>
+    ({ ...row(testId(id), { subjectId: "self", predicate: "person.relation", value: { kind: "enum", code }, args: { otherRef: SAM, label: null, employerRef: null } }, PRIOR, PRIOR_EID, "My dad lives in Leeds", hasher.id(["scope", SAM])), status, validTo: closedAt }) as Memory;
+
+  it("a reunion brings back only a partner or spouse relation", () => {
+    const partner = rel("relpartner", "partner", "history", "2026-09-01T00:00:00.000Z");
+    const ex = rel("relex", "ex_partner", "history", "2026-10-15T00:00:00.000Z");
+    const boss = rel("relboss", "boss", "history", "2026-10-20T00:00:00.000Z");
+    const r = "Sam and I got back together";
+    const v = { kind: "change" as const, transition: "reunion" as const, subject: "self", counterpart: SAM, when: msFromTs(TURN_AT) };
+    const written = puts(applyTransition(v, store(partner, ex, boss), envOf(turn(r), r, [partner, ex, boss]))).map((c) => c.row);
+    expect(written.filter((m) => m.status === "active").map((m) => m.value)).toEqual([{ kind: "enum", code: "partner" }]);
+    expect(puts(applyTransition(v, store(ex, boss), envOf(turn(r), r, [ex, boss])))).toEqual([]);
+  });
+
+  it("a death has gravity 3 and stands against a later illness or recovery", () => {
+    const d = "My dad passed away last night";
+    const death = { kind: "change" as const, transition: "death" as const, subject: DAD, counterpart: null, when: msFromTs(TURN_AT) };
+    const rows = puts(applyTransition(death, store(DAD_LIFE), envOf(turn(d), d, [DAD_LIFE]))).map((c) => c.row);
+    expect(rows.find((m) => m.status === "active")).toMatchObject({ value: { kind: "enum", code: "deceased" }, gravity: 3 });
+    const dead = { ...DAD_LIFE, value: { kind: "enum" as const, code: "deceased" } };
+    const s = "My dad has been really sick";
+    for (const transition of ["illness", "recovery"] as const) {
+      expect(applyTransition({ ...death, transition }, store(dead), envOf(turn(s), s, [dead]))).toEqual({ ok: false, error: "refused" });
+    }
+  });
+
+  it("a correction with targets listed history first still takes the current row's place", () => {
+    const life = (id: string, code: string, status: Memory["status"]) =>
+      ({ ...row(testId(id), { subjectId: DAD, predicate: "person.life", value: { kind: "enum", code }, args: { detail: null } }, PRIOR, PRIOR_EID, "My dad lives in Leeds"), status }) as Memory;
+    const ill = { ...life("lifeill", "ill", "history"), validTo: tsFromMs(msFromTs(TURN_AT) - 60_000) };
+    const recovered = life("liferec", "recovered", "active");
+    const c = "No, he was never ill, he's fine";
+    for (const targets of [[ill.logicalId, recovered.logicalId], [recovered.logicalId, ill.logicalId]]) {
+      const rows = puts(applyCorrection({ kind: "correct", targets, value: { kind: "enum", code: "alive" }, args: { detail: null } }, store(ill, recovered), envOf(turn(c), c, [ill, recovered]))).map((x) => x.row);
+      expect(rows.filter((m) => m.status === "active").map((m) => m.value)).toEqual([{ kind: "enum", code: "alive" }]);
+    }
   });
 });

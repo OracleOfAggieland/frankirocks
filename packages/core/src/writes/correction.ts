@@ -21,7 +21,8 @@ import { type RowSpec, moved, negated, newRow, nothing, provenProof, refused, sa
 import { statusTransition } from "./status";
 import type { Command, CorrectionVerdict, Plan, PlanEnv } from "./types";
 
-const protectedRow = (m: Memory) => m.kind === "rule" || m.predicate === "allergy";
+/** A row no correction may target: a rule or an allergy (row C5). */
+export const protectedRow = (m: Memory) => m.kind === "rule" || m.predicate === "allergy";
 const ms = (ts: string | null) => (ts === null ? null : msFromTs(ts));
 
 export function applyCorrection(v: CorrectionVerdict, rows: ReadonlyMap<ID, Memory>, env: PlanEnv): Plan {
@@ -37,9 +38,16 @@ export function applyCorrection(v: CorrectionVerdict, rows: ReadonlyMap<ID, Memo
     targets.push(t);
   }
   if (targets.length === 0 || new Set(targets.map((t) => t.key)).size !== 1) return refused;
-  const first = targets[0]!;
+  // The successor's interval and placement come from the current target when there is one, whatever order the model
+  // listed the targets in, so correcting the current value never leaves its key with none.
+  const first = targets.find((t) => t.status === "active") ?? targets[0]!;
   const refutedAt = env.evidence.assertedAt;
-  const wrongs: Command[] = targets.map((t) => moved(t, "wrong", refutedAt, "refuted", env));
+  const wrongs: Command[] = [];
+  for (const t of targets) {
+    const c = moved(t, "correct", refutedAt, "refuted", env);
+    if (c === null) return refused;
+    wrongs.push(c);
+  }
   if (v.kind === "retract") return { ok: true, commands: wrongs }; // C6: wrong, no successor (CQ 115)
 
   // C6b, said again; G35's negative.
@@ -93,8 +101,15 @@ function rename(v: Extract<CorrectionVerdict, { kind: "rename" }>, rows: Readonl
   if (negated(rows, key, to, env)) return nothing();
 
   const refutedAt = env.evidence.assertedAt;
-  const commands: Command[] = current.map((m) => moved(m, "wrong", refutedAt, "refuted", env));
+  const commands: Command[] = [];
+  for (const m of current) {
+    const c = moved(m, "correct", refutedAt, "refuted", env);
+    if (c === null) return refused;
+    commands.push(c);
+  }
   const closed = new Set(current.map((m) => m.logicalId));
+  // The new name's edge (contracts §7): the rows it replaces, and the old name's own row when it is written here.
+  const replaces = [...closed];
   const label = typeof target.args.label === "string" && target.args.label.trim() !== "" ? target.args.label.trim() : target.value.kind === "enum" ? target.value.code.replace(/_/g, " ") : "contact";
   const names = new Map([[v.entity, target.subjectId === "self" ? `the owner's ${label}` : "someone"]]);
   const base = {
@@ -125,6 +140,7 @@ function rename(v: Extract<CorrectionVerdict, { kind: "rename" }>, rows: Readonl
     });
     if (old === null) return refused;
     commands.push({ op: "putMemory", id: old.logicalId, expectRev: null, row: old });
+    replaces.push(old.logicalId);
   }
   const next = newRow(env, {
     ...base,
@@ -133,7 +149,7 @@ function rename(v: Extract<CorrectionVerdict, { kind: "rename" }>, rows: Readonl
     validFrom: current[0]?.validFrom ?? target.validFrom,
     validTo: null,
     closeReason: null,
-    replacesIds: [...closed],
+    replacesIds: replaces,
     closed,
   });
   if (next === null) return refused;

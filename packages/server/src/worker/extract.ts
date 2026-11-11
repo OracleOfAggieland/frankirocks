@@ -385,7 +385,11 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
       const event = plan.change === "correct" ? "correct" : "transition";
       for (const [id, old] of replaced) {
         const status = statusTransition(old.data.status, event);
-        if (status === "refuse") continue;
+        if (status === "refuse") {
+          // Not closed, so not replaced: `replacesIds` names only the rows this Memory closed.
+          replaced.delete(id);
+          continue;
+        }
         closed.add(id);
         tx.update(old.path, { ...old.data, status, validTo: m.validFrom, updatedAt: now });
       }
