@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import { REPO_ROOT } from "./clock-check.mjs";
 import { decide, gitTracks, isPropertyFile } from "./property-guard.mjs";
 
@@ -82,5 +84,68 @@ describe("property guard, end to end", () => {
 
   it("exits 2 on bad stdin", () => {
     expect(runHook("{not json").code).toBe(2);
+  });
+});
+
+describe("property guard, path spellings and the staged state", () => {
+  // The checkout's own folder name: `../<it>/...` from the repo root names a file inside this repo.
+  const REPO_DIR = basename(resolve(REPO_ROOT));
+  const temps: string[] = [];
+  afterEach(() => {
+    for (const root of temps.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
+
+  function runHook(stdin: string) {
+    const r = spawnSync(process.execPath, [HOOK], { input: stdin, encoding: "utf8", cwd: REPO_ROOT });
+    return { code: r.status, stderr: r.stderr };
+  }
+
+  it("blocks a tracked property file named through ../<repo folder>/, either slash", () => {
+    const file = "packages/server/src/parse-gap.property.test.ts";
+    const isTracked = tracked([file]);
+    expect(decide(event("fs_write", { path: `../${REPO_DIR}/${file}`, text: "x" }), isTracked).code).toBe(2);
+    expect(decide(event("str_replace", { path: `..\\${REPO_DIR}\\packages\\server\\src\\parse-gap.property.test.ts` }), isTracked).code).toBe(2);
+  });
+
+  it("still allows a property file in a different folder beside the repo, without asking git", () => {
+    const never = () => {
+      throw new Error("git was asked");
+    };
+    expect(decide(event("fs_write", { path: `../${REPO_DIR}-elsewhere/packages/core/src/head.property.test.ts`, text: "x" }), never)).toEqual({ code: 0, message: "" });
+  });
+
+  it("says the blocked file is tracked (staged or committed)", () => {
+    const file = "packages/core/src/voice/p1.property.test.ts";
+    expect(decide(event("str_replace", { path: file }), tracked([file])).message).toContain("tracked (staged or committed)");
+  });
+
+  it("counts a tracked property file named with different letter case as tracked", () => {
+    expect(gitTracks("packages/core/src/HEAD.property.test.ts")).toBe(true);
+    expect(gitTracks("Packages/Core/src/head.property.test.ts")).toBe(true);
+    expect(gitTracks("packages/core/src/voice/NOT-A-FILE.property.test.ts")).toBe(false);
+  });
+
+  it("counts a staged, never-committed file as tracked, and an unstaged one as not", () => {
+    const root = mkdtempSync(join(tmpdir(), "property-guard-"));
+    temps.push(root);
+    const git = (...args: string[]) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    expect(git("init", "-q").status).toBe(0);
+    writeFileSync(join(root, "draft.property.test.ts"), "x");
+    expect(gitTracks("draft.property.test.ts", root)).toBe(false);
+    expect(git("add", "draft.property.test.ts").status).toBe(0);
+    expect(gitTracks("draft.property.test.ts", root)).toBe(true);
+    expect(git("rm", "-q", "--cached", "draft.property.test.ts").status).toBe(0);
+    expect(gitTracks("draft.property.test.ts", root)).toBe(false);
+  });
+
+  it("blocks the hook for a case variant and a ../<repo folder>/ spelling of a tracked property file", () => {
+    const paths = [
+      "packages/core/src/HEAD.property.test.ts",
+      "Packages/core/src/head.property.test.ts",
+      join(REPO_ROOT, "packages", "core", "src", "Head.property.test.ts"),
+      `../${REPO_DIR}/${TRACKED}`,
+    ];
+    const codes = paths.map((path) => [path, runHook(event("str_replace", { path, oldStr: "a", newStr: "b" })).code]);
+    expect(codes).toEqual(paths.map((path) => [path, 2]));
   });
 });
