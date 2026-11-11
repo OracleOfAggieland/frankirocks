@@ -34,7 +34,14 @@ export function fastSlotsPort(deps: FastSlotsDeps): FastSlotsPort {
     async slots(input, deadlineMs) {
       const start = deps.clock.read().opsClock.now;
       const ms = () => deps.clock.read().opsClock.now - start;
-      const built = buildFastSlots(fastSlotsModel(deps.env), input);
+      // A missing model setting must not throw out of the turn: it answers `transport`, so the reply still plays
+      // and nothing is written (fail closed), the same as a failed call.
+      let built: ReturnType<typeof buildFastSlots>;
+      try {
+        built = buildFastSlots(fastSlotsModel(deps.env), input);
+      } catch {
+        return { kind: "transport", ms: ms() };
+      }
       if (!built.ok) return { kind: "invalid", reason: built.why === "oversize" ? "oversize" : "empty", path: null, ms: 0 };
       let result: unknown;
       try {

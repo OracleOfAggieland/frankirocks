@@ -50,6 +50,14 @@ describe("FastSlots port", () => {
     expect(fastSlotsModel({ ...TEST_ENV, FRANKI_BG_MODEL: "x-model" })).toBe("x-model");
     expect(() => fastSlotsModel({})).toThrow(/FRANKI_BG_MODEL/);
   });
+
+  it("a missing FRANKI_BG_MODEL answers transport and makes no call, never throwing out of the turn", async () => {
+    const rig = testRig();
+    const port = fastSlotsPort({ openai: rig.openai, timers: rig.timers, clock: rig.clock, env: {} });
+    const { value } = await settle(port.slots(input(), 900), rig.clock, rig.timers);
+    expect(value).toEqual({ kind: "transport", ms: 0 });
+    expect(rig.openai.requestsTo("responses.create")).toHaveLength(0);
+  });
 });
 
 describe("Fake_FastSlots", () => {
