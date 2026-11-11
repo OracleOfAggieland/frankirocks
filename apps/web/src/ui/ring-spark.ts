@@ -54,7 +54,8 @@ export function ringSparkStep(state: RingSpark, event: RingSparkEvent): RingSpar
       // The click that follows the press starts a call and removes the span, so no end will come.
       return state.mode === "sparking" ? release(state.token) : stay(state);
     case "reducedOn":
-      return stay(state);
+      // Reduced_Motion removes the animation, so neither an end nor a later replay may hold the grant.
+      return state.mode === "sparking" ? release(state.token) : stay(state);
     case "unmount":
       return stay(state);
     default:

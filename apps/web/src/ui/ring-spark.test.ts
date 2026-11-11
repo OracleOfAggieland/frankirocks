@@ -103,7 +103,7 @@ describe("ring spark: reduced motion", () => {
     expect(budget.active()).toBe(0);
   });
 
-  it.fails("SPARKING + reducedOn -> IDLE, grant released (the animation is gone, so no end will come)", () => {
+  it("SPARKING + reducedOn -> IDLE, grant released (the animation is gone, so no end will come)", () => {
     const { budget, state } = sparking();
     expect(drive(budget, state, [{ type: "reducedOn" }])).toEqual(RING_SPARK_IDLE);
     expect(budget.active()).toBe(0);
