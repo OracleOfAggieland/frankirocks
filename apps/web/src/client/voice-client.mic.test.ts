@@ -257,8 +257,10 @@ describe("Voice_Client microphone at call start (today)", () => {
     expect(s.retryVisible).toBe(false);
     expect(phases).toEqual(["CONNECTING", "RECOVERY", "CONNECTING", "RECOVERY", "CONNECTING", "RECOVERY", "CONNECTING", "RECOVERY"]);
 
-    // No fifth attempt: only "Try again", RETRY_UI_MS after the first failure, still with no mic message.
-    await timers.advance(RETRY_UI_MS);
+    // No fifth attempt: only "Try again", RETRY_UI_MS after the first failure (at call start), still with no mic message.
+    await timers.advance(RETRY_UI_MS - 20_000 - 1);
+    expect(vc.getSnapshot().retryVisible).toBe(false);
+    await timers.advance(1);
     expect(mic.requests).toBe(4);
     expect(vc.getSnapshot()).toMatchObject({ phase: "RECOVERY", retryVisible: true, error: null });
   });
