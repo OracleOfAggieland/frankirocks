@@ -111,7 +111,7 @@ describe("ring spark: reduced motion", () => {
 });
 
 describe("ring spark: every way a spark can end gives its grant back", () => {
-  it.fails("SPARKING + formLeft -> IDLE, grant released (the click started a call and the span is gone)", () => {
+  it("SPARKING + formLeft -> IDLE, grant released (the click started a call and the span is gone)", () => {
     const { budget, state } = sparking();
     expect(drive(budget, state, [{ type: "formLeft" }])).toEqual(RING_SPARK_IDLE);
     expect(budget.active()).toBe(0);

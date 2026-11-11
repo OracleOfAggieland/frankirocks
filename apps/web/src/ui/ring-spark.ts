@@ -51,7 +51,8 @@ export function ringSparkStep(state: RingSpark, event: RingSparkEvent): RingSpar
     case "animationCancel":
       return stay(state);
     case "formLeft":
-      return stay(state);
+      // The click that follows the press starts a call and removes the span, so no end will come.
+      return state.mode === "sparking" ? release(state.token) : stay(state);
     case "reducedOn":
       return stay(state);
     case "unmount":
