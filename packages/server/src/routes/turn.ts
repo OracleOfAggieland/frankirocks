@@ -87,14 +87,17 @@ export async function earlierSafeTurns(tx: Pick<Tx, "get" | "query">, uid: strin
  * `seq < beforeSeq`, in Turn order, the last four. The state route passes the rows of its S2 check (review item 2).
  */
 export async function safeTurnsOf(tx: Pick<Tx, "get">, uid: string, rows: readonly { id: string; data: Turn }[], beforeSeq: number, ctx: RouteContext): Promise<SafeTurn[]> {
+  const earlier = [...rows].sort((a, b) => turnOrder(a.data, b.data)).filter((row) => row.data.seq < beforeSeq && row.data.evidenceId !== null);
+  // The Evidence reads are independent, so they share one round trip; the slow path waits on them after the parse
+  // (R23.2). The results keep Turn order.
+  const evs = await Promise.all(earlier.map((row) => tx.get<Evidence>(paths.evidence(uid, row.data.evidenceId!))));
   const out: SafeTurn[] = [];
-  for (const row of [...rows].sort((a, b) => turnOrder(a.data, b.data))) {
-    if (row.data.seq >= beforeSeq || row.data.evidenceId === null) continue;
-    const ev = await tx.get<Evidence>(paths.evidence(uid, row.data.evidenceId));
-    if (ev === null) continue;
-    const s = safeTurn(row.id, row.data, ev.data, row.data.evidenceId, ctx.deps.hasher);
+  earlier.forEach((row, i) => {
+    const ev = evs[i];
+    if (ev === undefined || ev === null) return;
+    const s = safeTurn(row.id, row.data, ev.data, row.data.evidenceId!, ctx.deps.hasher);
     if (s !== null) out.push(s);
-  }
+  });
   return out.slice(-4);
 }
 
@@ -149,12 +152,20 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
     for (let attempt = 1; ; attempt++) {
       try {
         const outcome = await deps.store.transaction(uid, async (tx) => {
+          // These three reads are independent, so they share one round trip after the parse (R23.2). They are
+          // checked in the order they always were: the Session, then the core documents, then the fastO entry.
+          const coreP = readCoreDocs(tx, uid);
+          const fastOP = tx.get(paths.ledger(uid, fastODecisionId(deps.hasher, req.sessionId, req.turnId)));
+          coreP.catch(() => {});
+          fastOP.catch(() => {});
           const doc = await tx.get<Session>(paths.session(uid, req.sessionId));
           if (doc === null) throw scopeError();
           const s0 = doc.data;
           if (s0.generation !== req.generation || (s0.status !== "minting" && s0.status !== "active")) throw staleError("session");
-          const core = await readCoreDocs(tx, uid);
+          const core = await coreP;
           if (core.epoch.data.barrier !== null) throw barrierError();
+          // Settled before any early answer, so no read is still open when the transaction ends.
+          const fastO = await fastOP;
           const pair = ownerClock(core.state.data, deps.clock);
           const ops = pair.opsClock.now;
           const stamp = { ...currentStamp(req.sessionId, s0.generation, { epoch: core.epoch.data, rules: core.rules.data, bundle: core.bundle.data }), turnId: req.turnId };
@@ -197,7 +208,6 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
 
           // The parse and the verdict go on the Turn (R13.2; question 57); its Slice says its Sensitivity (question 61).
           const parsed = slow !== null && slow.parse.kind !== "failed";
-          const fastO = await tx.get(paths.ledger(uid, fastODecisionId(deps.hasher, req.sessionId, req.turnId)));
           const turn: Turn = {
             ...turn0,
             rootSlices: evidence === null ? [] : evidence.record.fieldSlices.slice(0, 1),
