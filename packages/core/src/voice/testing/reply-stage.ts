@@ -26,6 +26,10 @@
  *   slotsOffCall            a reply slot is filled outside a live call
  *   activeForOtherTurn      the admitted reply belongs to a Turn other than `admittedTurnId`
  *   pendingWithoutWait      a Permit is being checked with no wait armed to end the check
+ *   audioUnheard            a reply's audio started while the phase is not SPEAKING or the output is muted
+ *   speakingWithoutReply    SPEAKING or TOOL_WAIT with no admitted reply
+ *   judgingWithoutJudge     JUDGING with no judge running
+ *   speculatingWithoutSpec  SPECULATING with no speculative reply
  */
 import type { VoiceState } from "../machine";
 
@@ -52,6 +56,10 @@ export const ILLEGAL_REPLY_STAGES = [
   "slotsOffCall",
   "activeForOtherTurn",
   "pendingWithoutWait",
+  "audioUnheard",
+  "speakingWithoutReply",
+  "judgingWithoutJudge",
+  "speculatingWithoutSpec",
 ] as const;
 export type LegalReplyStage = (typeof LEGAL_REPLY_STAGES)[number];
 export type IllegalReplyStage = (typeof ILLEGAL_REPLY_STAGES)[number];
@@ -62,6 +70,11 @@ export function replyStage(st: VoiceState): ReplyStage {
   const offCall = phase === "CLOSED" || phase === "CONNECTING" || phase === "CONFIGURING" || (phase === "RECOVERY" && st.recovery?.kind === "connection");
   if (!st.outputMuted && !(phase === "SPEAKING" && active?.audioStarted === true)) return "audibleOutsideSpeaking";
   if (offCall) return judge === null && spec === null && pending === null && active === null ? "offCall" : "slotsOffCall";
+  // Each legal stage below is read from its slots alone, so the phase and the mute are tied to them here first.
+  if (active?.audioStarted === true && !(phase === "SPEAKING" && !st.outputMuted)) return "audioUnheard";
+  if ((phase === "SPEAKING" || phase === "TOOL_WAIT") && active === null) return "speakingWithoutReply";
+  if (phase === "JUDGING" && judge === null) return "judgingWithoutJudge";
+  if (phase === "SPECULATING" && spec === null) return "speculatingWithoutSpec";
   if (pending !== null && active !== null) return "pendingAndActive";
   if (spec !== null && phase !== "SPECULATING") return "specOutsideSpeculating";
   if (judge !== null && phase !== "JUDGING" && phase !== "SPECULATING") return "judgeOutsideJudging";
