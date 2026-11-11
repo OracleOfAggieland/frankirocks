@@ -13,6 +13,9 @@ import { checkPredicateFit } from "../schema/predicates";
 import type { Memory } from "../schema/records";
 import { msFromTs } from "../schema/primitives";
 import { NONE_CODE, findWholeWords, lookupAllergen, scanAliases, wordTokens } from "./gazetteer";
+import { protectedRow } from "./correction";
+import { scopeOf } from "./keys";
+import { sameValue } from "./plan";
 import { plainMention } from "./not-allergy";
 import { mentionEid, mentionName, hasFirstPerson, resolveSubject, type SubjectResult } from "./subject";
 import { spanClass, verifyTurnSpan } from "./spans";
@@ -152,19 +155,12 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
 // ---------------------------------------------------------------------------------------------
 // Correction items (rows C1 to C8, R1)
 
-/** Predicates whose key doesn't depend on the value or the model's `scope` string (row C5b). */
+/**
+ * Predicates whose key doesn't depend on the value or the model's `scope` string (row C5b). `preference.schedule` is
+ * left out: its scope holds the value's code, so its key depends on the value (CQ 155).
+ */
 const KEY_STABLE = new Set(["identity.name", "person.relation", "person.life", "employment.status", "employment.role", "preference.food", "preference.style", "handling", "care"]);
-/** The args each key-stable predicate's scope is made from (extraction's `scopeFor`). */
-const SCOPE_ARGS: Record<string, readonly string[]> = {
-  "person.relation": ["otherRef"],
-  "employment.role": ["employerRef"],
-  "preference.food": ["dimension", "targetRef"],
-  "preference.style": ["context", "dimension"],
-  handling: ["personRef", "context", "dimension"],
-  care: ["careSubjectRef", "topic"],
-};
 
-const protectedRow = (m: Memory) => m.kind === "rule" || m.predicate === "allergy";
 
 /** The words a value is said with, for "the turn names it" (rows C5c, C6). Null when it has none. */
 export function valueWords(v: Value): string | null {
@@ -173,8 +169,6 @@ export function valueWords(v: Value): string | null {
   return null;
 }
 
-const sameValue = (a: Value, b: Value): boolean =>
-  a.kind === "text" && b.kind === "text" ? mentionName(a.text) === mentionName(b.text) : canonicalJSON(a) === canonicalJSON(b);
 
 /** The name a renamed entity has now (G33): its known label, else the word in the target's line that derives it. */
 export function currentNameOf(entity: EID, line: string, ctx: Pick<ValidateContext, "known" | "hasher">): string | null {
@@ -210,7 +204,8 @@ function correctionVerdict(item: Extract<FastItem, { kind: "correction" }>, inde
   const target = targets[0]!;
   const args = { ...target.args, ...decodeArgs(item.args) };
   if (!KEY_STABLE.has(item.predicate)) return defer("keyUnstable"); // C5b
-  if (!isRename && (SCOPE_ARGS[item.predicate] ?? []).some((k) => canonicalJSON(args[k] ?? null) !== canonicalJSON(target.args[k] ?? null))) return defer("keyUnstable");
+  // The new args would change the key: the one scope function says so (extraction's, through `scopeOf`).
+  if (!isRename && scopeOf(item.predicate, args, item.replacementValue ?? target.value, ctx.hasher) !== target.scopeId) return defer("keyUnstable");
 
   const turnText = ctx.evidence.text;
   const line = ctx.targets.get(target.logicalId)!.line;
