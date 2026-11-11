@@ -3,6 +3,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { resolveLineage } from "../../lineage";
+import { checkRange } from "../../text";
 import type { Evidence } from "../../schema/records";
 import { Slice, Span } from "../../schema/primitives";
 import { validate } from "../../schema/v";
@@ -60,5 +61,22 @@ describe("wave A fixtures", () => {
     );
     expect(seen.clean).toBeGreaterThan(50);
     expect(seen.faulty).toBeGreaterThan(50);
+  });
+
+  it("buildEvidence moves a cut that would split a surrogate pair to the next boundary", () => {
+    const cases: [string, number[], number[]][] = [
+      ["a\u{1F436}b", [2], [0, 3]],
+      ["a\u{1F436}b", [1, 2], [0, 1, 3]],
+      ["a\u{1F436}b", [2, 3], [0, 3]],
+      ["a\u{1F436}b", [1, 2, 3], [0, 1, 3]],
+      ["a\u{1F436}", [2], [0]],
+      ["ab", [1], [0, 1]],
+    ];
+    for (const [text, cuts, starts] of cases) {
+      const e = buildEvidence(TURN_EID, text, cuts, ["U", "T", "U", "T"], TURN_AT);
+      for (const s of e.fieldSlices) expect(checkRange(text, s.start!, s.end!)).toBeNull();
+      expect(e.fieldSlices.map((s) => s.start)).toEqual(starts);
+      expect(e.fieldSlices.at(-1)!.end).toBe(text.length);
+    }
   });
 });

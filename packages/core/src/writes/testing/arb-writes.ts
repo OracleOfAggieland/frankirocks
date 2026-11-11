@@ -16,6 +16,7 @@ import { type Hasher, canonicalJSON, idParts, rootKey } from "../../ids";
 import { type Class, type Slice, type Span, msFromTs, tsFromMs } from "../../schema/primitives";
 import type { CoreRules, Evidence, Memory } from "../../schema/records";
 import { buildSlice } from "../../slices";
+import { splitsSurrogate } from "../../text";
 import { commonFields, sampleEvidence, sampleMemory, testId } from "../../testing/samples";
 import type { Act, FastItem, FastSlotsOut, HardRuleTurn, PlanEnv, Polarity, Route, TurnEvidence, ValidateContext } from "../types";
 import { aliasesIn, hasWholeWords } from "./gazetteer-oracle";
@@ -47,9 +48,16 @@ export const DAD = personEid("dad");
 
 export const memoryKey = (subject: string, predicate: string, scope: string) => hasher.id(idParts.memoryKey(subject, predicate, scope));
 
-/** Builds Evidence over `text` with slices at `cuts`, classed by `classes` (the last class repeats). */
+/**
+ * Builds Evidence over `text` with slices at `cuts`, classed by `classes` (the last class repeats). A cut between
+ * the two halves of a surrogate pair moves forward one code unit, and is dropped when that lands it on a
+ * neighbouring cut or on the end of the text.
+ */
 export function buildEvidence(eid: string, text: string, cuts: readonly number[], classes: readonly Class[], assertedAt: string): Evidence {
-  const bounds = [0, ...cuts.filter((c) => c > 0 && c < text.length), text.length];
+  const kept = cuts.filter((c) => c > 0 && c < text.length);
+  const moved = kept.map((c) => (splitsSurrogate(text, c) ? c + 1 : c));
+  const inner = moved.filter((c, i) => c === kept[i] || (c < text.length && c !== moved[i - 1] && c !== moved[i + 1]));
+  const bounds = [0, ...inner, text.length];
   const slices: Slice[] = [];
   for (let i = 0; i + 1 < bounds.length; i++) {
     if (bounds[i] === bounds[i + 1]) continue;
