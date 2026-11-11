@@ -118,7 +118,7 @@ describe("a policyRev rise and stored Memories", () => {
 
   for (const rise of ["supersede", "repair"] as const) {
     const how = rise === "supersede" ? "a Superseding_Post" : "a Parse_Repair";
-    it.fails(`a late forget on ${how} raises policyRev and hides no stored Memory: recall reads it and the next Head holds it`, async () => {
+    it(`a late forget on ${how} raises policyRev and hides no stored Memory: recall reads it and the next Head holds it`, async () => {
       const out = await run(rise);
       expect(out.raised).toBe(1);
       expect(out.call2Head.text).toContain(FACT);

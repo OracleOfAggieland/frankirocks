@@ -60,10 +60,10 @@ describe("eligible", () => {
       const { x, c, s } = setup();
       expect(eligible(x, { ...c, epoch: 2 }, s).reason).toBe("freshness");
     });
-    it("denies a row from an older policyRev", () => {
+    it("allows a row from an older policyRev when the context is current", () => {
       const { x, c, s } = setup();
       const docs = sampleCoreDocs();
-      expect(eligible(x, { ...c, policyRev: 2 }, { ...s, epoch: { ...docs.epoch, policyRev: 2 } }).reason).toBe("freshness");
+      expect(eligible(x, { ...c, policyRev: 2 }, { ...s, epoch: { ...docs.epoch, policyRev: 2 } })).toEqual({ allow: true, reason: "ok" });
     });
     it("browser: denies when generation differs from localGeneration", () => {
       const { x, c, s } = setup();

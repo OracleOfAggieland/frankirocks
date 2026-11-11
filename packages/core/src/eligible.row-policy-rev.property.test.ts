@@ -34,7 +34,7 @@ function answer(memory: Memory, epoch: number, policyRev: number, stage: "projec
 }
 
 describe("eligible: a stored row's policyRev", () => {
-  it.fails("never decides the answer when the row is at or below the current policyRev", () => {
+  it("never decides the answer when the row is at or below the current policyRev", () => {
     fc.assert(
       fc.property(caseArb, (k) => {
         const fields = { epoch: k.rowEpoch, status: k.status, sourceClass: k.sourceClass, dirty: k.dirty } as Partial<Memory>;
