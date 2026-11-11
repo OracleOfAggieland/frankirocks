@@ -1,10 +1,11 @@
 "use client";
 // The avatar slot (lab-ui-foundation R4.1, R4.2, R4.5, R18.1). The only place a renderer is chosen.
-// The Main_Screen and the Specimens_Page render <Avatar> only, so a Rive renderer replaces SvgGhost
-// here and nowhere else.
+// The Main_Screen and the Specimens_Page render <Avatar> only. The default is the three.js ghost
+// (brief 013), which shows the SVG ghost itself on the server, while three.js loads, under reduced
+// motion and wherever WebGL 2 can't run; SvgGhost stays available as an explicit renderer.
 import type { AvatarRenderer, AvatarRendererProps } from "../../ui/avatar/types";
 import { FrameTimeContext } from "./frame-time";
-import { SvgGhost } from "./SvgGhost";
+import { ThreeGhost } from "./ThreeGhost";
 
 export interface AvatarProps extends AvatarRendererProps {
   renderer?: AvatarRenderer;
@@ -12,7 +13,7 @@ export interface AvatarProps extends AvatarRendererProps {
   frameTime?: number;
 }
 
-export function Avatar({ look, input, renderer: Renderer = SvgGhost, frameTime = 0 }: AvatarProps) {
+export function Avatar({ look, input, renderer: Renderer = ThreeGhost, frameTime = 0 }: AvatarProps) {
   return (
     <div
       role="img"
