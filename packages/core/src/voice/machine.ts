@@ -802,6 +802,9 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
     case "timer":
       onTimer(s, event.name);
       break;
+    default:
+      // Compile-time only: a VoiceEvent member with no case fails the typecheck. At run time nothing happens.
+      event satisfies never;
   }
   return s.result();
 }
@@ -1663,6 +1666,12 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string, lastLoudA
       }
       return;
     }
+    default:
+      // The wire is open: the Voice_Client hands over any data-channel JSON with a string `type`, so types this union
+      // does not list do arrive here. They change nothing, as before. The check is compile-time only: a listed type
+      // with no case fails the typecheck. Never throw here.
+      ev satisfies never;
+      return;
   }
 }
 
@@ -1952,6 +1961,10 @@ function onTimer(s: Step, name: TimerName): void {
       return;
     case "swap":
       // Wave B.
+      return;
+    default:
+      // Compile-time only: a TimerName with no case fails the typecheck. At run time nothing happens.
+      name satisfies never;
       return;
   }
 }
