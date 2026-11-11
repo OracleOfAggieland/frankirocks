@@ -264,9 +264,13 @@ export interface HardRulePlan {
 // 6.3 One rule slot
 
 export type RuleSlot = { kind: "absent" } | { kind: "pending"; rule: AllergyRule } | { kind: "active"; rule: AllergyRule };
+/**
+ * `install` is the rule the event puts in an absent or pending slot: the active rule under its active ID for an
+ * affirmation, the pending filter for an unsure item (CQ 137: the slot function has no hasher, so the planner builds it).
+ */
 export type RuleEvent =
-  | { kind: "affirm"; proof: Span; deps: Dep[] }
-  | { kind: "unsure"; proof: Span | null }
+  | { kind: "affirm"; proof: Span; deps: Dep[]; install: AllergyRule }
+  | { kind: "unsure"; proof: Span | null; install: AllergyRule }
   | { kind: "deny" }
   | { kind: "trustedTap" };
 

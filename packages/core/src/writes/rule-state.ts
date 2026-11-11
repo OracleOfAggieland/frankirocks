@@ -1,10 +1,22 @@
 /**
- * One rule slot (design 6.3): the only code that decides a slot's next state. Stub from wave A task A2; task A7
- * builds it.
+ * One rule slot (design 6.3): the only code that decides a slot's next state. A slot is keyed by (subject or
+ * anonymous, code). Voice never relaxes an active rule; a pending rule leaves only by becoming active or through a
+ * certain denial; removal by a trusted tap isn't built (the "What I know" sheet builds it).
  */
 import type { HardRuleOutcome, RuleEvent, RuleSlot } from "./types";
-import { NotBuilt } from "./types";
 
-export function ruleTransition(_s: RuleSlot, _e: RuleEvent): { next: RuleSlot; outcome: HardRuleOutcome["kind"] } | { refused: "tapOnly" } {
-  throw new NotBuilt("ruleTransition");
+export function ruleTransition(s: RuleSlot, e: RuleEvent): { next: RuleSlot; outcome: HardRuleOutcome["kind"] } | { refused: "tapOnly" } {
+  if (e.kind === "trustedTap") return { refused: "tapOnly" };
+  switch (s.kind) {
+    case "absent":
+      if (e.kind === "affirm") return { next: { kind: "active", rule: e.install }, outcome: "ruleWritten" };
+      if (e.kind === "unsure") return { next: { kind: "pending", rule: e.install }, outcome: "pendingWritten" };
+      return { next: s, outcome: "denialRecorded" };
+    case "pending":
+      if (e.kind === "affirm") return { next: { kind: "active", rule: e.install }, outcome: "pendingResolved" };
+      if (e.kind === "unsure") return { next: s, outcome: "pendingKept" };
+      return { next: { kind: "absent" }, outcome: "pendingResolved" };
+    case "active":
+      return { next: s, outcome: "ruleKept" };
+  }
 }
