@@ -4,8 +4,11 @@
 // - no THREE.Timer: `rawDt = prevTs === null ? 0 : (ts - prevTs) / 1000`, unclamped, for perf.ema and tickQuality;
 //   `dt = clamp(rawDt, 0, 0.05)`; prevTs is null after every run(), so the first frame back has dt 0;
 // - `c0 = host.mono()`; frameInner applies a pending size first (queueResize), before the zero-size check;
+// - tickQuality(dms, c0 / 1000) is stored after the draw and run at the top of the next frame, after the pending size,
+//   so a tier change (setPixelRatio, setSize) never clears a frame that was just drawn; the ladder reads the same inputs;
 // - feedProbes reads host.audio only while `targets.mic` / `targets.voice` is open, otherwise silence();
-// - settle(): two frameInner calls with dt 0 that snap CH_LIST at 3380 and again after applyRig;
+// - settle(): two frameInner calls with dt 0 that snap CH_LIST at 3380 and again after applyRig; in still mode it first
+//   runs feedProbes(1/60) STILL_PREROLL times, so the still mouth never depends on the early frames' timing;
 // - the try/catch of frame() reports to the loop machine (FRAME_ERROR_LIMIT bad frames in a row fail the engine);
 // - removed: sim.update, call.tick, ui.tick, renderer.setAnimationLoop, the window resize listener, notify.
 // The loop machine itself is the pure loopStep/loopRuns of ui/avatar/renderer-phase.ts. Nothing but send() starts
@@ -80,6 +83,7 @@ export function createLoop(rc: Omit<Rig, keyof LoopPart>): LoopPart {
      ===================================================================== */
   let acc = 0, frameN = 0, running = false;
   const SUB = 1 / 120;                                                        // fixed spring sub-step: identical motion at 60 and 144 Hz
+  const STILL_PREROLL = 240;                                                  // contract: 4 s of 60 Hz probe steps before a still settle; the centroid's one-pole (60 ms) is at its float fixed point long before
   // contract: the rAF timestamp of the last frame (null after run(), so the first frame back has dt 0), the pending
   // size, the settle frames' snap, the loop machine and the scheduled frame.
   let prevTs: number | null = null;
@@ -87,6 +91,9 @@ export function createLoop(rc: Omit<Rig, keyof LoopPart>): LoopPart {
   let settling = false;
   let state: LoopState = INITIAL_LOOP;
   let handle: unknown = null;
+  // contract: the ladder's inputs from the last drawn frame. tickQuality runs at the top of the next frame, before the
+  // draw, because a tier change resizes the canvas and a resize after the draw clears the frame just drawn (§2.3).
+  const qualityTick = { due: false, dms: 0, t: 0 };
 
   function feedProbes(dt: number) {
     const m = audio.mic, v = audio.voice;
@@ -105,6 +112,7 @@ export function createLoop(rc: Omit<Rig, keyof LoopPart>): LoopPart {
   }
   function frameInner(ts: number) {
     if (pending) { size.w = pending.w; size.h = pending.h; pending = null; resize(); }   // contract: the queued size, before the frame is drawn
+    if (qualityTick.due) { qualityTick.due = false; tickQuality(qualityTick.dms, qualityTick.t); }   // contract: the last frame's tickQuality (3395), before this draw
     const c0 = host.mono();
     const rawDt = prevTs === null ? 0 : (ts - prevTs) / 1000;                  // contract (E7): replaces timer.update / getDelta
     prevTs = ts;
@@ -136,7 +144,7 @@ export function createLoop(rc: Omit<Rig, keyof LoopPart>): LoopPart {
     perf.cpu = host.mono() - c0;
     const dms = rawDt * 1000;
     if (dms > 0 && dms < 250) perf.ema += (dms - perf.ema) * 0.08;
-    tickQuality(dms, c0 / 1000);                                               // the monotonic CPU clock, never the (possibly frozen) simulation clock
+    qualityTick.due = true; qualityTick.dms = dms; qualityTick.t = c0 / 1000;   // contract: tickQuality(dms, c0 / 1000) at the top of the next frame; the monotonic CPU clock, never the (possibly frozen) simulation clock
   }
 
   function stats(): EngineStats {
@@ -278,7 +286,13 @@ export function createLoop(rc: Omit<Rig, keyof LoopPart>): LoopPart {
     const n0 = frameN;
     settling = true;
     prevTs = null;
-    try { frameInner(0); frameInner(0); }
+    try {
+      // contract: still frames only. The probes reach the still signal's fixed point before updateMouth first sees it,
+      // so the mouth driver's dominant shape (held 45 ms, which a frozen clock never releases) is the settled one and
+      // never depends on the early frames' timing (§2.3, §8.2 item 1). Silence stays silence; live engines skip it.
+      if (STILL) for (let i = 0; i < STILL_PREROLL; i++) feedProbes(1 / 60);
+      frameInner(0); frameInner(0);
+    }
     finally { settling = false; prevTs = null; }
     return frameN === n0 + 2;
   }
