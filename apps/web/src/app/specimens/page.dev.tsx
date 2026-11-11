@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import { AvatarSection } from "./_sections/AvatarSection";
 import { MainScreenSection } from "./_sections/MainScreenSection";
 import { SurfaceSections } from "./_sections/SurfaceSections";
+import { ThreeSection } from "./_sections/ThreeSection";
 
 export const metadata: Metadata = { title: "Franki specimens" };
 
@@ -15,6 +16,7 @@ export default function SpecimensPage() {
       <h1 className="text-2xl text-ink">Specimens</h1>
       <p className="text-sm text-ink-dim">Every surface in every state, with example props. Development only.</p>
       <AvatarSection />
+      <ThreeSection />
       <MainScreenSection />
       <SurfaceSections />
     </main>

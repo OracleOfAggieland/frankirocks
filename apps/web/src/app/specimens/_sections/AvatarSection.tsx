@@ -1,8 +1,11 @@
 "use client";
 // Every Look_Name, every Avatar_Event over every state, and Ghost_Mode over each state, each with
-// Reduced_Motion off and forced on (R20.2).
+// Reduced_Motion off and forced on (R20.2). These tiles are pinned to the SVG ghost (brief 013 WP14), so they
+// keep showing the SVG renderer after the default renderer becomes the three.js ghost; the three.js ghost has its
+// own section, beside the SVG, with one engine per tile.
 import { Avatar } from "../../../components/avatar/Avatar";
 import { Stage } from "../../../components/avatar/Stage";
+import { SvgGhost } from "../../../components/avatar/SvgGhost";
 import { lookFor } from "../../../ui/avatar/look";
 import { ReducedMotionOverride } from "../../../ui/hooks/reduced-motion";
 import { EVENTS, STATES, avatarInput } from "../_fixtures";
@@ -22,7 +25,7 @@ function Specimen({ input, label }: { input: ReturnType<typeof avatarInput>; lab
       >
         <div className="w-36">
           <Stage reduced={input.reducedMotion}>
-            <Avatar look={look} input={input} />
+            <Avatar look={look} input={input} renderer={SvgGhost} />
           </Stage>
         </div>
       </Tile>
