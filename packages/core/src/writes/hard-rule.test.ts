@@ -204,9 +204,25 @@ describe("cue sentences and notAllergyByCode", () => {
     const wide = { ...m, subject: { entityId: null, mention: spanAt(TURN_EID, t, 14, 36), isSelf: false } };
     expect(cueSentences(ev(t), { items: [wide], need: "none" }, false, new Set([0]))).toEqual([{ start: 14, end: 43 }]);
   });
-  it("fails the code check on an alias anywhere in the turn's U text", () => {
+  it("fails the code check on an alias anywhere in the turn's U text when the cue has no object of its own", () => {
     expect(notAllergyByCode(ev("I'm allergic. To shellfish."))).toBe(false);
     expect(notAllergyByCode(ev("I'm allergic to. Shellfish and peanuts."))).toBe(false);
+    expect(notAllergyByCode(ev("I'm allergic. Shellfish."))).toBe(false);
+    expect(notAllergyByCode(ev("I'm intolerant. Of lactose."))).toBe(false);
+  });
+  it("otherwise reads only the cue sentences: a food or pet word elsewhere in the turn is not the cue's object (CQ 157)", () => {
+    const jokes = [
+      "I'm allergic to Mondays. Can you order eggs for breakfast?",
+      "I'm allergic to Mondays. Did you feed the dog?",
+      "Ugh, I'm allergic to meetings. Remind me to buy milk.",
+      "My boss is so intolerant. Anyway, book the sushi place, the one with the good salmon.",
+    ];
+    for (const t of jokes) {
+      expect(notAllergyByCode(ev(t)), t).toBe(true);
+      const p = plan(t, []);
+      expect(p.outcome.kind, t).toBe("notAllergy");
+      expect(p.rules.allergies, t).toEqual([]);
+    }
   });
   it("passes Mondays and the intolerant boss; fails an alias, a generic object, an allergy pill near 'this', and EpiPen", () => {
     expect(notAllergyByCode(ev("I'm allergic to Mondays."))).toBe(true);

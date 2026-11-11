@@ -8,7 +8,8 @@
  * `MENTION_MAX_WORDS` words, no RX4 word) and validation resolved a subject from it; any other mention is scanned
  * like the rest of the text, so a model-chosen mention can never switch coverage or the fallback off.
  *
- * The code's half of G3 holds when the turn's U text names no gazetteer alias, every cue word in an RX4 sentence is
+ * The code's half of G3 holds when the RX4 sentences name no gazetteer alias (the whole U text, when a cue sentence
+ * has no object of its own), every cue word in an RX4 sentence is
  * `allerg…` or `intoleran…` (never `anaphyla…`, `epipen` or `celiac`), and no generic object word stands within six
  * words of a cue, except a compound right after "allergy" ("allergy pill").
  */
@@ -118,14 +119,38 @@ export function cueSpan(e: TurnEvidence, ranges: readonly Range[]): Span | null 
   return null;
 }
 
+/** Words that lead into a cue's object: a cue followed only by these has its object in a later sentence. */
+const OBJECT_LEADS: ReadonlySet<string> = new Set(["to", "of", "with"]);
+
 /**
- * The code's half of the G3 check. The model's half is the caller's. An alias anywhere in the turn's U text fails it
- * ("I'm allergic. To shellfish."), so an empty answer never decides alone that a named allergen isn't one.
+ * True when a cue sentence has no object of its own, so its object may be in the next sentence (CQ 150, amended by
+ * CQ 157): only "to", "of" or "with" follow the cue ("I'm allergic to. Shellfish."); or the cue is the sentence's
+ * last word and is `allerg…` ("I'm allergic. Shellfish.") or the next sentence starts with one of those words
+ * ("I'm intolerant. To lactose."). "My boss is so intolerant." followed by another sentence is the trait, not a cue
+ * with its object later.
+ */
+export function cueHasNoObject(text: string, s: Range): boolean {
+  const w = wordTokens(text, s.start, s.end).map((t) => t.word);
+  const next = sentencesOf(text).find((x) => x.start >= s.end);
+  const nextFirst = next === undefined ? undefined : wordTokens(text, next.start, next.end)[0]?.word;
+  return w.some((x, i) => {
+    if (!RX4.test(x)) return false;
+    const after = w.slice(i + 1);
+    if (after.length > 0) return after.every((a) => OBJECT_LEADS.has(a));
+    return /^allerg/.test(x) || (nextFirst !== undefined && OBJECT_LEADS.has(nextFirst));
+  });
+}
+
+/**
+ * The code's half of the G3 check, over the RX4 sentences. The model's half is the caller's. When a cue sentence has
+ * no object of its own, an alias anywhere in the turn's U text also fails it ("I'm allergic. To shellfish."), so an
+ * empty answer never decides alone that a named allergen isn't one; otherwise a food word in another sentence ("I'm
+ * allergic to Mondays. Can you order eggs?") is not the cue's object (G3, CQ 157).
  */
 export function notAllergyByCode(e: TurnEvidence): boolean {
   const rx = rx4Sentences(e.text);
   if (rx.length === 0) return false;
-  if (uParts(e.slices, 0, e.text.length).some((r) => scanAliases(e.text, r.start, r.end).length > 0)) return false;
+  if (rx.some((s) => cueHasNoObject(e.text, s)) && uParts(e.slices, 0, e.text.length).some((r) => scanAliases(e.text, r.start, r.end).length > 0)) return false;
   for (const s of rx) {
     if (scanAliases(e.text, s.start, s.end).length > 0) return false;
     const w = wordTokens(e.text, s.start, s.end).map((t) => t.word);
