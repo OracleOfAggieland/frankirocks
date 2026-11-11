@@ -80,7 +80,7 @@ One screen, no navigation. Desktop first, down to 375 px wide.
 
 ## Franki: the avatar
 
-The avatar is a contract with more than one renderer. This foundation builds an **SVG ghost** drawn in code. A Rive rig replaces it later behind the same contract, and the SVG ghost stays as the reduced-motion and fallback renderer.
+The avatar is a contract with more than one renderer. This foundation builds an **SVG ghost** drawn in code. A **three.js ghost** (brief 013), ported from the three.js prototype, replaces it as the default behind the same contract, and the SVG ghost stays as the reduced-motion and fallback renderer. The three.js engine under `components/avatar/three/` keeps the prototype's tuned `0x` colour numbers rather than the tokens, so a token edit never changes the 3D look; token-check waives only that rule there.
 
 **Look** (drawn fresh in code; `reference/mascot-reference.png` is concept art for proportions only, never shipped):
 - A glossy, soft-green ghost body, wider at the top, with a wavy three-lobe hem.
@@ -193,4 +193,4 @@ The room is dark. Franki is dormant, eyes closed, barely glowing. `FRANKIROCKS` 
 
 ## Out of scope for the foundation
 
-The Rive rig, server data for the strip, jar, Lab, receipt and chips, company mode ("Someone walked in"), and any new API route. The foundation builds these surfaces as components that render props, shows them with fixture props on a development-only specimens page, and wires to the main screen only what the client already has today: auth, voice state, mic and output state, levels, and typed turns.
+The three.js renderer (brief 013 builds it), server data for the strip, jar, Lab, receipt and chips, company mode ("Someone walked in"), and any new API route. The foundation builds these surfaces as components that render props, shows them with fixture props on a development-only specimens page, and wires to the main screen only what the client already has today: auth, voice state, mic and output state, levels, and typed turns.
