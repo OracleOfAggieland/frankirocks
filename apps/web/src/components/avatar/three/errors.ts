@@ -15,10 +15,3 @@ export class EngineError extends Error {
   }
 }
 
-/** The marker every unported stub throws with. I2 checks that no file under three/ still contains it. */
-export const NOT_PORTED = "not ported yet";
-
-/** The body of a scaffold stub. */
-export function notPorted(name: string, ...inputs: unknown[]): never {
-  throw new EngineError("build", `${name}: ${NOT_PORTED} (${inputs.length} inputs)`);
-}
