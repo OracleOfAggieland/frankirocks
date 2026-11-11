@@ -1,4 +1,13 @@
 /**
+ * @machine voice.call
+ * The only code that decides what the call does next. State: VoiceState; events: VoiceEvent; deciding function:
+ * step. Exits: closedFields (hangUp, openFailed), connectionRecovery, onOpen, startOpen; their reset table is above
+ * closedFields. Every wait is a TimerName; its meaning table is on that type.
+ * Always: every wait has its deadline in state, and a timer whose deadline is absent or not reached does nothing;
+ * and the rules listed below.
+ * Never: read a clock, a random source or the network; throw. An event type, timer name or Realtime type with no
+ * case changes nothing at run time; a member of a listed union with no case fails the typecheck.
+ *
  * Browser call-state reducer (design "Browser state machine"; R13, R15, R16.3, R17.2, R17.3; KV02, KV04, KV05,
  * KV06, KV13). Pure: `step(state, event, now)` returns the next state and the commands the Voice_Client runs, in
  * order. `now` is the browser opsClock in integer milliseconds. Nothing here reads a clock, a random source or the
