@@ -33,6 +33,19 @@ export function hasNegation(text: string): boolean {
   return wordTokens(text).some((t) => NEGATION.has(t.word) || t.word.endsWith("n't"));
 }
 
+/**
+ * Words that point back at the asked allergen or only answer the question (CQ 156). An `item` made of these alone
+ * ("it", "that one", "the same", "yes", "no") names nothing of its own, so an answer may take the asked rule's code.
+ * Any other word found in the span ("durian", "something") is another thing named, even when the gazetteer doesn't
+ * know it.
+ */
+export const REFERENCE_WORDS: ReadonlySet<string> = new Set(["it", "that", "this", "these", "those", "them", "one", "ones", "the", "same", "yes", "yeah", "yep", "yup", "no", "nope", "nah"]);
+
+/** True when the item's words are all reference words, or it has none. */
+export function namesNothing(item: string): boolean {
+  return wordTokens(item).every((t) => REFERENCE_WORDS.has(t.word));
+}
+
 const routeOf = (item: FastItem): Route | null =>
   item.kind === "allergy" ? "hardRule" : item.kind === "correction" ? "correct" : item.kind === "transition" ? "transition" : null;
 
@@ -88,12 +101,15 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
   let polarity = item.polarity === "denied" && !hasNeg ? "uncertain" : item.polarity; // A5
 
   // Codes come from `item`, once it is found inside the verified quote (A3). Answering rules 1 and 3 fill them from
-  // the asked rule R when the answer names no allergen ("Yes.", "No."); rule 4 then takes R's proof.
+  // the asked rule R when the answer names nothing of its own ("Yes.", "No.", "it"); rule 4 then takes R's proof. An
+  // item found in the span that the gazetteer doesn't know ("durian", "something") is another thing named: its codes
+  // stay empty and it never answers R (CQ 156).
   const aliasesInSpan = scanAliases(span.quote);
   const itemInSpan = item.item.trim() !== "" && findWholeWords(span.quote, item.item) !== null;
+  const namesOwn = itemInSpan && !namesNothing(item.item);
   let codes: string[];
   let proof: Span = span;
-  if (answering && R !== null && R.code !== "unresolved" && aliasesInSpan.length === 0 && (!itemInSpan || lookupAllergen(item.item).length === 0)) {
+  if (answering && R !== null && R.code !== "unresolved" && aliasesInSpan.length === 0 && !namesOwn) {
     if (polarity === "denied") codes = [R.code];
     else if (R.proof !== null) {
       codes = [R.code];
@@ -121,8 +137,9 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
     const onlyNone = codes.length > 0 && codes.every((c) => c === NONE_CODE);
     if (resolved !== null && onlyNone) return ok({ kind: "deny", subject: resolved.id, scope: "global", proof: span }); // A7
     if (resolved !== null) return ok({ kind: "deny", subject: resolved.id, scope: "specific", codes: codes.filter((c) => c !== NONE_CODE), proof: span }); // A8
-    // A9: only a denial that names no other allergen answers R ("No.", "Nobody's allergic to anything"; CQ 145).
-    if (answering && R !== null && R.anonymous && (codes.length === 0 || onlyNone || codes.includes(R.code))) return ok({ kind: "deny", answers: R.id, proof: span }); // A9
+    // A9: only a denial that names no other allergen answers R ("No.", "Nobody's allergic to anything"; CQ 145), and
+    // an item the gazetteer doesn't know is another allergen named ("Nobody's allergic to durian"; CQ 156).
+    if (answering && R !== null && R.anonymous && ((codes.length === 0 && !namesOwn) || onlyNone || codes.includes(R.code))) return ok({ kind: "deny", answers: R.id, proof: span }); // A9
     // A10. The design names the reason `act`; `target` is used so a direct, matching denial is never turned away
     // for its act or its span (P2), and nothing is written either way (CQ 136).
     return ignored("target"); // A10

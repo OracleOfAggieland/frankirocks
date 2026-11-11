@@ -328,6 +328,40 @@ describe("planHardRule: a pending rule leaves only for its own slot", () => {
     }
   });
 
+  // CQ 156: an answer that names something the gazetteer doesn't know never takes the asked rule's code.
+  it("a denial of something off the table leaves the asked rule, for the owner, for nobody and for the brother", () => {
+    const selfPeanut = { ...ANSWER_PRIORS.anonPeanut, subjectId: "self", anonymous: false };
+    const a = "I'm not allergic to durian.";
+    const pa = plan(a, [item(a, "I'm not allergic to durian", "durian", "denied")], rulesOf(selfPeanut), { answering: { rule: selfPeanut } });
+    expect(triples(pa.rules)).toEqual([["self", "peanut", "pending"]]);
+    expect(pa.outcome.kind).not.toBe("pendingResolved");
+    const anon = ANSWER_PRIORS.anonPeanut;
+    const b = "Nobody here is allergic to durian, no.";
+    const pb = plan(b, [item(b, "Nobody here is allergic to durian, no", "durian", "denied", NOBODY)], rulesOf(anon), { answering: { rule: anon } });
+    expect(pb.rules.allergies.some((r) => r.id === anon.id)).toBe(true);
+    const bro = ANSWER_PRIORS.brotherPeanut;
+    const c = "My brother isn't allergic to durian.";
+    const pc = plan(c, [item(c, "My brother isn't allergic to durian", "durian", "denied", { entityId: null, mention: at(c, "My brother"), isSelf: false })], rulesOf(bro), { answering: { rule: bro } });
+    expect(triples(pc.rules)).toEqual([[BROTHER, "peanut", "pending"]]);
+  });
+
+  it("an affirm of something off the table writes the all-food filter for its subject, never the asked code", () => {
+    const selfPeanut = { ...ANSWER_PRIORS.anonPeanut, subjectId: "self", anonymous: false };
+    const a = "I'm allergic to durian.";
+    const pa = plan(a, [item(a, "I'm allergic to durian", "durian", "affirmed")], rulesOf(selfPeanut), { answering: { rule: selfPeanut } });
+    expect(triples(pa.rules)).toEqual([
+      ["self", "peanut", "pending"],
+      ["self", "unresolved", "pending"],
+    ]);
+    expect(pa.outcome).toMatchObject({ kind: "pendingWritten", question: "whatItem" });
+    const b = "My brother is allergic to something too.";
+    const pb = plan(b, [item(b, "My brother is allergic to something too", "something", "affirmed", { entityId: null, mention: at(b, "My brother"), isSelf: false })], rulesOf(selfPeanut), { answering: { rule: selfPeanut } });
+    expect(triples(pb.rules)).toEqual([
+      ["self", "peanut", "pending"],
+      [BROTHER, "unresolved", "pending"],
+    ]);
+  });
+
   it("at exactly RULES_MAX rules nothing grows past the bound", () => {
     const full = { ...emptyRules(), allergies: Array.from({ length: RULES_MAX }, (_, i) => fixtureRule(`g${i}`, "self", `code${i}`, "active")) };
     const t = "I'm allergic to peanuts.";

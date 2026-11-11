@@ -62,6 +62,7 @@ export type AnswerKind =
   | "nobodyOther"
   | "self"
   | "selfDenial"
+  | "brotherDenial"
   | "brotherHas"
   | "itWas"
   | "drug"
@@ -70,7 +71,10 @@ export type AnswerKind =
   | "wholeMention"
   | "dog";
 
-export const ANSWER_ALLERGENS = ["shellfish", "peanuts", "sesame", "kiwi", "milk", "eggs"] as const;
+export const ANSWER_ALLERGENS = ["shellfish", "peanuts", "sesame", "kiwi", "milk", "eggs", "durian", "something"] as const;
+
+/** The items above that the gazetteer doesn't know: each names something of its own (CQ 156). */
+export const OFF_TABLE_ITEMS: ReadonlySet<string> = new Set(["durian", "something"]);
 
 const NOBODY: Subject = { entityId: null, mention: null, isSelf: false };
 const SELF: Subject = { entityId: null, mention: null, isSelf: true };
@@ -113,6 +117,10 @@ function build(kind: AnswerKind, x: string, y: string): Built {
       const s = `I'm not allergic to ${x}`;
       return { text: `${s}.`, item: allergy(s.length, x, "denied", () => SELF), plainMention: null };
     }
+    case "brotherDenial": {
+      const s = `My brother isn't allergic to ${x}`;
+      return { text: `${s}.`, item: allergy(s.length, x, "denied", mention(0, 10)), plainMention: plain(0, 10) };
+    }
     case "brotherHas": {
       const s = `My brother can't have ${x}`;
       return { text: `${s}.`, item: allergy(s.length, x, "affirmed", mention(0, 10)), plainMention: plain(0, 10) };
@@ -144,7 +152,7 @@ function build(kind: AnswerKind, x: string, y: string): Built {
 }
 
 const sentenceArb = fc.record({
-  kind: fc.constantFrom<AnswerKind>("yes", "me", "myBrother", "no", "nobodyOther", "self", "selfDenial", "brotherHas", "itWas", "drug", "notSure", "wideMention", "wholeMention", "dog"),
+  kind: fc.constantFrom<AnswerKind>("yes", "me", "myBrother", "no", "nobodyOther", "self", "selfDenial", "brotherDenial", "brotherHas", "itWas", "drug", "notSure", "wideMention", "wholeMention", "dog"),
   x: fc.constantFrom(...ANSWER_ALLERGENS),
   y: fc.constantFrom(...ANSWER_ALLERGENS),
   act: fc.constantFrom<FastItem["act"]>("direct", "direct", "direct", "quoted", "hypothetical", "uncertain"),

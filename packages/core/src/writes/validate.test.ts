@@ -149,6 +149,26 @@ describe("answering turns", () => {
     const b = "I'm allergic to peanuts.";
     expect(one(run(b, [allergy(b, "peanuts")], { answering: { rule: U } }))).toMatchObject({ v: { kind: "affirm" } });
   });
+  it("1 and 3 take the asked rule's code only for an item that names nothing of its own (CQ 156)", () => {
+    const it2 = "Yes, I'm allergic to it.";
+    expect(one(run(it2, [allergy(it2, "it")], { answering: { rule: R } }))).toMatchObject({ v: { kind: "affirm", subject: "self", codes: ["peanut"], proof: R.proof } });
+    const d = "I'm not allergic to durian.";
+    expect(one(run(d, [allergy(d, "durian", { polarity: "denied" })], { answering: { rule: R } }))).toMatchObject({ v: { kind: "deny", subject: "self", scope: "specific", codes: [] } });
+    const anon = { ...R, subjectId: null, anonymous: true };
+    const n = "Nobody here is allergic to durian, no.";
+    expect(one(run(n, [allergy(n, "durian", { polarity: "denied", subject: NONE })], { answering: { rule: anon } }))).toEqual({ kind: "ignored", index: 0, reason: "target" });
+    const ref = "Nobody here is allergic to that, no.";
+    expect(one(run(ref, [allergy(ref, "that", { polarity: "denied", subject: NONE })], { answering: { rule: anon } }))).toMatchObject({ v: { kind: "deny", answers: anon.id } });
+    const b = "My brother isn't allergic to durian.";
+    const bro = mentionEid("person", "brother", hasher);
+    const mention = spanAt(TURN_EID, b, 0, 10);
+    expect(one(run(b, [allergy(b, "durian", { polarity: "denied", subject: { entityId: null, mention, isSelf: false } })], { answering: { rule: { ...R, subjectId: bro } } }))).toMatchObject({ v: { kind: "deny", subject: bro, codes: [] } });
+    const a = "I'm allergic to durian.";
+    expect(one(run(a, [allergy(a, "durian")], { answering: { rule: R } }))).toMatchObject({ v: { kind: "unsure", subject: "self", codes: "unresolved", question: "whatItem", proof: whole(a) } });
+    const s = "My brother is allergic to something too.";
+    const sm = spanAt(TURN_EID, s, 0, 10);
+    expect(one(run(s, [allergy(s, "something", { subject: { entityId: null, mention: sm, isSelf: false } })], { answering: { rule: R } }))).toMatchObject({ v: { kind: "unsure", subject: bro, codes: "unresolved", question: "whatItem" } });
+  });
   it("6: with no asked rule, codes and subject come from the answer itself", () => {
     const a = "Shellfish and peanuts, both.";
     expect(one(run(a, [allergy(a, "Shellfish", { subject: NONE })], { answering: { rule: null } }))).toMatchObject({ v: { kind: "unsure", subject: null, codes: ["shellfish"], question: "whoHas" } });
