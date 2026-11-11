@@ -11,3 +11,4 @@ export * from "./rule-state";
 export * from "./hard-rule";
 export * from "./not-allergy";
 export * from "./slots-phase";
+export * from "./fast-slots";
