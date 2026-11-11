@@ -80,7 +80,7 @@ One screen, no navigation. Desktop first, down to 375 px wide.
 
 ## Franki: the avatar
 
-The avatar is a contract with more than one renderer. This foundation builds an **SVG ghost** drawn in code. A **three.js ghost** (brief 013), ported from the three.js prototype, replaces it as the default behind the same contract, and the SVG ghost stays as the reduced-motion and fallback renderer. The three.js engine under `components/avatar/three/` keeps the prototype's tuned `0x` colour numbers rather than the tokens, so a token edit never changes the 3D look; token-check waives only that rule there.
+The avatar is a contract with more than one renderer. This foundation builds an **SVG ghost** drawn in code. A **three.js ghost** (brief 013), ported from the three.js prototype, replaces it as the default behind the same contract, and the SVG ghost stays as the reduced-motion and fallback renderer.
 
 **Look** (drawn fresh in code; `reference/mascot-reference.png` is concept art for proportions only, never shipped):
 - A glossy, soft-green ghost body, wider at the top, with a wavy three-lobe hem.
