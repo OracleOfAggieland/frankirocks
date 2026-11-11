@@ -6,6 +6,10 @@ Report for `docs/briefs/012-voice-writes.md`, by wave. Section and row numbers a
 
 ### Properties run red
 
+**This section and the next three describe the state at `ed6107b`, before the build.** The stubs, `NotBuilt` and the generators named here have changed since; the build table and the review fixes below say how.
+
+**Commit order.** Section 9 lists task A1 (steering) first; it was committed third. `39d197e` holds properties P1, P2, P5, P6 and P8, the typed stubs they ran against, their generators and fixtures, and the frozen extraction lines; `ed6107b` is this section; the steering file came after both, in `17eca05`.
+
 Written first, at commit `39d197e` (from `bc19494`), against typed stubs that throw `NotBuilt` ("not implemented: …"). Every property below ran red for that reason and no other: the first generated case reached a stub. Each was run on its own with `npx vitest run <file>`; the seeds are fast-check's, printed on failure. A counterexample is given by the generated inputs that decide it (the clause list, the item's change, the slice classes and the flags); the derived fields (text, Evidence, items) follow from them.
 
 | Property | File | Test | Seed | Path | Shrunk counterexample | Red because |
@@ -70,9 +74,9 @@ Every task of section 9's wave A is built and committed by path, one commit per 
 | A4 FastSlotsV1 | `162da09` | `writes/fast-slots.ts` (constants, the contract literal after `PREFIX`, the guide, input bounds and trim, the strict schema, `parseFastSlots`), `server/onturn/fast-slots-port.ts` (`FRANKI_BG_MODEL`, the caller's deadline on the opsClock), `server/testing/fake-fast-slots.ts`, and `fastSlots` in `RouteDeps`. |
 | A5 Validation | `3e7844b` | `writes/subject.ts` (rows SU1 to SU8), `writes/spans.ts` (extraction's anchor and verify, the U parts), `writes/validate.ts` (the allergy, answering, correction and transition tables, with a running bound on handled keys and refs), `writes/validate.test.ts` (45 cases). |
 | A6 Status and planners | `9e1f210` | `writes/status.ts` (`statusTransition`, the one function for a Memory's next status; extraction's replaced loop now calls it and skips `refuse`), `writes/bitemporal.ts` (`place`, `closesCurrent`), `writes/bundle.ts`, `writes/keys.ts`, `writes/plan.ts`, `writes/correction.ts` (`applyCorrection`, with renames through `identity.name`), `writes/transition.ts` (`applyTransition`, the truth-order table and transcript order), `writes/plans.test.ts`. P5 and P6 green. |
-| A7 Rules | `7728ef0` | `writes/rule-state.ts` (`ruleTransition`, every move of 6.3), `writes/not-allergy.ts` (the G3 double check), `writes/hard-rule.ts` (`planHardRule`: slots from U proofs only, cross-slot reach, coverage over the U cue sentences, the `unresolved` fallback, the bounds, the outcome read from what changed), `writes/hard-rule.test.ts` (29 cases). P1, P2, P4 and P8 green. P4 found a real defect on the way (CQ 131), fixed in code. |
+| A7 Rules | `7728ef0` | `writes/rule-state.ts` (`ruleTransition`, every move of 6.3), `writes/not-allergy.ts` (the G3 double check), `writes/hard-rule.ts` (`planHardRule`: slots from U proofs only, cross-slot reach, coverage over the U cue sentences, the `unresolved` fallback, the bounds, the outcome read from what changed), `writes/hard-rule.test.ts` (29 cases). P1, P2, P4 and P8 green. P4 found a real defect on the way (CQ 131), fixed in code: seed `-1822335196`, a hedge plus a global denial ("I'm not allergic to anything") left a pending shellfish rule with neither a slot nor a recorded denial. |
 | A8 Call phase | `bc91caf` | `writes/slots-phase.ts` (`initialSlots`, `nextSlots`: never before the context is read, at most one start, the deadline from the starting event, a due deadline always settles) and `slots-phase.test.ts`, one case per row of 6.1. P12 green. |
-| A9 Harness | `930e657` | `scripts/judge-spike/fast-slots.ts` and `fast-slots-fixture.ts` (synthetic entities and targets, none of the owner's words), `--fast-slots` in `cli.ts`, the FastSlotsV1 section in `summary.ts`, six cases in `harness.test.ts`. Rows hold the time, result, invalid reason and path, and item kinds; never line text. From the Nov 10 run file (`2026-11-10T06-32-11-722Z-owner.json`), **hardRule 4 of 5 and correction 3 of 5 lines pass `speakerCertain`**: `c-hardrule-2` and `c-correction-4` had failed parses, and `c-correction-5` had company at 0.3. `transition` reports "no lines" (G21). |
+| A9 Harness | `930e657` | `scripts/judge-spike/fast-slots.ts` and `fast-slots-fixture.ts` (synthetic entities and targets, none of the owner's words), `--fast-slots` in `cli.ts`, the FastSlotsV1 section in `summary.ts`, six cases in `harness.test.ts`. Rows hold the time, result, invalid reason and path, and item kinds; never line text. From the Nov 10 run file (`2026-11-10T06-32-11-722Z-owner.json`), **hardRule 4 of 5 and correction 3 of 5 lines pass `speakerCertain`**: `c-hardrule-2` and `c-correction-4` had failed parses, and `c-correction-5` had company at 0.3. `transition` reports "no lines" (G21). The review found its correction count measured the shared fixture, not FastSlotsV1 (fixed in `b5fe6ee`, below). |
 | A10b Extraction check | `72cea4a` | `scripts/extract-check/check.ts`, `run.mjs`, `check.test.ts`, `tsconfig.json`; the root `typecheck` now covers it. `LINES_SHA256` pins `lines.json` (`7bba56d2…0a0b`, read with LF line endings) and a run refuses any other file. Every item is planned with the extractor's own `planItem`; a hold counts as `held`, a memory plan as its own status, and each target it closes as `wrong` or `history` (CQ 143). The test checks the pin, the class counts, that no line holds a 4-word window of a judge-spike probe line (`closeCopies`, as `regex-copy.test.ts` does), real answers for an allergy, a misplaced allergy, a correction and a change on a correction line, and that the fake run exits 0. |
 | A11 | this report | |
 
@@ -80,15 +84,56 @@ A fake extraction run (`node scripts/extract-check/run.mjs`) passes 9 of 30: exa
 
 ### Contract questions raised
 
-CQs 130 to 143 are in the design note's section 8: 130 the turn is never cut; 131 a global denial's ledger codes; 132 cross-slot resolution only on a newly active rule; 133 answering rule 5 keeps the asked rule pending (the owner's call, with 128); 134 past words place a change at the turn; 135 `SubjectIndex.seen`; 136 row A10's reason; 137 `RuleEvent.install`; 138 no `subjectLabel` until wave B; 139 the care row's subject and topic; 140 a correction with another current row on its key is refused; 141 a change meeting a later-asserted row ends at now; 142 what `--fast-slots` sends; 143 the extraction check's single call.
+CQs 130 to 155 are in the design note's section 8. 130 the turn is never cut; 131 a global denial's ledger codes; 132 cross-slot resolution only on a newly active rule; 133 answering rule 5 keeps the asked rule pending (the owner's call, with 128); 134 past words place a change at the turn; 135 `SubjectIndex.seen`; 136 row A10's reason; 137 `RuleEvent.install`; 138 no `subjectLabel` until wave B; 139 the care row's subject and topic; 140 a correction with another current row on its key is refused; 141 a change meeting a later-asserted row ends at now; 142 what `--fast-slots` sends; 143 the extraction check's single call. From the wave A review: 144 cross-slot reach only where the new rule answers the pending one; 145 row A9 and A7's codes exactly `[none]`; 146 answering rule 5 only for R's own subject; 147 an answer's rule depends on both Evidences, root keys the proof's; 148 an uncertain speaker's denial carries only verified codes; 149 SU2's "my" and "mine"; 150 subjects only from a plain mention, and notAllergy over the whole U text; 151 a change said for the turn's own day defers unless past; 152 a death stands, a reunion brings back only a partner; 153 an asked rule landing on an active slot stays (the owner's call); 154 `targets[].line` and the planner signatures; 155 row C5b's `preference.*`.
+
+### Review fixes
+
+The wave A review confirmed 17 findings and listed smaller ones. Every confirmed finding is fixed in code; no committed property file was edited.
+
+**Property 4b, written red first.** P4 was weak, not wrong: its generator never made a turn where a pending rule could leave for another rule's answer. `packages/core/src/writes/hard-rule-slots.property.test.ts`, with its generator `writes/testing/arb-hard-rule-answers.ts`, was committed red in `e12c423`: a pending rule leaves only for its own slot, an answer's rule names this turn in `dependsOn`, `pendingKept` never comes with no rule and no change, and coverage holds except on a plain "My X" mention. Red seeds at `e12c423` (1,000 runs each; log `_sm/logs/f3/p4b-red.log` outside the repo):
+
+| Seed | Failure |
+|---|---|
+| `105783578` | "I'm allergic to penicillin" removed the owner's pending `unresolved` rule |
+| `-1548683395` | a pending kiwi rule for anyone left on "I'm allergic to penicillin." while kiwi was asked |
+| `-1100999920` | the owner's `unresolved` rule left on "I'm allergic to penicillin. Yes." |
+| `849322210` | "My brother with the milk allergy…": milk uncovered |
+| `-91000851` | a shellfish rule written without the turn in `dependsOn` |
+| `-877453753` | `pendingKept` with no rule on "I'm allergic to shellfish." |
+| `364412852` | the same on "I'm allergic to shellfish. Yes." |
+| `-31857720` | the same on "My brother." |
+| `-1709706888` | "I'm allergic to kiwi. Yes.": kiwi uncovered |
+
+P4b is green after `67fee10`, over 12 repeated runs alongside P1, P2, P4 and P8.
+
+| Commit | What it fixes |
+|---|---|
+| `67fee10` | `planHardRule` and validation: cross-slot reach only for the new rule's own slot or an asked anonymous `unresolved` rule (CQ 144); A9 and A7 (145); rule 5's subject (146); an answer's lineage (147); A6's verified codes (148); SU2 (149); plain mentions, the fallback over the uncut cue sentences, `notAllergy` over the whole U text (150); the catch-all `pendingKept`; the `superseded` rule move through `ruleTransition`; `RULES_MAX` refusing growth; `ruleKept` precedence; same-day times (row T6b, CQ 151) and an ambiguous transition subject deferring (SU6); the dead `NotBuilt`, `mentionSpanOf` and `removeId`. The commit message names CQs 144 to 151, but CQ 151's text landed in the next commit (its code is here). |
+| `5ed99ac` | Every planner status move goes through `statusTransition`; a death needs a U proof, has gravity 3 and stands against a later illness or recovery; a reunion brings back only a partner or spouse (152); a correction takes the current row's place whatever order its targets come in; a rename's `replaces` names the old name's row; the worker drops a refused row from its replaced set; CQs 151 to 155 recorded. |
+| `5faa799` | One scope function: `writes/keys.ts` calls extraction's `scopeIdOf`, so the on-turn route and extraction give one row the same key (pinned by a test in `c1f769d`); `preference.schedule` is not key-stable (CQ 155); validation reuses `protectedRow` and `sameValue` instead of its own copies. |
+| `c1f769d` | The extraction check meets an allergy in ExtractV1's guide shape (`value boolean true`, the allergen in `args.allergenCode`), and its output states that same-key closes are under-counted. |
+| `b5fe6ee` | `--fast-slots`: each correction line is sent the row it corrects, written from its own text; a row counts the items passing the code's first checks (exact span on the turn, a gazetteer allergen, only targets that were sent); the summary says validateItems' full tables don't run and event corrections defer (C5b). A live run counts speaker certainty from its own parses, else from the Nov 10 run. |
+| `fb2ad05` | The FastSlots port answers `transport` rather than throwing when `FRANKI_BG_MODEL` is missing. |
+| `e29ce93` | The two emulator tests' `RouteDeps` lacked `fastSlots`, which nothing compiled; `npm run typecheck` now runs `tsc` on `tests/`. |
+| `c5ca360` | The clock and model-literal guards now scan `scripts/extract-check` (no violations). |
+
+**Smaller findings skipped,** each with its reason:
+- Hardening a denial whose `need` isn't `none`: it needs a new ignored reason and changes P4's coverage clause.
+- The plant-milk row of gz2: it changes the frozen gazetteer and its oracle; a question for the owner, not a fix.
+- The "just a dislike" answer template: it belongs to wave B's notes.
+- Tidying only: the duplicate `rangeClassOn`, a cast in `spans.ts` and in `check.ts`, `SlotsRoute` vs `Route`, the unused exports `normalizeAllergenText` and `hasWholeWordSequence`, and unread fields (`ValidateContext.source`, `trigger.asked`, `RuleEvent`'s proof and deps).
+
+**Seen, not fixed here.** `voice-control` Property 13 failed once under a full `npm test` (seed `-1393276649`) and passed on rerun. It is outside brief 012's files and belongs to another wave.
 
 ### Disputes
 
-None. No committed property was found wrong.
+None. No committed property was found wrong; P4 was found weak, and P4b adds to it.
 
 ### Checks
 
-Run one at a time after A10b, logs in `_sm/logs/f3/a11-*.log` outside the repo:
+After the review fixes (`c5ca360`), run one at a time, logs in `_sm/logs/f3/fix-*.log` outside the repo: `npm test` exit 0 with 183 files and 1,709 tests; `npm run lint` exit 0; `npm run typecheck` exit 0 (packages, `scripts/judge-spike`, `scripts/extract-check`, and now `tests/`); `npm run build` exit 0, `specimens-absent` passes; `npm run test:emulator` (Java 21) exit 0 with 4 files and 42 tests.
+
+Earlier, after A10b, logs in `_sm/logs/f3/a11-*.log`:
 
 | Check | Result |
 |---|---|
