@@ -507,12 +507,17 @@ export function wideReach(trace: Trace): Set<WideSituation> {
   const sessions = new Set<string>();
   const first = trace.steps[0];
   if (first?.event.type === "callPressed" && trace.steps.some((x) => x.after.phase === "LISTENING")) out.add(WIDE_SITUATIONS[0]);
+  // Whether a state answer was handled since CONFIGURING was entered: a gap is only what comes before it.
+  let answeredInConfiguring = false;
   for (const st of trace.steps) {
     const b: VoiceState = st.before;
     const a: VoiceState = st.after;
     const e = st.event;
     if (a.session !== null) sessions.add(a.session.sessionId);
-    if (b.phase === "CONFIGURING" && e.type !== "stateOk") out.add(WIDE_SITUATIONS[2]);
+    if (b.phase !== "CONFIGURING") answeredInConfiguring = false;
+    // A gap step is a non-timer event (the ack limit firing ends CONFIGURING; it is not a gap).
+    else if (e.type === "stateOk") answeredInConfiguring = true;
+    else if (e.type !== "timer" && !answeredInConfiguring) out.add(WIDE_SITUATIONS[2]);
     const answerSession = e.type === "turnOk" ? e.response.stamp.sessionId : e.type === "turnFailed" ? postSession.get(e.turnId) : e.type === "stateOk" ? e.response.stamp.sessionId : undefined;
     if (answerSession !== undefined && b.session !== null && answerSession !== b.session.sessionId) {
       out.add(WIDE_SITUATIONS[3]);

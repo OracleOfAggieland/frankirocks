@@ -9,7 +9,7 @@ import { WIDE_SITUATIONS, type WideSituation, WideDriver, arbWideCall, reachCoun
 const FLOORS: Record<WideSituation, number> = {
   "setup: started at callPressed and reached LISTENING through generated steps": 350,
   "reconnect: a later Session with a new sessionId": 190,
-  "gap: an event handled in CONFIGURING before its state answer": 265,
+  "gap: an event handled in CONFIGURING before its state answer": 210,
   "late answer: a turn or state answer from an earlier Session": 80,
   "late answer in CONFIGURING": 75,
   "mute: the Owner's mutePressed toggled the mic in a call": 70,
