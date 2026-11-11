@@ -3,13 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { APP_JUDGE_SETTINGS, JUDGE_V1_INSTRUCTIONS, JUDGE_V2_INSTRUCTIONS, type JudgeSettings, encodeWav } from "@franki/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { judgeSettings, main, predicateSettings, runSettings, seedOf } from "./cli";
+import { earlierSpeakerCount, judgeSettings, main, parseFlags, predicateSettings, runSettings, seedOf } from "./cli";
 import { HARNESS_PARSE_WAIT_MS, fakeDecisionsPort, lineParser } from "./decisions";
+import { HARNESS_SLOTS_WAIT_MS, fakeFastSlotsPort, rowOf, slotsLiner, slotsRoutes, speakerCertainCount } from "./fast-slots";
+import { FIXTURE_TARGETS, fixtureInput } from "./fast-slots-fixture";
 import { FAKE_REFUSAL, type FakeJudgeScript, type FakeOptions, fakeConnect, placeholderPcm } from "./fake-realtime";
 import { DEFAULT_RUN, DEFAULT_SEED, MAX_RUN_LINES, NO_SPEECH, type Row, type RunSettings, SESSION_LINES, SPIKE_JUDGE_SETTINGS, openSession, outputTokensOf, reasoningTokensOf, runHarness, runLine, shuffleLines, silentTakes } from "./harness";
 import { type ProbeLine, LINES_URL, loadLines } from "./lines";
 import type { Connect } from "./realtime";
-import { COMMIT_TO_SEND_FLAG_MS, type RunFile, runFile, summarize, summaryMarkdown } from "./summary";
+import { COMMIT_TO_SEND_FLAG_MS, type FastSlotsSection, type RunFile, fastSlotsMarkdown, fastSlotsStats, runFile, summarize, summaryMarkdown } from "./summary";
 import { SPEECH_RMS_THRESHOLD } from "./trim";
 import { VirtualClock } from "./virtual-clock";
 
@@ -913,6 +915,112 @@ describe("judge spike, what the routes would do (review of the live run, item 6)
       expect(await main(["harness", "--lines", "o-01", "--predicates", "contract"], { spikeDir: d, env: {}, log: () => {} })).toBe(0);
       const file = readdirSync(join(d, "dist", "dry-run")).find((f) => f.endsWith(".json"))!;
       expect((JSON.parse(readFileSync(join(d, "dist", "dry-run", file), "utf8")) as RunFile).predicates).toBe("contract");
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("judge spike, FastSlotsV1 (brief 012 task A9)", () => {
+  const zeroParse = (over: Record<string, number> = {}) => ({
+    probabilities: { forget: 0, quiet: 0, correct: 0, transition: 0, hardRule: 0, crisis: 0, company: 0, alone: 0, why: 0, rushed: 0, food: 0, action: 0, answer: 0, uncertainSpeaker: 0, ...over },
+    chosen: null,
+    ordinary: true,
+    ms: 0,
+    missedDeadline: false,
+    failure: null,
+  });
+
+  it("opens a route on RX4, RX6 or RX7, or on a route candidate at 0.20 or more", () => {
+    expect(slotsRoutes("I just found out I'm allergic to shellfish.", zeroParse())).toEqual({ routes: ["hardRule"], triggers: ["regex"] });
+    expect(slotsRoutes("No, her name is Mara, not Maya.", zeroParse({ correct: 0.2 }))).toEqual({ routes: ["correct"], triggers: ["candidate"] });
+    expect(slotsRoutes("My dad passed away.", zeroParse({ hardRule: 0.5 }))).toEqual({ routes: ["hardRule", "transition"], triggers: ["regex", "candidate"] });
+    expect(slotsRoutes("I forgot my umbrella again.", zeroParse({ correct: 0.19 })).routes).toEqual([]);
+    expect(slotsRoutes("Hello there.", null).routes).toEqual([]);
+  });
+
+  it("sends the synthetic context, with targets only for the correct and transition routes", () => {
+    expect(fixtureInput("c-hardrule-1", "text", ["hardRule"]).targets).toEqual([]);
+    expect(fixtureInput("c-correction-1", "text", ["correct"]).targets).toEqual(FIXTURE_TARGETS);
+    expect(fixtureInput("x", "text", ["transition"]).entities.length).toBeGreaterThan(0);
+  });
+
+  it("a row holds the time, the result, why it was invalid and the item kinds, never words", async () => {
+    const line = lines.find((l) => l.class === "hardRule")!;
+    const opened = slotsRoutes(line.text, null);
+    const invalid = rowOf(line, opened, { kind: "invalid", reason: "shape", path: "$.items[0].span", ms: 950 });
+    expect(invalid).toMatchObject({ result: "invalid", reason: "shape", path: "$.items[0].span", overDeadline: true, kinds: [] });
+    const span = { eid: "e", fieldPath: "text" as const, start: 0, end: 3, quote: "I'm" };
+    const valid = rowOf(line, opened, {
+      kind: "valid",
+      out: { items: [{ kind: "allergy", subject: { entityId: null, mention: null, isSelf: true }, item: "shellfish", severity: "allergy", polarity: "affirmed", act: "direct", span }], need: "none" },
+      ms: 400,
+    });
+    expect(valid).toMatchObject({ result: "valid", kinds: ["allergy"], need: "none", overDeadline: false });
+    expect(JSON.stringify(valid)).not.toContain("shellfish");
+    expect(rowOf(line, opened, { kind: "timeout", ms: HARNESS_SLOTS_WAIT_MS }).overDeadline).toBe(true);
+    let waited = 0;
+    const row = await slotsLiner({
+      slots: async (_i, ms) => {
+        waited = ms;
+        return { kind: "transport", ms: 3 };
+      },
+    })(line, line.text, null);
+    expect(row).toMatchObject({ result: "transport", ms: 3 });
+    expect(waited).toBe(HARNESS_SLOTS_WAIT_MS);
+    expect(await slotsLiner(fakeFastSlotsPort())(lines.find((l) => l.id === "o-01")!, "Hello.", null)).toBeNull();
+  });
+
+  it("summarizes p50, p95, the largest, the share over 900 ms, and per class the valid expected items", () => {
+    const row = (lineId: string, cls: string, ms: number, kinds: string[], result: "valid" | "timeout" = "valid") =>
+      ({ lineId, class: cls, routes: [], triggers: [], ms, result, reason: null, path: null, kinds, need: "none", overDeadline: result === "timeout" || ms > 900 }) as FastSlotsSection["rows"][number];
+    const sec: FastSlotsSection = {
+      port: "live",
+      waitMs: HARNESS_SLOTS_WAIT_MS,
+      deadlineMs: 900,
+      rows: [row("c-hardrule-1", "hardRule", 300, ["allergy"]), row("c-hardrule-2", "hardRule", 1200, []), row("c-correction-1", "correction", 500, ["correction"]), row("c-correction-2", "correction", 5000, [], "timeout")],
+      speakerCertain: { file: "x.json", hardRule: { pass: 4, of: 5 }, correction: { pass: 3, of: 5 } },
+    };
+    const s = fastSlotsStats(sec);
+    expect(s).toMatchObject({ n: 4, p50: 500, p95: 5000, max: 5000, over: 2, byResult: { valid: 3, timeout: 1 } });
+    expect(s.perClass).toEqual({ hardRule: { lines: 2, validExpected: 1 }, correction: { lines: 2, validExpected: 1 }, transition: null });
+    const md = fastSlotsMarkdown(sec).join("\n");
+    expect(md).toContain("| transition (transition) | no lines | no lines |");
+    expect(md).toContain("Over 900 ms: 2 of 4 (50%)");
+    expect(md).toContain("hardRule 4 of 5, correction 3 of 5");
+  });
+
+  it("counts speaker certainty from the Nov 10 run file, and says when it can't", () => {
+    const d = mkdtempSync(join(tmpdir(), "judge-spike-speaker-"));
+    try {
+      expect(earlierSpeakerCount(d)).toEqual({ file: null, unavailable: "no run file" });
+      mkdirSync(join(d, "results"));
+      const name = "2026-11-10T06-32-11-722Z-owner.json";
+      copyFileSync(new URL(`./results/${name}`, import.meta.url), join(d, "results", name));
+      expect(earlierSpeakerCount(d)).toEqual({ file: name, hardRule: { pass: 4, of: 5 }, correction: { pass: 3, of: 5 } });
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+    expect(speakerCertainCount("old.json", [{ class: "hardRule" }])).toEqual({ file: "old.json", unavailable: "the run file holds no parse probabilities for every line" });
+  });
+
+  it("a fake --fast-slots run measures the route lines, stores no line text, and never calls the network", async () => {
+    const d = mkdtempSync(join(tmpdir(), "judge-spike-slots-"));
+    try {
+      copyFileSync(LINES_URL, join(d, "lines.json"));
+      expect(parseFlags(["--fast-slots", "--lines", "o-01"]).fastSlots).toBe(true);
+      const logs: string[] = [];
+      const ids = ["c-hardrule-1", "c-hardrule-3", "o-10", "o-01"];
+      expect(await main(["harness", "--lines", ids.join(","), "--fast-slots"], { spikeDir: d, env: {}, log: (l) => logs.push(l) })).toBe(0);
+      expect(logs.some((l) => /^ {2}fast-slots c-hardrule-1: valid in 0 ms, items \[\], routes hardRule$/.test(l))).toBe(true);
+      const dir = join(d, "dist", "dry-run");
+      const file = readdirSync(dir).find((f) => f.endsWith(".json"))!;
+      const run = JSON.parse(readFileSync(join(dir, file), "utf8")) as RunFile;
+      expect(run.fastSlots?.port).toBe("fake");
+      expect(run.fastSlots?.rows.map((r) => r.lineId).sort()).toEqual(["c-hardrule-1", "c-hardrule-3", "o-10"]);
+      const section = JSON.stringify(run.fastSlots);
+      for (const id of ids) expect(section).not.toContain(lines.find((l) => l.id === id)!.text);
+      expect(readFileSync(join(dir, file.replace(/\.json$/, ".md")), "utf8")).toContain("## FastSlotsV1");
     } finally {
       rmSync(d, { recursive: true, force: true });
     }
