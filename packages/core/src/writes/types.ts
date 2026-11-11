@@ -102,6 +102,8 @@ export interface TurnEvidence {
   /** The Evidence's root keys, H(slice) per slice. */
   rootKeys: readonly ID[];
   assertedAt: TS;
+  /** The zone the words were said in (Evidence `zone`), for spoken times; UTC when absent. */
+  zone?: string | null;
 }
 
 export type EntityKind = "person" | "pet" | "place" | "organization" | "artifact" | "occasion" | "topic";
@@ -109,6 +111,8 @@ export type EntityKind = "person" | "pet" | "place" | "organization" | "artifact
 /** Every subject code may link to (G7): relation rows of `self`, rule subjects, the rename index. */
 export interface SubjectIndex {
   entries: readonly { id: EID; kind: EntityKind; label: string; aliases: readonly string[]; relation: string | null }[];
+  /** Row SU7: every EID some Memory's `entityIds` names. Absent: none (CQ 135). */
+  seen?: ReadonlySet<EID>;
 }
 
 export interface ValidateContext {
@@ -132,7 +136,8 @@ export type QuestionKind = "whatItem" | "whoHas" | "isAllergy" | "notListed";
 /** A code is a gazetteer ID; "unresolved" is the all-food filter. */
 export type AllergyVerdict =
   | { kind: "affirm"; subject: EID; label: string | null; codes: string[]; proof: Span }
-  | { kind: "unsure"; subject: EID | null; label: string | null; codes: string[] | "unresolved"; question: QuestionKind; proof: Span | null }
+  /** `question` null: a pending rule with no further question (answering rule 5). */
+  | { kind: "unsure"; subject: EID | null; label: string | null; codes: string[] | "unresolved"; question: QuestionKind | null; proof: Span | null }
   | { kind: "deny"; subject: EID; scope: "global"; proof: Span }
   | { kind: "deny"; subject: EID; scope: "specific"; codes: string[]; proof: Span }
   | { kind: "deny"; answers: ID; proof: Span }

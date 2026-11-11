@@ -1,10 +1,315 @@
 /**
  * Validation (design 2.4): spans, authority per covering slice, act, speaker, subject, value and gazetteer, one
- * verdict per item. Pure; writes nothing. Stub from wave A task A2; task A5 builds it.
+ * verdict per item. Pure; writes nothing. Models read and extract; code decides here what may be written.
+ *
+ * Before every table: an item whose route no trigger opened is `outOfScope` (G38), and a `kind: rule` item is
+ * `outOfScope` (G31). Then each table's rows run in order; the first that matches decides.
  */
-import type { FastSlotsOut, ItemVerdict, ValidateContext } from "./types";
-import { NotBuilt } from "./types";
+import { REGEX_TABLE, normalizeForRegex } from "../intents/regex";
+import { looksLikeTime, resolveSpoken } from "../dates";
+import { canonicalJSON } from "../ids";
+import type { EID, Span, Value } from "../schema/primitives";
+import { checkPredicateFit } from "../schema/predicates";
+import type { Memory } from "../schema/records";
+import { msFromTs } from "../schema/primitives";
+import { NONE_CODE, findWholeWords, lookupAllergen, scanAliases, wordTokens } from "./gazetteer";
+import { mentionEid, mentionName, hasFirstPerson, resolveSubject, type SubjectResult } from "./subject";
+import { spanClass, verifyTurnSpan } from "./spans";
+import type { AllergyVerdict, ArgPair, CorrectionVerdict, EntityKind, FastItem, FastSlotsOut, ItemVerdict, Need, QuestionKind, Route, Subject, TransitionKind, TransitionVerdict, ValidateContext } from "./types";
 
-export function validateItems(_out: FastSlotsOut, _ctx: ValidateContext): ItemVerdict[] {
-  throw new NotBuilt("validateItems");
+/** `handled`'s bounds (design 5): a correction or change past them defers; nothing is truncated. */
+export const HANDLED_KEYS_MAX = 8;
+export const HANDLED_REFS_MAX = 16;
+
+const RX4 = REGEX_TABLE.find((r) => r.id === "RX4")!.pattern;
+const NEGATION = new Set(["not", "no", "never", "none", "nothing", "nope", "outgrew", "outgrown"]);
+
+/** Row A5: a negation word (not, n't, no, never, none, nothing, no longer, nope, outgrew, outgrown). */
+export function hasNegation(text: string): boolean {
+  return wordTokens(text).some((t) => NEGATION.has(t.word) || t.word.endsWith("n't"));
 }
+
+const routeOf = (item: FastItem): Route | null =>
+  item.kind === "allergy" ? "hardRule" : item.kind === "correction" ? "correct" : item.kind === "transition" ? "transition" : null;
+
+/** Name/value pairs back to Args (CQ 122). A repeated name keeps the last value. */
+export function decodeArgs(pairs: readonly ArgPair[] | null): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const p of pairs ?? []) out[p.name] = p.value;
+  return out;
+}
+
+interface Budget {
+  keys: Set<string>;
+  refs: number;
+}
+
+export function validateItems(out: FastSlotsOut, ctx: ValidateContext): ItemVerdict[] {
+  const budget: Budget = { keys: new Set(), refs: 0 };
+  return out.items.map((item, index) => validateOne(item, index, out.need, ctx, budget));
+}
+
+function validateOne(item: FastItem, index: number, need: Need, ctx: ValidateContext, budget: Budget): ItemVerdict {
+  const route = routeOf(item);
+  if (route === null || !ctx.routes.has(route)) return { kind: "ignored", index, reason: "outOfScope" };
+  switch (item.kind) {
+    case "allergy":
+      return allergyVerdict(item, index, need, ctx);
+    case "correction":
+      return correctionVerdict(item, index, need, ctx, budget);
+    case "transition":
+      return transitionVerdict(item, index, need, ctx, budget);
+    default:
+      return { kind: "ignored", index, reason: "outOfScope" };
+  }
+}
+
+const subjectOf = (s: Subject, quote: string, ctx: ValidateContext, kind: EntityKind): SubjectResult =>
+  resolveSubject({ subject: s, quote, evidence: ctx.evidence, known: ctx.known, entities: ctx.entities, kind, hasher: ctx.hasher });
+
+const isEmptySubject = (s: Subject) => !s.isSelf && s.entityId === null && s.mention === null;
+
+// ---------------------------------------------------------------------------------------------
+// Allergy items (rows A1 to A16, and the answering rules)
+
+function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: number, need: Need, ctx: ValidateContext): ItemVerdict {
+  const ignored = (reason: "authority" | "span" | "act" | "speaker" | "target") => ({ kind: "ignored" as const, index, reason });
+  const ok = (v: AllergyVerdict): ItemVerdict => ({ kind: "allergy", index, v });
+  if (spanClass(item.span, ctx.evidence) !== "U") return ignored("authority"); // A1
+  const span = verifyTurnSpan(item.span, ctx.evidence);
+  if (span === null) return ignored("span"); // A2
+  const answering = ctx.answering !== null;
+  const R = ctx.answering?.rule ?? null;
+  const hasNeg = hasNegation(span.quote);
+  let polarity = item.polarity === "denied" && !hasNeg ? "uncertain" : item.polarity; // A5
+
+  // Codes come from `item`, once it is found inside the verified quote (A3). Answering rules 1 and 3 fill them from
+  // the asked rule R when the answer names no allergen ("Yes.", "No."); rule 4 then takes R's proof.
+  const aliasesInSpan = scanAliases(span.quote);
+  const itemInSpan = item.item.trim() !== "" && findWholeWords(span.quote, item.item) !== null;
+  let codes: string[];
+  let proof: Span = span;
+  if (answering && R !== null && R.code !== "unresolved" && aliasesInSpan.length === 0 && (!itemInSpan || lookupAllergen(item.item).length === 0)) {
+    if (polarity === "denied") codes = [R.code];
+    else if (R.proof !== null) {
+      codes = [R.code];
+      proof = R.proof;
+    } else return ignored("span");
+  } else if (!itemInSpan) {
+    if (!(answering && polarity === "denied")) return ignored("span"); // A3
+    codes = [];
+  } else codes = lookupAllergen(item.item);
+  if (item.act !== "direct") return ignored("act"); // A4
+
+  // Subjects; answering rule 2 for an item with none.
+  let subject: SubjectResult;
+  if (answering && isEmptySubject(item.subject)) {
+    subject = R !== null && R.subjectId !== null ? { kind: "resolved", id: R.subjectId, label: null } : hasFirstPerson(span.quote) ? { kind: "resolved", id: "self", label: null } : { kind: "unresolved" };
+  } else subject = subjectOf(item.subject, span.quote, ctx, "person");
+  const resolved = subject.kind === "resolved" ? subject : null;
+
+  if (polarity === "denied") {
+    if (!ctx.speakerCertain) return ignored("speaker"); // A6
+    if (resolved !== null && codes.includes(NONE_CODE)) return ok({ kind: "deny", subject: resolved.id, scope: "global", proof: span }); // A7
+    if (resolved !== null) return ok({ kind: "deny", subject: resolved.id, scope: "specific", codes: codes.filter((c) => c !== NONE_CODE), proof: span }); // A8
+    if (answering && R !== null && R.anonymous) return ok({ kind: "deny", answers: R.id, proof: span }); // A9
+    // A10. The design names the reason `act`; `target` is used so a direct, matching denial is never turned away
+    // for its act or its span (P2), and nothing is written either way (CQ 136).
+    return ignored("target"); // A10
+  }
+
+  const real = codes.filter((c) => c !== NONE_CODE);
+  const codesOr = (): string[] | "unresolved" => (real.length > 0 ? real : "unresolved");
+  // Answering rule 5: an answer naming the item for an unresolved rule of a known subject stays pending, unless the
+  // answer itself states the allergy (RX4).
+  if (answering && R !== null && R.code === "unresolved" && R.subjectId !== null && real.length > 0 && !RX4.test(normalizeForRegex(span.quote)) && ctx.speakerCertain) {
+    return ok({ kind: "unsure", subject: R.subjectId, label: null, codes: real, question: null, proof });
+  }
+  if (polarity === "affirmed" && real.length > 0 && resolved !== null && ctx.speakerCertain && need === "none") {
+    return ok({ kind: "affirm", subject: resolved.id, label: resolved.label, codes: real, proof }); // A11
+  }
+  if (!ctx.speakerCertain || resolved === null) {
+    return ok({ kind: "unsure", subject: null, label: null, codes: codesOr(), question: real.length > 0 ? "whoHas" : "whatItem", proof }); // A12, A13
+  }
+  if (polarity === "affirmed" && need !== "none") {
+    const question: QuestionKind = need === "subject" ? "whoHas" : need === "meaning" ? "isAllergy" : "whatItem";
+    return ok({ kind: "unsure", subject: resolved.id, label: resolved.label, codes: codesOr(), question, proof }); // A14
+  }
+  if (real.length === 0) {
+    if (answering && R !== null && R.code === "unresolved") return ok({ kind: "pendingKept", ruleId: R.id, question: "notListed" }); // A15, answering
+    return ok({ kind: "unsure", subject: resolved.id, label: resolved.label, codes: "unresolved", question: "whatItem", proof }); // A15
+  }
+  return ok({ kind: "unsure", subject: resolved.id, label: resolved.label, codes: real, question: "isAllergy", proof }); // A16
+}
+
+// ---------------------------------------------------------------------------------------------
+// Correction items (rows C1 to C8, R1)
+
+/** Predicates whose key doesn't depend on the value or the model's `scope` string (row C5b). */
+const KEY_STABLE = new Set(["identity.name", "person.relation", "person.life", "employment.status", "employment.role", "preference.food", "preference.style", "handling", "care"]);
+/** The args each key-stable predicate's scope is made from (extraction's `scopeFor`). */
+const SCOPE_ARGS: Record<string, readonly string[]> = {
+  "person.relation": ["otherRef"],
+  "employment.role": ["employerRef"],
+  "preference.food": ["dimension", "targetRef"],
+  "preference.style": ["context", "dimension"],
+  handling: ["personRef", "context", "dimension"],
+  care: ["careSubjectRef", "topic"],
+};
+
+const protectedRow = (m: Memory) => m.kind === "rule" || m.predicate === "allergy";
+
+/** The words a value is said with, for "the turn names it" (rows C5c, C6). Null when it has none. */
+export function valueWords(v: Value): string | null {
+  if (v.kind === "text") return v.text;
+  if (v.kind === "enum") return v.code.replace(/_/g, " ");
+  return null;
+}
+
+const sameValue = (a: Value, b: Value): boolean =>
+  a.kind === "text" && b.kind === "text" ? mentionName(a.text) === mentionName(b.text) : canonicalJSON(a) === canonicalJSON(b);
+
+/** The name a renamed entity has now (G33): its known label, else the word in the target's line that derives it. */
+export function currentNameOf(entity: EID, line: string, ctx: Pick<ValidateContext, "known" | "hasher">): string | null {
+  const known = ctx.known.entries.find((e) => e.id === entity && e.label.trim() !== "" && e.relation !== e.label);
+  if (known !== undefined && mentionEid(known.kind, mentionName(known.label), ctx.hasher) === entity) return known.label;
+  for (const t of line.match(/[\p{L}][\p{L}'-]*/gu) ?? []) {
+    if (mentionEid("person", mentionName(t), ctx.hasher) === entity) return t;
+  }
+  return known?.label ?? null;
+}
+
+function correctionVerdict(item: Extract<FastItem, { kind: "correction" }>, index: number, need: Need, ctx: ValidateContext, budget: Budget): ItemVerdict {
+  const ignored = (reason: "authority" | "span" | "act" | "target") => ({ kind: "ignored" as const, index, reason });
+  const v = (verdict: CorrectionVerdict): ItemVerdict => ({ kind: "correction", index, v: verdict });
+  const defer = (why: Extract<CorrectionVerdict, { kind: "defer" }>["why"]) => v({ kind: "defer", why });
+  if (spanClass(item.span, ctx.evidence) !== "U") return ignored("authority"); // C1
+  if (item.act !== "direct") return ignored("act"); // C2
+  const span = verifyTurnSpan(item.span, ctx.evidence);
+  if (span === null) return ignored("span"); // C3
+  if (need !== "none") return defer("need"); // C4
+  if (!ctx.speakerCertain) return defer("speaker");
+
+  const targets: Memory[] = [];
+  for (const id of item.targetIds) {
+    const t = ctx.targets.get(id);
+    if (t === undefined || protectedRow(t.memory)) return ignored("target"); // C5
+    targets.push(t.memory);
+  }
+  const otherEntity = (m: Memory): EID | null => (typeof m.args.otherRef === "string" ? m.args.otherRef : m.subjectId !== "self" ? m.subjectId : null);
+  const isRename = item.predicate === "identity.name" && targets.length === 1 && otherEntity(targets[0]!) !== null && targets[0]!.predicate !== "identity.name";
+  if (!isRename && targets.some((t) => t.predicate !== item.predicate)) return ignored("target"); // C5
+  if (new Set(targets.map((t) => t.key)).size !== 1) return ignored("target"); // C5a
+  const target = targets[0]!;
+  const args = { ...target.args, ...decodeArgs(item.args) };
+  if (!KEY_STABLE.has(item.predicate)) return defer("keyUnstable"); // C5b
+  if (!isRename && (SCOPE_ARGS[item.predicate] ?? []).some((k) => canonicalJSON(args[k] ?? null) !== canonicalJSON(target.args[k] ?? null))) return defer("keyUnstable");
+
+  const turnText = ctx.evidence.text;
+  const line = ctx.targets.get(target.logicalId)!.line;
+  const entity = isRename ? otherEntity(target)! : null;
+  const currentWords = isRename ? currentNameOf(entity!, line, ctx) : valueWords(target.value);
+  const named = currentWords !== null && findWholeWords(turnText, currentWords) !== null;
+  const onlyOne = [...ctx.targets.values()].filter((t) => t.memory.predicate === target.predicate).length === 1;
+  if (!named && !onlyOne) return defer("uncertainTarget"); // C5c
+
+  const keys = new Set([...budget.keys, target.key, ...(isRename ? [`name:${entity}`] : [])]);
+  const refs = budget.refs + targets.length + (isRename ? 2 : 1);
+  if (keys.size > HANDLED_KEYS_MAX || refs > HANDLED_REFS_MAX) return defer("bounds"); // C5d
+  const spend = (verdict: CorrectionVerdict): ItemVerdict => {
+    budget.keys = keys;
+    budget.refs = refs;
+    return v(verdict);
+  };
+
+  if (isRename) {
+    // R1: the old name by code, the new one from the span.
+    if (currentWords === null) return defer("value");
+    const said = item.replacementValue?.kind === "text" ? item.replacementValue.text : null;
+    const at = said === null ? null : findWholeWords(span.quote, said);
+    if (at === null) return defer("value");
+    const to = span.quote.slice(at.start, at.end);
+    if (mentionName(to) === mentionName(currentWords)) return v({ kind: "same", targets: [target.logicalId] });
+    return spend({ kind: "rename", target: target.logicalId, entity: entity!, from: currentWords, to });
+  }
+  if (item.replacementValue === null) {
+    if (item.args === null && named) return spend({ kind: "retract", targets: targets.map((t) => t.logicalId) }); // C6
+    return defer("value"); // C6a
+  }
+  const value = item.replacementValue;
+  if (sameValue(value, target.value) && canonicalJSON(args) === canonicalJSON(target.args)) return v({ kind: "same", targets: targets.map((t) => t.logicalId) }); // C6b
+  // C7: the value fits the predicate, its words are in the span, entity refs are known.
+  const fit = checkPredicateFit({ predicate: item.predicate, kind: target.kind, value, args }, "$") === null;
+  const words = valueWords(value);
+  const wordsOk = value.kind !== "text" || (words !== null && findWholeWords(span.quote, words) !== null);
+  const entityOk = value.kind !== "entity" || value.ref === "self" || ctx.entities.some((e) => e.id === value.ref);
+  if (fit && wordsOk && entityOk) return spend({ kind: "correct", targets: targets.map((t) => t.logicalId), value, args });
+  return defer("value"); // C8
+}
+
+// ---------------------------------------------------------------------------------------------
+// Transition items (rows T1 to T7)
+
+/** Predicates each kind's truth order touches (design 3.3). */
+export const TRUTH_ORDER: Record<Exclude<TransitionKind, "scheduledStart" | "expire">, readonly string[]> = {
+  death: ["person.life", "care"],
+  illness: ["person.life", "care"],
+  recovery: ["person.life", "care"],
+  breakup: ["person.relation"],
+  reunion: ["person.relation"],
+  move: ["place.residence"],
+  jobChangeOwn: ["employment.role", "person.relation"],
+  jobChangeOther: ["employment.role"],
+};
+
+/** Past words the date resolver reads forward and doesn't resolve (CQ 134): the change is placed at the turn. */
+const PAST_WORDS = /\b(yesterday|last (night|week|weekend|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|ago|earlier|just now|recently|this (morning|afternoon))\b/;
+
+/** When a stated change happened, or why it can't be placed now (row T6b). */
+export function whenOf(whenSpoken: string | null, ev: { assertedAt: string; zone?: string | null }, worldNow: number): { ok: true; when: number } | { ok: false } {
+  const said = msFromTs(ev.assertedAt);
+  if (whenSpoken === null || whenSpoken.trim() === "" || !looksLikeTime(whenSpoken)) return { ok: true, when: Math.min(said, worldNow) };
+  const r = resolveSpoken(whenSpoken, said, ev.zone ?? "UTC");
+  if (r !== null) return r.startMs <= worldNow ? { ok: true, when: r.startMs } : { ok: false };
+  return PAST_WORDS.test(whenSpoken.normalize("NFKC").toLowerCase()) ? { ok: true, when: Math.min(said, worldNow) } : { ok: false };
+}
+
+function transitionVerdict(item: Extract<FastItem, { kind: "transition" }>, index: number, need: Need, ctx: ValidateContext, budget: Budget): ItemVerdict {
+  const ignored = (reason: "authority" | "span" | "target") => ({ kind: "ignored" as const, index, reason });
+  const v = (verdict: TransitionVerdict): ItemVerdict => ({ kind: "transition", index, v: verdict });
+  if (spanClass(item.span, ctx.evidence) !== "U") return ignored("authority"); // T1
+  const span = verifyTurnSpan(item.span, ctx.evidence);
+  if (span === null) return ignored("span"); // T2
+  if (item.act !== "direct" || item.polarity !== "affirmed") return v({ kind: "careOnly" }); // T3
+  if (need !== "none") return v({ kind: "defer", why: "need" }); // T4
+  if (!ctx.speakerCertain) return v({ kind: "defer", why: "speaker" });
+  if (item.transition === "scheduledStart" || item.transition === "expire") return v({ kind: "defer", why: "scheduled" }); // T5
+  const kind = item.transition;
+  const subject = subjectOf(item.subject, span.quote, ctx, "person");
+  const counterpartKind: EntityKind = kind === "move" ? "place" : kind === "jobChangeOwn" || kind === "jobChangeOther" ? "organization" : "person";
+  const counterpart = item.counterpart === null ? null : subjectOf(item.counterpart, span.quote, ctx, counterpartKind);
+  const s = subject.kind === "resolved" ? subject.id : null;
+  const c = counterpart !== null && counterpart.kind === "resolved" ? counterpart.id : null;
+  if (
+    s === null ||
+    (kind === "death" && s === "self") ||
+    ((kind === "breakup" || kind === "reunion") && c === null) ||
+    (kind === "jobChangeOwn" && s !== "self") ||
+    (kind === "jobChangeOther" && s === "self")
+  ) {
+    return ignored("target"); // T6
+  }
+  const rows = [...ctx.targets.values()].map((t) => t.memory).filter((m) => m.subjectId === s && TRUTH_ORDER[kind].includes(m.predicate));
+  if ((kind === "jobChangeOwn" || kind === "jobChangeOther") && c === null && rows.filter((m) => m.predicate === "employment.role" && m.status === "active").length > 1) {
+    return v({ kind: "defer", why: "employer" }); // T6a
+  }
+  const when = whenOf(item.whenSpoken, ctx.evidence, ctx.worldNow);
+  if (!when.ok) return v({ kind: "defer", why: "time" }); // T6b
+  const keys = new Set([...budget.keys, ...TRUTH_ORDER[kind].map((p) => `${s}:${p}`)]);
+  const refs = budget.refs + 2 * (rows.length + 1);
+  if (keys.size > HANDLED_KEYS_MAX || refs > HANDLED_REFS_MAX) return v({ kind: "defer", why: "bounds" }); // T6c
+  budget.keys = keys;
+  budget.refs = refs;
+  return v({ kind: "change", transition: kind, subject: s, counterpart: c, when: when.when }); // T7
+}
+
