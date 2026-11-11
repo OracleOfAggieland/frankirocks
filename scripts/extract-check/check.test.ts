@@ -4,6 +4,7 @@ import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFile
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { keyOf, planItem } from "@franki/core";
 import { closeCopies, probeTexts } from "../close-copy.mjs";
 import { type CheckLine, LINES_SHA256, type CheckRun, judgeLine, lineSetup, linesHash, main, parseLines } from "./check";
 
@@ -70,14 +71,41 @@ describe("extraction check, frozen lines (brief 012 task A10b)", () => {
 describe("extraction check, judging an answer", () => {
   it("an allergy the extractor holds meets the allergy line", () => {
     const l = line("x-allergy-1");
-    const r = judgeLine(l, answered([item(l, { act: "hard_rule", predicate: "allergy", kind: "rule", value: { kind: "text", text: "sesame" } }, "allergic to sesame")]));
+    // The shape ExtractV1's guide asks for: value boolean true, the allergen in args.allergenCode.
+    const r = judgeLine(l, answered([item(l, { act: "hard_rule", predicate: "allergy", kind: "rule", value: { kind: "boolean", bool: true }, args: { allergenCode: "sesame" } }, "allergic to sesame")]));
     expect(r).toMatchObject({ pass: true, plans: ["hold"], missing: [], forbidden: [] });
     expect(judgeLine(l, answered([])).missing).toEqual([0]);
   });
 
+  it("two allergies in the guide's shape meet both expectations", () => {
+    const l = line("x-allergy-7");
+    const of = (code: string, quote: string) => item(l, { act: "hard_rule", predicate: "allergy", kind: "rule", value: { kind: "boolean", bool: true }, args: { allergenCode: code } }, quote);
+    expect(judgeLine(l, answered([of("kiwi", "allergies to kiwi"), of("mango", "mango")]))).toMatchObject({ pass: true, missing: [], forbidden: [] });
+  });
+
+  it("an Item extraction plans has the key the on-turn route gives the same row (one scope function)", () => {
+    const l = line("x-correct-1");
+    const { ctx } = lineSetup(l);
+    const raw = item(
+      l,
+      {
+        predicate: "person.relation",
+        value: { kind: "enum", code: "sister" },
+        args: { otherRef: "m1", label: "sister", employerRef: null },
+        mentions: [{ localId: "m1", type: "person", observedName: "Mara", span: spanOf(l, "Mara"), existingId: null }],
+      },
+      "my sister is called Mara",
+    );
+    const plan = planItem(raw, 0, ctx);
+    expect(plan.kind).toBe("memory");
+    if (plan.kind !== "memory") return;
+    const m = plan.memory;
+    expect(keyOf(m.subjectId, "person.relation", m.args, m.value, ctx.hasher)).toEqual({ scopeId: m.scopeId, key: m.key });
+  });
+
   it("an allergy put on the wrong person breaks the neverWrites", () => {
     const l = line("x-allergy-2");
-    const r = judgeLine(l, answered([item(l, { act: "hard_rule", predicate: "allergy", kind: "rule", value: { kind: "text", text: "eggs" } }, "can't eat eggs")]));
+    const r = judgeLine(l, answered([item(l, { act: "hard_rule", predicate: "allergy", kind: "rule", value: { kind: "boolean", bool: true }, args: { allergenCode: "egg" } }, "can't eat eggs")]));
     expect(r.pass).toBe(false);
     expect(r.missing).toEqual([0]);
     expect(r.forbidden).toEqual([0]);

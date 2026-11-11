@@ -232,13 +232,23 @@ function subjectWords(item: ExtractItemT): string {
   return item.mentions.find((m) => m.localId === item.subject)?.observedName ?? item.subject;
 }
 
+/**
+ * The words an Item's value is said with. An allergy is `value boolean true` with the allergen in `args.allergenCode`
+ * (ExtractV1's guide), so its words are that code; a text value is the fallback for an answer shaped otherwise.
+ */
+function itemWords(item: ExtractItemT): string | null {
+  const code = item.args.allergenCode;
+  if (item.predicate === "allergy" && typeof code === "string" && code.trim() !== "") return code;
+  return valueWords(item);
+}
+
 /** The rows one Item's plan would write: none for a skip or a reject. */
 export function seenOf(raw: unknown, plan: ItemPlan, priorById: ReadonlyMap<string, Prior>): Seen[] {
   if (plan.kind !== "hold" && plan.kind !== "memory") return [];
   const checked = validate(ExtractItem, raw);
   if (!checked.ok) return [];
   const item = checked.value;
-  const value = valueWords(item);
+  const value = itemWords(item);
   const names = [...item.mentions.map((m) => m.observedName), ...(value === null ? [] : [value])];
   if (plan.kind === "hold") return [{ predicate: item.predicate, subject: subjectWords(item), value, status: "held", target: null, names }];
   const own: Seen = { predicate: plan.memory.predicate, subject: subjectWords(item), value, status: plan.memory.status as Status, target: null, names };
@@ -428,6 +438,7 @@ export async function main(argv: readonly string[], ctx: CheckCtx): Promise<numb
   const run = summarizeRun(live ? "live" : "fake", rows);
   ctx.log(`extract-check: ${run.passed} of ${rows.length} lines pass${live ? "" : " (fake port: this counts the lines that expect no write, nothing more)"}`);
   ctx.log(`  by class: ${CLASSES.map((c) => `${c} ${run.byClass[c].pass} of ${run.byClass[c].of}`).join(", ")}`);
+  ctx.log("  limit: a prior counts as closed only when an Item names it as a target; the worker also closes same-key rows of a single-valued predicate, so a change line can be under-counted");
   const clock = ctx.clock ?? liveClockPort;
   const stamp = new Date(clock.read().opsClock.now).toISOString().replace(/[:.]/g, "-");
   const out = join(ctx.dir, ...(live ? ["results"] : ["dist", "dry-run"]));
