@@ -41,9 +41,24 @@ export function hasNegation(text: string): boolean {
  */
 export const REFERENCE_WORDS: ReadonlySet<string> = new Set(["it", "that", "this", "these", "those", "them", "one", "ones", "the", "same", "yes", "yeah", "yep", "yup", "no", "nope", "nah"]);
 
-/** True when the item's words are all reference words, or it has none. */
+/**
+ * Generic pointer and quantifier words (CQ 161): "that stuff", "any of that", "those things", "either", "that kind
+ * of thing", "nobody". Like reference words, they name no allergen of their own.
+ */
+export const GENERIC_WORDS: ReadonlySet<string> = new Set(["stuff", "thing", "things", "any", "all", "of", "either", "both", "nobody", "anyone", "anybody", "kind", "sort"]);
+
+/** The allergy cue words themselves (RX4's allergy and intolerance words, not "celiac" or "epipen"): "allergic", "that allergy". */
+const CUE_WORD = /^(allerg(y|ies|ic)|intoleran(t|ce))$/;
+
+/**
+ * True when the item names nothing of its own: it has no words, or every word is a reference, generic or cue word
+ * and the gazetteer finds nothing in it (so "any allergies" and "nothing" still name the `none` entry; CQ 156,
+ * amended by CQ 161).
+ */
 export function namesNothing(item: string): boolean {
-  return wordTokens(item).every((t) => REFERENCE_WORDS.has(t.word));
+  const words = wordTokens(item);
+  if (words.length === 0) return true;
+  return words.every((t) => REFERENCE_WORDS.has(t.word) || GENERIC_WORDS.has(t.word) || CUE_WORD.test(t.word)) && lookupAllergen(item).length === 0;
 }
 
 const routeOf = (item: FastItem): Route | null =>
@@ -101,7 +116,8 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
   let polarity = item.polarity === "denied" && !hasNeg ? "uncertain" : item.polarity; // A5
 
   // Codes come from `item`, once it is found inside the verified quote (A3). Answering rules 1 and 3 fill them from
-  // the asked rule R when the answer names nothing of its own ("Yes.", "No.", "it"); rule 4 then takes R's proof. An
+  // the asked rule R when the answer names nothing of its own ("Yes.", "No.", "it", "that stuff", "allergic"; CQ 161);
+  // rule 4 then takes R's proof. An
   // item found in the span that the gazetteer doesn't know ("durian", "something") is another thing named: its codes
   // stay empty and it never answers R (CQ 156).
   const aliasesInSpan = scanAliases(span.quote);
@@ -145,6 +161,9 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
     // answers R (CQ 160).
     const namesNoOne = !namesSomeone(span.quote, knownNameWords(ctx.known, ctx.entities));
     if (answering && R !== null && R.anonymous && namesNoOne && ((codes.length === 0 && !namesOwn) || onlyNone || codes.includes(R.code))) return ok({ kind: "deny", answers: R.id, proof: span }); // A9
+    // A10 on an answering turn: a certain, direct denial answering Franki's own question keeps the asked rule as it
+    // is, so the fallback never adds the all-food filter for a "no" (CQ 161).
+    if (answering && R !== null) return ok({ kind: "pendingKept", ruleId: R.id, question: null }); // A10, answering
     // A10. The design names the reason `act`; `target` is used so a direct, matching denial is never turned away
     // for its act or its span (P2), and nothing is written either way (CQ 136).
     return ignored("target"); // A10

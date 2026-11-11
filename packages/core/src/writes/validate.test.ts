@@ -156,7 +156,7 @@ describe("answering turns", () => {
     expect(one(run(d, [allergy(d, "durian", { polarity: "denied" })], { answering: { rule: R } }))).toMatchObject({ v: { kind: "deny", subject: "self", scope: "specific", codes: [] } });
     const anon = { ...R, subjectId: null, anonymous: true };
     const n = "Nobody here is allergic to durian, no.";
-    expect(one(run(n, [allergy(n, "durian", { polarity: "denied", subject: NONE })], { answering: { rule: anon } }))).toEqual({ kind: "ignored", index: 0, reason: "target" });
+    expect(one(run(n, [allergy(n, "durian", { polarity: "denied", subject: NONE })], { answering: { rule: anon } }))).toEqual({ kind: "allergy", index: 0, v: { kind: "pendingKept", ruleId: anon.id, question: null } });
     const ref = "Nobody here is allergic to that, no.";
     expect(one(run(ref, [allergy(ref, "that", { polarity: "denied", subject: NONE })], { answering: { rule: anon } }))).toMatchObject({ v: { kind: "deny", answers: anon.id } });
     const b = "My brother isn't allergic to durian.";
@@ -196,6 +196,50 @@ describe("answering turns", () => {
     }
     expect(hasFirstPerson("It's a friend of mine.", { kind: "answer" })).toBe(false);
     expect(hasFirstPerson("Mine and my brother's.", { kind: "answer" })).toBe(false);
+  });
+  it("1 and 3: generic, pointer and cue words name nothing, so the answer takes the asked rule's code (CQ 161)", () => {
+    for (const [t, w] of [
+      ["No, I'm not allergic to that stuff.", "that stuff"],
+      ["No, I'm not allergic to any of that.", "any of that"],
+      ["No, I'm not allergic to those things.", "those things"],
+      ["I'm not allergic to either.", "either"],
+      ["No, I'm not allergic.", "allergic"],
+      ["No, I don't have that allergy.", "that allergy"],
+    ] as const) {
+      expect(one(run(t, [allergy(t, w, { polarity: "denied" })], { answering: { rule: R } })), t).toMatchObject({ v: { kind: "deny", subject: "self", scope: "specific", codes: ["peanut"] } });
+    }
+    const y = "Yes, I am allergic to that stuff.";
+    expect(one(run(y, [allergy(y, "that stuff")], { answering: { rule: R } }))).toMatchObject({ v: { kind: "affirm", subject: "self", codes: ["peanut"], proof: R.proof } });
+    const anon = { ...R, subjectId: null, anonymous: true };
+    for (const [t, w] of [
+      ["Yes, I'm allergic.", "allergic"],
+      ["Yes, I have that allergy.", "that allergy"],
+      ["I'm the one who's allergic.", "allergic"],
+    ] as const) {
+      expect(one(run(t, [allergy(t, w)], { answering: { rule: anon } })), t).toMatchObject({ v: { kind: "affirm", subject: "self", codes: ["peanut"] } });
+    }
+    for (const [t, w] of [
+      ["No, nobody has that allergy.", "that allergy"],
+      ["No, nobody's allergic.", "allergic"],
+    ] as const) {
+      expect(one(run(t, [allergy(t, w, { polarity: "denied", subject: NONE })], { answering: { rule: anon } })), t).toMatchObject({ v: { kind: "deny", answers: anon.id } });
+    }
+    // "Nobody." holds no negation word, so it reads as uncertain (A5), with the asked code, about no one.
+    const nb = "Nobody.";
+    expect(one(run(nb, [allergy(nb, "nobody", { polarity: "denied", subject: NONE })], { answering: { rule: anon } }))).toMatchObject({ v: { kind: "unsure", subject: null, codes: ["peanut"], question: "whoHas" } });
+    // The gazetteer's `none` entry still names its own: a global denial, never the asked code.
+    const g = "No, I don't have any allergies.";
+    expect(one(run(g, [allergy(g, "any allergies", { polarity: "denied" })], { answering: { rule: R } }))).toMatchObject({ v: { kind: "deny", subject: "self", scope: "global" } });
+    // A cue word that names a condition of its own is not a generic word.
+    const c = "Yes, I'm celiac.";
+    expect(one(run(c, [allergy(c, "celiac")], { answering: { rule: R } }))).not.toMatchObject({ v: { codes: ["peanut"] } });
+  });
+  it("A10 on an answering turn keeps the asked rule (CQ 161)", () => {
+    const anon = { ...R, subjectId: null, anonymous: true };
+    const t = "Nobody here is allergic to durian, no.";
+    expect(one(run(t, [allergy(t, "durian", { polarity: "denied", subject: NONE })], { answering: { rule: anon } }))).toEqual({ kind: "allergy", index: 0, v: { kind: "pendingKept", ruleId: anon.id, question: null } });
+    const d = "I'm not allergic to peanuts.";
+    expect(one(run(d, [allergy(d, "peanuts", { polarity: "denied", subject: NONE })]))).toEqual({ kind: "ignored", index: 0, reason: "target" });
   });
   it("A9: a denial whose span names a person never answers an anonymous rule (CQ 160)", () => {
     const anon = { ...R, subjectId: null, anonymous: true };
@@ -365,7 +409,8 @@ describe("validation: the review's cases", () => {
   it("A9 answers the asked anonymous rule only when the denial names no other allergen", () => {
     const anon = fixtureRule("anon", null, "peanut", "pending");
     const t = "Nobody here is allergic to shellfish, no.";
-    expect(one(run(t, [allergy(t, "shellfish", { polarity: "denied", subject: NONE })], { answering: { rule: anon } }))).toEqual({ kind: "ignored", index: 0, reason: "target" });
+    // Row A10 on an answering turn keeps the asked rule (CQ 161); coverage then files shellfish.
+    expect(one(run(t, [allergy(t, "shellfish", { polarity: "denied", subject: NONE })], { answering: { rule: anon } }))).toEqual({ kind: "allergy", index: 0, v: { kind: "pendingKept", ruleId: anon.id, question: null } });
     const p = "Nobody here is allergic to peanuts, no.";
     expect(one(run(p, [allergy(p, "peanuts", { polarity: "denied", subject: NONE })], { answering: { rule: anon } }))).toMatchObject({ v: { kind: "deny", answers: anon.id } });
   });

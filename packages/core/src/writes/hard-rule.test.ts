@@ -398,6 +398,56 @@ describe("planHardRule: a pending rule leaves only for its own slot", () => {
     }
   });
 
+  // CQ 161: a plain yes or no to Franki's own question answers it, whatever generic words the item copies.
+  it("a plain yes or no with generic words answers the owner's asked rule", () => {
+    const selfPeanut = { ...ANSWER_PRIORS.anonPeanut, subjectId: "self", anonymous: false };
+    for (const [t, w] of [
+      ["No, I'm not allergic to that stuff.", "that stuff"],
+      ["No, I'm not allergic to any of that.", "any of that"],
+      ["No, I'm not allergic to those things.", "those things"],
+      ["I'm not allergic to either.", "either"],
+      ["No, I'm not allergic.", "allergic"],
+      ["No, I don't have that allergy.", "that allergy"],
+    ] as const) {
+      const p = plan(t, [item(t, t.slice(0, -1), w, "denied")], rulesOf(selfPeanut), { answering: { rule: selfPeanut } });
+      expect(triples(p.rules), t).toEqual([]);
+      expect(p.outcome, t).toMatchObject({ kind: "pendingResolved", by: "denial" });
+    }
+    const y = "Yes, I am allergic to that stuff.";
+    const py = plan(y, [item(y, y.slice(0, -1), "that stuff", "affirmed")], rulesOf(selfPeanut), { answering: { rule: selfPeanut } });
+    expect(triples(py.rules)).toEqual([["self", "peanut", "active"]]);
+  });
+
+  it("a plain answer about who has it answers the anonymous rule and never adds the all-food filter", () => {
+    const anon = ANSWER_PRIORS.anonPeanut;
+    for (const [t, w] of [
+      ["Yes, I'm allergic.", "allergic"],
+      ["Yes, I have that allergy.", "that allergy"],
+      ["I'm the one who's allergic.", "allergic"],
+    ] as const) {
+      const p = plan(t, [item(t, t.slice(0, -1), w, "affirmed")], rulesOf(anon), { answering: { rule: anon } });
+      expect(triples(p.rules), t).toEqual([["self", "peanut", "active"]]);
+    }
+    for (const [t, w] of [
+      ["No, nobody has that allergy.", "that allergy"],
+      ["No, nobody's allergic.", "allergic"],
+    ] as const) {
+      const p = plan(t, [item(t, t.slice(0, -1), w, "denied", NOBODY)], rulesOf(anon), { answering: { rule: anon } });
+      expect(triples(p.rules), t).toEqual([]);
+      expect(p.outcome, t).toMatchObject({ kind: "pendingResolved", by: "denial" });
+    }
+    const nb = "Nobody.";
+    const pn = plan(nb, [item(nb, "Nobody", "nobody", "denied", NOBODY)], rulesOf(anon), { answering: { rule: anon } });
+    expect(triples(pn.rules)).toEqual([[null, "peanut", "pending"]]);
+    // Row A10 on an answering turn keeps the asked rule, so the fallback adds nothing.
+    for (const t of ["Nobody here is allergic to durian, no.", "My brother doesn't.", "She isn't."]) {
+      const w = t.includes("durian") ? "durian" : "";
+      const p = plan(t, [item(t, t.slice(0, -1), w, "denied", NOBODY)], rulesOf(anon), { answering: { rule: anon } });
+      expect(triples(p.rules), t).toEqual([[null, "peanut", "pending"]]);
+      expect(p.outcome, t).toEqual({ kind: "pendingKept", ruleIds: [anon.id] });
+    }
+  });
+
   it("at exactly RULES_MAX rules nothing grows past the bound", () => {
     const full = { ...emptyRules(), allergies: Array.from({ length: RULES_MAX }, (_, i) => fixtureRule(`g${i}`, "self", `code${i}`, "active")) };
     const t = "I'm allergic to peanuts.";
