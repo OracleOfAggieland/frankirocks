@@ -22,14 +22,14 @@ describe("the voice reply is only ever at a legal stage", () => {
   it("over the wide generator, every step's reply stage is legal or allow-listed", () => {
     fc.assert(
       fc.property(arbWideCall, (steps) => check(runWideCall(steps).trace.steps.map((s) => s.after))),
-      { numRuns: 1_000 },
+      { numRuns: 1_000, seed: 20261111 },
     );
   });
 
   it("over arbCall, every step's reply stage is legal or allow-listed", () => {
     fc.assert(
       fc.property(arbCall, (steps) => check(runCall(steps).trace.steps.map((s) => s.after))),
-      { numRuns: 1_000 },
+      { numRuns: 1_000, seed: 20261112 },
     );
   });
 });
