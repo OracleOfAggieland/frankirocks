@@ -36,7 +36,7 @@ import { toolRoute } from "../routes/tool";
 import { turnRoute } from "../routes/turn";
 import { buildSeed } from "../seed/build";
 import { listTenantRows } from "../seed/clear";
-import { relInstant } from "../seed/clock";
+import { cloneWorldStart, relInstant } from "../seed/clock";
 import { setWorldClock } from "../seed/clock-state";
 import { type BankLine, type CalendarLine, type MailLine, type RelTime, type SeedFixture, at } from "../seed/fixture";
 import { PERSONA, PERSONA_FIXTURE_ID } from "../seed/persona";
@@ -127,6 +127,32 @@ export const extract = (why: string, items: (w: World) => unknown[]): Answer => 
   result: (w) => ok(completed(JSON.stringify(extractOutput(items(w))))),
 });
 
+/** One flat ExtractV1 Item (contracts §5), with the contract's empty values for what `fields` leaves out. */
+export function item(fields: Record<string, unknown> & { act: string; kind: string; predicate: string; value: unknown; args: unknown; spans: unknown[] }) {
+  return {
+    target: "new",
+    memoryId: null,
+    subject: "self",
+    scope: null,
+    mentions: [],
+    bindings: [],
+    contextIds: [],
+    when: { kind: "none", spoken: null, appliesTo: "occurrence", anchorHint: null },
+    endHint: null,
+    changes: [],
+    texture: [],
+    sens: "S0",
+    gravity: 0,
+    authorize: null,
+    flow: "open",
+    deliveryRequest: null,
+    ...fields,
+  };
+}
+
+/** The `when` of an Item for spoken time words; code resolves them (spec §5). */
+export const spoken = (words: string, appliesTo: "occurrence" | "due" | "valid_from" = "occurrence") => ({ kind: "spoken", spoken: words, appliesTo, anchorHint: null });
+
 // ---------------------------------------------------------------------------------------------
 // Assertions.
 
@@ -190,7 +216,7 @@ export type Action =
   | { do: "chip"; text: string }
   | { do: "tap"; control: string }
   | { do: "tool"; tool: (w: World) => { name: string; args: unknown } }
-  | { do: "advance"; to: RelTime; label: string }
+  | { do: "advance"; to: RelTime; /** The labeled time the bolt shows. */ called: string }
   | { do: "mail"; lines: MailLine[] }
   | { do: "bank"; lines: BankLine[] }
   | { do: "calendar"; lines: CalendarLine[] }
@@ -379,8 +405,15 @@ async function act(step: Step, w: World): Promise<Res> {
       return res;
     }
     case "advance": {
-      if (w.namespace === null || w.friday === null) throw new Error("advance: no seed");
-      const to = relInstant(w.friday, step.to, w.zone);
+      // A clone moves its world clock through the seam brief 023's route will call (seed/clock-state.ts). With no
+      // seed (the memory-off control) the tenant is live, and the fake clock's world moves instead.
+      if (w.namespace === null) {
+        const friday = localDateOf(cloneWorldStart(rig.clock.read().worldClock.now, w.zone), w.zone);
+        w.friday ??= friday;
+        rig.clock.setWorld(relInstant(w.friday, step.to, w.zone));
+        return null;
+      }
+      const to = relInstant(w.friday!, step.to, w.zone);
       await rig.store.transaction(w.uid, (tx) => setWorldClock(tx, w.uid, w.namespace!, to, rig.clock.read().opsClock.now));
       return null;
     }
