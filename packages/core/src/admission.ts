@@ -143,6 +143,17 @@ export function serverRule(i: RuleInput): RuleOutcome {
   return permit("slowOrdinary", "reply", full ? "all" : "S0", false);
 }
 
+// Brief 035 (findings 1, 2, 4): whether a parsed hit narrows the audience, for the routes that run the rule late
+// (the Parse_Repair, the Superseding_Post) and for the rule's own rows 8 and 9.
+type FiringParse = Pick<Extract<RuleParse, { kind: "hit" }>, "candidates" | "candidateP">;
+const firesIn = (p: FiringParse, c: ControlClass, judge: RuleInput["judge"]) => p.candidates.includes(c) && routeFires(c, p.candidateP[c] ?? 0, judge);
+
+/** A company or quiet candidate that fires narrows, whatever class was chosen (finding 4, as a retained crisis always gets care). */
+export const narrowsAudience = (p: FiringParse, judge: RuleInput["judge"]): boolean => firesIn(p, "company", judge) || firesIn(p, "quiet", judge);
+
+/** A retained crisis candidate fires (crisis is exempt from the judge; `routeFires`). */
+export const crisisFires = (p: FiringParse, judge: RuleInput["judge"]): boolean => firesIn(p, "crisis", judge);
+
 export interface PayloadInput {
   stamp: Stamp;
   head: Head | null;

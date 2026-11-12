@@ -20,6 +20,13 @@ import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import { decisionsPort } from "./decisions-port";
 import { runSlowParse } from "./slow-parse";
+// Brief 035 (finding 1): a late company or quiet hit narrows, as it would on the turn.
+import { type CoreBundle, type CoreRules, type CoreState } from "@franki/core";
+import { lateNarrowing, precompileAudienceHead, withNarrowHead } from "../audience-swap";
+import { ownerClock } from "../core-docs";
+import { driveHangupJob, ensureHangupJob } from "../worker/hangup";
+import { ensureExtractJobs } from "../worker/extract-jobs";
+import { drainExtractJobs } from "../worker/drain";
 
 /** The Parse_Repair's Decisions deadline (R15.3). */
 export const REPAIR_DEADLINE_MS = 2_000;
@@ -44,6 +51,10 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
   const stored = await deps.store.get<Turn>(uid, turnPath);
   if (stored === null || stored.data.role !== "user" || stored.data.parseState !== "failed" || stored.data.text === null) return "skipped";
   const slow = await runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log }, { turnId, utterance: stored.data.text }, REPAIR_DEADLINE_MS);
+  // Brief 035: the narrow Head a late company or quiet hit needs, compiled before the transaction as the turn does.
+  const sessionGen = (await deps.store.get<Session>(uid, paths.session(uid, sessionId)))?.data.generation ?? 1;
+  const audienceHead = await precompileAudienceHead({ uid, deps }, slow, sessionGen);
+  let hangupJob: ID | null = null;
 
   // A concurrent write (a receipt, the next turn) loses this compare-and-set: run the transaction again, as the
   // routes do. Each attempt re-reads the Session and re-checks the lease (review of wave A, item 18).
@@ -56,11 +67,20 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
     }
   }
   deps.log("turn.repair", { turnId, result, ms: slow.ms });
+  // Brief 035 (finding 1): a narrowing with a live call hangs up after the commit, with the Job's backoff.
+  const job = hangupJob as ID | null;
+  if (job !== null) {
+    await driveHangupJob(uid, job, deps, async (id) => {
+      await ensureExtractJobs(uid, id, deps);
+      await drainExtractJobs(uid, deps);
+    });
+  }
   // Brief 012 G20 (task B9): with the parse committed, the hardRule route runs once, outside the lease, as a proposal.
   if (result === "ordinary" || result === "hit") await runRepairRoute({ uid, deps }, { sessionId, turnId }, slow);
   return result;
 
   async function repairTx(tx: Tx): Promise<RepairResult> {
+    hangupJob = null;
     const doc = await tx.get<Session>(paths.session(uid, sessionId));
     const turn = await tx.get<Turn>(turnPath);
     if (doc === null || turn === null) return "skipped";
@@ -82,19 +102,41 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
     // The Turn's own committed parse closes its own gap, `alone` included; R15.8 only says `alone` doesn't close
     // another Turn's gap, and advancedWatermark moves only over contiguous committed Turns (review item 20).
     const committedParseSeq = await advancedWatermark(tx, uid, sessionId, s, turn.data.seq);
-    tx.update(doc.path, { ...s, committedParseSeq, updatedAt: now });
-    if (slow.parse.kind !== "hit") return "ordinary";
+    if (slow.parse.kind !== "hit") {
+      tx.update(doc.path, { ...s, committedParseSeq, updatedAt: now });
+      return "ordinary";
+    }
 
     // The held decision is on the record for any hit; only a route that changes what is said and fires raises
     // policyRev, which cancels speech (review of the live run, item 5). A Turn with no stored verdict is not O.
     const judge = turn.data.judge ?? (turn.data.itemIds.length === 0 ? "typed" : "timeout");
     const epochDoc = await tx.get<CoreEpoch>(paths.core(uid, "epoch"));
-    if (epochDoc === null) return "hit";
-    const cuts = changesWhatIsSaid(slow.parse, judge, "A");
-    const epoch: CoreEpoch = cuts ? { ...epochDoc.data, policyRev: epochDoc.data.policyRev + 1, updatedAt: now } : epochDoc.data;
-    if (cuts) tx.update(epochDoc.path, epoch);
+    if (epochDoc === null) {
+      tx.update(doc.path, { ...s, committedParseSeq, updatedAt: now });
+      return "hit";
+    }
+    // Brief 035 (finding 1): a company or quiet hit narrows here as it would have on the turn (lateNarrowing).
+    const [bundleDoc, rulesDoc, stateDoc] = await Promise.all([tx.get<CoreBundle>(paths.core(uid, "bundle")), tx.get<CoreRules>(paths.core(uid, "rules")), tx.get<CoreState>(paths.core(uid, "state"))]);
+    const narrowing =
+      bundleDoc === null || rulesDoc === null || stateDoc === null
+        ? null
+        : await withNarrowHead(tx, uid, lateNarrowing({ sessionId, session: s, parse: slow.parse, judge, epoch: epochDoc.data, bundle: bundleDoc.data, rules: rulesDoc.data, opsNow: ops, head: audienceHead, hasher: deps.hasher }), {
+            epoch: epochDoc.data,
+            rules: rulesDoc.data,
+            bundle: bundleDoc.data,
+            clock: ownerClock(stateDoc.data, deps.clock),
+            generation: s0.generation,
+            opsNow: ops,
+            hasher: deps.hasher,
+          });
+    tx.update(doc.path, { ...s, ...(narrowing?.session ?? {}), committedParseSeq, updatedAt: now });
+    if (narrowing?.bundle) tx.update(paths.core(uid, "bundle"), narrowing.bundle);
+    if (narrowing?.hangup) hangupJob = await ensureHangupJob(tx, uid, sessionId, s0.rev, ops, deps.hasher);
+    const cuts = narrowing === null && changesWhatIsSaid(slow.parse, judge, "A");
+    const epoch: CoreEpoch = narrowing !== null ? narrowing.epoch : cuts ? { ...epochDoc.data, policyRev: epochDoc.data.policyRev + 1, updatedAt: now } : epochDoc.data;
+    if (narrowing !== null || cuts) tx.update(epochDoc.path, epoch);
     // Nothing is admitted for a late hit: the seam records one held decision for the Turn (item 22).
-    recordLateHit(tx, { uid, sessionId, turnId, core: { epoch: epoch.epoch, policyRev: epoch.policyRev }, opsNow: ops, audience: effectiveAudience(s, ops) }, deps);
+    recordLateHit(tx, { uid, sessionId, turnId, core: { epoch: epoch.epoch, policyRev: epoch.policyRev }, opsNow: ops, audience: effectiveAudience({ ...s, ...(narrowing?.session ?? {}) }, ops) }, deps);
     return "hit";
   }
 }

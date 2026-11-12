@@ -13,6 +13,7 @@
  */
 import {
   type Au,
+  type ClockPair,
   COMPANY_LINE,
   ALONE_LINE,
   type CoreBundle,
@@ -24,8 +25,11 @@ import {
   type ID,
   type RuleInput,
   type RuleOutcome,
+  type RuleParse,
   type Session,
+  crisisFires,
   msFromTs,
+  narrowsAudience,
   tsFromMs,
   utf8,
 } from "@franki/core";
@@ -35,7 +39,7 @@ import { buildHead } from "./head-build";
 import { DECK_TTL_MS } from "./sessions";
 import type { SlowParse } from "./intents/slow-parse";
 import { paths } from "./store/paths";
-import { readSnapshot } from "./store/port";
+import { type Tx, readSnapshot } from "./store/port";
 import type { RouteContext } from "./routes/runtime";
 
 /** Row 8: how long the narrowed audience waits for the fresh call's open (question 81). */
@@ -72,7 +76,7 @@ export interface AudienceHead {
 }
 
 /** Compiles the target audience's Head from a lock-free snapshot, as open does (design "Alone"). */
-export async function precompileAudienceHead(ctx: RouteContext, slow: SlowParse | null, generation: number): Promise<AudienceHead | null> {
+export async function precompileAudienceHead(ctx: Pick<RouteContext, "uid" | "deps">, slow: SlowParse | null, generation: number): Promise<AudienceHead | null> {
   const audience = audienceTarget(slow);
   if (audience === null) return null;
   const { uid, deps } = ctx;
@@ -114,6 +118,11 @@ export interface AudienceEffect {
   bundle: CoreBundle | null;
   /** Row 8: write the hangup Job and hang up after the response. */
   hangup: boolean;
+  /**
+   * Brief 035: the audience whose Head the Deck must now carry, or null when the Deck may keep its Head. When it is
+   * set and `bundle` is null, `withNarrowHead` compiles that Head in the transaction, and if it can't, no Deck goes out.
+   */
+  wantsHead?: Au | null;
 }
 
 export interface AudienceInput {
@@ -214,3 +223,73 @@ export function errorCloseCarry(s: Session, reason: "user" | "replace" | "expire
   if (reason !== "error" || effectiveAudience(expireLease(s, opsNow), opsNow) === "private") return null;
   return { waitDeadline: tsFromMs(opsNow + RECONNECT_WAIT_MS) };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Brief 035: the review of the audience wave. Every door a company or quiet hit comes in by narrows, and fails closed.
+
+/** Row 8's Session fields: company, the swap wait, and the Session moved to `closing` as a close does. */
+const closingFields = (opsNow: number): Partial<Session> => ({ audience: "company", waitDeadline: tsFromMs(opsNow + SWAP_WAIT_MS), status: "closing", browserState: "CLOSED" });
+
+export interface LateNarrowingInput {
+  sessionId: string;
+  /** The Session as this transaction will write it, before the narrowing. */
+  session: Session;
+  parse: RuleParse;
+  judge: RuleInput["judge"];
+  epoch: CoreEpoch;
+  bundle: CoreBundle;
+  rules: CoreRules;
+  opsNow: number;
+  head: AudienceHead | null;
+  hasher: Pick<Hasher, "sha256">;
+}
+
+/**
+ * The narrowing of a hit that commits after its answer was sent: by the Parse_Repair (finding 1) or a
+ * Superseding_Post (finding 2). Nothing is spoken late, so there is no care reply to wait for:
+ *   a live call: row 8 (company, policyRev raised, the swap wait, `closing`, the hangup Job), and the crisis modifier
+ *     when crisis fired too, so the next call opens with care;
+ *   no call: company, policyRev raised, the crisis modifier, and the narrow Head in the Deck;
+ *   a Session already narrowed here: only the crisis modifier.
+ * A company or quiet candidate that fires narrows whatever was chosen (finding 4). Null when nothing narrows.
+ */
+export function lateNarrowing(x: LateNarrowingInput): AudienceEffect | null {
+  if (x.parse.kind !== "hit" || !narrowsAudience(x.parse, x.judge)) return null;
+  const s = x.session;
+  const modifiers = crisisFires(x.parse, x.judge) ? { ...s.modifiers, crisis: tsFromMs(x.opsNow) } : s.modifiers;
+  if (narrowedHere(s)) return { session: { modifiers }, epoch: x.epoch, bundle: null, hangup: false, wantsHead: null };
+  // A narrowing changes what is said: policyRev + 1 cancels older speech and Decks (KV05).
+  const raised: CoreEpoch = { ...x.epoch, policyRev: x.epoch.policyRev + 1, updatedAt: tsFromMs(x.opsNow) };
+  if (s.registeredCallIds.length > 0 && LIVE.includes(s.status)) {
+    const clears = x.epoch.activeSessionId === x.sessionId;
+    return { session: { ...closingFields(x.opsNow), modifiers }, epoch: clears ? { ...raised, activeSessionId: null, activeCallId: null } : raised, bundle: null, hangup: true, wantsHead: null };
+  }
+  const open = s.status === "minting" || s.status === "active";
+  const fits = x.head !== null && x.head.audience === "company" && x.head.rulesRev === x.rules.rulesRev && x.head.epoch === x.epoch.epoch;
+  return {
+    session: { audience: "company", modifiers },
+    epoch: raised,
+    bundle: open && fits ? headBundle(x.bundle, x.head!.head, x.rules.rulesRev, x.opsNow, x.hasher) : null,
+    hangup: false,
+    wantsHead: open ? "company" : null,
+  };
+}
+
+/**
+ * Fails closed when the Head compiled before the transaction no longer fits (the rules or the epoch moved): the
+ * Head `wantsHead` names is compiled here, in the transaction. If even that fails, the effect keeps a null bundle
+ * and `deckAllowed` sends no Deck.
+ */
+export async function withNarrowHead(
+  tx: Pick<Tx, "get" | "query">,
+  uid: string,
+  eff: AudienceEffect | null,
+  x: { epoch: CoreEpoch; rules: CoreRules; bundle: CoreBundle; clock: ClockPair; generation: number; opsNow: number; hasher: Pick<Hasher, "sha256">; bundleWritten?: boolean },
+): Promise<AudienceEffect | null> {
+  if (eff === null || eff.bundle !== null || (eff.wantsHead ?? null) === null || x.bundleWritten === true) return eff;
+  const compiled = await buildHead(tx, uid, { epoch: x.epoch, rules: x.rules }, x.clock, x.generation, eff.wantsHead!);
+  return compiled.ok ? { ...eff, bundle: headBundle(x.bundle, compiled.head, x.rules.rulesRev, x.opsNow, x.hasher) } : eff;
+}
+
+/** Whether an answer may carry a Deck after this effect: never when it hangs up (finding 11), nor when the Head it needs is missing. */
+export const deckAllowed = (eff: AudienceEffect | null): boolean => eff === null || (!eff.hangup && ((eff.wantsHead ?? null) === null || eff.bundle !== null));

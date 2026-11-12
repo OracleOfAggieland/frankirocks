@@ -2,7 +2,8 @@
 // Only a late control hit that changes what is said raises it: the turn route's late hit and the Parse_Repair,
 // each behind changesWhatIsSaid. No write, proposal, the repair's hardRule route or the extraction backstop does.
 // Wave B (brief 026, tasks 48 and 49) adds one designed site: the turn route's own company, quiet or alone hit,
-// also behind changesWhatIsSaid (design "Audience effects in the transaction").
+// also behind changesWhatIsSaid (design "Audience effects in the transaction"). Brief 035 (finding 1) adds the late
+// narrowing in audience-swap.ts, behind narrowsAudience: a company or quiet hit the Parse_Repair commits.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -45,12 +46,12 @@ describe("policyRev raise sites", () => {
     expect(RAISE.test("policyRev + 10")).toBe(false);
   });
 
-  it("raises policyRev only in the turn route's late hit, its wave B audience hit and the Parse_Repair, each behind changesWhatIsSaid", () => {
+  it("raises policyRev only in the turn route's late hit, its wave B audience hit, the Parse_Repair and the late narrowing, each behind its check", () => {
     const sites = raiseSites();
-    expect(sites.map((s) => s.file).sort(), sites.map((s) => `${s.file}:${s.line}: ${s.text}`).join("\n")).toEqual(["packages/server/src/intents/repair.ts", "packages/server/src/routes/turn.ts", "packages/server/src/routes/turn.ts"]);
+    expect(sites.map((s) => s.file).sort(), sites.map((s) => `${s.file}:${s.line}: ${s.text}`).join("\n")).toEqual(["packages/server/src/audience-swap.ts", "packages/server/src/intents/repair.ts", "packages/server/src/routes/turn.ts", "packages/server/src/routes/turn.ts"]);
     for (const s of sites) {
       const before = readFileSync(join(REPO_ROOT, s.file), "utf8").split(/\r?\n/).slice(Math.max(0, s.line - 6), s.line).join("\n");
-      expect(before, `${s.file}:${s.line}`).toContain("changesWhatIsSaid(");
+      expect(before, `${s.file}:${s.line}`).toContain(s.file.endsWith("audience-swap.ts") ? "narrowsAudience(" : "changesWhatIsSaid(");
     }
   });
 });
