@@ -15,7 +15,7 @@
  * Two visits never see each other's rows: each is its own tenant, the store refuses any path outside it, and the
  * clear leaves nothing of an earlier visit in the same tenant.
  */
-import { type CoreDocs, type ID, type Infer, type SeedResetRequest, type SeedResetResponse, type Session, msFromTs, tsFromMs } from "@franki/core";
+import { type CoreDocs, type ID, type Infer, type ResetRequest, type SeedResetResponse, type Session, msFromTs, tsFromMs } from "@franki/core";
 import { readCoreDocs } from "../core-docs";
 import { type RequestKey, completeRequest } from "../ledger/request";
 import { RouteError, barrierError, configError, dependencyError, scopeError, staleError } from "../routes/errors";
@@ -30,7 +30,7 @@ import { cloneWorldStart } from "./clock";
 import { loadSeed, seedCoreDocs } from "./load";
 import { FIXTURES } from "./persona";
 
-export type ResetReq = Infer<typeof SeedResetRequest>;
+export type ResetReq = Infer<typeof ResetRequest>;
 export type ResetRes = Infer<typeof SeedResetResponse>;
 
 /** How long a reset's barrier holds before another reset of this tenant may take it over. */

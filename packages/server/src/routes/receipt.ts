@@ -39,6 +39,7 @@ import { mutation } from "./mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 import { retryStale } from "./state";
 import { askAfterSpoken } from "../onturn/ask";
+import { goneCheck, receiptMoments } from "./receipt-moments";
 
 type ReceiptReq = Infer<typeof ReceiptRequest>;
 type ReceiptRes = Infer<typeof ReceiptResponse>;
@@ -69,7 +70,7 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
           await completeRequest(tx, key, refused, ops);
           return refused;
         }
-        const accepted: ReceiptRes = { accepted: true, controlCheck: "none" };
+        const accepted: ReceiptRes = { accepted: true, controlCheck: goneCheck(req) };
         const live = s.status === "minting" || s.status === "active";
 
         if (req.kind === "transcript") {
@@ -175,6 +176,8 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
           if (ask !== null) tx.update(paths.core(uid, "rules"), { ...core.rules.data, ask });
         }
         if (live) tx.update(doc.path, { ...s, lastTurnAt: now, expiresAt: tsFromMs(ops + SESSION_IDLE_MS), updatedAt: now });
+        // Brief 030 P1-6: the moments this receipt names (admitted, said, rendered).
+        await receiptMoments(tx, uid, req, ops, deps);
         // A browser-issued fastO is recorded by the seam from its `admitted` receipt (R9.1).
         if (req.kind === "admitted" && req.permitKind === "fastO") {
           const coreVals = { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev };

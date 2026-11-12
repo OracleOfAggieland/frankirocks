@@ -15,6 +15,7 @@
  */
 import { type DocRef, type EC, type Snapshot, docRef, eligible } from "./eligible";
 import { recallLineText } from "./recall";
+import { lessOnTakeoutLine } from "./patterns/words";
 import type { Au, Cov, ID, Ref, Sens } from "./schema/primitives";
 import type { Evidence, Ledger, Memory } from "./schema/records";
 import type { Card, InspectItem, LabView, SnapshotView, StripView, W } from "./schema/wire";
@@ -365,7 +366,12 @@ export function labView(input: LabInput): LabView {
  * the owner said yes, so noticed, connected, suggested and accepted are complete; the comparison is complete once
  * the loop is `eligible` or `celebrated`. Labels are the step kinds; the browser words them. No loop: no steps.
  */
-export function stripView(rows: readonly ViewRow[], ctx: ViewContext): StripView {
+/**
+ * `falls` (brief 030 P1-4): a loop's fall in cents, from its leased or delivered `celebrate` moment, which the tick
+ * wrote at `checkAt`. The comparison step's label is then the hero lane's "$115 less on takeout." line, once the
+ * loop is compared; otherwise it stays the step kind.
+ */
+export function stripView(rows: readonly ViewRow[], ctx: ViewContext, falls: ReadonlyMap<string, number> = new Map()): StripView {
   const r = rows
     .filter((x) => x.memory.loop !== null && counted(x, ctx.ec, ctx.snapshot) && underCeiling(x.memory.sens, ctx.ec.audience))
     .sort((a, b) => cmp(b.memory.assertedAt, a.memory.assertedAt) || cmp(a.id, b.id))[0];
@@ -380,7 +386,7 @@ export function stripView(rows: readonly ViewRow[], ctx: ViewContext): StripView
       done("connected"),
       done("suggested"),
       done("accepted", loop.acceptedActionId as ID),
-      { kind: "comparison", state: compared ? "complete" : "pending", label: "comparison", ledgerId: null },
+      { kind: "comparison", state: compared ? "complete" : "pending", label: (compared ? lessOnTakeoutLine(falls.get(r.id) ?? 0) : null) ?? "comparison", ledgerId: null },
     ],
   };
 }

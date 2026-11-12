@@ -24,6 +24,8 @@ describe("memory screen view-model (brief 020)", () => {
     expect(motes.filter((m) => m.kind === "told")).toHaveLength(4);
     expect(motes.filter((m) => m.kind === "guessed")).toHaveLength(3);
     expect(motes.filter((m) => m.kind === "private")).toHaveLength(1);
+    expect(motes.filter((m) => m.kind === "rule")).toHaveLength(0);
+    expect(jarMotes(FIXTURE_SNAPSHOT, 2).filter((m) => m.kind === "rule").map((m) => m.id)).toEqual(["rule-0", "rule-1"]);
     expect(new Set(motes.map((m) => m.id)).size).toBe(motes.length);
   });
 
@@ -42,6 +44,13 @@ describe("memory screen view-model (brief 020)", () => {
   it("strip: open while a loop has steps, filled to the first pending step", () => {
     expect(stripProps(FIXTURE_MEMORY.strip.strip)).toEqual({ open: true, filled: 4, resultLabel: COPY.memory.stripResult });
     expect(stripProps({ loopId: null, steps: [] })).toBeNull();
+  });
+
+  it("strip: a compared loop shows its fall as the last step's label (brief 030 P1-4)", () => {
+    const steps = FIXTURE_MEMORY.strip.strip!.steps.map((x) => ({ ...x, state: "complete" as const }));
+    const compared = { ...FIXTURE_MEMORY.strip.strip!, steps: steps.map((x) => (x.kind === "comparison" ? { ...x, label: "$115 less on takeout." } : x)) };
+    expect(stripProps(compared)).toEqual({ open: true, filled: 5, resultLabel: "$115 less on takeout." });
+    expect(stripProps({ ...compared, steps })).toMatchObject({ filled: 5, resultLabel: COPY.memory.stripResult });
   });
 
   it("receipt: kinds and counts only, and only once blocked or cleaned", () => {
