@@ -23,7 +23,7 @@ async function interviewMoved(w: World): Promise<true | string> {
   return shown.join("; ") === want.join("; ") ? true : `found ${shown.join("; ") || "no revisions"}; wanted ${want.join("; ")}`;
 }
 
-export const BEAT1: Script = {
+const BEAT1: Script = {
   name: "beat 1: Franki speaks first",
   scores: "spec §15 0:00–0:20, Friend Test 1",
   steps: [

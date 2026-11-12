@@ -320,7 +320,16 @@ async function runStep(script: Script, step: Step, w: World, checked: boolean): 
     declared.set(a.endpoint, (declared.get(a.endpoint) ?? 0) + 1);
   }
   const outputsBefore = w.outputs.length;
-  const res = await act(step, w);
+  let res: Res;
+  try {
+    res = await act(step, w);
+  } catch (error) {
+    // A waiting step's action may fail for the reason it waits; the green run notes it and goes on. In the run
+    // that checks this step, the failure is the expected one.
+    if (checked) throw error;
+    res = null;
+    w.vars.set(`error:${step.label}`, error instanceof Error ? error.message : String(error));
+  }
   const made = w.rig.openai.requests.slice(before);
   for (const r of made) push(w, step.label, "model", r.body);
   if (res !== null) w.answers.set(step.label, res);
@@ -506,7 +515,6 @@ export async function work(w: World): Promise<void> {
 /** A limb event: rows arrive the way the seed writes them (the one load's builder), in the clone's namespace. */
 async function arrive(w: World, lines: (MailLine | BankLine | CalendarLine)[]): Promise<void> {
   if (w.namespace === null) throw new Error("limb event: no seed");
-  const state = (await w.rig.store.get<CoreState>(w.uid, paths.core(w.uid, "state")))!.data;
   const epoch = (await w.rig.store.get<{ epoch: number; policyRev: number }>(w.uid, paths.core(w.uid, "epoch")))!.data;
   const fixture: SeedFixture = { id: PERSONA.id, origin: "authored", windowDays: PERSONA.windowDays, lines };
   const worldStart = relInstant(w.friday!, at(0, "08:40"), w.zone);
@@ -519,14 +527,13 @@ async function arrive(w: World, lines: (MailLine | BankLine | CalendarLine)[]): 
     core: { epoch: epoch.epoch, policyRev: epoch.policyRev },
     hasher: w.rig.deps.hasher,
   });
-  void state;
   await w.rig.store.transaction(w.uid, async (tx) => {
     for (const g of rows.groups) {
       for (const wr of g.writes) {
-        // A calendar move writes only the revisions not already stored; the current flag moves to the newest.
+        // A calendar move lists every revision: the ones already stored are skipped, the new one is written.
+        // Evidence is immutable, so an older revision keeps its own `isCurrentProvider` (no writer moves it yet).
         const existing = await tx.get<Evidence>(wr.path);
         if (existing === null) tx.create(wr.path, wr.record);
-        else if (canonicalJSON(existing.data) !== canonicalJSON(wr.record)) tx.update(wr.path, wr.record);
       }
     }
   });
@@ -658,6 +665,27 @@ export async function allLedger(w: World): Promise<{ id: string; data: Ledger }[
 
 export async function allEvidence(w: World): Promise<{ id: string; data: Evidence }[]> {
   return (await listTenantRows(w.rig.store, w.uid)).filter((r) => r.path.includes("/evidence/")).map((r) => ({ id: r.id, data: r.data as Evidence }));
+}
+
+/**
+ * Test setup only: replaces stored Evidence rows. Evidence is immutable in place (store/checks.ts), so each row is
+ * deleted and written again under the same ID. `change` returns the new record, or null to leave the row out.
+ */
+export async function rewriteEvidence(w: World, pick: (e: Evidence) => boolean, change: (e: Evidence) => Evidence | null): Promise<number> {
+  const rows = (await allEvidence(w)).filter((e) => pick(e.data));
+  await w.rig.store.transaction(w.uid, async (tx) => {
+    for (const r of rows) {
+      await tx.get(paths.evidence(w.uid, r.id));
+      tx.delete(paths.evidence(w.uid, r.id));
+    }
+  });
+  await w.rig.store.transaction(w.uid, async (tx) => {
+    for (const r of rows) {
+      const next = change(r.data);
+      if (next !== null) tx.create(paths.evidence(w.uid, r.id), next);
+    }
+  });
+  return rows.length;
 }
 
 export async function rulesOf(w: World): Promise<CoreRules> {

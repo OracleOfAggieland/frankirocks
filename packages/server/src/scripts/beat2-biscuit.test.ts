@@ -9,9 +9,10 @@
 import type { Memory } from "@franki/core";
 import { addDays } from "../seed/clock";
 import { at } from "../seed/fixture";
+import { BISCUIT_LINE } from "./lines";
 import { type Script, type Step, type World, allMemories, extract, item, memoryText, parse, reply, scriptSuite, spanOf, spoken } from "../testing/script-runner";
 
-export const LINE = "Biscuit has surgery Thursday.";
+const LINE = BISCUIT_LINE;
 const biscuit = { what: "the owner's words about Biscuit", pick: (m: Memory) => memoryText(m).includes("Biscuit") };
 
 const CHECKIN_WAITS = "brief 023 (derive the check-in, the tick, the jump and delivery) and 024 (the Gate words it); open answers proactive: null today";
@@ -48,7 +49,7 @@ const typed: Step = {
   expect: [{ mustSay: { note: true } }],
 };
 
-export const BEAT2: Script = {
+const BEAT2: Script = {
   name: "beat 2: Biscuit has surgery Thursday",
   scores: "spec §15 0:20–0:50, Friend Test 1 for a pet",
   steps: [
@@ -88,7 +89,7 @@ export const BEAT2: Script = {
 };
 
 /** Memory off: no seed, nothing extracted. After the jump nothing about Biscuit is said. */
-export const BEAT2_MEMORY_OFF: Script = {
+const BEAT2_MEMORY_OFF: Script = {
   name: "beat 2, memory-off control",
   scores: "spec §13 line 358",
   steps: [
