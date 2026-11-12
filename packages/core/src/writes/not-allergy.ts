@@ -12,8 +12,9 @@
  *
  * The code's half of G3 holds when the RX4 sentences name no gazetteer alias (the whole U text, when a cue sentence
  * has no object of its own), every cue word in an RX4 sentence is
- * `allerg…` or `intoleran…` (never `anaphyla…`, `epipen` or `celiac`), and no generic object word stands within six
- * words of a cue, except a compound right after "allergy" ("allergy pill").
+ * `allerg…` or `intoleran…` (never `anaphyla…`, `epipen` or `celiac`), no generic object word stands within six
+ * words of a cue, except a compound right after "allergy" ("allergy pill"), and each cue's object is a word in the
+ * closed non-food list `NOT_ALLERGEN_OBJECTS` (brief 032 M1; "intolerant" with nothing after it is the trait).
  */
 import { REGEX_TABLE, normalizeForRegex } from "../intents/regex";
 import type { Span } from "../schema/primitives";
@@ -31,6 +32,21 @@ export const GENERIC_ALLERGY_OBJECTS = [
 /** Words that don't count when they directly follow "allergy" or "allergies". */
 export const ALLERGY_COMPOUNDS = ["pill", "pills", "meds", "medicine", "medication", "shot", "shots", "tablet", "tablets", "spray"] as const;
 
+/**
+ * The closed list of things a person is "allergic to" that are not an allergen (brief 032 M1): the only objects the
+ * code half of G3 lets through. Anything else after the cue, an allergen the gazetteer doesn't know included
+ * ("allergic to durian"), fails the check, so the unresolved fallback runs and Franki asks. One word each, lower case.
+ */
+export const NOT_ALLERGEN_OBJECTS = [
+  "monday", "mondays", "morning", "mornings", "meeting", "meetings", "work", "homework", "school", "math", "exercise",
+  "cardio", "running", "gym", "effort", "people", "crowds", "boss", "bosses", "email", "emails", "deadlines", "taxes",
+  "traffic", "drama", "nonsense", "chores", "cleaning", "commitment", "responsibility", "adulting", "mistakes",
+  "criticism", "change", "rules", "noise", "you", "him", "her", "them", "me",
+] as const;
+
+/** Words that may stand between the cue's lead word and its object ("allergic to my boss"). */
+const OBJECT_DETERMINERS: ReadonlySet<string> = new Set(["my", "the", "a", "an", "his", "her", "their", "our", "your"]);
+
 /** How many words on each side of a cue the generic-object check looks at. */
 export const GENERIC_WINDOW = 6;
 
@@ -40,6 +56,7 @@ export const MENTION_MAX_WORDS = 5;
 const RX4 = REGEX_TABLE.find((r) => r.id === "RX4")!.pattern;
 const GENERIC: ReadonlySet<string> = new Set(GENERIC_ALLERGY_OBJECTS);
 const COMPOUND: ReadonlySet<string> = new Set(ALLERGY_COMPOUNDS);
+const NOT_ALLERGEN: ReadonlySet<string> = new Set(NOT_ALLERGEN_OBJECTS);
 
 export interface Range {
   start: number;
@@ -151,6 +168,23 @@ export function cueHasNoObject(text: string, s: Range): boolean {
 }
 
 /**
+ * Whether the cue at `i` passes brief 032 M1: "allergy" or "allergies" in a compound ("allergy pill"); "intolerant"
+ * as a trait, with nothing after it ("My boss is so intolerant."); or a lead word ("to", "of", "with") and then, past
+ * any determiners, an object from `NOT_ALLERGEN_OBJECTS`. Anything else ("I'm allergic.", "an allergic reaction",
+ * "allergic to durian") fails, so Franki asks.
+ */
+function objectIsNotAllergen(w: readonly string[], i: number): boolean {
+  const cue = w[i]!;
+  const next = w[i + 1];
+  if (next === undefined) return /^intoleran/.test(cue);
+  if (/^allerg(y|ies)$/.test(cue) && COMPOUND.has(next)) return true;
+  if (!OBJECT_LEADS.has(next)) return false;
+  let j = i + 2;
+  while (j < w.length && OBJECT_DETERMINERS.has(w[j]!)) j++;
+  return j < w.length && NOT_ALLERGEN.has(w[j]!);
+}
+
+/**
  * The code's half of the G3 check, over the RX4 sentences. The model's half is the caller's. When a cue sentence has
  * no object of its own, an alias anywhere in the turn's U text also fails it ("I'm allergic. To shellfish."), so an
  * empty answer never decides alone that a named allergen isn't one; otherwise a food word in another sentence ("I'm
@@ -172,6 +206,7 @@ export function notAllergyByCode(e: TurnEvidence): boolean {
         if (j === i + 1 && /^allerg(y|ies)$/.test(w[i]!) && COMPOUND.has(w[j]!)) continue;
         return false;
       }
+      if (!objectIsNotAllergen(w, i)) return false;
     }
   }
   return true;

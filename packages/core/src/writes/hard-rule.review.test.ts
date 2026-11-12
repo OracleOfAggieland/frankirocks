@@ -2,7 +2,8 @@
 import { describe, expect, it } from "vitest";
 import type { CoreRules } from "../schema/records";
 import { planHardRule } from "./hard-rule";
-import { TURN_AT, TURN_EID, buildEvidence, emptyRules, hardRuleTurn, spanAt, validateContext } from "./testing/arb-writes";
+import { notAllergyByCode } from "./not-allergy";
+import { TURN_AT, TURN_EID, buildEvidence, emptyRules, hardRuleTurn, spanAt, turnEvidenceOf, validateContext } from "./testing/arb-writes";
 import type { FastItem, FastSlotsOut, Subject } from "./types";
 import { validateItems } from "./validate";
 
@@ -114,5 +115,22 @@ describe("H3: a named person's rule never clears the anonymous one", () => {
     const p = plan(t, [brotherItem(t)], { ...emptyRules(), allergies: [{ ...anonPeanut }] }, { answering: { rule: anonPeanut } });
     expect(p.rules.allergies.some((r) => r.id === anonPeanut.id)).toBe(false);
     expect(p.outcome).toMatchObject({ kind: "pendingResolved", by: "rule" });
+  });
+});
+
+describe("M1: an allergen outside the gazetteer is never passed as not-an-allergy", () => {
+  const ev = (t: string) => turnEvidenceOf(buildEvidence(TURN_EID, t, [], ["U"], TURN_AT), TURN_EID);
+
+  it("\"I'm allergic to durian.\" with a valid empty answer: the unresolved filter, and Franki asks", () => {
+    const t = "I'm allergic to durian.";
+    expect(notAllergyByCode(ev(t))).toBe(false);
+    const p = plan(t, []);
+    expect(p.outcome).toMatchObject({ kind: "pendingWritten", question: "whatItem" });
+    expect(p.rules.allergies).toMatchObject([{ subjectId: null, code: "unresolved", state: "pending" }]);
+  });
+
+  it("the code half needs the cue's object in the closed non-food list, or the trait reading of 'intolerant'", () => {
+    for (const t of ["I'm allergic to Mondays.", "Ugh, I'm allergic to meetings.", "I'm allergic to my boss.", "My boss is so intolerant.", "I took an allergy pill."]) expect(notAllergyByCode(ev(t)), t).toBe(true);
+    for (const t of ["I'm allergic to durian.", "I'm allergic to jackfruit.", "I'm intolerant of fructose.", "I'm allergic.", "I had an allergic reaction."]) expect(notAllergyByCode(ev(t)), t).toBe(false);
   });
 });
