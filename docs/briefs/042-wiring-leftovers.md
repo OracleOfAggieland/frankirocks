@@ -36,3 +36,59 @@ Another lane (brief 041, part 3) is adding filters inside `chooseNow`, `admitMom
 ## Done
 
 The seven items with their tests, the three properties with seeds recorded, the checks of brief 016 with `npm run build` and the repo's check scripts, and a section "Outcome" at the end of this file: each item with its commit, each step turned green, each ruling as a numbered question at the end of the list in `docs/briefs/030-report.md`, the design note on the typed-reply Gate, and what a live call or a signed-in browser must still show. Merge `build/plan-stages` before the final checks and run the full suite after it.
+
+## Outcome
+
+Built in lane `wire`. Items 1 to 5 are done; items 6 and 7 are not started and go to a fresh builder (see "Left" below). Brief 045's ruling on finding 6 changed item 1's shape, and the open's budget came first by the coordinator's word; both are recorded here and in brief 045's "Outcome, part D".
+
+### Items, with their commits
+
+| Item | Commit(s) | Test, red first |
+|---|---|---|
+| Open budget (coordinator, first) and 045 finding 9 | `c8685c2`, then `e244a3a` (deterministic test) | `routes/open-budget.test.ts`: the seeded open took 5,509 ms at 75 ms a store call before the fix |
+| 1. An offer shown again can be answered | `de106ba`, reshaped by `79571ab` with 045 finding 6 | `routes/offer-shown-again.test.ts`; property `routes/offer-answered-once.property.test.ts` |
+| 2. An answered offer is closed | `553675e` | `time/answered-offer-closes.test.ts`, both ways |
+| 4. Delivery's own Gate verdicts get rows | `159a2a6` (built before item 3, which reads these holds) | `routes/delivery-verdict-rows.test.ts`; property `routes/verdict-rows.property.test.ts` |
+| 3. A reminder held under crisis is never lost | `6bd1fe2` | `time/held-reminder.test.ts`: held, said late once, or closed with a held row |
+| 5. `said` rows from what was heard | `9b71bdd` | `routes/said-rows.test.ts`; property `routes/said-row-only-on-match.property.test.ts` |
+| 6. The nine W-166 rows | not started | |
+| 7. Beats waiting on delivery | not started | |
+
+### Properties
+
+| Property | File | Seed | Red first |
+|---|---|---|---|
+| A shown offer can always be answered once | `routes/offer-answered-once.property.test.ts` | 42042 | counterexample before item 1: `["show","open","show","yes","open"]` |
+| Every verdict that is not say has exactly one row | `routes/verdict-rows.property.test.ts` | 42044 | counterexample with no row writer: `[0,0,"unknown",false,false,["idle"]]` |
+| No row, no claim; no match, no row | `routes/said-row-only-on-match.property.test.ts` | 42053 | counterexample with no `said` writer: `[["line"]]` |
+
+All three at 1,000 runs. The second takes about 5 minutes (a persona reset per run).
+
+### What changed in each item
+
+- **1.** Every showing is a ledger row per Session (`showingEntryId`, up to `SHOWINGS_PER_SESSION_MAX` = 16, past it fails closed); the first showing's row is kept. The yes binding reads the latest showing in the yes turn's Session. With 045 finding 6: a showing is recorded when the playback ended uncut or the transcript matched, once per response (`showingResponseId`); `cancelled` revokes the latest showing (`showingRevokedId`); a yes writes only when the turn is certainly the owner's (`certainlyOwners`: judge `O`, or typed by the owner) and the Session's Gate audience is private, on the path with IDs and the path with nulls.
+- **2.** Delivery skips an offer whose pending ID has an answer (`time/answered.ts`, `offerAnswer`), and the tick cancels it as `closed` (a yes) or `declined` (a no). A no to the hero offer is now recorded by the tool route (`recordHeroDeclined`), since `answerTool` writes nothing for a no.
+- **3.** When delivery's Gate holds a `commitmentDue` for a crisis at or after its due time, the route records it once (`reminderHeldId`). The next line not under crisis says it by `heldReminderLine`: "You asked me to remind you about Call the vet at 10 PM. I held it." (the time is `clockLabel`'s, so "10 PM", not "10"). It is said once, as the mustSay it already is. If none comes before its close, the tick writes a `held` Gate row naming `crisis`, scoped to the moment.
+- **4.** `chooseNow` returns `verdicts` (optional) beside the choice. The route writes one Gate row per verdict that is not `say`, IDs and reason codes only, with the Session's delivery turn (`deliveryTurnId`) as the row's turn, so a candidate has one row per outcome per Session. A `card` is `steered`. At most `DELIVERY_ROWS_MAX` = 8 a call.
+- **5.** The receipt route writes the Gate `said` row for a moment's whisper heard on the response that admitted it (`writeSaid`; its matcher decides). One row per turn and note. Reply notes outside delivery are not covered: their text is not stored, only their tokens (see "Left").
+
+### Steps turned green
+
+None. Items 6 and 7 hold the beats' waits.
+
+### Design note: the Gate on typed-reply notes and on `inspect`
+
+- **A typed reply's note.** The note is the reply model's words over the Head, not one Memory's line, so no `GateCandidate` fits. The Gate would need, per note: the Memory IDs the note cites, read back with their class, sensitivity and `toldAt`; the turn's ask (`asked`/`notAsked` from the owner's own words); the Session's audience and modifiers; and a render rule for model words (`attributed` or `free`). The smallest input is one candidate per cited Memory, with the note dropped if any cited Memory's verdict is not `say`.
+- **`inspect`.** The owner asked for everything, so every line is asked. The Gate would need the audience and modifiers (company and crisis still hold S1+), the sensitivity of each line's Memory, and a carve-out for the owner's own explicit "what do you know" request. Without a carve-out the Gate would silence lines the owner asked to see.
+
+### Left, for a fresh builder
+
+- Item 6 (W-166's nine rows in `onturn/execute.ts`, after merging `build/plan-stages`).
+- Item 7 (beat 2's check-in against spec §6 "Delivery", beat 1's texture).
+- `said` rows for reply notes: needs the note's text stored with the turn (today `noteTokens` only).
+
+### What a live call or a signed-in browser must still show
+
+- A barge-in after one word of the hero offer, then "Okay?", writes nothing; the offer heard to the end and a plain yes writes the list.
+- The late reminder line on the first open after a crisis clears, spoken once.
+- The open answering inside 3.5 s with a 75 ms round trip on the real store (the emulator's `collide` case is still red, from the open's own transaction, not delivery; see brief 045's "Outcome, part D").
