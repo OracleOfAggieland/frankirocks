@@ -589,6 +589,34 @@ export const AllergyRule = obj({
   dependsOn: arr(Dep, 32),
 });
 
+// ---------------------------------------------------------------------------------------------
+// Wave B of brief 012 (brief 018 task B2). The on-turn hard-rule route keeps its state on `core/rules`, the one
+// document it already writes, rather than on the Session or the Extract_Job (rulings in docs/briefs/018-report.md):
+// subject labels (CQ 103), late proposals (G39, CQ 125), what the route handled per turn (section 5, CQ 108) and
+// the open allergy question (6.4, CQ 106). Documents written before this read with defaults (`withRulesDefaults`).
+
+/** What the on-turn route handled for one route of one turn (design section 5). */
+export const OnTurnHandledRecord = obj({
+  route: oneOf(["hardRule", "correct", "transition"]),
+  outcome: oneOf(["ruleWritten", "ruleKept", "pendingWritten", "pendingKept", "pendingResolved", "denialRecorded", "notAllergy", "applied", "renamed", "retracted", "same", "careOnly", "deferred", "proposed"]),
+  keys: arr(ID, 8),
+  refs: arr(Ref, 16),
+  ruleKeys: arr(obj({ subjectId: nullable(EID), code: str(64, { min: 1 }) }), 32),
+});
+/** The `handled` ring: the most recent turns' entries, by Evidence. */
+export const HANDLED_RING_MAX = 16;
+export const HandledEntry = obj({ eid: ID, turnId: ID, entries: arr(OnTurnHandledRecord, 3) });
+/** A late hardRule result (a Parse_Repair's or the extraction backstop's), applied by the next turn or open (G39). */
+export const PROPOSALS_MAX = 16;
+export const RuleProposal = obj({ id: ID, origin: oneOf(["repair", "backstop"]), turnId: nullable(ID), eid: ID, install: arr(AllergyRule, 8) });
+/** The open allergy question (design 6.4), for the Session it was asked in. */
+export const AllergyAskRecord = tagged("kind", {
+  none: obj({ kind: literal("none") }),
+  planned: obj({ kind: literal("planned"), ruleId: ID, seq: nat() }),
+  asked: obj({ kind: literal("asked"), ruleId: nullable(ID), askedSeq: nat(), attempts: nat() }),
+});
+export const RulesAsk = obj({ sessionId: nullable(ID), q: AllergyAskRecord });
+
 export const CoreRules = obj({
   ...C_SHAPE,
   rulesRev: nat(),
@@ -597,6 +625,11 @@ export const CoreRules = obj({
   rulePages: nat(0, 256),
   gazetteerVersion: str(32),
   noneConfirmed: arr(EID, 256),
+  // Brief 018 task B2.
+  subjectLabels: arr(obj({ subjectId: EID, label: str(80, { min: 1 }) }), 256),
+  proposals: arr(RuleProposal, PROPOSALS_MAX),
+  handled: arr(HandledEntry, HANDLED_RING_MAX),
+  ask: RulesAsk,
 });
 export type CoreRules = Infer<typeof CoreRules>;
 

@@ -10,6 +10,8 @@ import {
   type CoreDocs,
   type CoreState,
   civilDay,
+  rulesWaveBDefaults,
+  withRulesDefaults,
   isZone,
   tsFromMs,
   withZone,
@@ -65,7 +67,7 @@ export function initialCoreDocs(uid: string, pair: ClockPair, clientZone: string
       connectorOffers: [],
       warmth: { sessionId: null, turnsWithoutReference: 0 },
     },
-    rules: { ...c, rulesRev: 1, allergies: [], standing: [], rulePages: 0, gazetteerVersion: "none", noneConfirmed: [] },
+    rules: { ...c, rulesRev: 1, allergies: [], standing: [], rulePages: 0, gazetteerVersion: "none", noneConfirmed: [], ...rulesWaveBDefaults() },
     bundle: { ...c, state: "dirty", bundleRev: 0, rulesRev: 1, head: null, headHash: null, selectedRefs: [], compiledAt: null, expiresAt: null },
   };
 }
@@ -96,7 +98,9 @@ export async function readCoreDocs(tx: Pick<Tx, "get">, uid: string): Promise<{ 
   const read = async <K extends keyof CoreDocs>(id: K) => {
     const doc = await tx.get<CoreDocs[K]>(paths.core(uid, id));
     if (doc === null) throw new StoreError("invalidInput", "core documents are missing", paths.core(uid, id));
-    return { data: doc.data, rev: (doc.data as { rev: number }).rev };
+    // core/rules written before wave B reads with its new fields filled (brief 018 task B2).
+    const data = (id === "rules" ? withRulesDefaults(doc.data as CoreDocs["rules"]) : doc.data) as CoreDocs[K];
+    return { data, rev: (doc.data as { rev: number }).rev };
   };
   const [epoch, state, counters, rules, bundle] = await Promise.all([
     read("epoch"),

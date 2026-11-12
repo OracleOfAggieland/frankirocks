@@ -328,7 +328,7 @@ export function sampleCoreDocs(): CoreDocs {
       connectorOffers: [],
       warmth: { sessionId: null, turnsWithoutReference: 0 },
     },
-    rules: { ...c, rulesRev: 1, allergies: [], standing: [], rulePages: 0, gazetteerVersion: "none", noneConfirmed: [] },
+    rules: { ...c, rulesRev: 1, allergies: [], standing: [], rulePages: 0, gazetteerVersion: "none", noneConfirmed: [], subjectLabels: [], proposals: [], handled: [], ask: { sessionId: null, q: { kind: "none" } } },
     bundle: {
       ...c,
       state: "dirty",
