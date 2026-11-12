@@ -179,12 +179,36 @@ export function turnRef(turnId: string, sessionId: string, rev: number): Ref {
 // ---------------------------------------------------------------------------------------------
 // The on-turn write and the seam's notes (brief 012 design section 4, G1, G27, G30). Wave B, task B4.
 
-/** Not built yet (brief 018 task B1 stub). */
-export function writeRule(_i: RuleInput, _base: RuleOutcome, _w: TurnWrite): RuleOutcome {
-  throw new Error("writeRule: not built");
+/**
+ * The cut and the permit kind after this turn's on-turn write (G1). A committed write that raised the Deck, or a
+ * kept write with `cut` (a denial of an active rule), stops a playing reply: `cut` becomes true, and a
+ * `slowOrdinary` or `postCommitControl` reply permit with no Fixed_Line becomes `postCommitControl`, so the reply is
+ * created from the new Head. A hold, no write, or a write that raised nothing leaves `serverRule`'s outcome as it is.
+ * `notes`, `scope`, `line` and `swap` never change (P10).
+ */
+export function writeRule(_i: RuleInput, base: RuleOutcome, w: TurnWrite): RuleOutcome {
+  if (base.kind === "hold") return base;
+  const raises = (w.kind === "committed" && w.deckRaised) || (w.kind === "kept" && w.cut);
+  if (!raises) return base;
+  const upgrade = (base.permit === "slowOrdinary" || base.permit === "postCommitControl") && base.scope === "reply" && base.line === null;
+  return { ...base, permit: upgrade ? "postCommitControl" : base.permit, cut: true };
 }
 
-/** Not built yet (brief 018 task B1 stub). */
-export function admittedNotes(_candidates: readonly W[], _allowed: NotesAllowed, _ack: W | null, _routeNote: W | null): W[] {
-  throw new Error("admittedNotes: not built");
+/** The notes a level lets through. */
+export const notesAllowed = (notes: readonly W[], allowed: NotesAllowed): W[] => (allowed === "all" ? [...notes] : allowed === "S0" ? notes.filter((n) => n.sens === "S0") : []);
+
+/** At most this many notes ride on one reply (contracts §6 Permit `noteIds`). */
+export const NOTES_MAX = 4;
+
+/**
+ * The notes a Permit admits (design section 4): a Fixed_Line's ack note alone (no route note rides on a Fixed_Line,
+ * G27); else the allowed notes, cut to three first when a route note comes too, so the route note is never the one
+ * the bound drops (G30). The route note passes the same level as every other note.
+ */
+export function admittedNotes(candidates: readonly W[], allowed: NotesAllowed, ack: W | null, routeNote: W | null): W[] {
+  if (ack !== null) return [ack];
+  const own = notesAllowed(candidates, allowed);
+  if (routeNote === null) return own.slice(0, NOTES_MAX);
+  const route = notesAllowed([routeNote], allowed);
+  return [...own.slice(0, NOTES_MAX - route.length), ...route];
 }
