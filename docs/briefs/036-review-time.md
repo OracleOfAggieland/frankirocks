@@ -85,3 +85,76 @@ Where a fix changes a ruling of brief 023, add a numbered contract question at t
 ## Done
 
 The fixes with their red-first tests, the seven properties green, the checks of brief 016, and a section "Outcome" at the end of this file: per finding, the test, the commit and the ruling it changed; per property, the seed and counterexample; and the signature of every seam function that changed.
+
+## Outcome
+
+Built by Claude on lane `fix5` (no Kiro run). Two merges of `build/plan-stages` (`e6ef13d`, `4854e8e`); finding 3 was built after the second, with brief 033's "Outcome" in it.
+
+### Per finding
+
+| Finding | First failing test | Commit | Ruling changed |
+|---|---|---|---|
+| 1 | `time/review-036.test.ts` "finding 1" (three cases) | `c6746d2` | none (S-176 era rulings kept; merge rewrites a leased row) |
+| 2 | property 2, `changed-source-never-spoken.property.test.ts` | `1e10629` | none |
+| 4 | `core/moments/delivery.test.ts` crisis and grief cases; property 4 | `2b3d1cb` | S-177 |
+| 5 | `review-036.test.ts` "finding 5"; property 3 | `55c4e5b` | S-178 |
+| 6 | `review-036.test.ts` "finding 6" | `fa5d8c1` | S-179 |
+| 8 | `review-036.test.ts` "finding 8" | `02aa7dc` | S-180 |
+| 9 | `review-036.test.ts` "finding 9"; property 7 | `a06605a` | S-181 |
+| 10 | `review-036.test.ts` "finding 10"; property 7 | `f5d7ff1` | S-182 |
+| (wiring) | `review-036.test.ts` "admitMoments shares admitMoment's checks" | `40da654` | none |
+| 11 | `core/moments/derive.test.ts` zone change | `13e1bba` | S-183 |
+| 12 | `review-036.test.ts` "finding 12"; property 1 | `eeb469c` | S-184 |
+| 13 | `delivery.test.ts` NaN world time. Not red first: brief 033's `inQuietHours` guard already made it pass; the fix is the guard in `delivery.ts` itself | `bcb166c` | none |
+| 14 | property 5, `said-needs-playback.property.test.ts` | `24ea10f` | S-185 |
+| 15 | `time/scan-limits.test.ts` (pins the 2,000-row and 100-row limits; they fail quiet) | `9dc5f74` | none |
+| 3 | property 6, `spoken-passed-gate.property.test.ts` | `553c9b8` | S-186 |
+
+Finding 7 is the wiring lane's and was not touched.
+
+### Properties (1,000 runs each, server path over the in-memory store)
+
+| # | File | Red seed and shrunk counterexample | Time for 1,000 runs |
+|---|---|---|---|
+| 1 | `nothing-fires-at-old-time.property.test.ts` | -1105440751: start 08:30, world +60 min, tick, move to 08:30, lease expires, the moment is cancelled. -625404631: start 07:00, world +90 min, move to 08:30, tick, move to 09:00, never revived | about 7 s |
+| 2 | `changed-source-never-spoken.property.test.ts` | -1768535985: Chicago, occasion at 10:00, source marked `wrong` with no tick after; `chooseNow` chose it | about 7.7 s |
+| 3 | `caps-hold-interleaved.property.test.ts` | -774234152: occasions at 09:00 (heavy), 11:30, 15:00 (heavy); render both heavy, choose, admit both; two heavy admitted in one day | about 33 s (over the 20 s guide; kept at 1,000 runs) |
+| 4 | `crisis-is-quiet.property.test.ts` | -143280255: occasion at 09:00, world 13:00, opening, crisis; a check-in was spoken | about 8 s |
+| 5 | `said-needs-playback.property.test.ts` | 158808069: admitted on `resp_b`, matching transcript, no playback; said. 116837789: cancel before admission | about 5 s |
+| 6 | `spoken-passed-gate.property.test.ts` | -1875404195: U source, S1, gravity 0, occasion 09:00, world 13:00, audience company, idle session; check-in spoken while the Gate said `hold` | about 5.4 s |
+| 7 | `reminder-bound-to-offer.property.test.ts` | -1016073770: yes at the same instant as the render. -125819472: source corrected, then yes applied. -1448355805: yes, then corrected; the reminder opened | about 3 s |
+
+### Existing tests whose assertions changed
+
+- `packages/server/src/time/time.test.ts`: `admitMoment` called with `{responseId, noteIds}` and `{clock, hasher}`; the yes turn is committed after the render; "no then yes" moved to a second offer and now expects `stale`; the reminder's source is the Jordan email (Evidence); `recordPlayback` before the transcript.
+- `packages/server/src/routes/receipt-moments.test.ts`: receipts name the current lease's `noteIds`; a `playbackStarted` receipt before the transcript.
+- `packages/core/src/moments/delivery.test.ts`: the admitted fixture gains `playbackAt`.
+
+### Seam signatures
+
+| Function | Old | New |
+|---|---|---|
+| `chooseNow` | `(ctx, mode, { transitionOrCrisis, turnsSinceCheckInAnswer })` | `(ctx, mode, SessionSignals)`, `SessionSignals = ({ transition, crisis } \| { transitionOrCrisis }) & { audience?: Au; rushed?: boolean } & { turnsSinceCheckInAnswer }`; unset audience is `unknown` |
+| `proactiveOf` | `(ctx, momentId, m, stamp)` | unchanged; now writes `rendered` on the moment in a transaction and returns null if the moment is no longer leased under that lease or its source doesn't read `ok` |
+| `admitMoment` | `(tx, uid, momentId, responseId, clock)` | `(tx, uid, momentId, { responseId, noteIds }, { clock, hasher })` |
+| `admitMoments` | `(tx, uid, momentIds, responseId, clock)` | `(tx, uid, momentIds, { responseId, noteIds }, { clock, hasher })`; one shared check with `admitMoment` |
+| `recordSaid` | `(tx, uid, ...)` | unchanged |
+| `recordPlayback` | none | new: `(tx, uid, momentId, { kind: "playbackStarted" \| "cancelled", responseId }, clock)` |
+| `recordPendingRendered` | unchanged | unchanged |
+| `offerReminder` | unchanged | unchanged; `ReminderOffer` gains `sourceId` and its `pendingId` hashes source, note and time |
+| `confirmReminder` | `(ctx, offer, choiceId, turn)` | unchanged shape (one parameter renamed) |
+| `memoryTick` | `(ctx)` | unchanged |
+| `isMustSay` (core) | `(kind)` | `(kind, dueAt, worldNow)` |
+| `chooseDelivery` input (core) | `transitionOrCrisis` | `SessionHolds` (either form) |
+| `RowContext` (core) | | gains optional `worldNow` |
+
+Route call site changed (allowed by the lead): `packages/server/src/routes/receipt-moments.ts` calls `admitMoments` with `{ responseId, noteIds }` and `deps`, and passes `playbackStarted` and `cancelled` receipts to `recordPlayback`.
+
+### Known limits and open questions
+
+- A Gate `card` verdict is dropped, not routed to a card (S-186).
+- The Gate holds a mustSay reminder under crisis, while delivery lets mustSay through; with the Gate in `chooseNow`, crisis now holds reminders too. Needs a ruling.
+- The rollup's verdict at admission relies on the render's check (`rollupLive: true` at render); admission doesn't rerun the detector.
+- The celebrate moment's `said` path is covered only by the shared `rendered` match, not by its own test.
+- Moment rows are never deleted (finding 15): past 2,000 rows nothing opens for that owner.
+- Baseline flake not from this lane: `packages/core/src/whisper/whisper.adds-nothing.property.test.ts` seed 1214228179.
