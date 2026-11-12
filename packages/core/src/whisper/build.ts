@@ -8,7 +8,16 @@ import { validate } from "../schema/v";
 import { W } from "../schema/wire";
 import type { GateResult, GateTrigger } from "../gate/types";
 import { safeName } from "../safe-name";
-import { FIXED_TEMPLATE_IDS, WHISPER_TEMPLATES, type WhisperTemplateId, templateFor } from "./templates";
+import {
+  FIXED_TEMPLATE_IDS,
+  MAIL_KINDS,
+  TIME_SLOT,
+  WHISPER_TEMPLATES,
+  type WhisperSlot,
+  type WhisperTemplate,
+  type WhisperTemplateId,
+  templateFor,
+} from "./templates";
 
 /** A whisper lives as long as the Deck that carries it (contracts §6 "deck60s"). */
 export const WHISPER_TTL_MS = 60_000;
@@ -33,17 +42,36 @@ export interface WhisperContext {
 
 const ONE_LINE = /^[^\p{Cc}\p{Zl}\p{Zp}]+$/u;
 
+/** A token as its slot's type allows it, or null (brief 033 finding 2): a name through `safeName`, a kind from its closed set, a time by `TIME_SLOT`. */
+function slotValue(s: WhisperSlot, k: string): string | null {
+  switch (s) {
+    case "free":
+      return k;
+    case "name":
+      return safeName(k);
+    case "kind":
+      return (MAIL_KINDS as readonly string[]).includes(k) ? k : null;
+    case "time":
+      return TIME_SLOT.test(k) ? k : null;
+    default:
+      s satisfies never;
+      return null;
+  }
+}
+
 /** The template filled with the note's tokens; null when the count or a token doesn't fit. */
 function render(id: WhisperTemplateId, tokens: readonly string[]): { text: string; tokens: string[] } | null {
-  const t: { text: string; slots: number | "1-4"; names: readonly number[] } = WHISPER_TEMPLATES[id];
+  const t: WhisperTemplate = WHISPER_TEMPLATES[id];
   if (!Array.isArray(tokens) || tokens.length > WHISPER_MAX_TOKENS) return null;
-  if (t.slots === "1-4" ? tokens.length < 1 : tokens.length !== t.slots) return null;
+  if (t.slots === "1-4" ? tokens.length < 1 : tokens.length !== t.slots.length) return null;
   const used: string[] = [];
   for (let i = 0; i < tokens.length; i++) {
     const k = tokens[i];
     // A token is carried exactly as the note holds it, so one with space around it is refused, not trimmed.
     if (typeof k !== "string" || k.trim() === "" || k !== k.trim() || k.length > WHISPER_TOKEN_CHARS || !ONE_LINE.test(k)) return null;
-    used.push(t.names.includes(i) ? safeName(k) : k);
+    const v = slotValue(t.slots === "1-4" ? "free" : t.slots[i]!, k);
+    if (v === null) return null;
+    used.push(v);
   }
   // One pass over the template only, so a token that looks like a slot is never filled in turn.
   const text = t.text.replace(/\{(\d|\*)\}/g, (_m, d: string) => (d === "*" ? used.join(", ") : (used[Number(d)] ?? "")));
