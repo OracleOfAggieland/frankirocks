@@ -120,7 +120,7 @@ describe("post transitions", () => {
     expect(cmds.some((c) => c.kind === "verifyPermit"), "the resend's Permit is sent for checking").toBe(true);
   });
 
-  it.fails("HELD + timer permit during the Permit's hash check -> HELD (a Permit inside the answer wait plays)", () => {
+  it("HELD + timer permit during the Permit's hash check -> HELD (a Permit inside the answer wait plays)", () => {
     const d = live();
     const turnId = posted(d);
     // The answer at 4.95 s, inside the wait; the wait ends at 5 s; the hash comes back at 5.05 s.

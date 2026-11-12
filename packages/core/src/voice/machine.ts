@@ -147,7 +147,8 @@ export type VoicePhase =
  *                 onTurn's resend after a `stale` answer): the post + TURN_RESPONSE_LIMIT_MS (R7.5). Also RECOVERY (line), when the transcript arrives after the
  *                 admitted reply's `response.create` was refused; it does nothing there, and lineDone ends the
  *                 Turn. Any phase but RECOVERY (requestVerify, only when none is armed): the hash check of a pending
- *                 Permit has TURN_RESPONSE_LIMIT_MS (KV06).
+ *                 Permit has TURN_RESPONSE_LIMIT_MS (KV06). When the answer wait ends during a check, the wait
+ *                 moves to the check's own end (`pending.checkUntil`), once.
  *                 (2) The hold. HELD, entered from SPEAKING, TOOL_WAIT, HELD, JUDGING or SPECULATING when a higher
  *                 Stamp cancels the reply (cancelAll): now + HOLD_LIMIT_MS for a Permit under the new Deck, or the
  *                 answer wait or hash check already armed, whichever is later.
@@ -253,6 +254,8 @@ export interface PendingReply {
   notes: W[];
   toolCall: ToolCallItem | null;
   toolOutput: Infer<typeof ToolResult> | null;
+  /** While its hash is checked: when the check's own TURN_RESPONSE_LIMIT_MS ends (requestVerify; KV06). */
+  checkUntil?: number;
 }
 
 export interface ActiveReply extends PendingReply {
@@ -1407,7 +1410,8 @@ function requestVerify(s: Step, reply: PendingReply): void {
   const payload = replyPayload(s.st, reply);
   // A Permit that already fails a check needs no hash: it never plays (R17.3).
   if (payload === null || permitProblem(s.st, reply, null, s.now) !== null) return rejectReply(s);
-  s.set({ pending: reply });
+  // The check's own limit: a Permit that came inside the answer wait gets it whole, even past that wait (V2 step 5).
+  s.set({ pending: { ...reply, checkUntil: s.now + TURN_RESPONSE_LIMIT_MS } });
   // Every check waits with a deadline (KV06): no answer to the hash, and the Turn ends (R7.5).
   if (s.st.phase !== "RECOVERY" && s.st.deadlines.permit === undefined) s.arm("permit", s.now + TURN_RESPONSE_LIMIT_MS);
   s.push({ kind: "verifyPermit", permitId: reply.permit.permitId, payload });
@@ -2085,6 +2089,8 @@ function onTimer(s: Step, name: TimerName): void {
       if (st.turn?.posted != null && st.pending === null && st.active === null) pushTurn(s, st.turn.posted);
       return;
     case "permit":
+      // A Permit that came inside the answer wait is still being checked: the check keeps its own limit (V2 step 5).
+      if (st.pending !== null && st.pending.checkUntil !== undefined && st.pending.checkUntil > s.now) return s.arm("permit", st.pending.checkUntil);
       // R7.5: no answer to the post within 5 s: RECOVERY with nothing to play, then listen again.
       if ((["HELD", "SPECULATING", "JUDGING"] as VoicePhase[]).includes(st.phase) && st.active === null) {
         dropSpeculation(s);
