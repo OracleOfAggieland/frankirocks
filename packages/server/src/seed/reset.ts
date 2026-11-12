@@ -5,7 +5,7 @@
  *
  *   1. Fence: `core/epoch.barrier` goes up (phase `fence`), so open answers blocked and state, turn, tool and
  *      receipt refuse with BARRIER; the epoch rises in the same transaction, as the forget fence's does (contracts
- *      ง8 step 2), so every Stamp and every captured epoch from before the reset fails its check from here on
+ *      ยง8 step 2), so every Stamp and every captured epoch from before the reset fails its check from here on
  *      (brief 038 finding 2); `core/state.fixtureNamespace` names the new namespace, so a crashed reset can be
  *      recognised as this tenant's own and taken over by the next one. policyRev is not raised.
  *   2. Close (phase `close`): every live Session moves to closing and its calls are hung up. A hangup that fails
