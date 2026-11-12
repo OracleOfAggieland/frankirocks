@@ -69,8 +69,6 @@ export interface WhatIKnowProps {
   onClose: () => void;
   /** Brief 027: no Wrong, Forget or Don't bring it up, while no control route reaches the browser. */
   readOnly?: boolean;
-  /** Brief 027: drawn under the items, such as the receipt slip. */
-  footer?: import("react").ReactNode;
 }
 
 export interface LabProps {

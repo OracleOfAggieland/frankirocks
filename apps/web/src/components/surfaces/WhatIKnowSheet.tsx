@@ -27,6 +27,8 @@ export type SheetPresentation = "inline" | "sheet";
 export type WhatIKnowSheetProps = WhatIKnowProps & {
   /** "inline" (the default) sits in the page; "sheet" is modal: a drawer from 1024 px, a bottom sheet below. */
   presentation?: SheetPresentation;
+  /** Brief 027: drawn under the items, such as the receipt slip. */
+  footer?: ReactNode;
 };
 
 // ---- Pure rules, tested in WhatIKnowSheet.test.tsx ----
@@ -245,6 +247,8 @@ function groupHead(glyph: ReactNode, label: string, tone: "brass" | "dim") {
 
 export interface WhatIKnowViewProps extends WhatIKnowProps {
   presentation: SheetPresentation;
+  /** Brief 027: drawn under the items, such as the receipt slip. */
+  footer?: ReactNode;
   reduced: boolean;
   /** The hard rule whose Forget is waiting for its second tap. */
   armed: string | null;
