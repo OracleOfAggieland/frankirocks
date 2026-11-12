@@ -152,4 +152,17 @@ describe("VisitModel", () => {
     expect(parseStoredVisit(JSON.stringify({ visitId: "" }))).toBeNull();
     expect(parseStoredVisit(JSON.stringify({ visitId: "v", fixtureNamespace: 3, worldClockMs: "x" }))).toEqual({ visitId: "v", fixtureNamespace: null, worldClockMs: null });
   });
+
+  it("a LIVE answer is stored, and a reload of a real account is live with no reset (brief 038 finding 1)", async () => {
+    const h = harness({ answer: () => Response.json({ error: "LIVE", retryAfterMs: 0 }, { status: 409 }) });
+    h.model.enter();
+    await flush();
+    expect(h.model.getSnapshot().phase).toBe("live");
+    expect(parseStoredVisit(h.storage.data.get(KEY) ?? null)).toEqual({ visitId: vid("id1"), fixtureNamespace: null, worldClockMs: null, live: true });
+    const again = harness({ storage: h.storage });
+    again.model.enter();
+    await flush();
+    expect(again.model.getSnapshot().phase).toBe("live");
+    expect(again.seen).toEqual([]);
+  });
 });

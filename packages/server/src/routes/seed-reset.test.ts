@@ -92,7 +92,7 @@ describe("POST /api/seed/reset", () => {
     await commitUserTurnForTest(rig.store, UID, testId("t1"), "My dog is called Pip", rig.clock, rig.deps.hasher);
     const before = await listTenantRows(rig.store, UID);
     const res = await resetAs(rig, UID, "v1", "r1", ZONE);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(409);
     const after = (await listTenantRows(rig.store, UID)).filter((r) => !r.path.includes("/ledger/"));
     expect(after).toEqual(before.filter((r) => !r.path.includes("/ledger/")));
     expect((await stateOf(rig.store, UID)).clockMode).toBe("live");

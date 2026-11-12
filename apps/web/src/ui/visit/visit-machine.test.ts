@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROACTIVE_ANSWER } from "../../app/specimens/_fixtures/visit";
-import { BARRIER_WAIT_MS, INITIAL_VISIT, type VisitEvent, type VisitState, boltEnabled, visitBadge, visitStep } from "./visit-machine";
+import { BARRIER_WAIT_MS, INITIAL_VISIT, type VisitEvent, type VisitState, boltEnabled, inputAllowed, visitBadge, visitStep } from "./visit-machine";
 
 const FRI = Date.UTC(2026, 10, 6, 8, 40);
 const THU = Date.UTC(2026, 10, 12, 18, 0);
@@ -126,5 +126,27 @@ describe("ui.visit", () => {
     expect(visitBadge(INITIAL_VISIT, THU, "UTC").simulated).toBe(false);
     expect(visitBadge(ready(), THU, "UTC")).toEqual({ simulated: true, instantMs: FRI, zone: "UTC" });
     expect(visitBadge(ready(), FRI, "UTC").simulated).toBe(false);
+  });
+
+  // Brief 038 finding 1.
+  it("a LIVE answer is the live phase, stored so a reload is live at once and asks nothing", () => {
+    const { s, commands } = run([{ kind: "entered", stored: null, newVisitId: "v1" }, { kind: "resetFailed", seq: 1, why: "live" }]);
+    expect(s).toMatchObject({ phase: "live", worldMs: null, failure: null });
+    expect(commands.at(-1)).toEqual({ kind: "store", visit: { visitId: "v1", fixtureNamespace: null, worldClockMs: null, live: true } });
+    const again = run([{ kind: "entered", stored: { visitId: "v1", fixtureNamespace: null, worldClockMs: null, live: true }, newVisitId: "v2" }]);
+    expect(again.s.phase).toBe("live");
+    expect(again.commands).toEqual([]);
+    // No start over and no bolt on a real account.
+    expect(visitStep(s, { kind: "startOverAsked" }).state.confirming).toBe(false);
+    expect(boltEnabled(s)).toBe(false);
+  });
+
+  it("the screen takes input only once the server has said which account this is", () => {
+    const cloning = run([{ kind: "entered", stored: null, newVisitId: "v1" }]).s;
+    const failed = visitStep(cloning, { kind: "resetFailed", seq: 1, why: "timeout" }).state;
+    const live = visitStep(cloning, { kind: "resetFailed", seq: 1, why: "live" }).state;
+    const resetting = visitStep(visitStep(ready(), { kind: "startOverAsked" }).state, { kind: "startOverConfirmed", inCall: false }).state;
+    expect([INITIAL_VISIT, cloning, failed, resetting].map(inputAllowed)).toEqual([false, false, false, false]);
+    expect([ready(), live].map(inputAllowed)).toEqual([true, true]);
   });
 });

@@ -20,7 +20,7 @@
 import { type CoreDocs, type ID, type Infer, type ResetRequest, type SeedResetResponse, type Session, msFromTs, tsFromMs } from "@franki/core";
 import { readCoreDocs } from "../core-docs";
 import { type RequestKey, completeRequest } from "../ledger/request";
-import { RouteError, barrierError, configError, dependencyError, scopeError, staleError } from "../routes/errors";
+import { barrierError, configError, dependencyError, scopeError, staleError } from "../routes/errors";
 import type { RouteContext } from "../routes/runtime";
 import { LIVE_STATUSES, beginCloseInTx } from "../sessions";
 import { paths } from "../store/paths";
@@ -29,6 +29,7 @@ import { ensureHangupJob, hangupAll } from "../worker/hangup";
 import { SeedLoadError } from "./build";
 import { CLEAR_PAGE, clearTenant } from "./clear";
 import { cloneWorldStart } from "./clock";
+import { isRealAccount, liveAccountError, readLiveData } from "./live";
 import { loadSeed, seedCoreDocs } from "./load";
 import { FIXTURES } from "./persona";
 
@@ -44,15 +45,6 @@ export const RESET_HANGUP_BUDGET_MS = 3_000;
 export const namespaceFor = (ctx: RouteContext, req: ResetReq): ID => ctx.deps.hasher.id(["seed-ns", ctx.uid, req.visitId, req.requestId]);
 const opIdFor = (ctx: RouteContext, namespace: ID): ID => ctx.deps.hasher.id(["seed-reset", namespace]);
 
-/**
- * Who may reset (contracts §6 "seedrole/namespace", which no contract defines): a tenant already holding a clone,
- * or one with no Evidence yet. An account with data of its own is never wiped.
- */
-export function mayReset(state: CoreDocs["state"], hasEvidence: boolean): boolean {
-  return state.clockMode === "fixture" || !hasEvidence;
-}
-
-const notAllowed = () => new RouteError("AUTH", 403, 0, "seedReset");
 
 async function setPhase(ctx: RouteContext, opId: ID, phase: "close" | "install"): Promise<void> {
   const { uid, deps } = ctx;
@@ -78,10 +70,9 @@ async function fence(ctx: RouteContext, namespace: ID, opId: ID): Promise<void> 
       // Another control operation (a forget) holds the tenant, or a reset of ours is still inside its deadline.
       if (!ownCrashed || msFromTs(barrier.deadline) > ops) throw barrierError();
     }
-    if (barrier === null) {
-      const anyEvidence = await tx.query({ collection: paths.collection(uid, "evidence"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: 1 });
-      if (!mayReset(core.state.data, anyEvidence.length > 0)) throw notAllowed();
-    }
+    // Who may reset (contracts §6 "seedrole/namespace", which no contract defines; brief 038 finding 1): a clone,
+    // or an account with no data of its own. A real account is answered LIVE and loses nothing.
+    if (barrier === null && isRealAccount(core.state.data, await readLiveData(tx, uid, core.rules.data))) throw liveAccountError();
     const now = tsFromMs(ops);
     tx.update(paths.core(uid, "epoch"), {
       ...core.epoch.data,

@@ -87,4 +87,8 @@ describe("VisitBar", () => {
     click(VisitBar({ ...BASE, phase: "failed", failure: "interrupted", onRetry }), (p) => p["data-action"] === "retry-visit");
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
+
+  it("draws nothing for a real account: no start over, no bolt (brief 038 finding 1)", () => {
+    expect(html({ phase: "live" })).toBe("");
+  });
 });

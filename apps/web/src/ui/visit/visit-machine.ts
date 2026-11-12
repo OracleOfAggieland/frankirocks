@@ -4,8 +4,11 @@
 // the shell (`client/visit-model.ts`) runs the commands in order and sends the answers back as events.
 import type { Proactive } from "@franki/core";
 
-/** Where the visit is. */
-export type VisitPhase = "none" | "cloning" | "ready" | "resetting" | "failed";
+/**
+ * Where the visit is. `live` (brief 038 finding 1): the server said this is a real account, which is never reset;
+ * the screen takes input as it does without a visit, shows the real clock, and offers no start over and no bolt.
+ */
+export type VisitPhase = "none" | "cloning" | "ready" | "resetting" | "failed" | "live";
 
 /** The time bolt: free, waiting for its advance, or held by a barrier. */
 export type BoltPhase = "idle" | "moving" | "waiting";
@@ -20,6 +23,8 @@ export interface StoredVisit {
   fixtureNamespace: string | null;
   /** The world clock the last answer gave, or null before one. */
   worldClockMs: number | null;
+  /** Brief 038 finding 1: the server answered that this account is real (LIVE), so it is never cloned. */
+  live?: true;
 }
 
 export interface VisitState {
@@ -51,7 +56,8 @@ export const INITIAL_VISIT: Readonly<VisitState> = Object.freeze({
   seq: 0,
 });
 
-export type SeedFailureWhy = "barrier" | "signedOut" | "timeout" | "failed";
+/** `live`: the server answered LIVE, a real account that is never reset (brief 038 finding 1). */
+export type SeedFailureWhy = "barrier" | "signedOut" | "timeout" | "failed" | "live";
 
 export type VisitEvent =
   /** The lab opened, with what storage holds and a fresh ID to use if it holds nothing. */
@@ -112,6 +118,7 @@ export function visitStep(s: VisitState, e: VisitEvent): VisitStep {
         const seq = s.seq + 1;
         return { state: { ...s, phase: "cloning", visit, worldMs: null, seq }, commands: [{ kind: "store", visit }, { kind: "reset", seq, visitId: visit.visitId }] };
       }
+      if (e.stored.live === true) return none({ ...s, phase: "live", visit: { ...e.stored }, worldMs: null });
       if (known(e.stored)) return none({ ...s, phase: "ready", visit: { ...e.stored }, worldMs: e.stored.worldClockMs });
       // A reset for this ID was asked for and never confirmed. Asking again is the visitor's call ("Try again").
       return none({ ...s, phase: "failed", failure: "interrupted", visit: { ...e.stored }, worldMs: null });
@@ -126,6 +133,11 @@ export function visitStep(s: VisitState, e: VisitEvent): VisitStep {
     }
     case "resetFailed": {
       if ((s.phase !== "cloning" && s.phase !== "resetting") || s.endingCall || e.seq !== s.seq) return none(s);
+      if (e.why === "live" && s.visit !== null) {
+        // The server's word: a real account. Stored, so a reload is live at once and asks nothing.
+        const visit: StoredVisit = { visitId: s.visit.visitId, fixtureNamespace: null, worldClockMs: null, live: true };
+        return { state: { ...s, phase: "live", visit, worldMs: null, failure: null }, commands: [{ kind: "store", visit }] };
+      }
       return none({ ...s, phase: "failed", failure: e.why === "barrier" ? "barrier" : "clone", worldMs: null });
     }
     case "retry": {
@@ -191,6 +203,15 @@ export function shownClock(s: VisitState, realMs: number): number {
 export function visitBadge(s: VisitState, realMs: number, zone: string): { simulated: boolean; instantMs: number; zone: string } {
   const shown = shownClock(s, realMs);
   return { simulated: shown !== realMs, instantMs: shown, zone };
+}
+
+/**
+ * Brief 038 finding 1, the input gate: whether the screen takes input (a chip, a typed line, a call). Only once the
+ * server has said which account this is: a clone that is `ready`, or a real account (`live`). Never while the clone
+ * is being made, reset or has failed, so nothing a visitor does can write to the fresh account before its clone.
+ */
+export function inputAllowed(s: VisitState): boolean {
+  return s.phase === "ready" || s.phase === "live";
 }
 
 /** Whether the bolt can be pressed now. */

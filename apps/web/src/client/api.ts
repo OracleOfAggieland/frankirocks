@@ -135,11 +135,17 @@ export async function readMemory(api: ApiClient, view: MemoryView, opts: { id?: 
 export type SeedCall<T> =
   | { ok: true; body: T }
   | { ok: false; why: "barrier"; retryAfterMs: number }
-  | { ok: false; why: "signedOut" | "timeout" | "failed" };
+  | { ok: false; why: "signedOut" | "timeout" | "failed" }
+  /** Brief 038 finding 1: the reset's LIVE answer, a real account that is never reset. */
+  | { ok: false; why: "live" };
+
+/** Brief 038 finding 1: the reset's answer for a real account, which is never reset (HTTP 409, ErrorCode LIVE). */
+export const LIVE_ERROR = "LIVE";
 
 function seedFailure(r: Exclude<ApiResult<unknown>, { ok: true }>): Exclude<SeedCall<never>, { ok: true }> {
   if (r.kind === "signedOut" || r.kind === "timeout") return { ok: false, why: r.kind };
   if (r.kind === "http" && (r.status === BARRIER_STATUS || r.error === "BARRIER")) return { ok: false, why: "barrier", retryAfterMs: r.retryAfterMs };
+  if (r.kind === "http" && r.error === LIVE_ERROR) return { ok: false, why: "live" };
   return { ok: false, why: "failed" };
 }
 

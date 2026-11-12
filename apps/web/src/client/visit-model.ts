@@ -54,6 +54,8 @@ export function parseStoredVisit(raw: string | null): StoredVisit | null {
   if (o === null || typeof o !== "object" || typeof o.visitId !== "string" || o.visitId === "") return null;
   const ns = typeof o.fixtureNamespace === "string" ? o.fixtureNamespace : null;
   const world = typeof o.worldClockMs === "number" && Number.isFinite(o.worldClockMs) ? o.worldClockMs : null;
+  // Brief 038 finding 1: a stored LIVE answer. Anything else reads as a visit that is not live.
+  if ((o as { live?: unknown }).live === true) return { visitId: o.visitId, fixtureNamespace: null, worldClockMs: null, live: true };
   return { visitId: o.visitId, fixtureNamespace: ns, worldClockMs: world };
 }
 

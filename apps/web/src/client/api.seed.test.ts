@@ -40,6 +40,11 @@ describe("resetVisit", () => {
     expect(await resetVisit(api, RESET)).toEqual({ ok: false, why: "barrier", retryAfterMs: 1500 });
   });
 
+  it("answers live on the LIVE code: a real account, never reset (brief 038 finding 1)", async () => {
+    const { api } = fake(() => Response.json({ error: "LIVE", retryAfterMs: 0 }, { status: 409 }));
+    expect(await resetVisit(api, RESET)).toEqual({ ok: false, why: "live" });
+  });
+
   it("answers barrier on a BARRIER code under another status", async () => {
     const { api } = fake(() => Response.json({ error: "BARRIER", retryAfterMs: 0 }, { status: 409 }));
     expect(await resetVisit(api, RESET)).toEqual({ ok: false, why: "barrier", retryAfterMs: 0 });
