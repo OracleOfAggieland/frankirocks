@@ -64,7 +64,7 @@ function build(i: number, s: { pred: RoutePred; subject: EID; other: EID; code: 
     case "person.relation":
       subjectId = "self";
       value = enumV(pick(relCodes));
-      args = { otherRef: s.other, label: null, employerRef: value.code === "boss" ? EMPLOYER : null };
+      args = { otherRef: s.other, label: null, employerRef: pick(relCodes) === "boss" ? EMPLOYER : null };
       break;
     case "place.residence":
       value = { kind: "entity", ref: HOME };
