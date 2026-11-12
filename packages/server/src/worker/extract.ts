@@ -60,7 +60,14 @@ import {
   planItem,
   relevantOpen,
   renderedMemory,
+  type RenameIndex,
+  renameIndex,
+  renameLine,
   sameClaim,
+  canonicalJSON,
+  mentionName,
+  msFromTs,
+  place,
   statusTransition,
   tsFromMs,
   wantsOpen,
@@ -113,16 +120,28 @@ const NO_TURNS: PriorTurns = { turns: [], evidence: [] };
  * (`relevantOpen`), newest first, at most 40, each as its stored line. Read outside the commit transaction; the
  * commit re-reads every target it changes.
  */
-export function pickOpen(all: readonly HeadMemory[], said: readonly string[]): OpenContext {
+export function pickOpen(all: readonly HeadMemory[], said: readonly string[], renames: RenameIndex = workerRenames(all), handledRefs: ReadonlySet<string> = new Set()): OpenContext {
   const candidates = all
-    .filter((m) => m.memory.status === "active" && m.memory.sourceClass === "U" && m.memory.sens !== "S2")
+    // Brief 025 task C5: a Memory the on-turn route corrected, changed or wrote for this turn is never offered.
+    .filter((m) => openable(m) && !handledRefs.has(m.id))
     .sort((a, b) => (a.memory.updatedAt < b.memory.updatedAt ? 1 : a.memory.updatedAt > b.memory.updatedAt ? -1 : a.id < b.id ? -1 : 1))
-    .map((m) => ({ id: m.id, rev: m.memory.rev, kind: m.memory.kind, rendered: renderedMemory(m.memory), memory: m.memory }));
+    // Task C4 (G14): each line with the current name, or left out when its old name can't be replaced.
+    .flatMap((m) => {
+      const renamed = renameLine(renderedMemory(m.memory), m.memory, renames);
+      return renamed === null ? [] : [{ id: m.id, rev: m.memory.rev, kind: m.memory.kind, rendered: renamed.text, memory: m.memory }];
+    });
   const picked = relevantOpen(candidates, said).slice(0, PACKET_OPEN_CAP);
   return {
     list: picked.map(({ id, rev, kind, rendered }) => ({ id, rev, kind, rendered })),
     refs: new Map(picked.map((p) => [p.id, openRefOf(p.memory)])),
   };
+}
+
+const openable = (m: HeadMemory) => m.memory.status === "active" && m.memory.sourceClass === "U" && m.memory.sens !== "S2";
+
+/** The worker's rename index (task C4): current names from the rows `pickOpen` may show. */
+export function workerRenames(all: readonly HeadMemory[]): RenameIndex {
+  return renameIndex(all, all.filter(openable));
 }
 
 /**
@@ -160,6 +179,29 @@ export async function priorTurns(store: StorePort, uid: string, evidence: Eviden
 
 /** A rule or an allergy: never closed by extraction (memory-spec §8, hard rules are never withdrawn). */
 const protectedRow = (m: Memory): boolean => m.kind === "rule" || m.predicate === "allergy";
+
+/** What the on-turn routes handled for one Evidence (design section 5): rule slots, memory keys and Memory IDs. */
+function handledFor(rules: CoreRules | null, eid: string): { ruleKeys: { subjectId: string | null; code: string }[]; keys: string[]; refs: string[] } {
+  const entries = (rules?.handled ?? []).filter((h) => h.eid === eid).flatMap((h) => h.entries);
+  return { ruleKeys: entries.flatMap((e) => e.ruleKeys), keys: entries.flatMap((e) => e.keys), refs: entries.flatMap((e) => e.refs.map((r) => r.id)) };
+}
+
+/** Memories on one key with one status, newest first, at most 32. */
+async function sameKeyRows(tx: Tx, uid: string, key: string, status: "active" | "wrong"): Promise<{ id: string; path: string; data: Memory }[]> {
+  return tx.query<Memory>({
+    collection: paths.collection(uid, "memories"),
+    where: [
+      { field: "key", op: "==", value: key },
+      { field: "status", op: "==", value: status },
+    ],
+    orderBy: { field: "validFromKey", dir: "desc" },
+    limit: 32,
+  });
+}
+
+/** The same value after normalization: a name in any case, with or without "my" (G35 (2)). */
+const sameValue = (a: Memory, b: Memory): boolean =>
+  a.value.kind === "text" && b.value.kind === "text" ? mentionName(a.value.text) === mentionName(b.value.text) : canonicalJSON(a.value) === canonicalJSON(b.value);
 
 export type ExtractOutcome = "complete" | "retry" | "failed" | "requeued" | "skipped";
 
@@ -244,9 +286,10 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
   const job = lease.job;
   const eid = job.sourceIds[0]!;
 
-  const [evidenceDoc, stateDoc] = await Promise.all([
+  const [evidenceDoc, stateDoc, rulesBefore] = await Promise.all([
     deps.store.get<Evidence>(uid, paths.evidence(uid, eid)),
     deps.store.get<CoreState>(uid, paths.core(uid, "state")),
+    deps.store.get<CoreRules>(uid, paths.core(uid, "rules")),
   ]);
   if (evidenceDoc === null) {
     await deps.store.transaction(uid, async (tx) => {
@@ -262,9 +305,12 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
   const said = evidenceFieldText(evidence, "text") ?? "";
   const [earlier, all] = await Promise.all([
     needsEarlierTurns(said) ? priorTurns(deps.store, uid, evidence) : Promise.resolve(NO_TURNS),
-    wantsOpen(said) ? readAllMemories(storeReader(deps.store, uid), uid) : Promise.resolve(null),
+    // Every turn reads the Memories: the rename index (task C4) decides whose a name is, even with no `open` list.
+    readAllMemories(storeReader(deps.store, uid), uid),
   ]);
-  const open = all === null ? NO_OPEN : pickOpen(all, [said, ...earlier.turns.map((t) => t.text)]);
+  const renames = workerRenames(all);
+  const refsBefore = new Set(handledFor(rulesBefore === null ? null : (withRulesDefaults(rulesBefore.data) as CoreRules), eid).refs);
+  const open = !wantsOpen(said) ? NO_OPEN : pickOpen(all, [said, ...earlier.turns.map((t) => t.text)], renames, refsBefore);
   const context: ContextRef[] = [
     ...earlier.evidence.map((e) => ({ type: "evidence" as const, ...e })),
     ...open.list.map((o) => ({ type: "memory" as const, id: o.id, rev: o.rev })),
@@ -317,9 +363,11 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
     // What the on-turn route handled for this Evidence (brief 012 section 5): its allergy slots are skipped.
     const rulesDoc = await tx.get<CoreRules>(paths.core(uid, "rules"));
     const rules = rulesDoc === null ? null : (withRulesDefaults(rulesDoc.data) as CoreRules);
-    const handled = (rules?.handled ?? []).filter((h) => h.eid === eid).flatMap((h) => h.entries.flatMap((e) => e.ruleKeys));
+    const { ruleKeys: handled, keys: handledKeys, refs: handledRefs } = handledFor(rules, eid);
     const ctx: PlanContext = {
       handled,
+      handledKeys,
+      handledRefs,
       uid,
       jobId,
       packet: new Map([[eid, { evidence, fields: ["text"] }]]),
@@ -330,6 +378,7 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
       epoch: job.epoch,
       policyRev: job.policyRev,
       open: open.refs,
+      renames,
       context,
       zone: stateDoc?.data.currentZone ?? stateDoc?.data.homeZone ?? "UTC",
     };
@@ -360,19 +409,14 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
         written.push({ id: plan.id, memory: m });
         continue;
       }
-      // Active Memories with the same key (Q03).
-      const sameKey = (
-        await tx.query<Memory>({
-          collection: paths.collection(uid, "memories"),
-          where: [
-            { field: "key", op: "==", value: m.key },
-            { field: "status", op: "==", value: "active" },
-            { field: "validFromKey", op: "<=", value: m.validFromKey },
-          ],
-          orderBy: { field: "validFromKey", dir: "desc" },
-          limit: 32,
-        })
-      ).filter((d) => !closed.has(d.id));
+      // Active Memories with the same key (Q03), later-asserted ones included (G35: no `validFromKey` bound).
+      const sameKey = (await sameKeyRows(tx, uid, m.key, "active")).filter((d) => !closed.has(d.id));
+      // G35 (2): a value the owner refuted after saying it is skipped `negated` and closes nothing.
+      const refuted = await sameKeyRows(tx, uid, m.key, "wrong");
+      if (refuted.some((d) => sameValue(d.data, m) && (d.data.validTo === null || m.assertedAt <= d.data.validTo))) {
+        deps.log?.("extract.skip", { jobId, index: plan.index, reason: "negated" });
+        continue;
+      }
       // Saying a saved fact again writes nothing, unless it is a correction or a change.
       if (plan.change === "none" && (sameKey.some((d) => sameClaim(d.data, m)) || written.some((w) => w.memory.status === "active" && sameClaim(w.memory, m)))) continue;
       // A single-valued key that a rule or an allergy holds is not changed by extraction: the Item is held, not
@@ -396,6 +440,18 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
         const shown = ctx.open?.get(target);
         if (doc !== null && doc.data.status === "active" && doc.data.rev === shown?.rev && doc.data.predicate === m.predicate && !protectedRow(doc.data)) {
           replaced.set(target, doc);
+        }
+      }
+      // G35 (3), design 6.6: an item never closes a row asserted after it. It is placed with `to` at that row's
+      // `validFrom` (clamped to now, CQ 141), so it is history and closes nothing.
+      const later = [...replaced.values()].filter((d) => d.data.assertedAt > m.assertedAt);
+      if (later.length > 0) {
+        const nowMs = pair.worldClock.now;
+        const fromMs = msFromTs(m.validFrom ?? m.assertedAt);
+        const toMs = Math.min(nowMs, Math.max(fromMs, Math.min(...later.map((d) => msFromTs(d.data.validFrom ?? d.data.assertedAt)))));
+        if (place({ from: fromMs, to: toMs, cls: m.sourceClass, change: plan.change }, nowMs) === "history") {
+          written.push({ id: plan.id, memory: { ...m, status: "history", validTo: tsFromMs(toMs) } });
+          continue;
         }
       }
       // A correction says the old value was an error (`wrong`); anything else says it stopped being true (`history`).

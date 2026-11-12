@@ -20,3 +20,5 @@ export * from "./rules-doc";
 export * from "./notes";
 export * from "./pending";
 export * from "./backstop";
+export * from "./entities";
+export * from "./renames";

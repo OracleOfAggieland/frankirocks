@@ -114,7 +114,7 @@ describe("the hardRule route (B6)", () => {
     expect(rules.ask.q.kind).toBe("none");
   });
 
-  it("a denial with a rule on record keeps it and cuts; with only pending rules a global denial clears them", async () => {
+  it("a denial with a rule on record keeps it and cuts; with only pending rules a global denial off an answering turn keeps them (W-187)", async () => {
     const a = await setup();
     decide(a.rig);
     a.rig.fastSlots.script(valid("self").slots);
@@ -134,8 +134,11 @@ describe("the hardRule route (B6)", () => {
     b.rig.fastSlots.script(valid("global").slots);
     await post(b.rig, typedTurn(after(b.stamp, c1), 2, "I don't have any allergies."));
     const rules = await rulesOf(b.rig);
-    expect(pending(rules)).toEqual([]);
-    expect(rules.noneConfirmed).toEqual(["self"]);
+    // Brief 025, W-187: the turn answers no asked question, so the denial removes no rule and confirms nothing.
+    expect(pending(rules)).toEqual(["self:unresolved"]);
+    expect(rules.noneConfirmed).toEqual([]);
+    // Franki asks about the kept rule again.
+    expect(rules.ask?.q).toMatchObject({ ruleId: rules.allergies.find((r) => r.state === "pending")!.id });
   });
 
   it("a guest's denial (speaker uncertain) relaxes nothing", async () => {

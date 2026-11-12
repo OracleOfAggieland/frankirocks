@@ -218,3 +218,34 @@ describe("compileHead by audience (task 45)", () => {
     expect(priv.lines.find((l) => l.section === "now")!.text).toMatch(/ Audience: private\.$/);
   });
 });
+
+describe("the deceased join (brief 025 task D3, G15)", async () => {
+  const { hasher } = await import("./writes/testing/arb-writes");
+  const { mentionEid, mentionName } = await import("./writes/subject");
+  const eid = (words: string) => mentionEid("person", mentionName(words), hasher);
+  const say = (text: string, ents: string[]) => ({ entityIds: ents, sayAs: { text, entityRefs: [], timeFields: [] } });
+  const rel = (n: number, words: string, text: string): HeadMemory =>
+    mem(n, { subjectId: "self", predicate: "person.relation", value: { kind: "enum", code: "parent" }, args: { otherRef: eid(words), label: null, employerRef: null }, ...say(text, [eid(words)]) });
+
+  it("keeps lines naming dad out of people, by the EID: \"Dad\" and \"my dad\" are reached, \"my father\" is not", () => {
+    const lines = [rel(1, "Dad", "Dad is the owner's parent."), rel(2, "my dad", "The owner's dad lives in Leeds."), rel(3, "my father", "The owner's father loves fishing.")];
+    const death = mem(4, { subjectId: eid("dad"), predicate: "person.life", value: { kind: "enum", code: "deceased" }, args: { detail: null }, sens: "S2", ...say("The owner's dad died.", [eid("dad")]) });
+    const before = compileHead(input(lines));
+    const after = compileHead(input([...lines, death]));
+    if (!before.ok || !after.ok) throw new Error("compile failed");
+    const where = (r: typeof after, n: number) => r.lines.find((l) => l.ref?.id === testId(`m${n}`))?.section;
+    expect([where(before, 1), where(before, 2), where(before, 3)]).toEqual(["people", "people", "people"]);
+    expect([where(after, 1), where(after, 2), where(after, 3)]).toEqual(["know", "know", "people"]);
+    // The S2 death line itself never renders, and the join adds no text.
+    expect(after.head.text).not.toContain("died");
+  });
+
+  it("reads only a current life row: a death in history or marked wrong keeps dad in people", () => {
+    for (const status of ["history", "wrong"] as const) {
+      const death = mem(4, { subjectId: eid("dad"), predicate: "person.life", value: { kind: "enum", code: "deceased" }, args: { detail: null }, status, ...say("The owner's dad died.", [eid("dad")]) });
+      const r = compileHead(input([rel(1, "Dad", "Dad is the owner's parent."), death]));
+      if (!r.ok) throw new Error("compile failed");
+      expect(r.lines.find((l) => l.ref?.id === testId("m1"))?.section).toBe("people");
+    }
+  });
+});
