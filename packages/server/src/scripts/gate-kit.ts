@@ -30,14 +30,18 @@ export const W = {
   M1: "brief 032 M1: an allergen outside the gazetteer passes as not-an-allergy (hard-rule.ts G3 code half), so no unresolved filter is filed",
   M2: "brief 032 M2: unlabeled non-self subjects are grouped as one 'Someone else' line (rules-section.ts subjectName)",
   ATTENDEE:
-    "finding A1 of brief 034 (a ruling): suggest(food) applies a named person's rule only when the model passes that person's entity ID in attendeeIds, and no Head, note or tool result ever shows an entity ID, so a named attendee's rule can never reach the filter",
+    "brief 037 (its ruling: food paths filter by every stored rule of every subject), for finding A1 of brief 034: suggest(food) applies a named person's rule only when the model passes that person's entity ID in attendeeIds, and no Head, note or tool result ever shows an entity ID, so a named attendee's rule can never reach the filter",
   PASTE:
-    "finding A2 of brief 034 (a ruling): an allergy the owner pastes is T, so it writes no rule and opens no route by design (G34), and nothing else filters it or asks; the Head only tells the model to ask the owner to say it",
+    "a ruling or a later brief (G-A2), for finding A2 of brief 034: an allergy the owner pastes is T, so it writes no rule and opens no route by design (G34), and nothing else filters it or asks; the Head only tells the model to ask the owner to say it",
   DECK_AFTER_NARROW:
-    "finding A3 of brief 034: on a company or quiet line with a live call (brief 026 row 8), the blocked answer carries a Deck stamped at the raised policyRev whose Head is still the private one, S1 lines included (routes/turn.ts issues the Deck from the old bundle); the voice machine adopts it before the swap",
+    "brief 035 findings 11 ('no Deck when the answer hangs up') and 9, for finding A3 of brief 034: on a company or quiet line with a live call (brief 026 row 8), the blocked answer carries a Deck stamped at the raised policyRev whose Head is still the private one, S1 lines included (routes/turn.ts issues the Deck from the old bundle); the voice machine adopts it before the swap",
   LINEAGE:
     "finding 4 of brief 029: the hero yes's loop Memory cites typed Slices with null ranges, W-LINEAGE refuses them, and the yes answers 400 PARSE, so the three dinners and the list are never written",
-  GATE_WIRE: "brief 030: no route calls the Gate or delivers a proactive line yet",
+  G_FT02:
+    "a ruling or a later brief (G-FT02): suggest(food) reads only core/rules allergies, never a diet or a food dislike, and the date resolver (core/dates.ts) resolves days only, so 'this month' gives no end",
+  G_FT16:
+    "a ruling or a later brief (G-FT16): a new mention's entity ID is a hash of its type and name (core/extract.ts resolveMention), so two new people with one name become one entity, and the second's single-valued relation closes the first's as history",
+  GATE_WIRE: "brief 030: no proactive line reaches an open, a turn or a whisper yet (nothing arrives on the proactive channel)",
   NARROW_TOOL: "brief 026 'Not built' and brief 030: /api/tool still runs the Server_Rule in wave A with narrowedHere false",
   FORGET: "brief 021's reserved closure and resume, and the brief that wires forget into /api/turn: no route calls fenceForget or advanceForget",
   MAIL_READ: "no path reads mail into a turn, a Head or a whisper yet (ClaimsV1 consumers, the inbox read, whispers: briefs 024 and 030)",
@@ -164,10 +168,11 @@ export function foodSafe(label: string, forbid: readonly string[], expect: FoodE
       const bad = recipes.filter((r) => r.ingredientIds.some((i) => forbid.includes(i)));
       if (bad.length > 0) return `offered ${bad.map((r) => `${r.name} (${r.ingredientIds.filter((i) => forbid.includes(i)).join(", ")})`).join("; ")}`;
       const tool = mine.find((o) => o.channel === "tool");
-      const ids = tool === undefined ? [] : ((JSON.parse(tool.json) as { candidateIds?: string[] } | null)?.candidateIds ?? []);
-      if (ids.length !== recipes.length && food.length > 0) return `the tool names ${ids.length} candidates and the card ${recipes.length}`;
+      // suggest(food) names its candidates; the hero's answer tool writes dinners and names none, so only its card counts.
+      const ids = tool === undefined ? undefined : (JSON.parse(tool.json) as { candidateIds?: string[] } | null)?.candidateIds;
+      if (ids !== undefined && ids.length !== recipes.length && food.length > 0) return `the tool names ${ids.length} candidates and the card ${recipes.length}`;
       if (expect === "offered" && recipes.length === 0) return `nothing offered; ${mine.map((o) => `[${o.channel}] ${o.text.slice(0, 200)}`).join(" ") || "no output"}`;
-      if (expect === "nothing" && (recipes.length > 0 || ids.length > 0)) return `offered ${recipes.map((r) => r.name).join("; ")}`;
+      if (expect === "nothing" && (recipes.length > 0 || (ids?.length ?? 0) > 0)) return `offered ${recipes.map((r) => r.name).join("; ")}`;
       return true;
     },
   };

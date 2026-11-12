@@ -83,13 +83,13 @@ const FT02 = friend("FT02", 2, "Vegetarian this month", [
     label: "a diet with an end is stored",
     do: "check",
     of: "open",
-    waits: "the date resolver (core/dates.ts) resolves days only: \"this month\" gives the diet no validTo, so it never ends",
+    waits: W.G_FT02,
     expect: [storeHas("an active vegetarian preference.food with validTo set", (m) => m.predicate === "preference.food" && m.status === "active", (ms) => (ms.some((m) => m.validTo !== null) ? true : `validTo ${ms.map((m) => m.validTo).join(", ") || "none"}`))],
   },
   { label: "ask about dinner this month", do: "say", text: "What should I make for dinner?", answers: [parse()] },
   {
     ...suggestCall("suggest this month", [foodSafe("suggest this month", MEAT)]),
-    waits: "suggest(food) reads no diet: routes/tool-food.ts suggestTool passes only core/rules allergies to suggestFood, so a vegetarian is offered chicken",
+    waits: W.G_FT02,
   },
   { label: "the month ends", do: "advance", to: at(33, "18:00"), called: "December 2, after the month" },
   { label: "ask about dinner after the month", do: "say", text: "What's for dinner tonight?", answers: [parse()] },
@@ -288,7 +288,7 @@ const FT11 = friend("FT11", 11, "Dinner with twenty relevant memories", [
   { label: "ask again", do: "say", text: "Anything else for dinner?", answers: [parse()] },
   {
     ...suggestCall("the disliked ingredient is left off", [foodSafe("the disliked ingredient is left off", ["mushroom"])]),
-    waits: "suggest(food) reads no food preference (tool-food.ts suggestTool passes only allergies; `excludes` are always empty), so the omelet with mushrooms is offered",
+    waits: W.G_FT02,
   },
 ]);
 
@@ -388,7 +388,7 @@ const FT16 = friend("FT16", 16, "Two Alexes", [
     label: "two separate people",
     do: "check",
     of: "open",
-    waits: "entity identity (core/extract.ts resolveMention): a new mention's entity ID is a hash of its type and name, so two new Alexes are one entity, and the neighbor's single-valued relation closes the colleague's as history",
+    waits: W.G_FT16,
     expect: [storeHas("two person.relation Memories naming different entities", (m) => m.predicate === "person.relation", (ms) => (new Set(ms.map((m) => (m.args as { otherRef?: string }).otherRef)).size === 2 ? true : `${ms.length} relation(s), refs ${ms.map((m) => (m.args as { otherRef?: string }).otherRef).join(", ")}`))],
   },
   { label: "an action that depends on which", do: "type", text: "Remind me to text Alex tonight.", answers: [reply("Alex from work, or your neighbor?"), parse({ action: 0.9 }, "parse: an action")] },

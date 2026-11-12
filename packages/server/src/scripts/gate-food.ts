@@ -213,7 +213,6 @@ const MOMENTS: Moment[] = [
   },
   {
     id: "F05",
-    waits: { rules: W.H2 },
     note: "after the turn nothing filters shellfish; the extraction backstop proposes it, and the next turn applies it, so the Head and the card at the dinner question are right (F06 asks on the same turn)",
     stated: "a list over two sentences, typed; the model returns only the first (brief 032 H2, the reviewer's input)",
     path: "suggest",
@@ -225,7 +224,6 @@ const MOMENTS: Moment[] = [
   },
   {
     id: "F06",
-    waits: { rules: W.H2, head: W.H2, food: W.H2 },
     stated: "a list over two sentences, spoken with the food question in one breath; the model returns only the first (H2, an allergen on the default card)",
     path: "suggest",
     state: "rules ready; suggest runs on the same turn, before extraction",
@@ -248,7 +246,6 @@ const MOMENTS: Moment[] = [
   },
   {
     id: "F07",
-    waits: { rules: W.H1, head: W.H1 },
     stated: "\"can't eat\", typed; the model marks it denied (brief 032 H1, the reviewer's input)",
     path: "suggest",
     state: "rules ready",
@@ -259,7 +256,6 @@ const MOMENTS: Moment[] = [
   },
   {
     id: "F08",
-    waits: { rules: W.H1, head: W.H1, food: W.H1 },
     stated: "\"can't eat\", typed; the model marks it denied (H1, an allergen on the default card)",
     path: "suggest",
     state: "rules ready",
@@ -270,7 +266,6 @@ const MOMENTS: Moment[] = [
   },
   {
     id: "F09",
-    waits: { rules: W.H1, head: W.H1 },
     stated: "one allergen affirmed, one denied, typed; the model marks both denied (H1's second input)",
     path: "suggest",
     state: "rules ready",
@@ -307,7 +302,6 @@ const MOMENTS: Moment[] = [
   },
   {
     id: "F12",
-    waits: { rules: W.M1, asks: W.M1, head: W.M1, food: W.M1 },
     stated: "an allergen outside the gazetteer (spinach), typed; the model finds no items",
     path: "suggest",
     state: "unresolved",
@@ -479,7 +473,6 @@ const MOMENTS: Moment[] = [
   },
   {
     id: "F26",
-    waits: { rules: W.H3, head: W.H3 },
     stated: "an unnamed guest, then a named brother, same allergen (brief 032 H3, the reviewer's input)",
     path: "suggest",
     state: "a rule for someone who is not at this dinner (the brother)",
@@ -494,7 +487,6 @@ const MOMENTS: Moment[] = [
   },
   {
     id: "F27",
-    waits: { rules: W.H3, head: W.H3, food: W.H3 },
     stated: "an unnamed guest, then a named brother, same allergen (H3, an allergen on the default card)",
     path: "suggest",
     state: "a rule for someone who is not at this dinner (the brother)",
@@ -696,7 +688,6 @@ function heroScript(id: string, what: "hero dinners" | "list write"): GateScript
         label: yes,
         do: "tool",
         tool: (w) => ({ name: "answer", args: { pendingId: offer(w)?.pendingId ?? "none", choiceId: offer(w)?.yesId ?? "none" } }),
-        waits: W.LINEAGE,
         expect: what === "hero dinners" ? [foodSafe(yes, NO.milk, "offered")] : [listSafe(NO_LABELS.milk)],
       },
     ],
