@@ -1,1 +1,31 @@
-/* The lab scenery behind the backdrop: its keyframes and loops. */
+/*
+ * The lab scenery behind the backdrop. It has no loops: the linework never moves by itself, and the
+ * pointer parallax is a motion value, not CSS. Strokes stay one screen pixel wide however far the
+ * drawing is scaled to cover the viewport, with round ends and joins like a drafting pen.
+ */
+[data-scenery-art] {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* Its own compositor layer, so the parallax repaints only the linework, not the grain and vignette. */
+  will-change: transform;
+}
+
+[data-scenery-art] :where(path, line, circle, ellipse) {
+  vector-effect: non-scaling-stroke;
+}
+
+/* The fig labels: 12 screen px at any drawing scale. Scenery.tsx writes 1 / scale to --scenery-inv. */
+[data-scenery-art] text {
+  font-size: calc(0.75rem * var(--scenery-inv, 1));
+}
+
+/*
+ * The shelf and the bench need about 1150 visible units of the drawing's width, so they drop on screens
+ * much taller than wide. On very wide screens the crop pulls the hanging cables down across them, so
+ * they drop there too.
+ */
+@media (max-aspect-ratio: 13/10), (min-aspect-ratio: 11/5) {
+  [data-scenery-art] :is([data-scenery="shelf"], [data-scenery="bench"], [data-fig="2"], [data-fig="4"]) {
+    display: none;
+  }
+}
