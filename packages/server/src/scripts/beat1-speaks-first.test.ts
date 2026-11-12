@@ -66,11 +66,11 @@ const BEAT1: Script = {
       waits: "brief 023 (the occasion's moment and its card) and 027 (the visit in the browser); no route returns a card on open",
       expect: [{ mustSay: { template: "occasion.moved", channel: "card" } }],
     },
+    { label: "the wish plays on the call", do: "play", of: "open a session" },
     { label: "close the session", do: "close" },
     {
       label: "the next open does not wish again",
       do: "open",
-      waits: "brief 023 (`said` from the transcript, once per occurrence); the wish template has no wording to match yet",
       expect: [{ mustSay: { template: "occasion.wish", channel: "proactive", times: 0 } }],
     },
   ],

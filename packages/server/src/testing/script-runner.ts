@@ -32,6 +32,7 @@ import { completed } from "../openai/responses";
 import { closeRoute } from "../routes/close";
 import { memoryRoute } from "../routes/memory";
 import { openRoute } from "../routes/open";
+import { receiptRoute } from "../routes/receipt";
 import type { RouteContext } from "../routes/runtime";
 import { seedResetRoute } from "../routes/seed-reset";
 import { seedAdvanceRoute } from "../routes/seed-advance";
@@ -252,6 +253,11 @@ export type Action =
   | { do: "read"; view: "overview" | "lab" | "strip" | "receipt" | "item" | "why"; id?: (w: World) => string }
   /** No action: assertions on what an earlier step said (so one route call can carry green and waiting checks). */
   | { do: "check"; of: string }
+  /**
+   * The voice client plays the Proactive an earlier step returned, as it does on a live call: the `admitted`
+   * receipt under its Permit, `playbackStarted`, then the transcript of the words heard (the whisper's line).
+   */
+  | { do: "play"; of: string }
   /** A built function that no route calls yet. Each probe is a finding: the seam is built and unwired. */
   | { do: "probe"; name: string; run: (w: World) => Promise<unknown> }
   /** Setup that stands in for a missing writer. Each is named in the report. */
@@ -491,10 +497,25 @@ async function act(step: Step, w: World): Promise<Res> {
       return null;
     case "check":
       return w.answers.get(step.of) ?? null;
+    case "play":
+      return play(w, step.of);
     default:
       step satisfies never;
       return null;
   }
+}
+
+/** The receipts a voice client sends for a played Proactive; the answer is the transcript receipt's. */
+async function play(w: World, of: string): Promise<Res> {
+  const p = w.answers.get(of)?.body?.proactive ?? null;
+  if (p === null || w.stamp === null) throw new Error(`play: step "${of}" returned no proactive`);
+  const responseId = `resp_${w.counter + 1}`;
+  const base = { stamp: p.permit.stamp, responseId, momentIds: p.permit.momentIds, noteIds: p.permit.noteIds, pendingId: null, permitKind: null, text: null };
+  const send = (o: Record<string, unknown>) => callRoute(w.rig, receiptRoute, { ...base, requestId: nextId(w, "receipt"), ...o });
+  const admitted = await send({ kind: "admitted", permitKind: "proactive" });
+  if (admitted.status !== 200) return admitted;
+  await send({ kind: "playbackStarted" });
+  return send({ kind: "transcript", text: p.whisper.text });
 }
 
 async function turn(step: Step & { do: "type" | "chip" | "say" | "tap" | "paste" }, w: World): Promise<Res> {

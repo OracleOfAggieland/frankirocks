@@ -25,7 +25,12 @@ import { BISCUIT_LINE } from "./lines";
 const SIGN_WAITS =
   "a fit between briefs 019 and 022: the seed writes a purchase as a negative amountCents (seed/build.ts buildBank) and the detector counts only positive ones (core/patterns/spend.ts spendRows), so the seeded pattern is `insufficient` with 0 orders";
 const HERO_WAITS = "a card on open: the offer is said as the Proactive (brief 030 part A), but no route returns its card (S2_SCREEN_ASK_BUILT is false; no card route)";
-const COMPARE_WAITS = "brief 023 (the comparison moment at checkAt, delivery) and a route calling brief 024's Gate; nothing calls compareLoop or markCelebrated today";
+/**
+ * The Friday variant's offer was shown by setup, not played, so its moment was never said; after the yes it is still
+ * open, and three weeks on it is offered again ahead of the comparison. Nothing in the moment's verdict ends an offer
+ * moment whose pending ID was answered (brief 030 part A finding; `time/verdict.ts`, brief 036's folder).
+ */
+const FRIDAY_REOFFER_WAITS = "an offer moment whose pending ID was answered is never ended, so the accepted offer is said again three weeks on (time/verdict.ts)";
 // LINEAGE_WAITS and WINDOW_WAITS were fixed by brief 030 (P1-2 and P1-1); no step waits for them now.
 const LINEAGE_WAITS =
   "a fit between brief 022 and the lineage check: the loop Memory's root Slices are the rows' typed Slices (routes/tool-food.ts loopMemory prefers bank.amount and calendar.time), and W-LINEAGE (core/lineage.ts) fails every Slice with a null range as sliceHashMismatch, so the yes's write is refused and the route answers 400 PARSE";
@@ -107,9 +112,9 @@ function coveredThrough(label: string, to: RelTime): Step {
 }
 
 /**
- * Test setup (brief 037, finding 4): a yes acts only on an offer recorded as shown just before it. Nothing sends the
- * hero offer's `pendingRendered` receipt yet (the offer reaches no call until brief 030's second phase), so the
- * script records it, as the receipt route would, right before the owner's yes.
+ * Test setup (brief 037, finding 4): a yes acts only on an offer recorded as shown just before it. The main beat plays
+ * the offer through the receipt route (brief 030 part A). The Friday variant's open says the wish first, so its offer
+ * would come as an idle whisper; until that is played here too, the script records the offer as shown.
  */
 function showOffer(name: string): Step {
   return {
@@ -191,7 +196,7 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
       ...needsOffer(HERO_WAITS),
       expect: [{ mustSay: { card: "Takeout and late meetings" } }],
     },
-    showOffer("offerAfterBolt"),
+    { label: "the offer plays on the call", do: "play", of: "open after the bolt" },
     { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
     {
       label: "Franki writes the list and the loop",
@@ -240,7 +245,7 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
       label: "Franki speaks first: $71, down from $186",
       do: "check",
       of: "open three weeks on",
-      ...needsOffer(COMPARE_WAITS),
+      ...needsOffer(),
       expect: [{ mustSay: { template: "hero.comparison", has: ["$71", "$186"], channel: "proactive" } }],
     },
     {
@@ -289,7 +294,7 @@ function beat3YesOnFriday(): Script {
     pick("run the worker until idle, three weeks on"),
     pick("probe: the comparison three weeks on"),
     pick("open three weeks on"),
-    pick("Franki speaks first: $71, down from $186"),
+    { ...pick("Franki speaks first: $71, down from $186"), waits: FRIDAY_REOFFER_WAITS },
     pick("the strip fills: $115 less"),
   ];
   return { name: "beat 3: the hero, yes on the clone's Friday (past the seed mismatches)", scores: "spec §15 0:50–1:30, spec §10", steps };
