@@ -7,6 +7,7 @@ import { paths } from "../store/paths";
 import { decisionAnswer } from "../testing/decisions";
 import { type TestRig, callRoute, runScheduled } from "../testing/fakes";
 import { openRoute } from "./open";
+import { stateRoute } from "./state";
 import { asrTurn, typedTurn } from "../testing/session-fixtures";
 import { PERSONAL_FACT } from "../testing/two-memories";
 import { UID, doorRig, postTurn } from "../testing/audience-doors";
@@ -186,5 +187,20 @@ describe("finding 8: a company turn that lands after an open replaced its Sessio
       const c = await callRoute(rig, openRoute, { requestId: testId(`open-c-${named}`), initiator: "user", previousSessionId: named, clientZone: "UTC", visitId: null });
       expect(headText(c.body)).not.toContain(PERSONAL_FACT);
     }
+  });
+});
+
+describe("finding 9: the state route on a crisis-deferred Session gives no ack and no Deck", () => {
+  it("after crisis with company (row 6), /api/session/state answers with ack null and deck null", async () => {
+    const { rig, s } = await doorRig(true);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ crisis: 0.6, company: 0.9 })));
+    const first = await postTurn(rig, voice(s.stamp, 1, "My cousin is here and I can't do this anymore."));
+    expect(first.body.status).toBe("blocked");
+    const stamp = await stampNow(rig, s.sessionId);
+    const res = await callRoute(rig, stateRoute, { sessionId: s.sessionId, generation: 1, seen: { epoch: stamp.epoch, policyRev: stamp.policyRev, bundleRev: stamp.bundleRev, rulesRev: stamp.rulesRev }, ackStamp: null, speechStartedOpsAt: null });
+    expect(res.status).toBe(200);
+    expect(res.body.ack).toBeNull();
+    expect(res.body.deck).toBeNull();
+    expect((await sessionOf(rig, s.sessionId)).stateAck?.stamp.policyRev ?? 0).toBeLessThan(stamp.policyRev);
   });
 });
