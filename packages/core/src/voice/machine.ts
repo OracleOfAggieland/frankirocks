@@ -41,6 +41,8 @@ import { sayExactly } from "./lines";
 // Brief 040: what a call sends for each tool; re-exported here so the core barrel needs no new line.
 export { CALL_ANSWER_ARGS, CALL_TOOL_NAMES, type CallToolName, callToolArgs, isCallToolName } from "./tool-args";
 import { type CallToolName, callToolArgs, isCallToolName } from "./tool-args";
+import { THIRD_PARTY_STAND_IN, isThirdPartyLine } from "./third-party";
+export { THIRD_PARTY_STAND_IN, isThirdPartyLine } from "./third-party";
 import { type Infer } from "../schema/v";
 import { type SS, type StateAck, msFromTs, tsFromMs } from "../schema/primitives";
 import type { PermitKind } from "../schema/records";
@@ -609,7 +611,8 @@ function replyInput(st: VoiceState, reply: Pick<PendingReply, "toolCall" | "tool
   const turn = st.turn!;
   const input: Record<string, unknown>[] = deck.turns.map(safeTurnInput);
   if (turn.source === "asr") for (const id of audioIds(turn)) input.push({ type: "item_reference", id });
-  else input.push({ type: "message", role: "user", content: [{ type: "input_text", text: turn.text ?? "" }] });
+  // Brief 045, finding 1: third-party text never reaches the model; a stand-in worded by code goes in its place.
+  else input.push({ type: "message", role: "user", content: [{ type: "input_text", text: isThirdPartyLine(turn.source, turn.text) ? THIRD_PARTY_STAND_IN : (turn.text ?? "") }] });
   if (reply.toolCall !== null && reply.toolOutput !== null) {
     input.push({ type: "function_call", call_id: reply.toolCall.callId, name: reply.toolCall.name, arguments: reply.toolCall.arguments });
     input.push({ type: "function_call_output", call_id: reply.toolCall.callId, output: JSON.stringify(reply.toolOutput) });
