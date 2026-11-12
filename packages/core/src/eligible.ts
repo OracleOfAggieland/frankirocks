@@ -182,9 +182,12 @@ export function eligible(x: Dependent, c: EC, s: Snapshot): ER {
     const barrier = s.epoch.barrier;
     if (barrier !== null) return deny("barrier");
 
-    // 5: current epoch and policyRev.
+    // 5: the read's context is at the current epoch and policyRev, and the row is at the current epoch. A stored
+    // row's own policyRev records when it was written and is not compared: a policyRev rise cancels speech and
+    // Decks (KV05), it does not hide what was stored before it. Forget raises the epoch, which still fences the
+    // row (contracts §8; design CQ 162 in docs/briefs/012-design.md).
     if (c.epoch !== s.epoch.epoch || c.policyRev !== s.epoch.policyRev) return deny("freshness");
-    if (row.epoch < c.epoch || row.policyRev < c.policyRev) return deny("freshness");
+    if (row.epoch < c.epoch) return deny("freshness");
 
     // 6, 7, 8: generation checks by execution.
     if (c.execution === "browser" && c.generation !== s.localGeneration) return deny("freshness");
