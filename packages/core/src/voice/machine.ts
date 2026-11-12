@@ -159,7 +159,11 @@ export type VoicePhase =
  *                 `lineDone`.
  *   turnRetry     Whichever phase the posted Turn waits in (onTurn): a `hold` answer with `retryAfterMs`, also for a
  *                 Turn whose reply is admitted. Fires with no Permit pending or active, or while that Turn's own
- *                 admitted reply plays: the same post is sent again.
+ *                 admitted reply plays: the same post is sent again. A Turn that leaves `turn` with this armed (its reply
+ *                 ended first, toListening) takes the wait with it as retryPost.
+ *   retryPost     LISTENING (toListening): the post of a Turn that left `turn` while its `hold` retry hint was armed,
+ *                 at the same deadline; re-armed by another `hold` with a hint for that post (onTurn). Fires with the
+ *                 same Session held: the post is sent again (brief 031, finding 2).
  *   refresh       Any phase with a Session (onState): the next state request REFRESH_MS after an answer. Fires in a
  *                 live phase or RECOVERY.
  *   stateRetry    Any phase with a Session after CONFIGURING (onStateFailed): a failed state request is retried after
@@ -197,6 +201,7 @@ export type TimerName =
   | "transcript"
   | "permit"
   | "turnRetry"
+  | "retryPost"
   | "refresh"
   | "stateRetry"
   | "stateRetryUi"
@@ -358,6 +363,11 @@ export interface VoiceState {
   stateFailures: { since: number; attempts: number } | null;
   stateRetryVisible: boolean;
   awaitingOpen: boolean;
+  /**
+   * The open in flight was sent before a `blocked` answer started the swap: its answer is closed and never adopted,
+   * and the swap's own open goes out after it, so only one open is ever in flight (brief 031, finding 1).
+   */
+  staleOpen: boolean;
   hangingUp: boolean;
   error: "open" | "close" | null;
   // voice-control (design "New state")
@@ -373,6 +383,8 @@ export interface VoiceState {
   missing: MissingTurn[];
   /** An admitted Turn whose reply ended before its transcript came; posted `final` or `missing` (review item 7). */
   heldBack: VoiceTurn | null;
+  /** The post of a Turn that left `turn` while its `hold` retry hint was armed; sent again at `retryPost` (brief 031). */
+  retryPost: TurnBody | null;
   lastTurnResponseAt: number | null;
   /** When the in-flight `/api/session/state` went out, or null when none is in flight. */
   stateSentAt: number | null;
@@ -386,6 +398,8 @@ export interface VoiceState {
   proactive: Infer<typeof Proactive> | null;
   /** The Session a `blocked` answer narrowed and this call swapped away from; a later `blocked` for it does nothing. */
   narrowedFrom: string | null;
+  /** Every Session this call swapped away from, narrowedFrom among them; a later `blocked` for any does nothing (brief 031). */
+  swappedFrom: string[];
   /** The last loud input frame the Voice_Client reported (Latency_Clock). */
   lastLoudAt: number | null;
   latency: { current: LatencyTimes | null; rows: LatencyRow[] };
@@ -423,6 +437,7 @@ export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState
     stateFailures: null,
     stateRetryVisible: false,
     awaitingOpen: false,
+    staleOpen: false,
     hangingUp: false,
     error: null,
     judge: null,
@@ -431,6 +446,7 @@ export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState
     outstanding: [],
     missing: [],
     heldBack: null,
+    retryPost: null,
     lastTurnResponseAt: null,
     stateSentAt: null,
     ackDroppedStale: false,
@@ -438,6 +454,7 @@ export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState
     afterReply: null,
     proactive: null,
     narrowedFrom: null,
+    swappedFrom: [],
     lastLoudAt: null,
     latency: { current: null, rows: [] },
     eventSeq: 0,
@@ -477,8 +494,12 @@ export type VoiceEvent =
   | { type: "connectionLost" }
   | { type: "stateOk"; response: Infer<typeof StateResponse>; sentAt?: number }
   | { type: "stateFailed" }
-  | { type: "turnOk"; turnId: string; response: Infer<typeof TurnResponse> }
-  | { type: "turnFailed"; turnId: string }
+  /**
+   * `supersede` says whether the answer is to a Superseding_Post (a `turn` command with `supersedesTurnId`); the
+   * Voice_Client always sets it, and an answer without it is matched by order (answerOf; brief 031, finding 4).
+   */
+  | { type: "turnOk"; turnId: string; response: Infer<typeof TurnResponse>; supersede?: boolean }
+  | { type: "turnFailed"; turnId: string; supersede?: boolean }
   | { type: "toolOk"; callId: string; response: Infer<typeof ToolResponse> }
   | { type: "toolFailed"; callId: string }
   | { type: "closeDone" }
@@ -843,7 +864,8 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       onOpen(s, event.response);
       break;
     case "openFailed":
-      if (state.awaitingOpen) openFailed(s);
+      if (state.staleOpen) dropStaleOpen(s, null);
+      else if (state.awaitingOpen) openFailed(s);
       break;
     case "sdpFailed":
     case "connectionLost":
@@ -869,13 +891,13 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       onStateFailed(s);
       break;
     case "turnOk":
-      onTurn(s, event.turnId, event.response);
+      onTurn(s, event.turnId, event.response, event.supersede);
       break;
     case "turnFailed": {
       // The client already retried the same requestId; the Session's clientSeq is unknown now, so reconnect,
       // which opens a fresh Session (design "Session timing"). That holds for any post of this Session, current
       // or not, and whether or not the permit wait fired first (review of wave A, item 6).
-      const { entry: was, rest } = answerOf(state, event.turnId);
+      const { entry: was, rest } = answerOf(state, event.turnId, event.supersede);
       const ownSession = was !== undefined && was.sessionId === state.session?.sessionId;
       const ours = ownSession || (state.turn?.turnId === event.turnId && state.turn.posted !== null);
       s.set({ outstanding: rest, lastTurnResponseAt: now });
@@ -883,6 +905,8 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       // A Superseding_Post reuses its `missing` post's clientSeq, so its failure leaves the Session's clientSeq
       // where it was: the late transcript is lost, the call goes on (V2 step 7).
       if (ownSession && was.supersede !== undefined) break;
+      // A Superseding_Post's failure with no entry left (its wait ended) is never read as its `missing` post's.
+      if (event.supersede === true) break;
       if (ours && state.session !== null) connectionRecovery(s, true);
       break;
     }
@@ -942,8 +966,22 @@ function startOpen(s: Step, zone: string, retrying: boolean): void {
   s.arm("openWait", s.now + OPEN_LIMIT_MS);
 }
 
+/**
+ * The answer to an open sent before a `blocked` answer (brief 031, finding 1). The server may have handled it before
+ * the narrowing committed, with the old audience and no swap line, so it is never adopted: a Session it created is
+ * closed. In SWAPPING the swap's own open goes out now, naming the narrowed Session.
+ */
+function dropStaleOpen(s: Step, res: Infer<typeof OpenResponse> | null): void {
+  s.set({ staleOpen: false });
+  if (res !== null && res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: "user" } });
+  if (s.st.phase !== "SWAPPING" || !s.st.awaitingOpen) return;
+  s.push({ kind: "open", body: { initiator: "user", previousSessionId: s.st.narrowedFrom ?? s.st.lastSessionId, clientZone: s.st.zone, visitId: null } });
+  s.arm("openWait", s.now + OPEN_LIMIT_MS);
+}
+
 function onOpen(s: Step, res: Infer<typeof OpenResponse>): void {
   const st = s.st;
+  if (st.staleOpen) return dropStaleOpen(s, res);
   if (!st.awaitingOpen) {
     // The Owner hung up before the open answered: close the Session it created.
     if (res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: "user" } });
@@ -968,7 +1006,7 @@ function onOpen(s: Step, res: Infer<typeof OpenResponse>): void {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
+    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, retryPost: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
     proactive: res.proactive,
     stateFailures: null,
     stateRetryVisible: false,
@@ -1011,11 +1049,13 @@ function openFailed(s: Step): void {
  *   turn, pending, active     null                      null                           null            -
  *   inFlight, unadmitted      []                        []                             []              -
  *   judge, spec, heldBack     null                      null                           null            -
+ *   retryPost                 null                      null                           null            -
  *   missing                   []                        []                             []              -
  *   admittedTurnId            null                      null                           null            -
  *   stateSentAt, afterReply   null                      null                           null            -
  *   proactive                 null                      null                           the answer's    -
  *   narrowedFrom              null                      keep                           keep            -
+ *   swappedFrom               []                        keep                           keep            -
  *   outstanding               keep                      keep                           keep            -
  *   speech                    []                        keep                           []              -
  *   instructions              null                      keep                           null            -
@@ -1037,6 +1077,7 @@ function openFailed(s: Step): void {
  *                                                                                                      else false
  *   outputMuted               true                      true (mute)                    -               -
  *   awaitingOpen              false (set by caller)     keep                           false           true
+ *   staleOpen                 keep                      keep                           -               -
  *   hangingUp                 hangUp: a Session was     keep                           -               -
  *                             held; openFailed: keep
  *   error                     hangUp: null;             keep                           -               null
@@ -1049,9 +1090,11 @@ function openFailed(s: Step): void {
  * Not an exit, but a reset: when CONFIGURING reaches LISTENING, onState sets recovery to null and retryVisible to
  * false, and disarms ack, connect, retryUi and reconnect.
  * A fifth exit, startSwap (a `blocked` answer, or the end of a care reply after one), resets as `recovery` does,
- * except: phase SWAPPING; lastSessionId and narrowedFrom the narrowed Session; recovery null, retryVisible,
- * stateFailures and stateRetryVisible cleared; instructions null; speech []; deadlines {}, then swap and, unless
- * an open is already in flight, openWait; awaitingOpen true; error null; micMuted kept.
+ * except: phase SWAPPING; lastSessionId and narrowedFrom the narrowed Session, which swappedFrom gains; recovery null, retryVisible,
+ * stateFailures and stateRetryVisible cleared; instructions null; speech []; deadlines {}, then swap and openWait
+ * (the open in flight keeps its own deadline); awaitingOpen true; staleOpen true when an open was already in
+ * flight, else kept; error null; micMuted kept. staleOpen is cleared only by the next open answer (onOpen or
+ * openFailed, through dropStaleOpen), which is then closed and dropped whatever the phase.
  */
 function closedFields(st: VoiceState): Partial<VoiceState> {
   return {
@@ -1065,9 +1108,10 @@ function closedFields(st: VoiceState): Partial<VoiceState> {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
+    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, retryPost: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
     proactive: null,
     narrowedFrom: null,
+    swappedFrom: [],
     deadlines: {},
     recovery: null,
     retryVisible: false,
@@ -1109,7 +1153,7 @@ function connectionRecovery(s: Step, closeSession: boolean): void {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
+    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, retryPost: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
     proactive: null,
     deadlines: {},
     recovery: { kind: "connection", since, attempts: st.recovery?.kind === "connection" ? st.recovery.attempts : 0 },
@@ -1141,8 +1185,9 @@ function reconnect(s: Step): void {
  * nothing more is heard from it. Mute, cancel and clear what it has in flight, tear it down and open a fresh call
  * naming the narrowed Session, so the server carries the narrowed audience over and sends the swap line. No close
  * is posted for the narrowed Session: the server is hanging it up. A different Session this call held (a reconnect
- * opened before the answer came) is closed, since no narrowing reaches it. An open already in flight is kept as
- * the swap's own open. The avatar shows `thinking` and the call button stays "hang up" throughout.
+ * opened before the answer came) is closed, since no narrowing reaches it. An open already in flight is never the
+ * swap's own: its answer is closed, and the swap's open goes out after it (`staleOpen`, brief 031 finding 1). The
+ * avatar shows `thinking` and the call button stays "hang up" throughout.
  */
 function startSwap(s: Step, from: string): void {
   if (s.st.phase === "CLOSED") return;
@@ -1158,6 +1203,7 @@ function startSwap(s: Step, from: string): void {
     phase: "SWAPPING",
     lastSessionId: from,
     narrowedFrom: from,
+    swappedFrom: st.swappedFrom.includes(from) ? st.swappedFrom : [...st.swappedFrom, from],
     session: null,
     deck: null,
     ack: null,
@@ -1167,7 +1213,7 @@ function startSwap(s: Step, from: string): void {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
+    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, retryPost: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
     proactive: null,
     deadlines: {},
     recovery: null,
@@ -1176,7 +1222,13 @@ function startSwap(s: Step, from: string): void {
     stateRetryVisible: false,
     error: null,
   });
-  if (!st.awaitingOpen) {
+  if (st.awaitingOpen) {
+    // An open sent before the `blocked` answer is never the swap's: the server may have handled it before the
+    // narrowing committed. Its answer is closed when it comes, and the swap's own open goes out then
+    // (dropStaleOpen); its own wait stays armed, so an open that never answers still ends the swap (brief 031).
+    s.set({ staleOpen: true });
+    s.arm("openWait", st.deadlines.openWait ?? s.now + OPEN_LIMIT_MS);
+  } else {
     s.set({ awaitingOpen: true });
     s.push({ kind: "open", body: { initiator: "user", previousSessionId: from, clientZone: s.st.zone, visitId: null } });
     s.arm("openWait", s.now + OPEN_LIMIT_MS);
@@ -1194,7 +1246,10 @@ function startSwap(s: Step, from: string): void {
  */
 function onBlocked(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void {
   const from = res.stamp.sessionId;
-  if (s.st.phase === "CLOSED" || s.st.narrowedFrom === from) return;
+  if (s.st.phase === "CLOSED" || s.st.narrowedFrom === from || s.st.swappedFrom.includes(from)) return;
+  // The care reply for this Session's narrowing is already under way, and the swap follows it: another `blocked`
+  // for the same Session (a stale resend, or another of its posts) neither cuts nor restarts it (brief 031, finding 3).
+  if (s.st.afterReply === "swap" && s.st.session?.sessionId === from) return;
   const session = s.st.session;
   const live = session !== null && session.sessionId === from && res.stamp.generation === session.generation;
   if (live) adoptDeck(s, res.deck);
@@ -1437,12 +1492,16 @@ function pushTurn(s: Step, body: TurnBody, supersedesTurnId: string | null = nul
 }
 
 /**
- * Which outstanding post of `turnId` an answer belongs to: its ordinary post while that one is unanswered, else its
- * Superseding_Post. Answers carry only the turnId; the server takes a Superseding_Post after its `missing` post
- * (the Voice_Client resends one that came first), so the ordinary post is answered first.
+ * Which outstanding post of `turnId` an answer belongs to. With `supersede` (the Voice_Client knows which request it
+ * answered), the post of that kind only: the Voice_Client resends a Superseding_Post that came before its `missing`
+ * post committed, so their HTTP answers can land in either order (brief 031, finding 4). Without it, by order: the
+ * ordinary post while that one is unanswered, else the Superseding_Post.
  */
-function answerOf(st: VoiceState, turnId: string): { entry: VoiceState["outstanding"][number] | undefined; rest: VoiceState["outstanding"] } {
-  const entry = st.outstanding.find((o) => o.turnId === turnId && o.supersede === undefined) ?? st.outstanding.find((o) => o.turnId === turnId);
+function answerOf(st: VoiceState, turnId: string, supersede?: boolean): { entry: VoiceState["outstanding"][number] | undefined; rest: VoiceState["outstanding"] } {
+  const entry =
+    supersede !== undefined
+      ? st.outstanding.find((o) => o.turnId === turnId && (o.supersede !== undefined) === supersede)
+      : (st.outstanding.find((o) => o.turnId === turnId && o.supersede === undefined) ?? st.outstanding.find((o) => o.turnId === turnId));
   return { entry, rest: st.outstanding.filter((o) => o !== entry) };
 }
 
@@ -1459,9 +1518,9 @@ function onSupersedingAnswer(s: Step, turnId: string, post: SupersedingPost, res
   pushTurn(s, body, turnId, true);
 }
 
-function onTurn(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void {
+function onTurn(s: Step, turnId: string, res: Infer<typeof TurnResponse>, supersede?: boolean): void {
   // Every answer ends its request's wait and dates the next StateAck: an ack requested before it can't grant fastO.
-  const { entry: was, rest } = answerOf(s.st, turnId);
+  const { entry: was, rest } = answerOf(s.st, turnId, supersede);
   const wasOutstanding = was !== undefined;
   s.set({ outstanding: rest, lastTurnResponseAt: s.now });
   if (s.st.ack !== null) s.set({ ack: null, ackDroppedStale: true });
@@ -1472,6 +1531,18 @@ function onTurn(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void 
   if (st.session === null || res.stamp.sessionId !== st.session.sessionId || res.stamp.generation !== st.session.generation) return;
   // The latest post of this Turn was a Superseding_Post: the answer is its own, whether or not the Turn is current.
   if (was?.supersede !== undefined && was.sessionId === st.session.sessionId) return onSupersedingAnswer(s, turnId, was.supersede, res);
+  // A Superseding_Post's answer with no entry left (its wait ended) gives its Deck only; it is never the Turn's own.
+  if (supersede === true) return adoptDeck(s, res.deck);
+  // The answer to a post kept after its Turn left `turn` (retryPost): another hint waits again; anything else ends it
+  // and is read below as any answer for a Turn that is no longer current (brief 031, finding 2).
+  if (st.retryPost !== null && st.retryPost.turnId === turnId && (turn === null || turn.turnId !== turnId)) {
+    if (res.status === "hold" && res.permit === null && res.error === null && res.retryAfterMs > 0) {
+      adoptDeck(s, res.deck);
+      s.arm("retryPost", s.now + res.retryAfterMs);
+      return;
+    }
+    s.set({ retryPost: null });
+  }
   const current = turn !== null && turn.turnId === turnId && turn.posted !== null && res.stamp.turnId === turnId;
   if (!current) {
     // An answer for a turn that is no longer current still carries a Deck (design rows), and if nothing was
@@ -1553,8 +1624,16 @@ function toListening(s: Step): void {
   // transcript), or `missing` at t0 + 5 s, so its Evidence and slow parse still happen (review of wave A, item 7).
   // A Turn whose admitted reply was cut or refused counts too: admittedTurnId was cleared, the Turn was still admitted.
   const keep = unpostedAdmitted(st, turn);
+  // A posted Turn whose `hold` retry hint is still armed is resent at that hint, even with `turn` gone (brief 031).
+  const retryAt = turn !== null && turn.posted !== null ? st.deadlines.turnRetry : undefined;
   s.disarm("permit", "turnRetry", "tool", "lineDone", "item", "transcript", "judge", "speakCap");
   if (keep) parkAdmitted(s, turn);
+  if (retryAt !== undefined && turn?.posted != null) {
+    // One kept at a time: an older one still waiting goes now, so neither is dropped.
+    if (s.st.retryPost !== null) pushTurn(s, s.st.retryPost);
+    s.set({ retryPost: turn.posted });
+    s.arm("retryPost", retryAt);
+  }
   s.set({ phase: "LISTENING", turn: null, pending: null, active: null, admittedTurnId: null, recovery: s.st.recovery?.kind === "line" ? null : s.st.recovery });
 }
 
@@ -2262,6 +2341,10 @@ function onTimer(s: Step, name: TimerName): void {
       if (st.turn?.posted != null && ((st.pending === null && st.active === null) || ownReply)) pushTurn(s, st.turn.posted);
       return;
     }
+    case "retryPost":
+      // The post of a Turn that left `turn` before its retry hint (brief 031, finding 2); its answer clears it (onTurn).
+      if (st.retryPost !== null && st.session !== null && st.retryPost.sessionId === st.session.sessionId) pushTurn(s, st.retryPost);
+      return;
     case "permit":
       // A Permit that came inside the answer wait is still being checked: the check keeps its own limit (V2 step 5).
       if (st.pending !== null && st.pending.checkUntil !== undefined && st.pending.checkUntil > s.now) return s.arm("permit", st.pending.checkUntil);

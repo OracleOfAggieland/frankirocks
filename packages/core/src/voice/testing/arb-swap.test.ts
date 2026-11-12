@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { arbSwapCall, runSwapCall } from "./arb-swap";
+import { arbEarlyOpenCall, arbSwapCall, runEarlyOpenCall, runSwapCall } from "./arb-swap";
 
 /**
  * How many of 500 calls (seed 2026) reach each situation, printed so a run shows the margin over its floor. The
@@ -36,5 +36,22 @@ describe("swap call generator", () => {
     expect(counts.inRecovery).toBeGreaterThanOrEqual(65);
     expect(counts.careHeard).toBeGreaterThanOrEqual(20);
     expect(counts.lineHeard).toBeGreaterThanOrEqual(35);
+  });
+
+  it("answers an open sent before the blocked answer as handled before the narrowing (brief 031, finding 1)", () => {
+    const drivers = fc.sample(arbEarlyOpenCall, { seed: 2026, numRuns: 500 }).map((x) => runEarlyOpenCall(x));
+    // A `blocked` answer arrived while an open was in flight, and an open sent before it was answered early.
+    const staleAtBlocked = drivers.filter((d) => d.trace.steps.some((x) => x.event.type === "turnOk" && x.event.response.status === "blocked" && x.before.awaitingOpen)).length;
+    const earlyAnswered = drivers.filter((d) =>
+      d.trace.steps.some((x) => {
+        const sent = d.openOf.get(x.i);
+        if (x.event.type !== "openOk" || x.event.response.proactive !== null || sent === undefined) return false;
+        return [...d.narrowedAt.values()].some((at) => sent < at && at < x.i);
+      }),
+    ).length;
+    console.log(`early-open generator reach over 500 calls (seed 2026): ${JSON.stringify({ staleAtBlocked, earlyAnswered })}`);
+    // Measured 132 and 120 when the generator was written; the floors are about half.
+    expect(staleAtBlocked).toBeGreaterThanOrEqual(65);
+    expect(earlyAnswered).toBeGreaterThanOrEqual(60);
   });
 });

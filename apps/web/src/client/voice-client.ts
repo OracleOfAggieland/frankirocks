@@ -314,7 +314,9 @@ export class VoiceClient {
       this.turnRequestIds.set(key, requestId);
     }
     const supersedesRequestId = supersedesTurnId === null ? body.supersedesRequestId : (this.turnRequestIds.get(supersedesTurnId) ?? null);
-    if (supersedesTurnId !== null && supersedesRequestId === null) return this.dispatch({ type: "turnFailed", turnId: body.turnId });
+    // The machine matches an answer to the post it answers by this flag (brief 031, finding 4).
+    const supersede = supersedesTurnId !== null;
+    if (supersede && supersedesRequestId === null) return this.dispatch({ type: "turnFailed", turnId: body.turnId, supersede });
     // Every attempt and every wait fits inside one TURN_TIMEOUT_MS from the first send (R7.5).
     const start = this.deps.clock.mono();
     const left = () => TURN_TIMEOUT_MS - (this.deps.clock.mono() - start);
@@ -327,11 +329,11 @@ export class VoiceClient {
         await this.sleep(res.retryAfterMs);
         continue;
       }
-      if (res !== null) return this.dispatch({ type: "turnOk", turnId: body.turnId, response: res });
+      if (res !== null) return this.dispatch({ type: "turnOk", turnId: body.turnId, response: res, supersede });
       // Same requestId on a transient failure: a request the server did commit is replayed, not written twice.
       const transient = !r.ok && (r.kind === "timeout" || r.kind === "network" || (r.kind === "http" && r.retryAfterMs > 0));
       const wait = !r.ok && r.kind === "http" ? Math.min(5_000, r.retryAfterMs) : 250;
-      if (!transient || attempt >= TURN_TRANSIENT_RETRIES || left() - wait <= 0) return this.dispatch({ type: "turnFailed", turnId: body.turnId });
+      if (!transient || attempt >= TURN_TRANSIENT_RETRIES || left() - wait <= 0) return this.dispatch({ type: "turnFailed", turnId: body.turnId, supersede });
       await this.sleep(wait);
     }
   }
