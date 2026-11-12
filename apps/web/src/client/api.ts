@@ -5,7 +5,8 @@
  *
  * The browser sets `Origin` itself on same-origin POSTs, which the Route_Guard checks (R10.3).
  */
-import { MemoryResponse, type MemoryView, validate } from "@franki/core";
+import { AdvanceRequest, AdvanceResponse, MemoryResponse, type MemoryView, ResetRequest, ResetResponse, type Schema, validate } from "@franki/core";
+import { ADVANCE_PATH, ADVANCE_TIMEOUT_MS, BARRIER_STATUS, RESET_PATH, RESET_TIMEOUT_MS } from "./seed-guesses";
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -116,4 +117,41 @@ export async function readMemory(api: ApiClient, view: MemoryView, opts: { id?: 
   if (!r.ok) return { ok: false, why: r.kind === "signedOut" ? "signedOut" : "failed" };
   const parsed = validate(MemoryResponse, r.body);
   return parsed.ok ? { ok: true, body: parsed.value as MemoryResponse } : { ok: false, why: "failed" };
+}
+
+// ---------------------------------------------------------------------------------------------
+// POST /api/seed/reset and /api/seed/advance (brief 027): the visit's clone, its reset and the time bolt.
+
+/**
+ * What a seed call came to. `barrier` is the 423 answer (a forget or a reset holds the fence); `timeout` and
+ * `failed` mean the browser does not know the answer, so it shows nothing as done.
+ */
+export type SeedCall<T> =
+  | { ok: true; body: T }
+  | { ok: false; why: "barrier"; retryAfterMs: number }
+  | { ok: false; why: "signedOut" | "timeout" | "failed" };
+
+function seedFailure(r: Exclude<ApiResult<unknown>, { ok: true }>): Exclude<SeedCall<never>, { ok: true }> {
+  if (r.kind === "signedOut" || r.kind === "timeout") return { ok: false, why: r.kind };
+  if (r.kind === "http" && (r.status === BARRIER_STATUS || r.error === "BARRIER")) return { ok: false, why: "barrier", retryAfterMs: r.retryAfterMs };
+  return { ok: false, why: "failed" };
+}
+
+async function seedCall<T>(api: ApiClient, path: string, request: Schema<unknown>, response: Schema<unknown>, body: unknown, timeoutMs: number): Promise<SeedCall<T>> {
+  // A request the contract would refuse is never sent.
+  if (!validate(request, body).ok) return { ok: false, why: "failed" };
+  const r = await api.call<unknown>(path, { method: "POST", body, timeoutMs });
+  if (!r.ok) return seedFailure(r);
+  const parsed = validate(response, r.body);
+  return parsed.ok ? { ok: true, body: parsed.value as T } : { ok: false, why: "failed" };
+}
+
+/** Clones the persona for this visit, or resets it (contracts §6 `POST /api/seed/reset`). */
+export function resetVisit(api: ApiClient, body: ResetRequest): Promise<SeedCall<ResetResponse>> {
+  return seedCall(api, RESET_PATH, ResetRequest, ResetResponse, body, RESET_TIMEOUT_MS);
+}
+
+/** Moves the visit's world clock forward to `to` (contracts §6 `POST /api/seed/advance`). */
+export function advanceVisit(api: ApiClient, body: AdvanceRequest): Promise<SeedCall<AdvanceResponse>> {
+  return seedCall(api, ADVANCE_PATH, AdvanceRequest, AdvanceResponse, body, ADVANCE_TIMEOUT_MS);
 }
