@@ -34,6 +34,7 @@ import {
   type MeetingRow,
   type ReceiptRow,
   CATALOG_VERSION,
+  addCivilDays,
   celebration,
   civilDateAt,
   docRef,
@@ -53,6 +54,7 @@ import {
   tsFromMs,
 } from "@franki/core";
 import { readCoreDocs, ownerClock } from "../core-docs";
+import { heroAnchor } from "../time/hero-anchor";
 import { foregroundEC, storeReader } from "../head-build";
 import { cFields } from "../records";
 import type { Reader } from "../store/port";
@@ -83,6 +85,8 @@ interface MoneyRows {
   coverage: Cov;
   clock: ClockPair;
   evidence: Map<string, Evidence>;
+  /** Brief 030 P1-1: the last date of the live hero insight's window, or null (the window then ends yesterday). */
+  anchor: string | null;
 }
 
 async function scanEvidence(reader: Reader, uid: string): Promise<{ id: string; data: Evidence }[] | null> {
@@ -124,7 +128,8 @@ async function readMoneyRows(ctx: RouteContext, generation: number): Promise<Mon
     complete: true,
   };
   const ec = { ...foregroundEC(uid, core.epoch.data, clock, generation), stage: "toolReturn" as const };
-  const out: MoneyRows = { bank: [], receipts: [], events: [], coverage: core.state.data.coverage, clock, evidence: new Map() };
+  const anchor = await heroAnchor(reader, uid, deps.hasher, clock.worldClock.now);
+  const out: MoneyRows = { bank: [], receipts: [], events: [], coverage: core.state.data.coverage, clock, evidence: new Map(), anchor };
   for (const d of money) {
     if (!eligible({ ref: docRef("evidence", d.id, d.data.rev), row: d.data }, ec, snapshot).allow) continue;
     const o = d.data.observation;
@@ -160,7 +165,8 @@ const evidenceRefs = (ids: readonly string[], evidence: Map<string, Evidence>, m
 
 function patternFor(rows: MoneyRows): PatternResult {
   const zone = rows.clock.worldClock.zone;
-  const today = civilDateAt(rows.clock.worldClock.now, zone);
+  // Brief 030 P1-1: a live insight keeps its own window across a jump; heroWindow ends the day before `today`.
+  const today = rows.anchor !== null ? addCivilDays(rows.anchor, 1) : civilDateAt(rows.clock.worldClock.now, zone);
   return takeoutLateMeetingV1({
     purchases: rows.bank,
     receipts: rows.receipts,

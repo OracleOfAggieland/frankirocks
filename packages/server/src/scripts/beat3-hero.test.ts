@@ -131,7 +131,6 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
       do: "probe",
       name: "offerAfterBolt",
       run: probeOffer,
-      ...needsOffer(WINDOW_WAITS),
       expect: [{ mustSay: { template: "hero.offer", has: ["$186"], channel: "probe" } }],
     },
     { label: "open after the bolt", do: "open" },
