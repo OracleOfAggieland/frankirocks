@@ -19,6 +19,7 @@ import { sameValue } from "./plan";
 import { plainMention } from "./not-allergy";
 import { hasFirstPerson, knownNameWords, mentionEid, mentionName, namesSomeone, resolveSubject, type SubjectInput, type SubjectResult } from "./subject";
 import { GENERIC_WORDS, REFERENCE_WORDS, itemNamesNothing } from "./names-own";
+import { ownerWordsSettle } from "./life-subject";
 import { spanClass, verifyTurnSpan } from "./spans";
 import type { AllergyVerdict, ArgPair, CorrectionVerdict, EntityKind, FastItem, FastSlotsOut, ItemVerdict, Need, QuestionKind, Route, Subject, TransitionKind, TransitionVerdict, ValidateContext } from "./types";
 
@@ -349,6 +350,9 @@ function transitionVerdict(item: Extract<FastItem, { kind: "transition" }>, inde
   if (!ctx.speakerCertain) return v({ kind: "defer", why: "speaker" });
   if (item.transition === "scheduledStart" || item.transition === "expire") return v({ kind: "defer", why: "scheduled" }); // T5
   const kind = item.transition;
+  // Brief 043, finding 1: the owner's words, not the model's ID or a cut-out span, choose who it happened to.
+  const settled = (s: Subject) => ownerWordsSettle({ subject: s, span, evidence: ctx.evidence, known: ctx.known, entities: ctx.entities });
+  if (!settled(item.subject) || (item.counterpart !== null && !settled(item.counterpart))) return v({ kind: "defer", why: "subject" });
   // A transition's "my job" names the speaker; "my brother" doesn't (CQ 159).
   const subject = subjectOf(item.subject, span.quote, ctx, "person", "transition");
   const counterpartKind: EntityKind = kind === "move" ? "place" : kind === "jobChangeOwn" || kind === "jobChangeOther" ? "organization" : "person";

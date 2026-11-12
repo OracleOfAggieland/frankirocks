@@ -22,3 +22,4 @@ export * from "./pending";
 export * from "./backstop";
 export * from "./entities";
 export * from "./renames";
+export * from "./life-subject";
