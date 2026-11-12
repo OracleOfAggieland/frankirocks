@@ -90,8 +90,8 @@ export interface HardRuleResult {
 
 const SUBJECT_LABELS_MAX = 256;
 const RULE_KEYS_MAX = 32;
-/** `handled` holds at most this many entries per turn (`WorkJob.handled: arr(OnTurnHandled, 8)`). */
-const HANDLED_ENTRIES_MAX = 8;
+/** `handled` holds at most this many entries per turn, one per route (`HandledEntry.entries: arr(OnTurnHandledRecord, 3)`). */
+const HANDLED_ENTRIES_MAX = 3;
 
 type CompileRun = Pick<HardRuleRun, "uid" | "epoch" | "bundle" | "context" | "clock" | "audience" | "generation" | "hasher">;
 

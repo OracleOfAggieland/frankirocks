@@ -529,6 +529,13 @@ export interface PlanContext {
    */
   renames?: RenameIndex;
   /**
+   * The memory keys and Memory IDs the on-turn correct and transition routes handled for this Evidence (brief 012
+   * section 5, brief 025 task C5): an item on one of the keys is skipped `handled`, and none of the IDs can be named
+   * as a target.
+   */
+  handledKeys?: readonly string[];
+  handledRefs?: readonly string[];
+  /**
    * The packet's other inputs (memory-spec §4: the packet "records all actual inputs"): the Evidence of the earlier
    * turns it carried and the `open` Memories. Each is named in `contextIds` and `dependsOn` (`e:<eid>`,
    * `m:<id>@<rev>`), and earlier Evidence in `packetEids`. A Memory this Item replaces is left out of `dependsOn`: it
@@ -929,7 +936,9 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
   for (const s of rootSlices) sens = maxSens(sens, s.sens);
   const gravity = Math.max(item.gravity, gravityFloor(quoted));
 
-  const rn: MentionRenames | undefined = ctx.renames === undefined || ctx.renames.renames.size === 0 ? undefined : { index: ctx.renames, at: verified[0]!.evidence.occurredAt };
+  // Transcript order (G35): an item is asserted when its root Evidence was, never when its job commits.
+  const saidAt = verified.reduce((at, v) => (v.evidence.assertedAt > at ? v.evidence.assertedAt : at), verified[0]!.evidence.assertedAt);
+  const rn: MentionRenames | undefined = ctx.renames === undefined || ctx.renames.renames.size === 0 ? undefined : { index: ctx.renames, at: saidAt };
   const subjectId = resolveMention(item.subject, item, ctx.hasher, rn);
   const value = resolveValue(item.value, item, ctx.hasher, rn);
   const args = resolveArgs(item.predicate, item.args, item, ctx.hasher, rn);
@@ -949,6 +958,8 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
 
   const scopeId = scopeIdOf(item.predicate, item.scope, args, value, ctx.hasher, occasionDay);
   const key = ctx.hasher.id(idParts.memoryKey(subjectId, item.predicate, scopeId));
+  // A key the on-turn route corrected or changed for this Evidence is the route's (brief 025 task C5).
+  if (ctx.handledKeys?.includes(key) === true) return { kind: "skip", index, reason: "handled" };
   const id = ctx.hasher.id(idParts.memory(ctx.jobId, index));
 
   // Entities the Memory names, and its spoken line with names from the Owner's own words.
@@ -984,7 +995,7 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
   // §8): a model slip that names the Owner's name in a pet correction changes nothing.
   const closable = (mid: string): boolean => {
     const o = ctx.open?.get(mid);
-    return o !== undefined && o.predicate === item.predicate && o.kind !== "rule" && o.predicate !== "allergy";
+    return o !== undefined && o.predicate === item.predicate && o.kind !== "rule" && o.predicate !== "allergy" && ctx.handledRefs?.includes(mid) !== true;
   };
   let targets = [item.changes[0]?.targetMid ?? null, item.memoryId].filter((t): t is string => t !== null && closable(t));
   // An event or commitment keys on its day, so "the dentist moved to Tuesday" no longer shares Friday's key. When the
@@ -1029,10 +1040,10 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
     closeReason: null,
     lastSupportAt: null,
     flow: item.flow,
-    assertedAt: ctx.worldNow,
-    validFrom: ctx.worldNow,
+    assertedAt: saidAt,
+    validFrom: saidAt,
     validTo: null,
-    validFromKey: ctx.worldNow,
+    validFromKey: saidAt,
     validFromKnown: true,
     when: spokenWhen === null ? { kind: "none" } : { kind: "spoken", spoken: spokenWhen },
     time: resolved === null ? null : timeRow(resolved),
