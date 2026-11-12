@@ -66,6 +66,8 @@ import { phoneId } from "../phone/outbound";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 026: company, quiet and alone (voice-control tasks 48, 49).
 import { audienceEffect, narrowedHere, precompileAudienceHead } from "../audience-swap";
+// Brief 035: the review of the audience wave.
+import { carryNarrowing, deckAllowed, lateNarrowing, narrowsHere, replacedNarrowing, swapWindowCare, turnEndAudience, withNarrowHead } from "../audience-swap";
 import { afterClosed } from "../sessions";
 import { driveHangupJob, ensureHangupJob } from "../worker/hangup";
 
@@ -228,7 +230,11 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           const doc = await tx.get<Session>(paths.session(uid, req.sessionId));
           if (doc === null) throw scopeError();
           const s0 = doc.data;
-          if (s0.generation !== req.generation || (s0.status !== "minting" && s0.status !== "active" && !narrowedHere(s0))) throw staleError("session");
+          // Brief 035 (finding 8): a company turn on a Session an open already replaced is kept and narrows. Telling
+          // needs core/epoch, so for a Session that isn't open the core documents are awaited before the check.
+          const replaced = s0.status !== "minting" && s0.status !== "active" && replacedNarrowing(s0, (await coreP).epoch.data.activeSessionId, req.sessionId, slow?.parse ?? null, req.judge);
+          const held = narrowedHere(s0) || replaced;
+          if (s0.generation !== req.generation || (s0.status !== "minting" && s0.status !== "active" && !held)) throw staleError("session");
           const core = await coreP;
           if (core.epoch.data.barrier !== null) throw barrierError();
           // Settled before any early answer, so no read is still open when the transaction ends.
@@ -253,9 +259,10 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           };
 
           // Brief 026 (row 1; R14.5; property 10, server half): a Session narrowed during itself speaks no more. Every
-          // turn on it answers `blocked` with no Permit, whatever it carries; only the hold decision and the answer
-          // are written.
-          if (narrowedHere(s0)) {
+          // turn on it answers `blocked` with no Permit, whatever it carries. Brief 035 (finding 7): the turn that is
+          // next in order is still kept below (its Turn, Evidence, Extract_Job and hard rule); one out of order has no
+          // place to go, so only the hold decision and the answer are written for it.
+          if (held && req.clientSeq !== s0.nextClientSeq) {
             const closed: RuleInput = {
               source: req.source === "asr" ? "asr" : cls.cls === "T" ? "pasted" : "typed",
               transcript: req.transcriptState,
@@ -281,7 +288,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
 
           // Stamp revisions must be current; a stale Stamp commits nothing.
           const fresh = req.epoch === stamp.epoch && req.policyRev === stamp.policyRev && req.bundleRev === stamp.bundleRev && req.rulesRev === stamp.rulesRev;
-          if (!fresh) {
+          if (!fresh && !held) {
             return { kind: "unrecorded" as const, response: { ...base, status: "stale" as const, deck: head === null ? null : issueDeck(stamp, head, ops) } };
           }
           if (req.clientSeq > s0.nextClientSeq) {
@@ -301,7 +308,8 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           const { turn: turn0, evidence } = userTurnRecords({ uid, sessionId: req.sessionId, req, text, cls, clock: pair, core: coreVals, hasher: deps.hasher });
 
           // The executor (design 3.0): on the rules this transaction read, before anything is admitted.
-          const audienceNow = effectiveAudience(s0, ops);
+          // Brief 035 (finding 10): the rule's Head compiles with the audience the turn ends with.
+          const audienceNow = turnEndAudience(effectiveAudience(s0, ops), slow?.parse ?? null, fastO !== null ? "O" : req.judge);
           let hr: HardRuleResult | null = null;
           let write: TurnWrite = { kind: "none" };
           let note: W | null = null;
@@ -378,7 +386,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             regexMatch: (slow?.regex.length ?? 0) > 0,
             // The gap and the audience are those before this Turn; its own failure shows from the next one.
             audience: effectiveAudience(s, ops),
-            narrowedHere: false,
+            narrowedHere: held,
             callLive: s.registeredCallIds.length > 0,
             parseGap: hasParseGap(s),
             noteSens: candidateNotes.length === 0 ? "none" : candidateNotes.some((n) => n.sens !== "S0") ? "S1+" : "S0",
@@ -389,12 +397,10 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           };
           // Brief 026 (tasks 48, 49): the audience effects of the rule's outcome, written in this transaction. The rule is
           // pure, so it runs here once more to choose them; the seam below runs it again on the same input.
-          // A wave B route that fires changes what is said, so it raises policyRev (KV05; design "Audience effects").
-          const routed = rule.parse.kind === "hit" && changesWhatIsSaid(rule.parse, rule.judge, "B");
-          const raisedEpoch: CoreEpoch | null = routed ? { ...core.epoch.data, policyRev: core.epoch.data.policyRev + 1, updatedAt: tsFromMs(ops) } : null;
-          const aud = audienceEffect(serverRule(rule), {
+          // An audience outcome changes what is said, so audienceEffect raises policyRev (KV05; design "Audience
+          // effects"; brief 035: the rule's outcome decides, not the chosen class alone).
+          const aud0 = audienceEffect(serverRule(rule), {
             sessionId: req.sessionId,
-            raisedEpoch,
             modifiers: s.modifiers,
             epoch: core.epoch.data,
             bundle: changed?.bundle ?? core.bundle.data,
@@ -404,11 +410,15 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             bundleWritten: (changed?.bundle ?? null) !== null,
             hasher: deps.hasher,
           });
+          // Brief 035: a narrowing whose Head no longer fits compiles it here; without it, no Deck goes out.
+          const aud = await withNarrowHead(tx, uid, aud0, { epoch: core.epoch.data, rules: changed?.rules ?? (core.rules.data as CoreRules), bundle: changed?.bundle ?? core.bundle.data, clock: pair, generation: s0.generation, opsNow: ops, hasher: deps.hasher, bundleWritten: (changed?.bundle ?? null) !== null });
+          const headless = (aud?.wantsHead ?? null) !== null && aud!.bundle === null && (changed?.bundle ?? null) === null;
           if (aud !== null) {
             tx.update(paths.core(uid, "epoch"), aud.epoch);
             if (aud.bundle !== null) tx.update(paths.core(uid, "bundle"), aud.bundle);
           }
-          const hangup = aud?.hangup === true ? await ensureHangupJob(tx, uid, req.sessionId as ID, s0.rev, ops, deps.hasher) : null;
+          const carry = replaced && slow !== null ? await carryNarrowing(tx, uid, { sessionId: req.sessionId, session: s0, parse: slow.parse, judge: rule.judge, epoch: core.epoch.data, opsNow: ops, hasher: deps.hasher }) : null;
+          const hangup = aud?.hangup === true ? await ensureHangupJob(tx, uid, req.sessionId as ID, s0.rev, ops, deps.hasher) : (carry?.hangupJob ?? null);
           const stampOut2 =
             aud === null
               ? stampOut
@@ -418,6 +428,8 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           tx.update(doc.path, {
             ...next,
             ...(aud?.session ?? {}),
+            ...swapWindowCare(s0, rule, ops),
+            ...(carry?.self ?? {}),
             nextClientSeq: req.clientSeq + 1,
             lastClientSeq: req.clientSeq,
             committedParseSeq,
@@ -428,7 +440,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             updatedAt: now,
           });
 
-          const deck = headOut2 === null ? null : issueDeck(stampOut2, headOut2, ops, safe);
+          const deck = headOut2 === null || headless || held || narrowsHere(aud) ? null : issueDeck(stampOut2, headOut2, ops, safe);
           // Every reply's Permit comes from the Admission_Seam, which writes its decision ledger entry in this
           // transaction and runs in production too (R8.1, R8.2).
           const admitted = admitRule(
@@ -505,6 +517,8 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
   const slow = await runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log }, { turnId: req.turnId, utterance: text });
   // Brief 012 G20 (task B9): the hardRule route only, once per turn, planned in this post's own transaction.
   const late = await lateSlots(ctx, { turnId: req.turnId, text, cls: cls.cls, typed: false, slow, generation: req.generation });
+  // Brief 035 (finding 2): a late company or quiet hit narrows; its Head is compiled before the transaction.
+  const audienceHead = await precompileAudienceHead(ctx, slow, req.generation);
   for (let attempt = 1; ; attempt++) {
     try {
       const outcome = await deps.store.transaction(uid, async (tx) => {
@@ -548,9 +562,11 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
         // older speech (KV05; R15.5). A weak one with judge O doesn't (review of the live run, item 5).
         const fastO = await tx.get(paths.ledger(uid, fastODecisionId(deps.hasher, req.sessionId, req.turnId)));
         const judge = fastO !== null ? "O" : req.judge;
-        const hit = slow.parse.kind === "hit" && changesWhatIsSaid(slow.parse, judge, "A");
-        const epoch: CoreEpoch = hit ? { ...core.epoch.data, policyRev: core.epoch.data.policyRev + 1, updatedAt: tsFromMs(ops) } : core.epoch.data;
-        if (hit) tx.update(paths.core(uid, "epoch"), epoch);
+        // Brief 035 (finding 2): a company or quiet hit narrows here as it would on the turn (lateNarrowing).
+        const narrowing = await withNarrowHead(tx, uid, lateNarrowing({ sessionId: req.sessionId, session: s0, parse: slow.parse, judge, epoch: core.epoch.data, bundle: core.bundle.data, rules: core.rules.data as CoreRules, opsNow: ops, head: audienceHead, hasher: deps.hasher }), { epoch: core.epoch.data, rules: core.rules.data as CoreRules, bundle: core.bundle.data, clock: pair, generation: s0.generation, opsNow: ops, hasher: deps.hasher });
+        const hit = narrowing === null && slow.parse.kind === "hit" && changesWhatIsSaid(slow.parse, judge, "A");
+        const epoch: CoreEpoch = narrowing?.epoch ?? (hit ? { ...core.epoch.data, policyRev: core.epoch.data.policyRev + 1, updatedAt: tsFromMs(ops) } : core.epoch.data);
+        if (hit || narrowing !== null) tx.update(paths.core(uid, "epoch"), epoch);
         const coreVals = { epoch: epoch.epoch, policyRev: epoch.policyRev };
 
         const { evidence } = userTurnRecords({ uid, sessionId: req.sessionId, req, text, cls, clock: pair, core: coreVals, hasher: deps.hasher });
@@ -581,7 +597,12 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
           if (lateHr.bundle !== null) tx.update(paths.core(uid, "bundle"), lateHr.bundle);
         }
         const rulesOut = lateHr?.rules ?? core.rules.data;
-        const bundleOut = lateHr?.bundle ?? core.bundle.data;
+        // Brief 035: the narrow Head, unless the hardRule route wrote core/bundle (compiled with the unknown audience
+        // of the missing transcript's lease, which takes S0 only).
+        const narrowBundle = lateHr?.bundle == null ? (narrowing?.bundle ?? null) : null;
+        if (narrowBundle !== null) tx.update(paths.core(uid, "bundle"), narrowBundle);
+        const hangupJob = narrowing?.hangup === true ? await ensureHangupJob(tx, uid, req.sessionId as ID, s0.rev, ops, deps.hasher) : null;
+        const bundleOut = lateHr?.bundle ?? narrowBundle ?? core.bundle.data;
         const stamp = { ...currentStamp(req.sessionId, s0.generation, { epoch, rules: rulesOut, bundle: bundleOut }), turnId: req.turnId };
         const head = bundleOut.head;
         tx.create(paths.evidence(uid, ev.eid), ev.record);
@@ -610,17 +631,21 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
         let committedParseSeq = s.committedParseSeq;
         if (!parsed) s = { ...s, audience: "unknown" };
         else committedParseSeq = await advancedWatermark(tx, uid, req.sessionId, s, req.clientSeq);
-        tx.update(doc.path, { ...s, committedParseSeq, lastTurnAt: now, expiresAt: tsFromMs(ops + SESSION_IDLE_MS), updatedAt: now });
+        tx.update(doc.path, { ...s, ...(narrowing?.session ?? {}), committedParseSeq, lastTurnAt: now, expiresAt: tsFromMs(ops + SESSION_IDLE_MS), updatedAt: now });
 
         const safe = await earlierSafeTurns(tx, uid, req.sessionId, req.clientSeq, ctx);
-        const deck = head === null ? null : issueDeck(stamp, head, ops, safe);
-        // A rules write raises the Deck, which cuts what is playing (G1), as a late hit does.
-        const response: TurnRes = { ...base, stamp, status: hit || lateHr?.rulesChanged === true ? "ready" : "ordinary", deck };
+        const deck = head === null || !deckAllowed(lateHr?.bundle == null ? narrowing : null) ? null : issueDeck(stamp, head, ops, safe);
+        // A rules write raises the Deck, which cuts what is playing (G1), as a late hit does. A narrowing that hangs
+        // up answers blocked, so the browser swaps (brief 035).
+        const status = narrowing?.hangup === true ? "blocked" : hit || narrowing !== null || lateHr?.rulesChanged === true ? "ready" : "ordinary";
+        const response: TurnRes = { ...base, stamp, status, deck };
         await completeRequest(tx, key, response, ops);
-        return { kind: "committed" as const, response, jobId };
+        return { kind: "committed" as const, response, jobId, hangupJob };
       });
       if (outcome.kind === "unrecorded") throw new Unrecorded(outcome.response);
       ctx.schedule(() => drainExtractJobs(uid, deps));
+      const hangupJob = outcome.hangupJob;
+      if (hangupJob !== null) ctx.schedule(() => driveHangupJob(uid, hangupJob, deps, (id) => afterClosed(ctx, id)));
       return outcome.response;
     } catch (error) {
       if (isStoreError(error, "staleRevision") && attempt < MAX_CAS_ATTEMPTS) continue;

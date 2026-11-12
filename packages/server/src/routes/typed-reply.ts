@@ -3,7 +3,8 @@
  * (FRANKI_BRAIN_MODEL, effort low, store:false, the Head text as instructions, the earlier safe turns and
  * the typed text as input, 4 s deadline). An explicit phone tool call is handled after the turn commits.
  * An ordinary reply comes back as one `W` note with kind `result`: `unprompted:false`,
- * the Head's selected Memories' root keys and dependsOn, and `sens` equal to the highest Sensitivity among them.
+ * the Head's selected Memories' root keys and dependsOn, and `sens` equal to the highest Sensitivity among them and
+ * the earlier safe turns in its input (brief 035, finding 12).
  *
  * It runs before the Turn transaction so the note is part of the admitted payload; any failure or timeout gives
  * no note, and the Turn still commits. The call happens only for the request that will commit (its clientSeq is
@@ -78,7 +79,8 @@ export async function typedReplyNote(
   // Roots and dependencies of the Head lines the reply could draw on.
   const rootKeys = new Set<ID>();
   const dependsOn = new Set<string>();
-  let sens: Sens = "S0";
+  // Brief 035 (finding 12): the earlier safe turns are input too, so the note is as sensitive as the highest of both.
+  let sens: Sens = turns.reduce<Sens>((acc, t) => maxSens(acc, t.sens), "S0");
   for (const ref of head.selectedRefs) {
     if (ref.type !== "memory") continue;
     const m = await deps.store.get<Memory>(uid, paths.memory(uid, ref.id as ID));

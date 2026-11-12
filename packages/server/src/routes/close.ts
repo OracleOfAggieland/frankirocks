@@ -9,7 +9,7 @@
  * `closed` with no hangup and no change. On `closed`, Extract_Jobs are ensured and a drain is scheduled.
  */
 import { CloseRequest, type CloseResponse, type ID, type Infer, type Session, tsFromMs } from "@franki/core";
-import { errorCloseCarry } from "../audience-swap";
+import { errorCloseCarry, userCloseCarry } from "../audience-swap";
 import { ensureCoreDocs } from "../core-docs";
 import { completeRequest } from "../ledger/request";
 import { afterClosed, beginCloseInTx } from "../sessions";
@@ -38,7 +38,8 @@ export async function closeSession(ctx: RouteContext, req: CloseReq): Promise<Cl
         return { state: "closed", justClosed: false };
       }
       // Brief 026 (task 51; R14.6): an error close of a non-private Session keeps its audience for the reconnect.
-      const carry = errorCloseCarry(doc.data, req.reason, ops);
+      // Brief 035 (finding 5): the Owner's own close of a non-private Session makes what it passes on private.
+      const carry = errorCloseCarry(doc.data, req.reason, ops) ?? userCloseCarry(doc.data, req.reason);
       if (doc.data.status === "closing" && carry !== null) tx.update(doc.path, { ...doc.data, ...carry, updatedAt: tsFromMs(ops) });
       if (doc.data.status !== "closing") {
         const b = await beginCloseInTx(tx, uid, req.sessionId, ops, undefined, carry ?? {});

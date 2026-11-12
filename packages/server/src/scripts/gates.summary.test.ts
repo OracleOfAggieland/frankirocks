@@ -39,11 +39,11 @@ describe("release gates: the count per gate (spec §13)", () => {
     expect(FOOD.length).toBeGreaterThanOrEqual(40);
     expect(summary(FOOD)).toEqual({
       written: 40,
-      green: 38,
-      waiting: 2,
-      waitingSteps: 4,
+      green: 39,
+      waiting: 1,
+      waitingSteps: 3,
       silent: 0,
-      byWait: { PASTE: 1, ATTENDEE: 1 },
+      byWait: { PASTE: 1 },
     });
   });
 
@@ -58,7 +58,8 @@ describe("release gates: the count per gate (spec §13)", () => {
     expect(company.length).toBeGreaterThanOrEqual(6);
     expect(quiet.length).toBeGreaterThanOrEqual(6);
     expect(EXPOSURE.length).toBeGreaterThanOrEqual(12);
-    expect(summary(EXPOSURE)).toEqual({ written: 12, green: 0, waiting: 12, waitingSteps: 12, silent: 12, byWait: { DECK_AFTER_NARROW: 12 } });
+    // Brief 035 (findings 11 and 9): the blocked answer carries no Deck, so the Deck step is green in all twelve.
+    expect(summary(EXPOSURE)).toEqual({ written: 12, green: 12, waiting: 0, waitingSteps: 0, silent: 12, byWait: {} });
   });
 
   it("Friend Tests: every test counted at 200 h has a script or a pointer, and none of the Later ones", () => {
