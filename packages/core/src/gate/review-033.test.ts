@@ -36,12 +36,23 @@ describe("finding 14: one T ask per sender per day, at any sensitivity", () => {
 });
 
 describe("finding 15: an asked S2 recall goes to a card until the screen ask exists", () => {
-  it("cards the opened-topic owner recall, behind one constant", () => {
+  it("cards the opened-topic owner recall in both builds, behind one constant", () => {
     expect(S2_SCREEN_ASK_BUILT).toBe(false);
     const c = gateCand({ sens: "S2", topic: work, queryTerms: ["work"] });
     const asked = { trigger: "recall" as const, ownerTurn: ownerSaid("how is work"), openedTopics: [WORK] };
     expect(gate(c, gateCtx(asked))).toMatchObject({ verdict: "card", carveOut: "openedTopicRecall" });
-    // In +200, private, the door's code template comes first and is said instead.
-    expect(gate(c, gateCtx({ ...asked, build: "plus200" }))).toMatchObject({ verdict: "say", form: "door", carveOut: "door" });
+    // In +200 too: an asked recall is answered as asked (finding 17), not by the door.
+    expect(gate(c, gateCtx({ ...asked, build: "plus200" }))).toMatchObject({ verdict: "card", carveOut: "openedTopicRecall" });
+  });
+});
+
+describe("finding 17: an asked recall is answered as asked, not by an unprompted path", () => {
+  it("does not let company open what rushed held (the committed subtract-only property, seed 2120965385)", () => {
+    const c = gateCand({ sens: "S2", topic: { ...work, terms: [] }, queryTerms: ["biopsy"] });
+    const wide = gateCtx({ build: "plus200", modifiers: { rushed: true, crisis: false }, trigger: "recall", ownerTurn: ownerSaid("biopsy"), openedTopics: [WORK] });
+    const w = gate(c, wide);
+    const n = gate(c, { ...wide, audience: "company" });
+    expect(w).toMatchObject({ verdict: "card", carveOut: "openedTopicRecall" });
+    expect(n.verdict).toBe("card");
   });
 });

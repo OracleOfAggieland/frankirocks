@@ -194,8 +194,9 @@ export function gate(c: GateCandidate, x: GateContext): GateResult {
         break;
       }
     }
-    // A sender-cap card is never overridden (brief 033 finding 1).
-    if (r.verdict !== "say" && raised && !r.reasons.includes("senderCap")) {
+    // A sender-cap card is never overridden (brief 033 finding 1). An asked recall is answered as asked, never by an
+    // unprompted path such as a door, so narrowing the room can't swap a held door for a carded answer (finding 17).
+    if ((r.verdict !== "say" || asked) && raised && !r.reasons.includes("senderCap")) {
       // Reply-only: full help once the owner opens the topic. S2 crosses only as an opened-topic owner recall.
       const carve = sens === "S2" && x.trigger === "recall" && asked && opened ? "openedTopicRecall" : null;
       r = result("say", ["ok", asked ? "asked" : "topicOpen", ...(carve !== null ? (["carveOut"] as const) : [])], {
