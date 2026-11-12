@@ -22,3 +22,5 @@ export * from "./pending";
 export * from "./backstop";
 export * from "./entities";
 export * from "./renames";
+export * from "./paste";
+export * from "./people";
