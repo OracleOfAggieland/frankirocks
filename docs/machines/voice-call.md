@@ -90,7 +90,7 @@ stateDiagram-v2
 
 **Where the tables live.** In `packages/core/src/voice/machine.ts`: the full reset table, with a cell for every `VoiceState` field in each of the closed, recovery, open and press exits, is the comment above `closedFields`; what each `TimerName` means, by the phase it is armed in, is the comment on that type; the file's `@machine voice.call` header says what always holds and what it never does. The three switches over a closed union, in `step` (over `VoiceEvent`), `onTimer` (over `TimerName`) and `onRealtime` (over `RealtimeServerEvent`), end in `satisfies never`, so a member with no case fails `npm run typecheck`; at run time an unknown value changes nothing. `onRealtime`'s default is where every Realtime type the union does not list lands; `packages/core/src/voice/voice-unlisted.transitions.test.ts` pins that it returns the same state and no commands. `onTimer` returns before its switch for a name with no deadline, so its default is not reached at run time.
 
-**Not modelled here:** the microphone prompt. `getMicrophone` runs inside the `connect` command, after the open answer armed the 5 s `connect` limit, so the browser's permission prompt runs inside that limit: an Allow later than 5 s ends in connection recovery. A refused microphone reaches the reducer as `sdpFailed`. The `swap` timer and `afterReply` are named but do nothing on this branch.
+**Not modelled here:** the microphone prompt. `getMicrophone` runs inside the `connect` command, after the open answer armed the 5 s `connect` limit, so the browser's permission prompt runs inside that limit: an Allow later than 5 s ends in connection recovery. A refused microphone reaches the reducer as `sdpFailed`.
 
 ### `voice.permit`
 
