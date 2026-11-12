@@ -8,9 +8,13 @@
  * Always: an armed wait has its deadline in state until it is disarmed; a timer whose deadline is absent does
  * nothing, and one that arrives before its deadline only re-arms the same deadline (an `armTimer` command can
  * outlive its deadline when the same step disarms it); and the rules listed below.
- * Never: read a clock, a random source or the network. Never throws on a well-typed VoiceEvent. A listed Realtime
- * type that arrives without its fields throws today: conversation.item.added, response.created, response.done,
- * response.output_audio_transcript.done and error. An event type, timer name or Realtime type with no case changes
+ * Never: read a clock, a random source or the network. Never throws on a well-typed VoiceEvent. Six listed Realtime
+ * types throw today when they arrive without their fields: conversation.item.added, response.created,
+ * response.done, response.output_audio_transcript.done, error, and
+ * conversation.item.input_audio_transcription.completed with no transcript for an item of the current unposted
+ * Turn. That last one stores the missing transcript; maybeAdmit throws on it, then or on a later event, once every
+ * item is recorded and has a transcript and no earlier item has text. The six are what a scratch run found, not a
+ * proof that no other type throws. An event type, timer name or Realtime type with no case changes
  * nothing at run time; a member of a listed union with no case fails the typecheck.
  *
  * Browser call-state reducer (design "Browser state machine"; R13, R15, R16.3, R17.2, R17.3; KV02, KV04, KV05,
