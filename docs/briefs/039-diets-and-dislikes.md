@@ -100,17 +100,10 @@ At `a23af3c`, after the merge:
 - `npm run typecheck`: exit 0.
 - `npm run build`: exit 0.
 
- changes only the hero card's title and adds one test. Its focused run passed: 40 passed, 7 expected fail.
+`b5fee0f` changes only the hero card's title and adds one test. Its focused run passed: 40 passed, 7 expected fail.
 
- was merged a third time at  (tip , with lane/writes merged). There was one conflict in : lane/writes changed  to . Both changes are kept:  and this brief's . At that merge:
--  RUN  v5.0.5 C:/Users/albeavi/Documents/Coding/frankirocks-lanes/hero
+`build/plan-stages` was merged a third time at `e585235` (tip `a56aa39`, with lane/writes merged). There was one conflict in `core/extract.ts`: lane/writes changed `validFrom` to `saidAt`. Both changes are kept: `saidAt` and this brief's `validTo`. At that merge:
+- `npx vitest run --maxWorkers=3`: exit 1. 482 files; 4200 passed, 34 expected fail, 4 failed.
+- `npm run lint`, `npm run typecheck` and `npm run build`: all exit 0.
 
-
- Test Files  no tests
-      Tests  no tests
-     Errors  1 error
-   Start at  09:27:02
-   Duration  491ms: exit 1. 482 files; 4200 passed, 34 expected fail, 4 failed.
-- ,  and : all exit 0.
-
-The 4 failures are Friend Tests 3, 8 and 10 in . Each makes 2  calls where 1 is declared. They fail the same way with this lane's ,  and  set back to 's versions, and this lane's other changes don't touch those tests. So they come from the merged base, not from this brief, and they are left for the lane that owns them.
+The 4 failures are Friend Tests 3, 8 and 10 in `gate-friend.test.ts`. Each makes 2 `responses.create` calls where 1 is declared. They fail the same way with this lane's `extract.ts`, `tool-food.ts` and `suggest.ts` set back to `build/plan-stages`'s versions, and this lane's other changes don't touch those tests. So they come from the merged base, not from this brief, and they are left for the lane that owns them.
