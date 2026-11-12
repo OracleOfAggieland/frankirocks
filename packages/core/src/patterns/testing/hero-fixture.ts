@@ -8,6 +8,8 @@ import { testId } from "../../testing/samples";
 import type { BankObs, BankRow, CalendarObs, MeetingRow, PatternInput, ReceiptRow } from "../types";
 import { coverageFor, instantAt } from "./arb-patterns";
 
+export { instantAt };
+
 export const HERO_ZONE = "America/Chicago";
 export const HERO_WINDOW = { fromCivil: "2026-10-05", toCivil: "2026-10-25", zone: HERO_ZONE, currency: "USD" } as const;
 /** The world time the owner says "yes": Oct 26 at 19:00 Chicago. */

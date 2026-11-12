@@ -194,7 +194,16 @@ const CASES: [string, Schema<unknown>, unknown, unknown, string][] = [
     "$.reason",
   ],
   ["CloseResponse", CloseResponse, { state: "closing" }, { state: "closing", extra: true }, "$.extra"],
-  ["ToolCall (recall)", ToolCall, { name: "recall", args: recallArgs }, { name: "suggest", args: recallArgs }, "$.name"],
+  // "suggest" became a tool in brief 022, so an unknown name is now "connection".
+  ["ToolCall (recall)", ToolCall, { name: "recall", args: recallArgs }, { name: "connection", args: recallArgs }, "$.name"],
+  [
+    "ToolCall (suggest)",
+    ToolCall,
+    { name: "suggest", args: { domain: "food", query: "dinner", attendeeIds: ["self"], when: null, contextId: null } },
+    { name: "suggest", args: { domain: "dessert", query: "dinner", attendeeIds: ["self"], when: null, contextId: null } },
+    "$.args.domain",
+  ],
+  ["ToolCall (answer)", ToolCall, { name: "answer", args: { pendingId: testId("p"), choiceId: testId("c") } }, { name: "answer", args: { pendingId: testId("p"), choiceId: "yes" } }, "$.args.choiceId"],
   ["RecallArgs", RecallArgs, recallArgs, { ...recallArgs, entityRefs: Array(9).fill({ id: null, label: null }) }, "$.entityRefs"],
   ["ToolResult (recall)", ToolResult, toolResult, { ...toolResult, notes: Array(5).fill(w) }, "$.notes"],
   [

@@ -6,6 +6,7 @@ import {
   Au,
   BrowserState,
   Cov,
+  EID,
   ErrorCode,
   Head,
   ID,
@@ -20,6 +21,7 @@ import {
   Slice,
   StateAck,
   TS,
+  When,
   Zone,
 } from "./primitives";
 import { CoreBundle, Evidence, Job, Ledger, Memory, PermitKind, Session, Turn, setWireResultFor } from "./records";
@@ -201,7 +203,21 @@ const StripView = obj({
 
 export const RecallCall = obj({ name: literal("recall"), args: RecallArgs });
 export const PhoneCall = obj({ name: literal("make_phone_call"), args: obj({}) });
-export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall });
+// Brief 022 (lane hero): `suggest` and `answer` (contracts §6 Tools). The server's food and hero-offer handlers are
+// in packages/server/src/routes/tool-food.ts.
+export const SuggestCall = obj({
+  name: literal("suggest"),
+  args: obj({
+    domain: oneOf(["food", "time", "connection", "prepare"]),
+    query: str(512),
+    attendeeIds: arr(EID, 8),
+    when: nullable(When),
+    contextId: nullable(ID),
+  }),
+});
+export const AnswerCall = obj({ name: literal("answer"), args: obj({ pendingId: ID, choiceId: ID }) });
+
+export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall, suggest: SuggestCall, answer: AnswerCall });
 export type ToolCall = Infer<typeof ToolCall>;
 
 export const RecallResult = obj({
@@ -215,7 +231,24 @@ export const RecallResult = obj({
   cards: arr(Card, 2),
 });
 export const PhoneResult = obj({ name: literal("make_phone_call"), requestId: ID, message: str(512) });
-export const ToolResult = tagged("name", { recall: RecallResult, make_phone_call: PhoneResult });
+export const SuggestResult = obj({
+  name: literal("suggest"),
+  candidateIds: arr(ID, 3),
+  selectedId: nullable(ID),
+  reason: str(160),
+  pendingId: nullable(ID),
+  question: nullable(str(512)),
+  coverage: Cov,
+  cards: arr(Card, 2),
+});
+export const AnswerResult = obj({
+  name: literal("answer"),
+  state: oneOf(["applied", "declined", "clarify", "stale"]),
+  receiptId: nullable(ID),
+  pendingId: nullable(ID),
+  cards: arr(Card, 2),
+});
+export const ToolResult = tagged("name", { recall: RecallResult, make_phone_call: PhoneResult, suggest: SuggestResult, answer: AnswerResult });
 export type ToolResult = Infer<typeof ToolResult>;
 
 // The server reads the destination and assignment from the owner's turn.
@@ -269,6 +302,40 @@ export const RECALL_TOOL = {
       anchorId: nullableJson({ type: "string", maxLength: 43 }),
       sourceMode: { type: "string", enum: ["canonical", "raw", "both"] },
     },
+  },
+} as const;
+
+/**
+ * Brief 022 (lane hero): the Realtime definitions for `suggest` and `answer`, strict JSON Schema like RECALL_TOOL.
+ * Not yet in the voice machine's tool list; adding them there is the voice lane's.
+ */
+export const SUGGEST_TOOL = {
+  type: "function",
+  name: "suggest",
+  description: "suggest",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    required: ["domain", "query", "attendeeIds", "when", "contextId"],
+    properties: {
+      domain: { type: "string", enum: ["food", "time", "connection", "prepare"] },
+      query: { type: "string", maxLength: 512 },
+      attendeeIds: { type: "array", maxItems: 8, items: EID_JSON },
+      when: { type: "null" },
+      contextId: nullableJson({ type: "string", maxLength: 43 }),
+    },
+  },
+} as const;
+
+export const ANSWER_TOOL = {
+  type: "function",
+  name: "answer",
+  description: "answer",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    required: ["pendingId", "choiceId"],
+    properties: { pendingId: { type: "string", maxLength: 43 }, choiceId: { type: "string", maxLength: 43 } },
   },
 } as const;
 
