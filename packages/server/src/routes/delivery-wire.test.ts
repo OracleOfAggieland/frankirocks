@@ -1,5 +1,5 @@
 // Brief 030 phase two, part A: delivery's choice on the wire, through the Gate inside `chooseNow`.
-import type { CoreEpoch, Moment } from "@franki/core";
+import { type CoreEpoch, IDLE_SILENCE_MS, type Moment, PERMIT_TTL_MS } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { paths } from "../store/paths";
@@ -7,6 +7,7 @@ import { callRoute, patchRecord, testRig } from "../testing/fakes";
 import { resetAs } from "../testing/seed";
 import { momentsOf, ofKind } from "../time/testing";
 import { openRoute } from "./open";
+import { stateRoute } from "./state";
 
 const UID = "owner-1";
 const ZONE = "America/Chicago";
@@ -58,5 +59,34 @@ describe("delivery on open", () => {
     const rig = testRig();
     const res = await callRoute(rig, openRoute, { ...openBody(3), visitId: null });
     expect(res.body).toMatchObject({ state: "connecting", proactive: null });
+  });
+});
+
+describe("delivery as an idle whisper (the state route)", () => {
+  const poll = (rig: ReturnType<typeof testRig>, open: { body: any }) => {
+    const d = open.body.deck;
+    return callRoute(rig, stateRoute, {
+      sessionId: open.body.sessionId,
+      generation: 1,
+      seen: { epoch: d.epoch, policyRev: d.policyRev, bundleRev: d.bundleRev, rulesRev: d.rulesRev },
+      ackStamp: null,
+      speechStartedOpsAt: null,
+    });
+  };
+
+  it("nothing before IDLE_SILENCE_MS of quiet; then the leased moment, once per Permit", async () => {
+    const rig = await clone();
+    const open = await callRoute(rig, openRoute, openBody(1));
+    expect(open.body.proactive).not.toBeNull();
+    // The open's line is not admitted; while the browser is talking nothing more is sent.
+    rig.clock.advance(IDLE_SILENCE_MS - 1_000);
+    expect((await poll(rig, open)).body.proactive).toBeNull();
+    // Past the open's Permit and 8 s of quiet, the unadmitted wish is offered again as an idle whisper.
+    rig.clock.advance(PERMIT_TTL_MS);
+    const idle = await poll(rig, open);
+    expect(idle.body.proactive).toMatchObject({ permit: { kind: "proactive" }, whisper: { text: "Good luck at 2 PM: Tessellate Labs final interview." } });
+    // The next poll, under that Permit, sends nothing again.
+    rig.clock.advance(1_000);
+    expect((await poll(rig, open)).body.proactive).toBeNull();
   });
 });

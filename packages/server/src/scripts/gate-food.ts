@@ -669,6 +669,7 @@ function heroScript(id: string, what: "hero dinners" | "list write"): GateScript
       { label: "load the seed for a visit", do: "seed", visit: `food-${id}` },
       asDetectorReads,
       { label: "open a session", do: "open" },
+      { label: "the wish plays", do: "play", of: "open a session" },
       ...typed(milk, fs("milk for the owner", milk, [self("I can't have dairy", "dairy")]), [{ quote: "I can't have dairy", code: "milk" }]),
       { label: "the stated allergens are filtered in core/rules", do: "check", of: "open a session", expect: [rulesHold([{ codes: CODES.milk, who: "self" }])] },
       {
@@ -681,6 +682,9 @@ function heroScript(id: string, what: "hero dinners" | "list write"): GateScript
         },
         expect: [{ mustSay: { template: "hero.offer", has: ["$186"], channel: "probe" } }],
       },
+      // The offer comes as an idle whisper, and the yes follows it (brief 037, H-168).
+      { label: "a quiet moment on the call", do: "idle" },
+      { label: "the offer plays as an idle whisper", do: "play", of: "a quiet moment on the call" },
       { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
       { label: "the Head at the yes lists the rule", do: "check", of: "the owner says yes", expect: [headFilters("the owner says yes", [{ subjects: YOU, allergen: "milk" }])] },
       {

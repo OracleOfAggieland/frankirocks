@@ -19,6 +19,7 @@ import {
   type Memory,
   type CoreRules,
   type CoreState,
+  IDLE_SILENCE_MS,
   WHISPER_TEMPLATES,
   canonicalJSON,
   msFromTs,
@@ -33,6 +34,7 @@ import { closeRoute } from "../routes/close";
 import { memoryRoute } from "../routes/memory";
 import { openRoute } from "../routes/open";
 import { receiptRoute } from "../routes/receipt";
+import { stateRoute } from "../routes/state";
 import type { RouteContext } from "../routes/runtime";
 import { seedResetRoute } from "../routes/seed-reset";
 import { seedAdvanceRoute } from "../routes/seed-advance";
@@ -258,6 +260,8 @@ export type Action =
    * receipt under its Permit, `playbackStarted`, then the transcript of the words heard (the whisper's line).
    */
   | { do: "play"; of: string }
+  /** The owner stays quiet on a live call for `IDLE_SILENCE_MS`, and the browser polls the state route once. */
+  | { do: "idle" }
   /** A built function that no route calls yet. Each probe is a finding: the seam is built and unwired. */
   | { do: "probe"; name: string; run: (w: World) => Promise<unknown> }
   /** Setup that stands in for a missing writer. Each is named in the report. */
@@ -499,6 +503,14 @@ async function act(step: Step, w: World): Promise<Res> {
       return w.answers.get(step.of) ?? null;
     case "play":
       return play(w, step.of);
+    case "idle": {
+      if (w.stamp === null) throw new Error("idle: no session");
+      rig.clock.advance(IDLE_SILENCE_MS);
+      const { sessionId, generation, ...seen } = w.stamp;
+      const res = await callRoute(rig, stateRoute, { sessionId, generation, seen: { epoch: seen.epoch, policyRev: seen.policyRev, bundleRev: seen.bundleRev, rulesRev: seen.rulesRev }, ackStamp: null, speechStartedOpsAt: null });
+      if (res.status === 200 && res.body.proactive !== null) push(w, step.label, "proactive", res.body.proactive, proactiveText(res.body.proactive));
+      return res;
+    }
     default:
       step satisfies never;
       return null;

@@ -15,7 +15,7 @@
  * The Proactive is not part of the open's recorded answer: a replayed open (a lost answer) gets none, and the moment
  * stays leased for the next opening. Ruling, fails closed: a line is never sent twice from one render.
  */
-import { IDLE_SILENCE_MS, type ID, type Moment, type Proactive, type Session, type Stamp, type Turn, msFromTs } from "@franki/core";
+import { IDLE_SILENCE_MS, PERMIT_TTL_MS, type ID, type Moment, type Proactive, type Session, type Stamp, type Turn, msFromTs } from "@franki/core";
 import { gateAudience } from "../audience";
 import { raceLimit } from "../clock/timers";
 import { paths } from "../store/paths";
@@ -81,6 +81,10 @@ async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>
   const id = choice.spoken.momentId as ID;
   const m = moments.get(id);
   if (m === undefined) return null;
+  // Idle only: a line rendered for an earlier poll is still under its Permit, so the browser has it and nothing is
+  // sent twice (the state route is polled once a second). Past the Permit's life an unadmitted line is offered again.
+  // An open is a new session, whose browser holds no earlier Permit, so it renders afresh.
+  if (mode.kind === "session" && m.rendered !== null && ctx.deps.clock.read().opsClock.now - msFromTs(m.rendered.at) < PERMIT_TTL_MS) return null;
   const turnId = ctx.deps.hasher.id(["proactiveTurn", stamp.sessionId, id, m.generation]) as ID;
   return proactiveOf(ctx, id, m, { ...stamp, turnId });
 }
@@ -94,8 +98,15 @@ export async function openingProactive(ctx: RouteContext, stamp: Omit<Stamp, "tu
   return deliver(ctx, { kind: "opening" }, stamp, signalsOf(doc.data, ops, null));
 }
 
-/** An idle whisper for a live, listening session, or null. Reads nothing until the session has been silent. */
-export async function idleProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, s: Session): Promise<Proactive | null> {
+/**
+ * An idle whisper for a live, listening session, or null. The session is read after the state route's own write,
+ * and nothing else is read until it has been silent for `IDLE_SILENCE_MS` (its last turn or receipt, and the last
+ * speech start the browser reported).
+ */
+export async function idleProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">): Promise<Proactive | null> {
+  const doc = await ctx.deps.store.get<Session>(ctx.uid, paths.session(ctx.uid, stamp.sessionId));
+  if (doc === null || (doc.data.status !== "active" && doc.data.status !== "minting")) return null;
+  const s = doc.data;
   const ops = ctx.deps.clock.read().opsClock.now;
   const lastSound = Math.max(msFromTs(s.lastTurnAt), s.lastSpeechStartedOpsAt === null ? 0 : msFromTs(s.lastSpeechStartedOpsAt));
   const silentMs = ops - lastSound;
