@@ -444,9 +444,9 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
 
 ### Group B1 (parallel)
 
-- [ ] 45. Head compile by audience
+- [x] 45. Head compile by audience
   - Requirements: R14.2
-  - Depends on: 44 · Estimate: 1.5 h · Actual:
+  - Depends on: 44 · Estimate: 1.5 h · Actual: about 0.2 h. Built by Claude Code (brief 026). `headAdmitsSens` in `head.ts`: outside `private` only S0 lines, so `unknown` narrows too (fails closed); `buildHead` takes the audience
   - Files: `packages/core/src/head.ts`, `packages/core/src/head.test.ts`, `packages/server/src/head-build.ts`
   - Witness: `head.test.ts` › with audience `company` no line with `sens ≠ S0` appears, the rules section is unchanged, the Now line says `Audience: company.`; private is byte-identical to today. `head.property.test.ts` still passes untouched.
   - Commit: `feat(head): compile by audience`
