@@ -21,7 +21,8 @@ describe("memory views: Lab counts are real", () => {
         const lab = labView(s.lab);
         const live = (id: string) => {
           const r = s.rows.find((x) => x.id === id)!;
-          return r.memory.status === "active" && eligible({ ref: docRef("memories", id, r.memory.rev), row: r.memory }, { ...s.ctx.ec, stage: "read" }, s.snapshot).allow;
+          // A guess is stored as `alleged`, never current (spec §4), so a live guess is active or alleged (question X-167).
+          return (r.memory.status === "active" || r.memory.status === "alleged") && eligible({ ref: docRef("memories", id, r.memory.rev), row: r.memory }, { ...s.ctx.ec, stage: "read" }, s.snapshot).allow;
         };
         const guesses = new Set(s.rows.filter((r) => r.memory.sourceClass === "M" && r.memory.sens !== "S0" && live(r.id)).map((r) => r.id));
         const guessIds = new Set(s.rows.filter((r) => r.memory.sourceClass === "M").map((r) => r.id));

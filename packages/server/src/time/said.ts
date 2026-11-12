@@ -33,6 +33,36 @@ export async function admitMoment(tx: Tx, uid: string, momentId: ID, responseId:
 }
 
 /**
+ * Brief 030 P1-6: admits every leased moment a receipt names, in one transaction, writing `core/counters` once (a
+ * store refuses a record written twice in one transaction, and two `admitMoment` calls would each count from the
+ * same stale counters). Returns the IDs admitted. Under a barrier nothing is admitted.
+ */
+export async function admitMoments(tx: Tx, uid: string, momentIds: readonly ID[], responseId: string, clock: ClockPort): Promise<ID[]> {
+  const ids = [...new Set(momentIds)];
+  if (ids.length === 0) return [];
+  const core = await readCoreDocs(tx, uid);
+  if (core.epoch.data.barrier !== null) return [];
+  const pair = ownerClock(core.state.data, clock);
+  const ops = pair.opsClock.now;
+  const day = civilDateAt(pair.worldClock.now, pair.worldClock.zone);
+  const admitted: { path: string; data: Moment; heavy: boolean }[] = [];
+  for (const momentId of ids) {
+    const doc = await tx.get<Moment>(paths.moment(uid, momentId));
+    if (doc === null || doc.data.status !== "leased") continue;
+    const source = doc.data.memoryId === null ? null : await tx.get<Memory>(paths.memory(uid, doc.data.memoryId));
+    admitted.push({ path: doc.path, data: doc.data, heavy: isHeavy(doc.data.kind, source?.data.gravity ?? 0) });
+  }
+  if (admitted.length === 0) return [];
+  let counters: CoreCounters = core.counters.data;
+  for (const a of admitted) {
+    tx.update(a.path, { ...a.data, status: "admitted", admittedAt: tsFromMs(ops), responseId, leaseToken: null, leaseUntil: null, updatedAt: tsFromMs(ops) });
+    counters = countDelivery(counters, day, a.heavy);
+  }
+  tx.update(paths.core(uid, "counters"), { ...counters, updatedAt: tsFromMs(ops) });
+  return admitted.map((a) => a.path.split("/").pop() as ID);
+}
+
+/**
  * Records a transcript receipt against one moment. Returns the match when `saidAt` was set; null otherwise (saidAt
  * stays null). The moment and its ledger `delivery` row are written together.
  */

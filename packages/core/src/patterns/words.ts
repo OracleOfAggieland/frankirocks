@@ -43,6 +43,12 @@ export function heroOfferLine(p: PatternResult): string | null {
   );
 }
 
+/** "$115 less on takeout": the fall alone, for the strip's last step (brief 030 P1-4). Null for no fall. */
+export function lessOnTakeoutLine(deltaCents: number): string | null {
+  if (!Number.isSafeInteger(deltaCents) || deltaCents <= 0) return null;
+  return guard(`${formatDollars(deltaCents)} less on takeout.`);
+}
+
 /**
  * The lines of the offer's source card, worded by code from the same numbers as the offer. Every line passes the
  * guard, or the card has no lines (null) and the offer isn't made.
@@ -70,7 +76,7 @@ export function comparisonLines(r: LoopResult): string[] | null {
   const span = spanWords(r.windowDates);
   let out: string[] | null = null;
   if (r.metric === "takeoutSpend" && r.claim === "categoryLess") {
-    out = [`Takeout's ${formatDollars(r.afterCents)}, down from ${formatDollars(r.beforeCents)} over the same ${span}.`, `${formatDollars(r.deltaCents)} less on takeout.`];
+    out = [`Takeout's ${formatDollars(r.afterCents)}, down from ${formatDollars(r.beforeCents)} over the same ${span}.`, lessOnTakeoutLine(r.deltaCents)!];
   } else if (r.metric === "totalFoodSpend" && r.claim === "netReductionScoped") {
     out = [`All food spending was ${formatDollars(r.afterCents)}, down from ${formatDollars(r.beforeCents)} over the same ${span}.`];
   }
