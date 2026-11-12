@@ -11,7 +11,7 @@ import type { CoreRules, Effect, Evidence, Memory } from "../../schema/records";
 import { T0, UID, sampleCoreDocs, sampleEffect, sampleEvidence, sampleMemory, testId } from "../../testing/samples";
 import { lookupAllergen } from "../../writes/gazetteer";
 import type { InstallInput } from "../install";
-import type { AllergyRule, RosterEntry } from "../reanchor";
+import type { RosterEntry, StoredRule } from "../reanchor";
 
 function fnv(bytes: Uint8Array, seed: number): string {
   let h = (0x811c9dc5 ^ seed) >>> 0;
@@ -102,7 +102,7 @@ export function memoryOn(eid: ID, text: string, start: number, end: number, labe
   });
 }
 
-function ruleOn(eid: ID, text: string, s: SentenceAt, index: number, hasher: Hasher): AllergyRule {
+function ruleOn(eid: ID, text: string, s: SentenceAt, index: number, hasher: Hasher): StoredRule {
   const a = ALLERGY_SENTENCES[s.allergy!]!;
   const [ps, pe] = a.proof === null ? [0, a.text.length] : a.proof;
   const start = s.start + ps;

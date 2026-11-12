@@ -15,7 +15,7 @@ import type { EID, ID, Sens } from "../schema/primitives";
 import type { AllergyRule as AllergyRuleSchema, Evidence } from "../schema/records";
 import type { Infer } from "../schema/v";
 
-export type AllergyRule = Infer<typeof AllergyRuleSchema>;
+export type StoredRule = Infer<typeof AllergyRuleSchema>;
 export type SanitizeMapEntry = Evidence["sanitizeMap"][number];
 
 /** A roster entity and the words that name it literally (labels and aliases). */
@@ -31,17 +31,17 @@ export interface Survivor {
 
 export type PendingWhy = "noSurvivor" | "noDisjointSpan" | "quote" | "gazetteer" | "subject" | "noProof";
 
-export type RuleReanchor = { kind: "reanchored"; rule: AllergyRule } | { kind: "pending"; rule: AllergyRule; why: PendingWhy };
+export type RuleReanchor = { kind: "reanchored"; rule: StoredRule } | { kind: "pending"; rule: StoredRule; why: PendingWhy };
 
 /** The rule as a pending, anonymous food filter: no name, no proof, no erased roots (design note 021, gap 13). */
-export function pendingRule(rule: AllergyRule): AllergyRule {
+export function pendingRule(rule: StoredRule): StoredRule {
   return { ...rule, state: "pending", anonymous: true, subjectId: null, proof: null, proofRev: null, rootKeys: [], dependsOn: [] };
 }
 
 /** "my" and the first-person words count as a literal self (spec §8 "What survives"). */
 const SELF_WORDS: ReadonlySet<string> = new Set([...FIRST_PERSON, "my", "mine"]);
 
-function subjectLiteral(rule: AllergyRule, quote: string, roster: readonly RosterEntry[]): boolean {
+function subjectLiteral(rule: StoredRule, quote: string, roster: readonly RosterEntry[]): boolean {
   if (rule.subjectId === null) return true;
   if (rule.subjectId === "self") {
     const words = quote.toLowerCase().replace(/’/g, "'").match(/[a-z']+/g) ?? [];
@@ -51,7 +51,7 @@ function subjectLiteral(rule: AllergyRule, quote: string, roster: readonly Roste
   return entry !== undefined && entry.names.some((n) => findWholeWords(quote, n) !== null);
 }
 
-export function reanchorRule(rule: AllergyRule, map: readonly SanitizeMapEntry[], survivor: Survivor | null, roster: readonly RosterEntry[], hasher: Hasher): RuleReanchor {
+export function reanchorRule(rule: StoredRule, map: readonly SanitizeMapEntry[], survivor: Survivor | null, roster: readonly RosterEntry[], hasher: Hasher): RuleReanchor {
   const pending = (why: PendingWhy): RuleReanchor => ({ kind: "pending", rule: pendingRule(rule), why });
   const p = rule.proof;
   if (p === null) return pending("noProof");

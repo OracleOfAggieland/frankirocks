@@ -151,6 +151,11 @@ function sanitizeEvidence(i: InstallInput, oldEid: ID, e: Evidence, ranges: Read
 
 const premisedOn = (e: Effect, ids: ReadonlySet<string>) => e.premiseIds.some((p) => p.type === "memory" && ids.has(p.id));
 
+/** The ID of the redact overlay for one removed range; resolve writes it first, install completes it. */
+export function redactOverlayId(hasher: Hasher, opId: ID, eid: ID, field: FP, r: TextRange): ID {
+  return hasher.id(["overlay", opId, "redact", eid, field, r.start, r.end]);
+}
+
 export function planInstall(i: InstallInput): InstallPlan {
   const blocks = new Map<ID, Block>();
   const overlays = new Map<ID, Overlay>();
@@ -232,7 +237,7 @@ export function planInstall(i: InstallInput): InstallPlan {
     survivors.set(eid, next === null ? null : { eid: newEid, evidence: next });
     for (const [field, list] of byField) {
       for (const r of list) {
-        const oid = i.hasher.id(["overlay", i.opId, "redact", eid, field, r.start, r.end]);
+        const oid = redactOverlayId(i.hasher, i.opId, eid, field, r);
         overlays.set(oid, {
           ...fresh(i.uid, i.stamps, i.now),
           opId: i.opId,
