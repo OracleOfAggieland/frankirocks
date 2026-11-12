@@ -11,6 +11,7 @@ import type { Au, Head, ReasonCode, Ref } from "./schema/primitives";
 import type { PermitKind } from "./schema/records";
 import type { SafeTurn, Stamp, W } from "./schema/wire";
 import { ALONE_LINE, COMPANY_LINE, FORGET_NOT_YET, type FixedLine, RECOVERY_LINE } from "./voice/lines";
+import type { TurnWrite } from "./writes/types";
 
 export const PERMIT_TTL_MS = 10_000;
 /** The only line a `recoveryOnly` Permit covers; it lives with every Fixed_Line in `voice/lines.ts`. */
@@ -173,4 +174,17 @@ export function payloadHash(p: PayloadInput, hasher: Pick<Hasher, "sha256">): st
 /** The Ref of a user Turn, for admission ledger payloads. */
 export function turnRef(turnId: string, sessionId: string, rev: number): Ref {
   return { type: "turn", id: turnId, parentId: sessionId, rev };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The on-turn write and the seam's notes (brief 012 design section 4, G1, G27, G30). Wave B, task B4.
+
+/** Not built yet (brief 018 task B1 stub). */
+export function writeRule(_i: RuleInput, _base: RuleOutcome, _w: TurnWrite): RuleOutcome {
+  throw new Error("writeRule: not built");
+}
+
+/** Not built yet (brief 018 task B1 stub). */
+export function admittedNotes(_candidates: readonly W[], _allowed: NotesAllowed, _ack: W | null, _routeNote: W | null): W[] {
+  throw new Error("admittedNotes: not built");
 }
