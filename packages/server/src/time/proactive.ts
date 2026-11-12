@@ -5,10 +5,13 @@
  *   `chooseNow`    reads the opened (leased) moments, today's counts and the owner's world time, and runs the pure
  *                  `chooseDelivery`;
  *   `proactiveOf`  turns the chosen moment into a `Proactive` for a session stamp: a code-worded whisper and a
- *                  `proactive` Permit bound to its hash. S2 never goes on the wire (KC09 floor).
+ *                  `proactive` Permit bound to the hash of the reply payload the browser will check (brief 045,
+ *                  finding 3): the stamp, the Deck the same answer carries (its Head and safe turns), the whisper
+ *                  as the one note, no audio and no tool output. S2 never goes on the wire (KC09 floor).
  */
 import {
   type Card,
+  type Deck,
   type DeliveryCandidate,
   type DeliveryChoice,
   type DeliveryMode,
@@ -22,7 +25,7 @@ import {
   type Stamp,
   type W,
   PERMIT_TTL_MS,
-  canonicalJSON,
+  payloadHash,
   chooseDelivery,
   civilDateAt,
   idParts,
@@ -147,8 +150,15 @@ async function render(ctx: RouteContext, momentId: ID, m: Moment, noteId: string
   }
 }
 
-/** The chosen moment as a `Proactive` for this session's stamp, or null (no words, S2, or no longer leased). */
-export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, stamp: Stamp): Promise<Proactive | null> {
+/** The Deck a `Proactive` goes out with: the browser hashes its Head and safe turns into the reply payload. */
+export type ProactiveDeck = Pick<Deck, "head" | "turns">;
+
+/**
+ * The chosen moment as a `Proactive` for this session's stamp, or null (no words, S2, or no longer leased). The
+ * Permit is bound to the payload the browser checks with `deck`, the Deck in the same answer. With no Deck the Permit
+ * is bound to a null Head, which no browser holds, so the line never plays (fails closed).
+ */
+export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, stamp: Stamp, deck: ProactiveDeck | null = null): Promise<Proactive | null> {
   const { deps } = ctx;
   const line = await lineOf(ctx, m);
   const sens = line === null ? null : await sensOf(ctx, momentId, m);
@@ -171,7 +181,7 @@ export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, st
     momentId,
     tokens: [],
   };
-  const approvedPayloadHash = deps.hasher.sha256(new TextEncoder().encode(canonicalJSON({ whisper, momentId })));
+  const approvedPayloadHash = payloadHash({ stamp, head: deck?.head ?? null, notes: [whisper], turns: deck?.turns ?? [], audioIds: [], toolOutput: null }, deps.hasher);
   const permit: Permit = {
     permitId: deps.hasher.id(idParts.permit(stamp, "proactive", approvedPayloadHash)) as ID,
     stamp,

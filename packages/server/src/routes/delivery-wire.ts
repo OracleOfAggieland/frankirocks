@@ -19,7 +19,7 @@ import { IDLE_SILENCE_MS, PERMIT_TTL_MS, type ID, type Moment, type Proactive, t
 import { gateAudience } from "../audience";
 import { raceLimit } from "../clock/timers";
 import { paths } from "../store/paths";
-import { type SessionSignals, chooseNow, proactiveOf } from "../time/proactive";
+import { type ProactiveDeck, type SessionSignals, chooseNow, proactiveOf } from "../time/proactive";
 import { memoryTick, scanMoments } from "../time/tick";
 import { storeReader } from "../head-build";
 import type { RouteContext } from "./runtime";
@@ -66,16 +66,16 @@ export async function turnsSinceCheckInAnswer(ctx: RouteContext, s: Session, ses
  * A failed choice or render says nothing (fails closed) and never fails the route that already committed: the moment
  * stays leased and is offered again. Logged by name only.
  */
-async function deliver(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals): Promise<Proactive | null> {
+async function deliver(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals, deck: ProactiveDeck): Promise<Proactive | null> {
   try {
-    return await deliverOnce(ctx, mode, stamp, signals);
+    return await deliverOnce(ctx, mode, stamp, signals, deck);
   } catch (e) {
     ctx.deps.log("delivery.failed", { mode: mode.kind, error: e instanceof Error ? e.name : "unknown" });
     return null;
   }
 }
 
-async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals): Promise<Proactive | null> {
+async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals, deck: ProactiveDeck): Promise<Proactive | null> {
   const { choice, moments } = await chooseNow(ctx, mode, signals);
   if (choice.spoken === null) return null;
   const id = choice.spoken.momentId as ID;
@@ -86,24 +86,27 @@ async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>
   // An open is a new session, whose browser holds no earlier Permit, so it renders afresh.
   if (mode.kind === "session" && m.rendered !== null && ctx.deps.clock.read().opsClock.now - msFromTs(m.rendered.at) < PERMIT_TTL_MS) return null;
   const turnId = ctx.deps.hasher.id(["proactiveTurn", stamp.sessionId, id, m.generation]) as ID;
-  return proactiveOf(ctx, id, m, { ...stamp, turnId });
+  return proactiveOf(ctx, id, m, { ...stamp, turnId }, deck);
 }
 
-/** The opening line of a fresh session, or null. `budgetMs` is what is left of the open's budget. */
-export async function openingProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, budgetMs: number): Promise<Proactive | null> {
+/**
+ * The opening line of a fresh session, or null. `budgetMs` is what is left of the open's budget; `deck` is the Deck the
+ * open answers with, whose Head and safe turns the Permit's hash binds (brief 045, finding 3).
+ */
+export async function openingProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, budgetMs: number, deck: ProactiveDeck): Promise<Proactive | null> {
   const doc = await ctx.deps.store.get<Session>(ctx.uid, paths.session(ctx.uid, stamp.sessionId));
   if (doc === null) return null;
   await raceLimit(memoryTick(ctx), Math.max(0, budgetMs - OPEN_DELIVERY_RESERVE_MS), ctx.deps.timers);
   const ops = ctx.deps.clock.read().opsClock.now;
-  return deliver(ctx, { kind: "opening" }, stamp, signalsOf(doc.data, ops, null));
+  return deliver(ctx, { kind: "opening" }, stamp, signalsOf(doc.data, ops, null), deck);
 }
 
 /**
  * An idle whisper for a live, listening session, or null. The session is read after the state route's own write,
  * and nothing else is read until it has been silent for `IDLE_SILENCE_MS` (its last turn or receipt, and the last
- * speech start the browser reported).
+ * speech start the browser reported). `deck` is the Deck the state answer carries, as for the opening.
  */
-export async function idleProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">): Promise<Proactive | null> {
+export async function idleProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, deck: ProactiveDeck): Promise<Proactive | null> {
   const doc = await ctx.deps.store.get<Session>(ctx.uid, paths.session(ctx.uid, stamp.sessionId));
   if (doc === null || (doc.data.status !== "active" && doc.data.status !== "minting")) return null;
   const s = doc.data;
@@ -112,5 +115,5 @@ export async function idleProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnI
   const silentMs = ops - lastSound;
   if (!(silentMs >= IDLE_SILENCE_MS)) return null;
   const turns = await turnsSinceCheckInAnswer(ctx, s, stamp.sessionId);
-  return deliver(ctx, { kind: "session", listening: true, silentMs }, stamp, signalsOf(s, ops, turns));
+  return deliver(ctx, { kind: "session", listening: true, silentMs }, stamp, signalsOf(s, ops, turns), deck);
 }

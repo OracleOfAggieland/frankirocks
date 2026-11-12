@@ -360,9 +360,11 @@ export interface VoiceState {
    * Recent responses, for transcript receipts that arrive after playback: each one's Stamp and the transcript of
    * every message it has spoken so far. A response can speak more than one message (a short preamble, then the
    * answer); they go to the server in order as one transcript receipt at `response.done`. If that never comes,
-   * they go when the entry is pushed out of this list, at hang-up, or when the connection is lost.
+   * they go when the entry is pushed out of this list, at hang-up, or when the connection is lost. `moments`: the
+   * moments and notes a response's Permit names (an unprompted line), which its transcript receipt names too, so the
+   * server can record the line said (brief 045, finding 3).
    */
-  recent: { responseId: string; stamp: Stamp; parts: string[]; done: boolean }[];
+  recent: { responseId: string; stamp: Stamp; parts: string[]; done: boolean; moments?: { momentIds: string[]; noteIds: string[] } }[];
   deadlines: Partial<Record<TimerName, number>>;
   micMuted: boolean;
   outputMuted: boolean;
@@ -422,7 +424,23 @@ export interface VoiceState {
   strayAudio?: boolean;
   /** Realtime `error` events this visit, by the client event they name (review of wave A, item 15). */
   realtimeErrors?: { n: number; judge: number; spec: number; speech: number; other: number; lastCode: string | null };
+  /**
+   * When the owner last started speaking (`speech_started`, by `now`), for the quiet an unprompted line needs (brief
+   * 045, finding 3). Never reset by an exit. Absent reads as null.
+   */
+  lastSpeechAt?: number | null;
+  /** The last state answer's `proactive` that was not played, and why (brief 045, finding 3). Never reset. */
+  proactiveDropped?: { turnId: string; reason: ProactiveDrop } | null;
 }
+
+/**
+ * Why a state answer's unprompted line was dropped before its Permit was checked (brief 045, finding 3). `session`
+ * and `generation`: issued for another Session or call. `phase`: the call was not LISTENING. `busy`: a Turn, reply,
+ * judge, speculation, held-back speech or other line is under way. `speech`: the owner is speaking, or started
+ * after the state request went out. `kind`: not a `proactive` Permit over one unprompted moment line. A line that
+ * passes these is checked like any reply, and a failed check (`PermitProblem`) drops it too.
+ */
+export type ProactiveDrop = "session" | "generation" | "phase" | "busy" | "speech" | "kind";
 
 export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState {
   return {
@@ -644,7 +662,8 @@ export function replyCreate(st: VoiceState, reply: PendingReply, eventId: string
       response: { conversation: "none", instructions: sayExactly(RECOVERY_LINE), input: [], tools: [], metadata },
     });
   }
-  const ack = reply.notes.find((n) => n.kind === "ack");
+  // Brief 045, finding 3: an unprompted moment line was worded by code, so it is spoken verbatim like a Fixed_Line.
+  const ack = reply.notes.find((n) => n.kind === "ack") ?? (reply.permit.kind === "proactive" ? reply.notes.find((n) => n.unprompted) : undefined);
   if (ack !== undefined) {
     // A Fixed_Line: spoken verbatim, no tools (R12.4; question 59).
     return tag({ type: "response.create", response: { conversation: "none", instructions: sayExactly(ack.text), input: [], tools: [], metadata } });
@@ -733,7 +752,7 @@ export function replyPayload(st: VoiceState, reply: Omit<PendingReply, "permit">
 }
 
 const KINDS_FOR: Record<ReplyPurpose, readonly PermitKind[]> = {
-  speech: ["fastO", "slowOrdinary", "postCommitControl"],
+  speech: ["fastO", "slowOrdinary", "postCommitControl", "proactive"],
   tool: ["fastO", "slowOrdinary"],
   recovery: ["recoveryOnly"],
 };
@@ -752,6 +771,8 @@ export function permitProblem(st: VoiceState, reply: PendingReply, hash: string 
   if (msFromTs(permit.expiresAt) <= now) return "expired";
   if (st.deck === null || msFromTs(st.deck.expiresAt) <= now) return "deckExpired";
   if (!KINDS_FOR[reply.purpose].includes(permit.kind)) return "kind";
+  // Brief 045, finding 3: a `proactive` Permit plays only one unprompted moment line, on its own synthetic Turn.
+  if (permit.kind === "proactive" && !isUnpromptedReply(st, reply)) return "kind";
   if (permit.kind === "fastO" && checkAck) {
     // KV13 applies to fastO only: a StateAck matching all four revisions, younger than 2.5 s.
     const ack = st.ack;
@@ -760,6 +781,28 @@ export function permitProblem(st: VoiceState, reply: PendingReply, hash: string 
   // An empty hash (a failed hash command) never matches, even an empty approved hash (review of wave A, item 13).
   if (hash !== null && (hash === "" || hash !== permit.approvedPayloadHash)) return "hash";
   return null;
+}
+
+/**
+ * An unprompted moment line (brief 045, finding 3): one `moment` note marked unprompted, for a moment the Permit
+ * names, on the synthetic Turn `playProactive` made (no text, the Permit's Turn).
+ */
+function isUnpromptedReply(st: VoiceState, reply: Pick<PendingReply, "permit" | "notes" | "toolCall" | "toolOutput">): boolean {
+  const note = reply.notes.length === 1 ? reply.notes[0]! : null;
+  return (
+    note !== null &&
+    note.kind === "moment" &&
+    note.unprompted &&
+    note.momentId !== null &&
+    reply.permit.momentIds.includes(note.momentId) &&
+    reply.permit.noteIds.length === 1 &&
+    reply.permit.noteIds[0] === note.noteId &&
+    reply.toolCall === null &&
+    reply.toolOutput === null &&
+    st.turn !== null &&
+    st.turn.text === null &&
+    st.turn.turnId === reply.permit.stamp.turnId
+  );
 }
 
 export type AvatarState = "closed" | "connecting" | "listening" | "thinking" | "speaking" | "recovery";
@@ -837,10 +880,11 @@ class Step {
 }
 
 /** The transcript receipt for a response (R21.1): what Franki said, as one text, under the response's own Stamp. */
-function transcriptReceipt(s: Step, r: { responseId: string; stamp: Stamp }, text: string): void {
+function transcriptReceipt(s: Step, r: { responseId: string; stamp: Stamp; moments?: { momentIds: string[]; noteIds: string[] } }, text: string): void {
+  const m = r.moments ?? { momentIds: [], noteIds: [] };
   s.push({
     kind: "receipt",
-    body: { stamp: r.stamp, responseId: r.responseId, kind: "transcript", momentIds: [], noteIds: [], pendingId: null, permitKind: null, text: text.slice(0, 4096) },
+    body: { stamp: r.stamp, responseId: r.responseId, kind: "transcript", momentIds: m.momentIds, noteIds: m.noteIds, pendingId: null, permitKind: null, text: text.slice(0, 4096) },
   });
 }
 
@@ -1123,7 +1167,7 @@ function openFailed(s: Step): void {
  *                             done; openFailed: keep
  *   zone                      -                         -                              -               the press's
  * Never reset by any exit: config, lastTurnResponseAt, ackDroppedStale, lastLoudAt, latency, eventSeq, strayAudio,
- * realtimeErrors, visitId.
+ * realtimeErrors, visitId, lastSpeechAt, proactiveDropped.
  * Not an exit, but a reset: when CONFIGURING reaches LISTENING, onState sets recovery to null and retryVisible to
  * false, and disarms ack, connect, retryUi and reconnect.
  * A fifth exit, startSwap (a `blocked` answer, or the end of a care reply after one), resets as `recovery` does,
@@ -1313,6 +1357,34 @@ function playProactive(s: Step): void {
   requestVerify(s, { permit: p.permit, purpose: "speech", notes: [p.whisper], toolCall: null, toolOutput: null });
 }
 
+/** Why a state answer's unprompted line can't be played now, or null (brief 045, finding 3; `ProactiveDrop`). */
+export function proactiveDropOf(st: VoiceState, p: Infer<typeof Proactive>, sentAt: number): ProactiveDrop | null {
+  if (st.session === null || p.permit.stamp.sessionId !== st.session.sessionId) return "session";
+  if (p.permit.stamp.generation !== st.session.generation) return "generation";
+  if (st.phase !== "LISTENING" || st.recovery !== null) return "phase";
+  const busy =
+    st.turn !== null || st.pending !== null || st.active !== null || st.inFlight.length > 0 || st.judge !== null || st.spec !== null || st.heldBack !== null || st.proactive !== null || st.afterReply !== null;
+  if (busy) return "busy";
+  const speaking = st.speech.some((x) => x.startMs !== null && x.endMs === null);
+  if (speaking || (st.lastSpeechAt != null && st.lastSpeechAt >= sentAt)) return "speech";
+  if (p.permit.kind !== "proactive" || p.whisper.kind !== "moment" || !p.whisper.unprompted) return "kind";
+  return null;
+}
+
+/**
+ * A state answer's unprompted line (brief 045, finding 3): played only from LISTENING, in the quiet the state route
+ * required and nothing since, for this Session and call; then checked like any reply. Otherwise dropped, by name.
+ */
+function offerProactive(s: Step, p: Infer<typeof Proactive>, sentAt: number): void {
+  const why = proactiveDropOf(s.st, p, sentAt);
+  if (why !== null) {
+    s.set({ proactiveDropped: { turnId: p.turnId, reason: why } });
+    return;
+  }
+  s.set({ proactive: p, proactiveDropped: null });
+  playProactive(s);
+}
+
 // ---------------------------------------------------------------------------------------------
 // State refresh and decks
 
@@ -1398,8 +1470,11 @@ function onState(s: Step, res: Infer<typeof StateResponse>, sentAt?: number): vo
     s.disarm("ack", "connect", "retryUi", "reconnect", "swap", "openWait");
     s.set({ phase: "LISTENING", recovery: null, retryVisible: false });
     s.arm("poll", s.now + POLL_MS);
-    // R14.3: the first thing heard on a fresh call that inherited a narrowed audience is the swap line.
+    // R14.3: the first thing heard on a fresh call that inherited a narrowed audience is the swap line. An opening
+    // line from delivery plays the same way, on the call it opened (brief 045, finding 3).
     playProactive(s);
+  } else if (!configuring && res.proactive !== null) {
+    offerProactive(s, res.proactive, sent);
   } else if (configuring && ackDropped) {
     // The ack was dropped only because a turn answer (often an earlier Session's) landed after the request went
     // out. Ask once more rather than wait out the ack limit; a request sent now is younger than that answer (V1
@@ -1867,10 +1942,13 @@ function parkAdmitted(s: Step, turn: VoiceTurn): void {
 /** The active reply's response ID is known: it is tracked for receipts, and a fastO admission is reported (R3.7). */
 function replyKnown(s: Step, a: ActiveReply): void {
   const id = a.responseId!;
-  const recent: VoiceState["recent"] = [...s.st.recent, { responseId: id, stamp: a.permit.stamp, parts: [], done: false }];
+  const moments = a.permit.momentIds.length > 0 ? { moments: { momentIds: [...a.permit.momentIds], noteIds: [...a.permit.noteIds] } } : {};
+  const recent: VoiceState["recent"] = [...s.st.recent, { responseId: id, stamp: a.permit.stamp, parts: [], done: false, ...moments }];
   sendHeld(s, recent.slice(0, -MAX_RECENT_RESPONSES));
   s.set({ recent: recent.slice(-MAX_RECENT_RESPONSES), inFlight: s.st.inFlight.includes(id) ? s.st.inFlight : [...s.st.inFlight, id] });
-  if (a.permit.kind === "fastO") receipt(s, a, "admitted");
+  // The server records a fastO's admission, and admits an unprompted line's moments, from this receipt (R9.1; brief
+  // 045, finding 3). Every other Permit's admission the server recorded when it issued it.
+  if (a.permit.kind === "fastO" || a.permit.kind === "proactive") receipt(s, a, "admitted");
 }
 
 /** KV02: a function call of an admitted reply goes to `/api/tool`. */
@@ -1934,6 +2012,7 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string, lastLoudA
   const gen = String(st.session.generation);
   switch (ev.type) {
     case "input_audio_buffer.speech_started": {
+      s.set({ lastSpeechAt: s.now });
       // KV04: speech start also drops a posted turn's wait for its Permit, in HELD or waiting for the Neutral_Line
       // in RECOVERY, so a late Permit can't play over the owner (review of wave A, item 4).
       const waiting = st.pending !== null || st.phase === "HELD" || (st.phase === "RECOVERY" && st.recovery?.kind === "line");

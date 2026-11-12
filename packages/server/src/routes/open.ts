@@ -219,8 +219,9 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       times.lap("priorMs");
     }
     // Brief 030 part A: delivery's opening line, gated inside `chooseNow`, only where no swap line was spoken.
-    if (stamp === null || response.state !== "connecting" || response.proactive !== null) return response;
-    return { ...response, proactive: await openingProactive(ctx, stamp, OPEN_BUDGET_MS - times.elapsed()) };
+    // Brief 045, finding 3: no Deck, no line (its Permit binds the Deck's Head and safe turns).
+    if (stamp === null || response.state !== "connecting" || response.proactive !== null || response.deck === null) return response;
+    return { ...response, proactive: await openingProactive(ctx, stamp, OPEN_BUDGET_MS - times.elapsed(), response.deck) };
   });
 }
 

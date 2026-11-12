@@ -99,7 +99,8 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
     }),
   );
   // Brief 030 part A: an idle whisper, gated inside `chooseNow`, only where the ack checks passed.
-  return res.ack === null ? res : { ...res, proactive: await idleProactive(ctx, res.stamp) };
+  // Brief 045, finding 3: no Deck, no line (its Permit binds the Deck's Head and safe turns).
+  return res.ack === null || res.deck === null ? res : { ...res, proactive: await idleProactive(ctx, res.stamp, res.deck) };
 }
 
 export const stateRoute: RouteSpec<StateReq> = {
