@@ -43,6 +43,10 @@ import { startTick } from "../worker/tick";
 import { configError } from "./errors";
 import { mutation } from "./mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
+// Brief 026: a narrowed audience carried into the fresh call, with the swap line (voice-control task 50).
+import { type Proactive, type Session, turnRef } from "@franki/core";
+import { admitRule } from "../admission/seam";
+import { inheritedAudience, speaksSwapLine, swapLineRule, swapLineTurnId } from "../audience-swap";
 
 /**
  * Server time for one open, from runRoute's first line to the answer. The browser gives the whole request 5 s
@@ -146,7 +150,11 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       const applied = applyProposals(core.rules.data);
       const rules = applied.rules;
       if (applied.changed) tx.update(paths.core(uid, "rules"), rules);
-      const compiled = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: core.epoch.data, rules }, pair, 1));
+      // Brief 026 (R14.2, R14.8): the Session this open replaces, read under the Owner's uid, passes on a narrowed
+      // audience while its waitDeadline holds; the Head is compiled for that audience. Otherwise private, as before.
+      const previous = req.previousSessionId === null ? null : await tx.get<Session>(paths.session(uid, req.previousSessionId));
+      const inherited = inheritedAudience(previous?.data ?? null, ops);
+      const compiled = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: core.epoch.data, rules }, pair, 1, inherited?.audience));
       if (!compiled.ok) throw configError(500, "head fixed sections exceed the token cap");
       const head = compiled.head;
       const now = tsFromMs(ops);
@@ -169,12 +177,25 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       tx.update(paths.core(uid, "bundle"), bundle);
 
       const stamp = currentStamp(sessionId, 1, { epoch: core.epoch.data, rules, bundle });
-      tx.create(paths.session(uid, sessionId), newSession(uid, { stamp, now: ops, startedBy: req.initiator }));
+      const fresh = newSession(uid, { stamp, now: ops, startedBy: req.initiator });
+      tx.create(paths.session(uid, sessionId), inherited === null ? fresh : { ...fresh, audience: inherited.audience });
       const epoch: CoreEpoch = { ...core.epoch.data, activeSessionId: sessionId, activeCallId: null, updatedAt: now };
       tx.update(paths.core(uid, "epoch"), epoch);
       tx.update(paths.core(uid, "state"), { ...state, updatedAt: now });
 
-      const opened: OpenRes = { sessionId, generation: 1, deck: issueDeck(stamp, head, ops), state: "connecting", ack: stateAck(stamp, ops), proactive: null };
+      // Brief 026 (R14.3; question 81): the swap line, only on an open that inherited a company audience with no
+      // crisis. Its Permit comes from the Admission_Seam, which writes its decision in this transaction.
+      let proactive: Proactive | null = null;
+      if (inherited !== null && speaksSwapLine(inherited)) {
+        const turnId = swapLineTurnId(deps.hasher, sessionId);
+        const admitted = admitRule(
+          tx,
+          { uid, requestId: req.requestId, requestEntryId: key.keyHash, turnRef: turnRef(turnId, sessionId, 1), core: { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev }, opsNow: ops, stamp: { ...stamp, turnId }, head, notes: [], turns: [], audioIds: [], toolOutput: null, rule: swapLineRule },
+          deps,
+        );
+        if (admitted.kind === "permit" && admitted.notes.length === 1) proactive = { turnId, permit: admitted.permit, whisper: admitted.notes[0]!, cards: [] };
+      }
+      const opened: OpenRes = { sessionId, generation: 1, deck: issueDeck(stamp, head, ops), state: "connecting", ack: stateAck(stamp, ops), proactive };
       await completeRequest(tx, key, opened, ops);
       return { response: opened, prior: prior === null ? null : { id: priorId!, ...prior } };
     });

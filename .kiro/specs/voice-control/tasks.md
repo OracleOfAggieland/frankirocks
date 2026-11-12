@@ -483,9 +483,9 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `turn-alone.test.ts` › `alone` stores `private`, raises `policyRev`, compiles a full Head with `bundleRev + 1`, returns the new Deck and the ALONE ack note; no hang-up; a gap stays a gap.
   - Commit: `feat(turn): alone widens the session`
 
-- [ ] 50. Open with the carried audience and the swap line
+- [x] 50. Open with the carried audience and the swap line
   - Requirements: R14.2, R14.3, R14.8; Q81
-  - Depends on: 45, 48 · Estimate: 2.5 h · Actual:
+  - Depends on: 45, 48 · Estimate: 2.5 h · Actual: about 0.4 h. Built by Claude Code (brief 026). One more read in the open's transaction (the named Session, under the Owner's uid). The line is spoken only for an inherited `company` with no crisis; an inherited `unknown` starts narrow and silent. The Permit's decision cites `H("swapline", sessionId)`, which names no stored Turn. `tests/firestore/open-retry.test.ts` (the 3.5 s budget) is the emulator's and was not run here
   - Files: `packages/server/src/routes/open.ts`, `packages/server/src/routes/open-audience.test.ts` (new)
   - Witness: `open-audience.test.ts` › an open naming a narrowed Session within `waitDeadline` starts `company` with the narrow Head and a `proactive` `postCommitControl` carrying the COMPANY ack note; no line after a crisis; past `waitDeadline` or for another Owner's Session it starts `private`; the open stays inside its 3.5 s budget in `tests/firestore/open-retry.test.ts`.
   - Commit: `feat(open): carry a narrowed audience into the fresh call`
