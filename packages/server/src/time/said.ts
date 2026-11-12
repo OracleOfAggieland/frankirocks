@@ -28,41 +28,25 @@ export interface MomentAdmission {
 
 /**
  * Admits a leased moment on `admission.responseId`. Returns false, and writes nothing, unless the moment is leased
- * under a lease that still holds, the receipt names the note issued for that lease and generation, and a reread of
- * the source says `ok`.
+ * under a lease that still holds, the receipt names the note issued for that lease and generation, a reread of the
+ * source says `ok`, and today's caps allow it. One rule with `admitMoments`, which it calls.
  */
 export async function admitMoment(tx: Tx, uid: string, momentId: ID, admission: MomentAdmission, deps: { clock: ClockPort; hasher: Hasher }): Promise<boolean> {
-  const { clock } = deps;
-  const doc = await getMoment(tx, paths.moment(uid, momentId));
-  if (doc === null || doc.data.status !== "leased") return false;
-  const core = await readCoreDocs(tx, uid);
-  if (core.epoch.data.barrier !== null) return false;
-  const pair = ownerClock(core.state.data, clock);
-  const ops = pair.opsClock.now;
-  if (doc.data.leaseUntil === null || msFromTs(doc.data.leaseUntil) <= ops) return false;
-  if (!admission.noteIds.includes(momentNoteId(deps.hasher, momentId, doc.data))) return false;
-  if ((await momentVerdict(tx, uid, doc.data, core, clock, { rollupLive: null })) !== "ok") return false;
-  const responseId = admission.responseId;
-  const source = doc.data.memoryId === null ? null : await tx.get<Memory>(paths.memory(uid, doc.data.memoryId));
-  const heavy = isHeavy(doc.data.kind, source?.data.gravity ?? 0);
-  // Brief 036 finding 5: the day's caps are checked here, in the admission's transaction, so two sessions can't
-  // both admit past them.
-  const worldDay = civilDateAt(pair.worldClock.now, pair.worldClock.zone);
-  const override = doc.data.deliveryOverride;
-  const candidate = { heavy, mustSay: isMustSay(doc.data.kind, msFromTs(doc.data.dueAt), pair.worldClock.now), override: override === null ? null : { quietHours: override.quietHours, caps: override.caps } };
-  if (capLimit(candidate, todayCounts(core.counters.data, worldDay)) !== null) return false;
-  tx.update(doc.path, { ...doc.data, status: "admitted", admittedAt: tsFromMs(ops), responseId, leaseToken: null, leaseUntil: null, updatedAt: tsFromMs(ops) });
-  const counters: CoreCounters = countDelivery(core.counters.data, worldDay, heavy);
-  tx.update(paths.core(uid, "counters"), { ...counters, updatedAt: tsFromMs(ops) });
-  return true;
+  return (await admitMoments(tx, uid, [momentId], admission, deps)).length === 1;
 }
 
 /**
  * Brief 030 P1-6: admits every leased moment a receipt names, in one transaction, writing `core/counters` once (a
  * store refuses a record written twice in one transaction, and two `admitMoment` calls would each count from the
  * same stale counters). Returns the IDs admitted. Under a barrier nothing is admitted.
+ *
+ * Brief 036 findings 1, 2 and 5, for each moment, in this transaction: the lease still holds, the receipt names the
+ * note issued for the current lease and generation (`momentNoteId`), the source rereads `ok` with the tick's verdict
+ * (`momentVerdict`), and the day's caps, counted on from the moments admitted before it in this receipt, allow it
+ * unless it is mustSay or carries a verified override (`capLimit`). A moment that fails any of these is skipped.
  */
-export async function admitMoments(tx: Tx, uid: string, momentIds: readonly ID[], responseId: string, clock: ClockPort): Promise<ID[]> {
+export async function admitMoments(tx: Tx, uid: string, momentIds: readonly ID[], admission: MomentAdmission, deps: { clock: ClockPort; hasher: Hasher }): Promise<ID[]> {
+  const { clock } = deps;
   const ids = [...new Set(momentIds)];
   if (ids.length === 0) return [];
   const core = await readCoreDocs(tx, uid);
@@ -70,21 +54,26 @@ export async function admitMoments(tx: Tx, uid: string, momentIds: readonly ID[]
   const pair = ownerClock(core.state.data, clock);
   const ops = pair.opsClock.now;
   const day = civilDateAt(pair.worldClock.now, pair.worldClock.zone);
-  const admitted: { path: string; data: Moment; heavy: boolean }[] = [];
-  for (const momentId of ids) {
-    const doc = await tx.get<Moment>(paths.moment(uid, momentId));
-    if (doc === null || doc.data.status !== "leased") continue;
-    const source = doc.data.memoryId === null ? null : await tx.get<Memory>(paths.memory(uid, doc.data.memoryId));
-    admitted.push({ path: doc.path, data: doc.data, heavy: isHeavy(doc.data.kind, source?.data.gravity ?? 0) });
-  }
-  if (admitted.length === 0) return [];
   let counters: CoreCounters = core.counters.data;
-  for (const a of admitted) {
-    tx.update(a.path, { ...a.data, status: "admitted", admittedAt: tsFromMs(ops), responseId, leaseToken: null, leaseUntil: null, updatedAt: tsFromMs(ops) });
-    counters = countDelivery(counters, day, a.heavy);
+  const admitted: ID[] = [];
+  for (const momentId of ids) {
+    const doc = await getMoment(tx, paths.moment(uid, momentId));
+    if (doc === null || doc.data.status !== "leased") continue;
+    const m = doc.data;
+    if (m.leaseUntil === null || msFromTs(m.leaseUntil) <= ops) continue;
+    if (!admission.noteIds.includes(momentNoteId(deps.hasher, momentId, m))) continue;
+    if ((await momentVerdict(tx, uid, m, core, clock, { rollupLive: null })) !== "ok") continue;
+    const source = m.memoryId === null ? null : await tx.get<Memory>(paths.memory(uid, m.memoryId));
+    const heavy = isHeavy(m.kind, source?.data.gravity ?? 0);
+    const override = m.deliveryOverride === null ? null : { quietHours: m.deliveryOverride.quietHours, caps: m.deliveryOverride.caps };
+    const candidate = { heavy, mustSay: isMustSay(m.kind, msFromTs(m.dueAt), pair.worldClock.now), override };
+    if (capLimit(candidate, todayCounts(counters, day)) !== null) continue;
+    tx.update(doc.path, { ...m, status: "admitted", admittedAt: tsFromMs(ops), responseId: admission.responseId, leaseToken: null, leaseUntil: null, updatedAt: tsFromMs(ops) });
+    counters = countDelivery(counters, day, heavy);
+    admitted.push(momentId);
   }
-  tx.update(paths.core(uid, "counters"), { ...counters, updatedAt: tsFromMs(ops) });
-  return admitted.map((a) => a.path.split("/").pop() as ID);
+  if (admitted.length > 0) tx.update(paths.core(uid, "counters"), { ...counters, updatedAt: tsFromMs(ops) });
+  return admitted;
 }
 
 /**

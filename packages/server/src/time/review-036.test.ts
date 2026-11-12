@@ -8,7 +8,8 @@ import type { Tx } from "../store/port";
 import { type TestRig, patchRecord, testRig } from "../testing/fakes";
 import { resetAs, stateOf } from "../testing/seed";
 import { chooseNow, proactiveOf } from "./proactive";
-import { admitMoment, deliveryEntryId, recordSaid } from "./said";
+import { admitMoment, admitMoments, deliveryEntryId, recordSaid } from "./said";
+import { momentNoteId } from "./verdict";
 import { confirmReminder, offerReminder, recordPendingRendered } from "./reminder";
 import { momentsOf, moveOccasion, ofKind, setWorld } from "./testing";
 import { memoryTick } from "./tick";
@@ -183,5 +184,22 @@ describe("finding 10: a reminder never fires after its source is corrected", () 
     await setWorld(rig, UID, msFromTs(offer.time.start));
     await memoryTick(ctx);
     expect((await momentsOf(rig, UID)).get(applied.momentId)).toMatchObject({ status: "cancelled" });
+  });
+});
+
+describe("admitMoments shares admitMoment's checks (brief 030's receipt seam)", () => {
+  it("one receipt naming two open moments with room for one admits one; a stale note admits none", async () => {
+    const { rig, ctx } = await clone();
+    await memoryTick(ctx);
+    const all = await momentsOf(rig, UID);
+    const open = [...all.entries()].filter(([, m]) => m.status === "leased");
+    expect(open.length).toBeGreaterThanOrEqual(2);
+    const ids = open.map(([id]) => id as never);
+    const noteIds = open.map(([id, m]) => momentNoteId(rig.deps.hasher, id, m));
+    expect(await tx(rig, (t) => admitMoments(t, UID, ids, { responseId: "resp_x", noteIds: ["stale"] }, rig.deps))).toEqual([]);
+    const counters = await rig.store.get<CoreCounters>(UID, paths.core(UID, "counters"));
+    const day = civilDateAt(msFromTs((await stateOf(rig.store, UID)).worldClock!), ZONE);
+    await patchRecord<CoreCounters>(rig.store, UID, paths.core(UID, "counters"), { day, heavy: 0, counts: [...counters!.data.counts.filter((c) => c.kind !== "speech"), { kind: "speech", count: 2 }] });
+    expect(await tx(rig, (t) => admitMoments(t, UID, ids, { responseId: "resp_y", noteIds }, rig.deps))).toHaveLength(1);
   });
 });

@@ -19,7 +19,7 @@ export const MOMENT_PERMIT_KIND = "proactive" as const;
 
 export async function receiptMoments(tx: Tx, uid: string, req: Infer<typeof ReceiptRequest>, opsNow: number, deps: { clock: ClockPort; hasher: Hasher }): Promise<void> {
   const ids = req.momentIds as ID[];
-  if (req.kind === "admitted" && req.permitKind === MOMENT_PERMIT_KIND) await admitMoments(tx, uid, ids, req.responseId, deps.clock);
+  if (req.kind === "admitted" && req.permitKind === MOMENT_PERMIT_KIND) await admitMoments(tx, uid, ids, { responseId: req.responseId, noteIds: req.noteIds }, deps);
   else if (req.kind === "transcript") {
     const receipt = { kind: req.kind, responseId: req.responseId, momentIds: req.momentIds, noteIds: req.noteIds, text: req.text };
     for (const id of new Set(ids)) await recordSaid(tx, uid, id, receipt, MOMENT_PERMIT_KIND, deps.clock, deps.hasher);
