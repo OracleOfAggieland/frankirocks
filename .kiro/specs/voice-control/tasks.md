@@ -490,9 +490,9 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `open-audience.test.ts` › an open naming a narrowed Session within `waitDeadline` starts `company` with the narrow Head and a `proactive` `postCommitControl` carrying the COMPANY ack note; no line after a crisis; past `waitDeadline` or for another Owner's Session it starts `private`; the open stays inside its 3.5 s budget in `tests/firestore/open-retry.test.ts`.
   - Commit: `feat(open): carry a narrowed audience into the fresh call`
 
-- [ ] 51. Close keeps a narrowed audience on an error close
+- [x] 51. Close keeps a narrowed audience on an error close
   - Requirements: R14.6, R14.8; Q81
-  - Depends on: 48 · Estimate: 0.5 h · Actual:
+  - Depends on: 48 · Estimate: 0.5 h · Actual: about 0.2 h. Built by Claude Code (brief 026). Non-private is the Effective_Audience, an expired lease counting as `unknown`; the deadline is written in the close's own Session update (`beginCloseInTx` takes the extra fields). `open-audience.test.ts` also walks the reconnect: an error close of a company Session, then an open that starts company and hears the line again
   - Files: `packages/server/src/routes/close.ts`, `packages/server/src/routes/close.test.ts`
   - Witness: `close.test.ts` › `reason:"error"` on a non-private Session sets `waitDeadline` +60 s; `reason:"user"` leaves it null.
   - Commit: `feat(close): keep a narrowed audience across a reconnect`

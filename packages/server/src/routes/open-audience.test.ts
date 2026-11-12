@@ -11,6 +11,7 @@ import { type TestRig, callRoute, patchRecord, settle, testRig } from "../testin
 import { asrTurn, openTestSession } from "../testing/session-fixtures";
 import { PERSONAL_FACT, PLAIN_FACT, seedTwoMemories } from "../testing/two-memories";
 import { CARE_SWAP_WAIT_MS, SWAP_WAIT_MS, swapLineTurnId } from "../audience-swap";
+import { closeRoute } from "./close";
 import { openRoute } from "./open";
 import { turnRoute } from "./turn";
 
@@ -126,5 +127,17 @@ describe("/api/session/open: the carried audience (task 50)", () => {
     const t = await post(rig, { ...asrTurn(stamp, 1, "What's on for tonight?", [{ itemId: "item_b1", commitSeq: 1 }], "final", "b1"), judge: "O" });
     expect(t.body.status, JSON.stringify(t.body)).toBe("ordinary");
     expect(t.body.permit).toMatchObject({ kind: "slowOrdinary" });
+  });
+
+  it("a reconnect after an error close of a company Session starts company and hears the line again (task 51; question 81)", async () => {
+    const { rig, s } = await rigWithCall();
+    await patchRecord<Session>(rig.store, UID, paths.session(UID, s.sessionId), { audience: "company" });
+    const closed = await callRoute(rig, closeRoute, { requestId: testId("close-err"), sessionId: s.sessionId, generation: 1, reason: "error" });
+    expect(closed.status).toBe(200);
+    rig.clock.advance(30_000);
+    const res = await open(rig, s.sessionId);
+    expect((await sessionOf(rig, res.body.sessionId)).audience).toBe("company");
+    expect(res.body.deck.head.text).not.toContain(PERSONAL_FACT);
+    expect(res.body.proactive?.whisper.text).toBe(COMPANY_LINE);
   });
 });
