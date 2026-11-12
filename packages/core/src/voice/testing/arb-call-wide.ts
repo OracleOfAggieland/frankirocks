@@ -84,7 +84,7 @@ export class WideDriver extends CallDriver {
     return deckAt(at, { epoch: d.epoch, policyRev: d.policyRev, bundleRev: d.bundleRev, rulesRev: d.rulesRev, turns: this.serverTurns, ...revs });
   }
 
-  private ackFor(sessionId: string, d: Deck, at: number, policyBump = 0) {
+  protected ackFor(sessionId: string, d: Deck, at: number, policyBump = 0) {
     return {
       stamp: { sessionId, epoch: d.epoch, policyRev: d.policyRev + policyBump, bundleRev: d.bundleRev, rulesRev: d.rulesRev, generation: d.generation },
       issuedOpsAt: tsFromMs(at),
@@ -93,7 +93,7 @@ export class WideDriver extends CallDriver {
   }
 
   /** Reads the commands of steps not seen yet: opens and state requests become things the world can answer. */
-  private sync(): void {
+  protected sync(): void {
     for (const st of this.trace.steps.slice(this.seen)) {
       for (const c of st.commands) {
         if (c.kind === "open") this.opensWaiting += 1;
@@ -257,7 +257,7 @@ const arbSetupGapStep: fc.Arbitrary<WideStep> = fc.oneof(
 );
 
 /** Open, connect and configure, with a gap before the state answer and the odd failure on the way. */
-const arbSetup: fc.Arbitrary<WideStep[]> = fc
+export const arbSetup: fc.Arbitrary<WideStep[]> = fc
   .record({
     open: fc.constantFrom("ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "failed"),
     openMs: fc.integer({ min: 50, max: 900 }),
@@ -286,7 +286,7 @@ const arbComeBack: fc.Arbitrary<WideStep[]> = fc.tuple(fc.constantFrom("reconnec
 });
 
 /** A spoken Turn up to the judge and the speculative reply, with a fresh ack just before the commit. */
-function judged(fragments: number): WideStep[] {
+export function judged(fragments: number): WideStep[] {
   const out: WideStep[] = [];
   for (let f = 0; f < fragments; f++) {
     out.push(s({ k: "speechStart" }, 200), s({ k: "speechStop" }, 900));
@@ -299,7 +299,7 @@ function judged(fragments: number): WideStep[] {
 }
 
 /** A Turn admitted under fastO before its transcript, then what happens to it. */
-const arbFastOScene: fc.Arbitrary<WideStep[]> = fc
+export const arbFastOScene: fc.Arbitrary<WideStep[]> = fc
   .record({
     mutedFirst: fc.boolean(),
     judgeMs: fc.integer({ min: 100, max: 900 }),
@@ -345,7 +345,7 @@ const arbFastOScene: fc.Arbitrary<WideStep[]> = fc
   });
 
 /** A slow-path Turn: the transcript, the post, a server answer, and the orderings around its check. */
-const arbSlowScene: fc.Arbitrary<WideStep[]> = fc
+export const arbSlowScene: fc.Arbitrary<WideStep[]> = fc
   .record({
     then: fc.constantFrom("edgePermit", "staleHigher", "pollThenStale", "deckTurnsInCheck", "holdRetry"),
     answerMs: fc.integer({ min: 100, max: 4_999 }),
@@ -443,7 +443,7 @@ const arbLateAnswerScene: fc.Arbitrary<WideStep[]> = fc
   });
 
 /** Noise: any base step, or one of the wide actions, at any time. */
-const arbWideNoise: fc.Arbitrary<WideStep[]> = fc.array(
+export const arbWideNoise: fc.Arbitrary<WideStep[]> = fc.array(
   fc.oneof(
     { weight: 6, arbitrary: arbStep as fc.Arbitrary<WideStep> },
     { weight: 2, arbitrary: arbGapStep },
