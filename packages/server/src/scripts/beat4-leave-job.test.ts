@@ -87,7 +87,6 @@ const BEAT4: Script = {
       label: "tap: someone walked in",
       do: "tap",
       control: "walkedIn",
-      waits: "spec §14 addition 4 (the walked-in tap): /api/turn refuses trustedTap and uiControl turns (routes/turn.ts checkTurnRequest)",
       expect: [{ mustSay: { note: true } }],
     },
   ],

@@ -71,6 +71,7 @@ import { audienceEffect, narrowedHere, precompileAudienceHead } from "../audienc
 import { carryNarrowing, deckAllowed, lateNarrowing, narrowsHere, replacedNarrowing, swapWindowCare, turnEndAudience, withNarrowHead } from "../audience-swap";
 import { afterClosed } from "../sessions";
 import { driveHangupJob, ensureHangupJob } from "../worker/hangup";
+import { checkTapRequest, isControlTurn, isTap, postTap } from "./turn-tap";
 
 type TurnReq = Infer<typeof TurnRequest>;
 type TurnRes = Infer<typeof TurnResponse>;
@@ -82,7 +83,9 @@ const MAX_CAS_ATTEMPTS = 8;
 
 /** Request checks beyond the closed schema (R18.1, R18.8, R20.8). */
 export function checkTurnRequest(req: TurnReq): TurnReq {
-  if (req.uiControl !== null || req.source === "chip" || req.source === "trustedTap") throw parseError("control turns are not built");
+  // Brief 044, item 3: a trusted company or alone tap is the one control turn built; every other stays refused.
+  if (isControlTurn(req)) return checkTapRequest(req);
+  if (req.source === "chip") throw parseError("control turns are not built");
   if (req.source === "asr") {
     if (req.items.length === 0) throw parseError("asr needs items");
   } else if (req.items.length !== 0) throw parseError("typed turns carry no items");
@@ -149,6 +152,8 @@ export function wordsPer2s(transcript: string, items: TurnReq["items"]): boolean
 }
 
 export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes> {
+  // Brief 044, item 3: the walked-in tap has its own module.
+  if (isTap(req)) return postTap(ctx, req);
   const { uid, deps } = ctx;
   const typedText = req.transcriptState === "final" ? normalizedTranscript(req.transcript)! : "";
   const cls = classifyTurn(req);
