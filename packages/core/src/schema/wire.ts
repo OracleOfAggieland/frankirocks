@@ -460,3 +460,17 @@ export const DebugPage = obj({
   session: nullable(DebugSessionView),
 });
 export type DebugPage = Infer<typeof DebugPage>;
+
+// ---------------------------------------------------------------------------------------------
+// GET /api/memory (contracts §6 Routes; brief 020). The views the screen reads; the response shape above.
+
+export const MEMORY_VIEWS = ["overview", "item", "why", "receipt", "lab", "strip"] as const;
+export const MemoryView = oneOf(MEMORY_VIEWS);
+export type MemoryView = Infer<typeof MemoryView>;
+export const MemoryRequest = obj({ view: MemoryView, id: nullable(ID), cursor: nullable(ID) });
+export type MemoryRequest = Infer<typeof MemoryRequest>;
+export { LabView, MemoryResponse, StripView };
+export type SnapshotView = Infer<typeof SnapshotView>;
+export type LabView = Infer<typeof LabView>;
+export type StripView = Infer<typeof StripView>;
+export type MemoryResponse = Infer<typeof MemoryResponse>;
