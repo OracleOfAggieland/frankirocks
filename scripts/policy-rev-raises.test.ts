@@ -6,7 +6,8 @@
 //   - wave B on the turn (audienceEffect), behind audienceRow: the Server_Rule's outcome is an audience row (rows 6
 //     to 10, or row 7 with company), not merely a parse that changesWhatIsSaid in wave B, which crisis and forget
 //     also pass (design "Audience effects in the transaction");
-//   - a late company or quiet hit (lateNarrowing), behind narrowsAudience.
+//   - a late company or quiet hit (lateNarrowing), and one on a Session an open replaced (carryNarrowing), each
+//     behind narrowsAudience.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -60,11 +61,12 @@ describe("policyRev raise sites", () => {
     expect(RAISE.test("policyRev + 10")).toBe(false);
   });
 
-  it("raises policyRev only at the four named sites, each behind its own check", () => {
+  it("raises policyRev only at the five named sites, each behind its own check", () => {
     const sites = raiseSites();
     const named = sites.map((s) => `${s.file} ${s.fn}`).sort();
     expect(named, sites.map((s) => `${s.file}:${s.line} (${s.fn}): ${s.text}`).join("\n")).toEqual([
       "packages/server/src/audience-swap.ts audienceEffect",
+      "packages/server/src/audience-swap.ts carryNarrowing",
       "packages/server/src/audience-swap.ts lateNarrowing",
       "packages/server/src/intents/repair.ts repairTx",
       "packages/server/src/routes/turn.ts postSupersede",
@@ -72,6 +74,7 @@ describe("policyRev raise sites", () => {
     const guard: Record<string, RegExp> = {
       audienceEffect: /if \(audienceRow\(o\) === null\) return null;/,
       lateNarrowing: /!narrowsAudience\(x\.parse, x\.judge\)\) return null;/,
+      carryNarrowing: /!narrowsAudience\(x\.parse, x\.judge\)\) return null;/,
       repairTx: /narrowing === null && changesWhatIsSaid\(slow\.parse, judge, "A"\)/,
       postSupersede: /narrowing === null && slow\.parse\.kind === "hit" && changesWhatIsSaid\(slow\.parse, judge, "A"\)/,
     };

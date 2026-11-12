@@ -67,7 +67,7 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 026: company, quiet and alone (voice-control tasks 48, 49).
 import { audienceEffect, narrowedHere, precompileAudienceHead } from "../audience-swap";
 // Brief 035: the review of the audience wave.
-import { deckAllowed, lateNarrowing, swapWindowCare, withNarrowHead } from "../audience-swap";
+import { carryNarrowing, deckAllowed, lateNarrowing, replacedNarrowing, swapWindowCare, withNarrowHead } from "../audience-swap";
 import { afterClosed } from "../sessions";
 import { driveHangupJob, ensureHangupJob } from "../worker/hangup";
 
@@ -230,7 +230,11 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           const doc = await tx.get<Session>(paths.session(uid, req.sessionId));
           if (doc === null) throw scopeError();
           const s0 = doc.data;
-          if (s0.generation !== req.generation || (s0.status !== "minting" && s0.status !== "active" && !narrowedHere(s0))) throw staleError("session");
+          // Brief 035 (finding 8): a company turn on a Session an open already replaced is kept and narrows. Telling
+          // needs core/epoch, so for a Session that isn't open the core documents are awaited before the check.
+          const replaced = s0.status !== "minting" && s0.status !== "active" && replacedNarrowing(s0, (await coreP).epoch.data.activeSessionId, req.sessionId, slow?.parse ?? null, req.judge);
+          const held = narrowedHere(s0) || replaced;
+          if (s0.generation !== req.generation || (s0.status !== "minting" && s0.status !== "active" && !held)) throw staleError("session");
           const core = await coreP;
           if (core.epoch.data.barrier !== null) throw barrierError();
           // Settled before any early answer, so no read is still open when the transaction ends.
@@ -258,7 +262,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           // turn on it answers `blocked` with no Permit, whatever it carries. Brief 035 (finding 7): the turn that is
           // next in order is still kept below (its Turn, Evidence, Extract_Job and hard rule); one out of order has no
           // place to go, so only the hold decision and the answer are written for it.
-          if (narrowedHere(s0) && req.clientSeq !== s0.nextClientSeq) {
+          if (held && req.clientSeq !== s0.nextClientSeq) {
             const closed: RuleInput = {
               source: req.source === "asr" ? "asr" : cls.cls === "T" ? "pasted" : "typed",
               transcript: req.transcriptState,
@@ -284,7 +288,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
 
           // Stamp revisions must be current; a stale Stamp commits nothing.
           const fresh = req.epoch === stamp.epoch && req.policyRev === stamp.policyRev && req.bundleRev === stamp.bundleRev && req.rulesRev === stamp.rulesRev;
-          if (!fresh && !narrowedHere(s0)) {
+          if (!fresh && !held) {
             return { kind: "unrecorded" as const, response: { ...base, status: "stale" as const, deck: head === null ? null : issueDeck(stamp, head, ops) } };
           }
           if (req.clientSeq > s0.nextClientSeq) {
@@ -381,7 +385,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             regexMatch: (slow?.regex.length ?? 0) > 0,
             // The gap and the audience are those before this Turn; its own failure shows from the next one.
             audience: effectiveAudience(s, ops),
-            narrowedHere: narrowedHere(s0),
+            narrowedHere: held,
             callLive: s.registeredCallIds.length > 0,
             parseGap: hasParseGap(s),
             noteSens: candidateNotes.length === 0 ? "none" : candidateNotes.some((n) => n.sens !== "S0") ? "S1+" : "S0",
@@ -412,7 +416,8 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             tx.update(paths.core(uid, "epoch"), aud.epoch);
             if (aud.bundle !== null) tx.update(paths.core(uid, "bundle"), aud.bundle);
           }
-          const hangup = aud?.hangup === true ? await ensureHangupJob(tx, uid, req.sessionId as ID, s0.rev, ops, deps.hasher) : null;
+          const carry = replaced && slow !== null ? await carryNarrowing(tx, uid, { sessionId: req.sessionId, session: s0, parse: slow.parse, judge: rule.judge, epoch: core.epoch.data, opsNow: ops, hasher: deps.hasher }) : null;
+          const hangup = aud?.hangup === true ? await ensureHangupJob(tx, uid, req.sessionId as ID, s0.rev, ops, deps.hasher) : (carry?.hangupJob ?? null);
           const stampOut2 =
             aud === null
               ? stampOut
@@ -423,6 +428,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             ...next,
             ...(aud?.session ?? {}),
             ...swapWindowCare(s0, rule, ops),
+            ...(carry?.self ?? {}),
             nextClientSeq: req.clientSeq + 1,
             lastClientSeq: req.clientSeq,
             committedParseSeq,
@@ -433,7 +439,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             updatedAt: now,
           });
 
-          const deck = headOut2 === null || headless || narrowedHere(s0) ? null : issueDeck(stampOut2, headOut2, ops, safe);
+          const deck = headOut2 === null || headless || held ? null : issueDeck(stampOut2, headOut2, ops, safe);
           // Every reply's Permit comes from the Admission_Seam, which writes its decision ledger entry in this
           // transaction and runs in production too (R8.1, R8.2).
           const admitted = admitRule(

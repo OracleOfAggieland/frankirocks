@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import { never, ok } from "../openai/fake";
 import { paths } from "../store/paths";
 import { decisionAnswer } from "../testing/decisions";
-import { type TestRig, runScheduled } from "../testing/fakes";
+import { type TestRig, callRoute, runScheduled } from "../testing/fakes";
+import { openRoute } from "./open";
 import { asrTurn, typedTurn } from "../testing/session-fixtures";
 import { PERSONAL_FACT } from "../testing/two-memories";
 import { UID, doorRig, postTurn } from "../testing/audience-doors";
@@ -162,5 +163,28 @@ describe("finding 7: a turn on a narrowed Session is kept, not thrown away", () 
     expect(res.body).toMatchObject({ status: "blocked", permit: null });
     expect((await sessionOf(rig, s.sessionId)).modifiers.crisis).not.toBeNull();
     expect(await rig.store.get(UID, paths.turn(UID, s.sessionId, testId("turn-2")))).not.toBeNull();
+  });
+});
+
+describe("finding 8: a company turn that lands after an open replaced its Session still narrows", () => {
+  it("records company on the old Session and narrows the Owner's active one, with the policyRev raise", async () => {
+    const { rig, s } = await doorRig(true);
+    const before = await epochOf(rig);
+    const b = await callRoute(rig, openRoute, { requestId: testId("open-b"), initiator: "user", previousSessionId: s.sessionId, clientZone: "UTC", visitId: null });
+    expect(b.status).toBe(200);
+    const bId: string = b.body.sessionId;
+    rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9 })));
+    const res = await postTurn(rig, voice(s.stamp, 1, "My boss just walked in."));
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: "blocked", permit: null, deck: null });
+    expect((await sessionOf(rig, s.sessionId)).audience).toBe("company");
+    expect(await sessionOf(rig, bId)).toMatchObject({ audience: "company", status: "closing" });
+    expect(await jobOf(rig, bId)).not.toBeNull();
+    expect((await epochOf(rig)).policyRev).toBe(before.policyRev + 1);
+    // The open that takes the swap, naming either Session, starts company.
+    for (const named of [s.sessionId, bId]) {
+      const c = await callRoute(rig, openRoute, { requestId: testId(`open-c-${named}`), initiator: "user", previousSessionId: named, clientZone: "UTC", visitId: null });
+      expect(headText(c.body)).not.toContain(PERSONAL_FACT);
+    }
   });
 });

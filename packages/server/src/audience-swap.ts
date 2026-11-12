@@ -39,6 +39,7 @@ import { buildHead } from "./head-build";
 import { DECK_TTL_MS } from "./sessions";
 import type { SlowParse } from "./intents/slow-parse";
 import { paths } from "./store/paths";
+import { ensureHangupJob } from "./worker/hangup";
 import { type Tx, readSnapshot } from "./store/port";
 import type { RouteContext } from "./routes/runtime";
 
@@ -311,4 +312,40 @@ export const deckAllowed = (eff: AudienceEffect | null): boolean => eff === null
 export function swapWindowCare(s: Session, rule: RuleInput, opsNow: number): Partial<Session> {
   if (!narrowedHere(s) || rule.parse.kind !== "hit" || !crisisFires(rule.parse, rule.judge)) return {};
   return { modifiers: { ...s.modifiers, crisis: s.modifiers.crisis ?? tsFromMs(opsNow) } };
+}
+
+/**
+ * A company or quiet turn on a Session an open already replaced (finding 8): the open closed it, so the turn would
+ * answer stale and the hit would be lost. Such a turn is kept as one in the swap window is, and narrows.
+ */
+export const replacedNarrowing = (s: Session, activeSessionId: string | null, sessionId: string, parse: RuleParse | null, judge: RuleInput["judge"]): boolean =>
+  (s.status === "closing" || s.status === "closed") && !narrowedHere(s) && activeSessionId !== sessionId && parse !== null && parse.kind === "hit" && narrowsAudience(parse, judge);
+
+/**
+ * The carry of a replaced Session's narrowing (finding 8), in the turn's transaction: policyRev + 1; the replaced
+ * Session records company with the swap wait, so an open naming it inherits it; and the Owner's active Session,
+ * if it is live and still private, gets row 8 (company, the swap wait, `closing`, the hangup Job), since its call
+ * was opened on the private Head. Returns the replaced Session's fields and the active Session's hangup Job.
+ */
+export async function carryNarrowing(
+  tx: Tx,
+  uid: string,
+  x: { sessionId: string; session: Session; parse: RuleParse; judge: RuleInput["judge"]; epoch: CoreEpoch; opsNow: number; hasher: Hasher },
+): Promise<{ self: Partial<Session>; epoch: CoreEpoch; hangupJob: ID | null } | null> {
+  if (x.parse.kind !== "hit" || !narrowsAudience(x.parse, x.judge)) return null;
+  const crisis = crisisFires(x.parse, x.judge) ? tsFromMs(x.opsNow) : null;
+  // A narrowing changes what is said: policyRev + 1 cancels older speech and Decks (KV05).
+  let epoch: CoreEpoch = { ...x.epoch, policyRev: x.epoch.policyRev + 1, updatedAt: tsFromMs(x.opsNow) };
+  const activeId = x.epoch.activeSessionId;
+  let hangupJob: ID | null = null;
+  const b = activeId === null || activeId === x.sessionId ? null : await tx.get<Session>(paths.session(uid, activeId));
+  if (b !== null && LIVE.includes(b.data.status) && effectiveAudience(b.data, x.opsNow) === "private") {
+    const modifiers = crisis === null ? b.data.modifiers : { ...b.data.modifiers, crisis };
+    tx.update(b.path, { ...b.data, ...closingFields(x.opsNow), modifiers, updatedAt: tsFromMs(x.opsNow) });
+    epoch = { ...epoch, activeSessionId: null, activeCallId: null };
+    hangupJob = await ensureHangupJob(tx, uid, activeId as ID, b.data.rev, x.opsNow, x.hasher);
+  }
+  tx.update(paths.core(uid, "epoch"), epoch);
+  const self: Partial<Session> = { audience: "company", waitDeadline: tsFromMs(x.opsNow + SWAP_WAIT_MS), ...(crisis === null ? {} : { modifiers: { ...x.session.modifiers, crisis } }) };
+  return { self, epoch, hangupJob };
 }
