@@ -2,7 +2,7 @@
  * When the on-turn hardRule route opens (brief 012 design 3.0, 6.1; G19, G34). Pure.
  *
  * - At arrival: RX4 on the final transcript of a U turn. Pasted text (T), `missing` or `failed` transcripts and
- *   superseding posts never trigger here (a supersede's route is task B9).
+ *   superseding posts never trigger here (a supersede and a repair run the route through `late.ts`).
  * - At arrival plus the `core/rules` read: the owner's allergy question is `asked` in this Session.
  * - At the parse: a hardRule candidate at `CANDIDATE_P` or more, read from the probabilities, so an uncertain
  *   speaker's hit (which lists no candidates) still opens the route and fails closed.

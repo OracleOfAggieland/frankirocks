@@ -29,7 +29,7 @@ export function backstopItems(raw: readonly unknown[]): BackstopItem[] {
 const slot = (r: CoreRules["allergies"][number]) => `${r.anonymous ? "" : r.subjectId}|${r.code}`;
 
 /** `core/rules` with the proposal added (one per Evidence: a second for the same Evidence replaces the first). */
-export function withBackstop(rules: CoreRules, p: BackstopProposal): CoreRules {
+export function withBackstop(rules: CoreRules, p: BackstopProposal | CoreRules["proposals"][number]): CoreRules {
   const others = rules.proposals.filter((x) => x.id !== p.id);
   if (others.length < PROPOSALS_MAX) return { ...rules, proposals: [...others, p] };
   const last = others.at(-1)!;

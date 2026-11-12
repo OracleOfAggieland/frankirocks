@@ -7,11 +7,13 @@
  *   hit       the same, then the late-hit effects: `policyRev + 1` (the next Deck cancels older speech, KV05) and
  *             one `decision` with `heldRefs:[turn]`; no late reply is spoken
  *   failed    `parseState` stays `failed`, the lease clears, the audience is `unknown` until a parsed `alone`
+ * After `ordinary` or `hit`, the hardRule route runs once as a proposal (`onturn/late.ts`; brief 012 G20, G39).
  * A parsed `alone` never moves the watermark past a gap (R15.8).
  */
 import { type CoreEpoch, type ID, type Session, type Turn, changesWhatIsSaid, msFromTs, tsFromMs } from "@franki/core";
 import { lateHitDecisionId, recordLateHit } from "../admission/seam";
 import { advancedWatermark, effectiveAudience, expireLease } from "../audience";
+import { runRepairRoute } from "../onturn/late";
 import type { RouteDeps } from "../routes/runtime";
 import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
@@ -54,6 +56,8 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
     }
   }
   deps.log("turn.repair", { turnId, result, ms: slow.ms });
+  // Brief 012 G20 (task B9): with the parse committed, the hardRule route runs once, outside the lease, as a proposal.
+  if (result === "ordinary" || result === "hit") await runRepairRoute({ uid, deps }, { sessionId, turnId }, slow);
   return result;
 
   async function repairTx(tx: Tx): Promise<RepairResult> {
