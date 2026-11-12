@@ -109,6 +109,40 @@ describe("call swap transitions", () => {
     expect(d.st.phase).toBe("SWAPPING");
   });
 
+  /** The care reply after a `blocked` answer, playing; then a second post of the narrowed Session is pending. */
+  function careSpeaking(play: (a: SwapAction, dt?: number) => VoiceCommand[], d: SwapDriver, otherTurn: boolean) {
+    play({ k: "typed" }, 300);
+    const post = d.pending.posts.at(-1)!;
+    play({ k: "blocked", pick: 0, care: true }, 300);
+    play({ k: "hash", pick: 0, ok: true });
+    play({ k: "created", pick: 0 }, 30);
+    play({ k: "started", pick: 0 }, 200);
+    expect(d.st).toMatchObject({ phase: "SPEAKING", outputMuted: false, afterReply: "swap" });
+    const turnId = otherTurn ? d.fresh("t") : post.body.turnId;
+    d.pending.posts.push({ ...post, body: { ...post.body, turnId }, answered: false });
+    return d.st.active!.responseId;
+  }
+
+  it("SPEAKING (care reply) + turnOk blocked again for its Turn -> SPEAKING (a stale resend's answer neither cuts nor restarts it)", () => {
+    const { d, play } = rig();
+    const care = careSpeaking(play, d, false);
+    const cmds = play({ k: "blocked", pick: 0, care: true }, 100);
+    expect(cmds, "nothing is cut, muted or checked again").toEqual([]);
+    expect(d.st).toMatchObject({ phase: "SPEAKING", outputMuted: false, afterReply: "swap" });
+    expect(d.st.active?.responseId).toBe(care);
+  });
+
+  it("SPEAKING (care reply) + turnOk blocked for another Turn of the narrowed Session -> SPEAKING (the swap still waits for the care reply)", () => {
+    const { d, play } = rig();
+    const care = careSpeaking(play, d, true);
+    const cmds = play({ k: "blocked", pick: 0, care: false }, 100);
+    expect(cmds).toEqual([]);
+    expect(d.st).toMatchObject({ phase: "SPEAKING", outputMuted: false, afterReply: "swap" });
+    expect(d.st.active?.responseId).toBe(care);
+    play({ k: "stopped" }, 1_500);
+    expect(d.st.phase).toBe("SWAPPING");
+  });
+
   it("SPEAKING (care reply) + speech_started -> SWAPPING (a barge-in on the care reply swaps at once)", () => {
     const { d, play } = rig();
     play({ k: "typed" }, 300);

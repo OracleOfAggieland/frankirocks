@@ -1235,6 +1235,9 @@ function startSwap(s: Step, from: string): void {
 function onBlocked(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void {
   const from = res.stamp.sessionId;
   if (s.st.phase === "CLOSED" || s.st.narrowedFrom === from) return;
+  // The care reply for this Session's narrowing is already under way, and the swap follows it: another `blocked`
+  // for the same Session (a stale resend, or another of its posts) neither cuts nor restarts it (brief 031, finding 3).
+  if (s.st.afterReply === "swap" && s.st.session?.sessionId === from) return;
   const session = s.st.session;
   const live = session !== null && session.sessionId === from && res.stamp.generation === session.generation;
   if (live) adoptDeck(s, res.deck);
