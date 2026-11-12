@@ -15,7 +15,8 @@ import { type Script, type Step, type World, allMemories, extract, item, memoryT
 const LINE = BISCUIT_LINE;
 const biscuit = { what: "the owner's words about Biscuit", pick: (m: Memory) => memoryText(m).includes("Biscuit") };
 
-const CHECKIN_WAITS = "brief 023 (derive the check-in, the tick, the jump and delivery) and a route calling brief 024's Gate and `checkIn` whisper (built, not called); open answers proactive: null today";
+const CHECKIN_WAITS =
+  "delivery after the bolt (brief 036's folder): the open now says delivery's choice (brief 030 part A), and at Thursday 18:00 it is the hero offer, not the check-in; the check-in's line is also moments/words.ts checkInLine (\"How did it go: ...?\"), not the whisper template `checkIn` the runner binds (\"How's {0} doing?\")";
 
 /** What a careful extractor files for the line: Biscuit's surgery as an event, the time words left for code. */
 const biscuitItems = (w: World) => [
