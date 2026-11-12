@@ -12,7 +12,7 @@ Held back, on purpose (brief 021): closure (step 6, the `dependsOn` walk), resum
 
 | Step | Writes (one transaction unless paged) | Source |
 |---|---|---|
-| Fence, new op (no barrier) | `core/epoch`: `epoch+1`, `policyRev+1`, `barrier={opId, phase:"close", startedAt, deadline, queuedOps:[]}`; `core/bundle`: burned (`head`, `headHash` null, `selectedRefs` empty, `bundleRev+1`, state by `bundleAfter`); `jobs/{jobId}`: ForgetJob at phase `close`, stamped with the new epoch; `ledger/{receiptId}`: `forgetReceipt`, state `pending`; the request turns: state `dead`; the Session: request item IDs added to `deadItemIds` | C§8 step 2; C§1 core/epoch |
+| Fence, new op (no barrier) | `core/epoch`: `epoch+1` (contracts also say `policyRev+1`; held back, see gap 15), `barrier={opId, phase:"close", startedAt, deadline, queuedOps:[]}`; `core/bundle`: burned (`head`, `headHash` null, `selectedRefs` empty, `bundleRev+1`, state by `bundleAfter`); `jobs/{jobId}`: ForgetJob at phase `close`, stamped with the new epoch; `ledger/{receiptId}`: `forgetReceipt`, state `pending`; the request turns: state `dead`; the Session: request item IDs added to `deadItemIds` | C§8 step 2; C§1 core/epoch |
 | Fence, barrier up | `core/epoch.barrier.queuedOps` gains one `QueuedControl` with the epoch and policyRev it found; the request turns dead-marked. Nothing else; the barrier is never overwritten | C§8 step 2 |
 | Fence, retry of a known op | Nothing. The answer is the op's existing job and captured stamps | C§8 "Preserve captured stamps on retry" |
 | Fence, queue full | Nothing; refused `BARRIER` (423) | C§1 core/epoch |
@@ -39,6 +39,8 @@ Each page is at most `FORGET_PAGE_DOCS` (50) documents. A write that is already 
 12. **Uncommitted turns at the fence (spec line 273).** A non-request turn of the Session whose parse is still `pending` at install, with no salvage in the floor, clears `noneConfirmed` for everyone (the attendee can't be named by code) and leaves committed rules as they are. The ask "Any allergies I should know?" is card data for the resume step.
 13. **A pending re-anchored rule** is `state:"pending"`, `anonymous:true`, `subjectId:null`, `proof:null`, empty roots and `dependsOn`: the food filter applies as if anyone attends, and no erased root or name stays on it.
 14. **"Subject literal in the span."** For `self`, a first-person word (`FIRST_PERSON` or "my"); for another entity, a whole-word roster label or alias of that entity; for an anonymous rule, nothing is needed. A gazetteer check: `lookupAllergen(quote)` must contain the rule's code.
+
+15. **The fence and policyRev (found at the end of the build).** Contracts §8 step 2 raises `policyRev` with the epoch. The committed guard `scripts/policy-rev-raises.test.ts` (brief 014) allows exactly two raise sites, and adding a third would loosen it. The fence raises the epoch only. Nothing is lost today: the Session stamp carries the epoch, so every Deck and reply issued before the fence is cancelled; `eligible` denies a context at the old epoch; an Extract_Job fails `STALE` on the epoch. Ruling F-18; the lead decides whether the guard gains the fence as a third site.
 
 ## 4. Correctness properties
 

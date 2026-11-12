@@ -1,5 +1,6 @@
 /**
- * The fence, server half (spec §8 step 2; contracts §8 step 2; KV07). One transaction: `core/epoch` raised with
+ * The fence, server half (spec §8 step 2; contracts §8 step 2; KV07). One transaction: `core/epoch` raised (the epoch;
+ * policyRev is held back by ruling F-18) with
  * the barrier set (or the op added to its queue), `core/bundle` burned, the forget job at phase `close`, the
  * `forgetReceipt` ledger entry (state `pending`), and the request turns marked `dead` with their items added to
  * the Session's `deadItemIds`. The request turn dies here: it is never a safe turn, never extracted, never chunked.

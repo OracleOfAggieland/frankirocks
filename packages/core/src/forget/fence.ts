@@ -1,6 +1,6 @@
 /**
  * The fence, pure (spec §8 step 2; contracts §1 core/epoch, §8 step 2; KV07). One small transaction raises the
- * epoch and the policy revision and sets the barrier; a forget that finds a barrier joins its queue, and the
+ * epoch and sets the barrier (contracts §8 also raises policyRev: held back by ruling F-18 in the lane report); a forget that finds a barrier joins its queue, and the
  * barrier clears only when the queue is empty. A retry keeps the stamps its op first captured. The server half
  * (`packages/server/src/forget/fence.ts`) writes the plan in one transaction with the job, the burned bundle, the
  * receipt and the dead request turns.
@@ -44,7 +44,8 @@ export function planFence(epoch: CoreEpoch, req: FenceRequest, opsNow: TS, prior
   const queued = barrier?.queuedOps.find((q) => q.opId === req.opId);
   if (queued !== undefined) return { kind: "retry", captured: { epoch: queued.capturedEpoch, policyRev: queued.capturedPolicyRev } };
   if (barrier === null) {
-    const captured = { epoch: epoch.epoch + 1, policyRev: epoch.policyRev + 1 };
+    // Ruling F-18: the epoch rises; policyRev stays, since the committed raise-site guard allows no third site.
+    const captured = { epoch: epoch.epoch + 1, policyRev: epoch.policyRev };
     return { kind: "fenced", epoch: { ...epoch, ...captured, updatedAt: opsNow, barrier: ownBarrier(req.opId, opsNow, []) }, captured };
   }
   // The owner itself, retried before its job is readable, is still a retry: the barrier is never overwritten.
@@ -85,7 +86,7 @@ export function releaseBarrier(epoch: CoreEpoch, opId: ID, opsNow: TS): ReleaseP
   if (next === undefined) return { kind: "cleared", epoch: { ...epoch, updatedAt: opsNow, barrier: null } };
   return {
     kind: "promoted",
-    epoch: { ...epoch, epoch: epoch.epoch + 1, policyRev: epoch.policyRev + 1, updatedAt: opsNow, barrier: ownBarrier(next.opId, opsNow, rest) },
+    epoch: { ...epoch, epoch: epoch.epoch + 1, updatedAt: opsNow, barrier: ownBarrier(next.opId, opsNow, rest) },
     opId: next.opId,
     captured: { epoch: next.capturedEpoch, policyRev: next.capturedPolicyRev },
   };

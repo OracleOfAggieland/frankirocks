@@ -59,7 +59,7 @@ describe("fenceForget (spec §8 step 2)", () => {
     if (r.kind === "refused") return;
     const epoch = await get<CoreEpoch>(paths.core(UID, "epoch"));
     expect(epoch.epoch).toBe(before.epoch + 1);
-    expect(epoch.policyRev).toBe(before.policyRev + 1);
+    expect(epoch.policyRev).toBe(before.policyRev); // ruling F-18: the epoch alone fences
     expect(epoch.barrier).toMatchObject({ opId: r.opId, phase: "close", queuedOps: [] });
     const bundle = await get<CoreBundle>(paths.core(UID, "bundle"));
     expect(bundle).toMatchObject({ state: "dirty", head: null, headHash: null, selectedRefs: [], bundleRev: bundleBefore.bundleRev + 1 });
