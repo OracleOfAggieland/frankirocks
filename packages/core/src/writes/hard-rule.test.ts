@@ -222,8 +222,11 @@ describe("cue sentences and notAllergyByCode", () => {
     for (const t of jokes) {
       expect(notAllergyByCode(ev(t)), t).toBe(true);
       const p = plan(t, []);
-      expect(p.outcome.kind, t).toBe("notAllergy");
-      expect(p.rules.allergies, t).toEqual([]);
+      // Brief 032 H2: coverage reads on past the cue sentence, so the later food or pet word is filed for anyone
+      // (it over-filters at worst); the code check above still reads the RX4 sentence alone.
+      expect(p.outcome.kind, t).toBe("pendingWritten");
+      expect(p.rules.allergies.length, t).toBeGreaterThan(0);
+      expect(p.rules.allergies.every((r) => r.anonymous && r.state === "pending"), t).toBe(true);
     }
   });
   it("passes Mondays and the intolerant boss; fails an alias, a generic object, an allergy pill near 'this', and EpiPen", () => {

@@ -71,3 +71,19 @@ describe("H1: a wrong polarity never loses a stated allergy", () => {
     expect(resolved.rules.allergies).toEqual([]);
   });
 });
+
+describe("H2: coverage reads on past the cue sentence", () => {
+  it("\"I'm allergic to peanuts. Shellfish too.\" with peanut only: shellfish gets a slot", () => {
+    const t = "I'm allergic to peanuts. Shellfish too.";
+    const p = plan(t, [item(t, "I'm allergic to peanuts", "peanuts", "affirmed")]);
+    expect(filtered(p.rules, "self", "peanut")).toBe(true);
+    expect(filtered(p.rules, "self", "shellfish")).toBe(true);
+    expect(p.rules.allergies.some((r) => r.code === "shellfish")).toBe(true);
+  });
+
+  it("a sentence before the cue is still not scanned for coverage", () => {
+    const t = "We had shrimp last night. I'm allergic to peanuts.";
+    const p = plan(t, [item(t, "I'm allergic to peanuts", "peanuts", "affirmed")]);
+    expect(p.rules.allergies.map((r) => r.code)).toEqual(["peanut"]);
+  });
+});

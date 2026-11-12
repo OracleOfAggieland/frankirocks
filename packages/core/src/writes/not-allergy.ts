@@ -1,9 +1,11 @@
 /**
  * Cue sentences and the `notAllergy` check (design 2.5, G3). Pure.
  *
- * Cue sentences: sentences split at `.`, `!`, `?`, `;` and line breaks, offsets kept. They are the sentences with an
- * RX4 match; on an answering turn, the whole text; with no RX4 match and a valid answer, the sentences holding a
- * verified allergy item span; with no RX4 match and no valid answer, the whole text. Only their U parts are scanned.
+ * Cue sentences: sentences split at `.`, `!`, `?`, `;` and line breaks, offsets kept. They are the first sentence with
+ * an RX4 match and every sentence after it (brief 032 H2); on an answering turn, the whole text; with no RX4 match and
+ * a valid answer, the first sentence holding a verified allergy item span and every one after it; with no RX4 match
+ * and no valid answer, the whole text. Only their U parts are scanned. The `notAllergy` check reads the RX4
+ * sentences alone.
  * A subject mention is left out ("my dog is allergic to chicken" doesn't count dog) only when it is plain (at most
  * `MENTION_MAX_WORDS` words, no RX4 word) and validation resolved a subject from it; any other mention is scanned
  * like the rest of the text, so a model-chosen mention can never switch coverage or the fallback off.
@@ -64,18 +66,22 @@ export function rx4Sentences(text: string): Range[] {
   return sentencesOf(text).filter((s) => RX4.test(normalizeForRegex(text.slice(s.start, s.end))));
 }
 
-/** The cue sentences, whole (before the U and mention cuts). */
+/**
+ * The cue sentences, whole (before the U and mention cuts): the first cue sentence and every sentence after it, so
+ * "I'm allergic to peanuts. Shellfish too." scans shellfish as well (brief 032 H2). At worst it over-filters.
+ */
 export function cueSentenceRanges(e: TurnEvidence, out: FastSlotsOut | null, answering: boolean): Range[] {
   const whole = e.text.length === 0 ? [] : [{ start: 0, end: e.text.length }];
   if (answering) return whole;
+  const onFrom = (cues: readonly Range[]): Range[] => (cues.length === 0 ? [] : sentencesOf(e.text).filter((s) => s.start >= cues[0]!.start));
   const rx = rx4Sentences(e.text);
-  if (rx.length > 0) return rx;
+  if (rx.length > 0) return onFrom(rx);
   if (out === null) return whole;
   const spans = out.items.flatMap((it) => (it.kind === "allergy" ? [verifyTurnSpan(it.span, e)].filter((s): s is Span => s !== null) : []));
   // A parse candidate with no RX4 sentence and no verified allergy span has no narrower cue: the whole text is
   // scanned, so a named allergen gets its own slot (brief 018 B6, a ruling; fails closed).
   if (spans.length === 0) return whole;
-  return sentencesOf(e.text).filter((s) => spans.some((sp) => sp.start < s.end && s.start < sp.end));
+  return onFrom(sentencesOf(e.text).filter((s) => spans.some((sp) => sp.start < s.end && s.start < sp.end)));
 }
 
 /** `ranges` minus `cut`, in order. */
