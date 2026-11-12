@@ -276,6 +276,17 @@ export async function planMemoryRoutes(tx: Reader, a: MemoryRouteInput): Promise
         out.entries.push(deferred("transition", [...rows.values()].map(memRef)));
         continue;
       }
+      // Fail closed (brief 025 task D2): an active row on a new row's key that the plan didn't read would be left
+      // current beside it, so the change is extraction's.
+      let beside = false;
+      for (const p of puts) {
+        if (p.expectRev !== null) continue;
+        for (const m of await sameKeyRows(tx, a.uid, p.row.key)) if (!rows.has(m.logicalId) && !written.has(m.logicalId)) beside = true;
+      }
+      if (beside) {
+        out.entries.push(deferred("transition", [...rows.values()].map(memRef)));
+        continue;
+      }
       for (const p0 of puts) {
         const p = p0.expectRev === null ? { ...p0, row: rootedAtTurnSlice(p0.row, ev, a.hasher) } : p0;
         out.commands.push(p);

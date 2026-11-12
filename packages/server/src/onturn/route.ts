@@ -24,7 +24,7 @@ import type { SlowParse } from "../intents/slow-parse";
 import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 import { readSnapshot } from "../store/port";
-import { type OnTurnContext, correctionTargets, entitiesFor, packetTargets, readOnTurnContext, subjectIndex } from "./context";
+import { type OnTurnContext, correctionTargets, entitiesFor, packetTargets, readOnTurnContext, subjectIndex, truthOrderTargets } from "./context";
 import { type HardRuleRun, executeHardRule } from "./execute";
 import { anyMemoryRoute, candidateOpens, memoryCandidates, memoryRegexOpens, orRoutes } from "./trigger";
 import { TYPED_ROUTE_BUDGET_MS, planKey, typedLineNote, typedRouteReply } from "./typed";
@@ -78,12 +78,16 @@ export async function runHardRuleSlots(
   }
   const context = await readSnapshot(deps.store, uid, (reader) => readOnTurnContext(reader, uid, a.pre.epoch, a.generation));
   const correctKnown = memRegex.correct || (parsedFirst !== undefined && memoryCandidates(parsedFirst).correct);
-  const targets = correctKnown ? correctionTargets(context, [a.text]) : new Map();
+  const shownTargets = correctKnown ? correctionTargets(context, [a.text]) : new Map();
+  const known = subjectIndex(context.memories, a.pre.rules, deps.hasher);
+  // Brief 025 task D2: the transition route's truth-order rows, code's pick, kept out of the packet.
+  const transitionKnown = memRegex.transition || (parsedFirst !== undefined && memoryCandidates(parsedFirst).transition);
+  const targets = transitionKnown ? new Map([...truthOrderTargets(context, a.text, known, deps.hasher), ...shownTargets]) : shownTargets;
   const input = {
     turn: { eid: a.eid, text: a.text, ownerConfirmed: a.typed },
     lastTurns: [],
-    entities: entitiesFor(subjectIndex(context.memories, a.pre.rules, deps.hasher), a.text),
-    targets: packetTargets(targets),
+    entities: entitiesFor(known, a.text),
+    targets: packetTargets(shownTargets),
     pendingId: a.askedRuleId,
   };
   const slots = await deps.fastSlots.slots(input, FAST_SLOTS_DEADLINE_MS);

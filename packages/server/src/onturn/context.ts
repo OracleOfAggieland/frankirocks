@@ -5,7 +5,7 @@
  * the transaction compiles with the new `core/rules` (G16's overlay: a hardRule write changes no Memory, so the
  * overlay is the rules document alone).
  */
-import { type CoreEpoch, type CoreRules, type EID, type Evidence, FAST_SLOTS_ENTITIES, FAST_SLOTS_TARGETS, type FastSlotsInput, type HeadMemory, type Hasher, type ID, type Memory, type Snapshot, type SubjectIndex, type TurnEvidence, currentNames, entityLabel, protectedRow, renderedMemory, rootKey } from "@franki/core";
+import { type CoreEpoch, type CoreRules, type EID, type Evidence, FAST_SLOTS_ENTITIES, FAST_SLOTS_TARGETS, type FastSlotsInput, type HeadMemory, type Hasher, type ID, type Memory, type Snapshot, type SubjectIndex, type TurnEvidence, TRUTH_ORDER, currentNames, entityLabel, mentionEid, mentionName, protectedRow, renderedMemory, rootKey } from "@franki/core";
 import { pickOpen } from "../worker/extract";
 import { readAllMemories, snapshotFor } from "../head-build";
 import type { Tx } from "../store/port";
@@ -98,6 +98,29 @@ export function correctionTargets(context: Pick<OnTurnContext, "memories">, said
     out.set(o.id, { rev: o.rev, memory: m, line: o.rendered });
   }
   return out;
+}
+
+/** Truth-order rows read for one turn, at most (brief 025 task D2). */
+export const TRUTH_TARGETS_MAX = 48;
+const TRUTH_PREDICATES = new Set(Object.values(TRUTH_ORDER).flat());
+
+/**
+ * The transition route's targets (design 3.3, brief 025 task D2): code's own pick, never shown to the model. Every
+ * active or history row on a truth-order predicate whose subject is the owner or an entity the turn names (by the
+ * subject index's labels, or by a word that derives the entity's ID, "my dad" naming dad), and every `care` row
+ * about such an entity. Protected rows are never targets. Newest first, at most `TRUTH_TARGETS_MAX`.
+ */
+export function truthOrderTargets(context: Pick<OnTurnContext, "memories">, text: string, known: SubjectIndex, hasher: Hasher): Map<ID, OnTurnTarget> {
+  const named = new Set<EID>(["self"]);
+  const t = ` ${text.toLowerCase()} `;
+  for (const e of known.entries) if ([e.label, ...e.aliases].some((a) => a !== "" && t.includes(a.toLowerCase()))) named.add(e.id);
+  for (const w of text.match(/[\p{L}][\p{L}'-]*/gu) ?? []) for (const kind of ["person", "place", "organization"] as const) named.add(mentionEid(kind, mentionName(w), hasher));
+  const rows = context.memories
+    .filter(({ memory: m }) => (m.status === "active" || m.status === "history") && TRUTH_PREDICATES.has(m.predicate) && !protectedRow(m))
+    .filter(({ memory: m }) => named.has(m.subjectId) || (m.predicate === "care" && typeof m.args.careSubjectRef === "string" && named.has(m.args.careSubjectRef)))
+    .sort((a, b) => (a.memory.updatedAt < b.memory.updatedAt ? 1 : a.memory.updatedAt > b.memory.updatedAt ? -1 : a.id < b.id ? -1 : 1))
+    .slice(0, TRUTH_TARGETS_MAX);
+  return new Map(rows.map((r) => [r.id, { rev: r.memory.rev, memory: r.memory, line: renderedMemory(r.memory) }]));
 }
 
 /** The packet's `targets` (2.2): each target's predicate, value, args and stored line. */
