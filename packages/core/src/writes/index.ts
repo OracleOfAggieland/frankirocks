@@ -15,3 +15,8 @@ export * from "./keys";
 export * from "./bundle";
 export * from "./spans";
 export * from "./fast-slots";
+export * from "./rules-section";
+export * from "./rules-doc";
+export * from "./notes";
+export * from "./pending";
+export * from "./backstop";

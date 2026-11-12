@@ -170,3 +170,16 @@ One hard-rule slot, keyed by subject (or anonymous) and code: `absent`, `pending
 | Tests | `packages/core/src/writes/plans.test.ts` |
 
 The only code that decides `core/bundle.state`. `bundleAfter(prev, event)`: a compiled Head is `clean`; a failed compile or a burned bundle is `dirty`, the old Head stays and writes still commit; `blocked` stays `blocked` whatever the event, since only forget is meant to leave it.
+
+### `memory.allergyAsk`
+
+| Field | Value |
+|---|---|
+| Status | explicit |
+| File | `packages/core/src/writes/pending.ts` |
+| Decides | `pendingNext` |
+| State | `AllergyAsk` in `packages/core/src/writes/types.ts` |
+| Events | `AskEvent` in `packages/core/src/writes/types.ts` |
+| Tests | `packages/core/src/writes/notes.test.ts` |
+
+The open allergy question of brief 012 design 6.4, kept on `core/rules.ask` with the Session it belongs to (brief 018). A committed response that carried an `ask.*` route note plans it; it counts as asked only when the transcript receipt of Franki's next reply ends a sentence with `?`, or when Franki asked about allergies on its own. A final user turn whose FastSlots answer was valid ends it; one that wasn't counts an attempt, and `PENDING_ASK_TURNS` attempts end it. A missing transcript changes nothing (its Superseding_Post is the attempt). The rule leaving `core/rules`, or the Session closing, ends it.

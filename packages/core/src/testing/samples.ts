@@ -329,7 +329,7 @@ export function sampleCoreDocs(): CoreDocs {
       connectorOffers: [],
       warmth: { sessionId: null, turnsWithoutReference: 0 },
     },
-    rules: { ...c, rulesRev: 1, allergies: [], standing: [], rulePages: 0, gazetteerVersion: "none", noneConfirmed: [] },
+    rules: { ...c, rulesRev: 1, allergies: [], standing: [], rulePages: 0, gazetteerVersion: "none", noneConfirmed: [], subjectLabels: [], proposals: [], handled: [], ask: { sessionId: null, q: { kind: "none" } } },
     bundle: {
       ...c,
       state: "dirty",
@@ -400,5 +400,45 @@ export function sampleOverlay(overrides: Partial<Overlay> = {}): Overlay {
     state: "active",
     minSens: "S0",
     ...overrides,
+  };
+}
+
+// Brief 024: a Gate row (a note said under fastO) and a decision written before the admission fields existed.
+export function sampleLedgerGate(overrides: Partial<Extract<Ledger, { kind: "gate" }>["payload"]> = {}): Ledger {
+  return {
+    ...commonFields(),
+    kind: "gate",
+    state: "complete",
+    at: T0,
+    retainUntil: null,
+    payload: {
+      outcome: "said",
+      candidateId: testId("cand"),
+      refs: [{ type: "memory", id: testId("mem"), rev: 1 }],
+      noteIds: [testId("note")],
+      momentId: null,
+      sessionId: testId("session"),
+      turnId: testId("turn"),
+      verdict: "say",
+      form: "item",
+      render: "free",
+      carveOut: null,
+      reasonCodes: ["ok"],
+      audience: "private",
+      permitKind: "fastO",
+      match: "idTagged",
+      ...overrides,
+    },
+  };
+}
+
+export function sampleLedgerDecisionWithAdmission(): Ledger {
+  return {
+    ...commonFields(),
+    kind: "decision",
+    state: "complete",
+    at: T0,
+    retainUntil: null,
+    payload: { purpose: "answer", acceptedRefs: [], heldRefs: [], reasonCodes: ["ok"], audience: "private", issuer: "admissionSeam", permitKind: "slowOrdinary", judge: "O", falseHold: false },
   };
 }

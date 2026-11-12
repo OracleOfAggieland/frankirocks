@@ -58,3 +58,11 @@ export async function advancedWatermark(tx: Pick<Tx, "query">, uid: string, sess
   while (committed.has(w + 1) && w + 1 <= s.lastClientSeq) w++;
   return w;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Brief 024: the Gate's audience and modifiers from the Session. Modifiers only subtract, so a set timestamp
+// counts as on (fails closed); the Effective_Audience is `unknown` while a parse repair is pending.
+
+export function gateAudience(s: Session, opsNow: number): { audience: Au; modifiers: { rushed: boolean; crisis: boolean } } {
+  return { audience: effectiveAudience(s, opsNow), modifiers: { rushed: s.modifiers.rushed !== null, crisis: s.modifiers.crisis !== null } };
+}

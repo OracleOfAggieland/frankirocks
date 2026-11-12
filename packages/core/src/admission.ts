@@ -11,6 +11,7 @@ import type { Au, Head, ReasonCode, Ref } from "./schema/primitives";
 import type { PermitKind } from "./schema/records";
 import type { SafeTurn, Stamp, W } from "./schema/wire";
 import { ALONE_LINE, COMPANY_LINE, FORGET_NOT_YET, type FixedLine, RECOVERY_LINE } from "./voice/lines";
+import type { TurnWrite } from "./writes/types";
 
 export const PERMIT_TTL_MS = 10_000;
 /** The only line a `recoveryOnly` Permit covers; it lives with every Fixed_Line in `voice/lines.ts`. */
@@ -173,4 +174,41 @@ export function payloadHash(p: PayloadInput, hasher: Pick<Hasher, "sha256">): st
 /** The Ref of a user Turn, for admission ledger payloads. */
 export function turnRef(turnId: string, sessionId: string, rev: number): Ref {
   return { type: "turn", id: turnId, parentId: sessionId, rev };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The on-turn write and the seam's notes (brief 012 design section 4, G1, G27, G30). Wave B, task B4.
+
+/**
+ * The cut and the permit kind after this turn's on-turn write (G1). A committed write that raised the Deck, or a
+ * kept write with `cut` (a denial of an active rule), stops a playing reply: `cut` becomes true, and a
+ * `slowOrdinary` or `postCommitControl` reply permit with no Fixed_Line becomes `postCommitControl`, so the reply is
+ * created from the new Head. A hold, no write, or a write that raised nothing leaves `serverRule`'s outcome as it is.
+ * `notes`, `scope`, `line` and `swap` never change (P10).
+ */
+export function writeRule(_i: RuleInput, base: RuleOutcome, w: TurnWrite): RuleOutcome {
+  if (base.kind === "hold") return base;
+  const raises = (w.kind === "committed" && w.deckRaised) || (w.kind === "kept" && w.cut);
+  if (!raises) return base;
+  const upgrade = (base.permit === "slowOrdinary" || base.permit === "postCommitControl") && base.scope === "reply" && base.line === null;
+  return { ...base, permit: upgrade ? "postCommitControl" : base.permit, cut: true };
+}
+
+/** The notes a level lets through. */
+export const notesAllowed = (notes: readonly W[], allowed: NotesAllowed): W[] => (allowed === "all" ? [...notes] : allowed === "S0" ? notes.filter((n) => n.sens === "S0") : []);
+
+/** At most this many notes ride on one reply (contracts §6 Permit `noteIds`). */
+export const NOTES_MAX = 4;
+
+/**
+ * The notes a Permit admits (design section 4): a Fixed_Line's ack note alone (no route note rides on a Fixed_Line,
+ * G27); else the allowed notes, cut to three first when a route note comes too, so the route note is never the one
+ * the bound drops (G30). The route note passes the same level as every other note.
+ */
+export function admittedNotes(candidates: readonly W[], allowed: NotesAllowed, ack: W | null, routeNote: W | null): W[] {
+  if (ack !== null) return [ack];
+  const own = notesAllowed(candidates, allowed);
+  if (routeNote === null) return own.slice(0, NOTES_MAX);
+  const route = notesAllowed([routeNote], allowed);
+  return [...own.slice(0, NOTES_MAX - route.length), ...route];
 }

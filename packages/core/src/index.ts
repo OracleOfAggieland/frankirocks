@@ -50,3 +50,12 @@ export * from "./food";
 
 // Brief 019: claims packets for the seed.
 export * from "./claims";
+
+// Brief 024: the Gate.
+export * from "./gate/index";
+
+// Brief 024: third-party labels.
+export * from "./safe-name";
+
+// Brief 024: whispers.
+export * from "./whisper/index";

@@ -32,6 +32,7 @@ import { raceLimit } from "../clock/timers";
 import { ensureCoreDocs, ownerClock, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck } from "../deck";
 import { buildHead } from "../head-build";
+import { applyProposals } from "../onturn/proposals";
 import { completeRequest } from "../ledger/request";
 import { DECK_TTL_MS, afterClosed, beginCloseInTx, finishCloseInTx, newSession, stateAck } from "../sessions";
 import { paths } from "../store/paths";
@@ -141,7 +142,11 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
 
       const state: CoreState = { ...core.state.data, currentZone: req.clientZone };
       const pair = ownerClock(state, deps.clock);
-      const compiled = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: core.epoch.data, rules: core.rules.data }, pair, 1));
+      // Open proposals (brief 012 G39) are applied before the Head is compiled, so the Deck carries them.
+      const applied = applyProposals(core.rules.data);
+      const rules = applied.rules;
+      if (applied.changed) tx.update(paths.core(uid, "rules"), rules);
+      const compiled = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: core.epoch.data, rules }, pair, 1));
       if (!compiled.ok) throw configError(500, "head fixed sections exceed the token cap");
       const head = compiled.head;
       const now = tsFromMs(ops);
@@ -153,7 +158,7 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
         ...core.bundle.data,
         state: "clean",
         bundleRev: core.bundle.data.bundleRev + 1,
-        rulesRev: core.rules.data.rulesRev,
+        rulesRev: rules.rulesRev,
         head,
         headHash: deps.hasher.sha256(utf8(head.text)),
         selectedRefs: head.selectedRefs,
@@ -163,7 +168,7 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       };
       tx.update(paths.core(uid, "bundle"), bundle);
 
-      const stamp = currentStamp(sessionId, 1, { epoch: core.epoch.data, rules: core.rules.data, bundle });
+      const stamp = currentStamp(sessionId, 1, { epoch: core.epoch.data, rules, bundle });
       tx.create(paths.session(uid, sessionId), newSession(uid, { stamp, now: ops, startedBy: req.initiator }));
       const epoch: CoreEpoch = { ...core.epoch.data, activeSessionId: sessionId, activeCallId: null, updatedAt: now };
       tx.update(paths.core(uid, "epoch"), epoch);

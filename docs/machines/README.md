@@ -58,6 +58,7 @@ Every piece of code that holds state and moves it between named states is listed
 | `ui.cardSource` | explicit | Which source's rows show under a Card | `apps/web/src/components/surfaces/Card.tsx` | [ui-surfaces](ui-surfaces.md) |
 | `ui.ruleForget` | explicit | Which hard rule's Forget is armed for its second tap | `apps/web/src/components/surfaces/WhatIKnowSheet.tsx` | [ui-surfaces](ui-surfaces.md) |
 | `ui.spider` | explicit | The lab spider's springs, rest and travel, one frame at a time | `apps/web/src/ui/cursor/spider.ts` | [ui-surfaces](ui-surfaces.md) |
+| `ui.visit` | explicit | Whether the visit is cloned, ready, resetting or failed, and what the time bolt may ask for | `apps/web/src/ui/visit/visit-machine.ts` | [visit](visit.md) |
 | `ui.gait` | explicit | Which of the spider's feet are planted and which are swinging | `apps/web/src/ui/cursor/gait.ts` | [ui-surfaces](ui-surfaces.md) |
 | `landing.stepClock` | explicit | The stage's beat and words said within one visit to a story step | `apps/web/src/ui/landing/stage-script.ts` | [landing](landing.md) |
 | `landing.stageDriver` | explicit | When the front door's Franki wakes, and when a scene's one-shot fires or is cut | `apps/web/src/ui/landing/stage-script.ts` | [landing](landing.md) |
@@ -86,6 +87,7 @@ Every piece of code that holds state and moves it between named states is listed
 | `memory.slots` | explicit | When the FastSlots call of a request starts and settles | `packages/core/src/writes/slots-phase.ts` | [memory](memory.md) |
 | `memory.ruleState` | explicit | A hard-rule slot's next state | `packages/core/src/writes/rule-state.ts` | [memory](memory.md) |
 | `memory.bundle` | explicit | The bundle state a compile or a burn leaves behind | `packages/core/src/writes/bundle.ts` | [memory](memory.md) |
+| `memory.allergyAsk` | explicit | Whether an allergy question is planned, asked or closed | `packages/core/src/writes/pending.ts` | [memory](memory.md) |
 | `forget.job` | table | The phase a forget job moves to after each step, and which phases this part runs | `packages/core/src/forget/forget-phase.ts` | [forget](forget.md) |
 | `deploy.ci` | documented | The checks a push runs, in order | `.github/workflows/ci.yml` | [deploy](deploy.md) |
 | `deploy.secretScan` | documented | Which commits a push or pull request scans for secrets | `.github/workflows/secret-scan.yml` | [deploy](deploy.md) |

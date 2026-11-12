@@ -66,6 +66,17 @@ import {
   tagged,
   union,
 } from "./v";
+// Brief 024: the Gate's closed codes, for its ledger rows.
+import {
+  DECISION_ISSUERS,
+  DECISION_JUDGES,
+  GATE_CARVE_OUTS,
+  GATE_FORMS,
+  GATE_OUTCOMES,
+  GATE_REASONS,
+  GATE_RENDERS,
+  GATE_VERDICTS,
+} from "../gate/reasons";
 
 const s128 = str(128);
 
@@ -322,7 +333,7 @@ export type Turn = Infer<typeof Turn>;
 // ---------------------------------------------------------------------------------------------
 // ledger/{entryId}
 
-const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall"] as const;
+const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate"] as const;
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
 /**
@@ -344,6 +355,43 @@ const phoneCallFields = {
   accepted: bool,
 };
 
+// Brief 024: what the Gate said, held, steered, declined or blocked, as IDs and codes, never words.
+const GatePayload = obj({
+  outcome: oneOf(GATE_OUTCOMES),
+  candidateId: ID,
+  refs: arr(Ref, 8),
+  noteIds: arr(ID, 4),
+  momentId: nullable(ID),
+  sessionId: nullable(ID),
+  turnId: nullable(ID),
+  verdict: oneOf(GATE_VERDICTS),
+  form: nullable(oneOf(GATE_FORMS)),
+  render: nullable(oneOf(GATE_RENDERS)),
+  carveOut: nullable(oneOf(GATE_CARVE_OUTS)),
+  reasonCodes: arr(oneOf(GATE_REASONS), 16),
+  audience: Au,
+  permitKind: nullable(PermitKind),
+  match: nullable(oneOf(SAID_MATCH)),
+});
+
+// Brief 024 (first-spoken-call questions 16 and 17, voice-control question 57): who issued the admission, its
+// Permit kind, the judge's answer and whether it was a false hold. Decisions written before these fields have none
+// of them; `decisionFields` reads either shape, filling nulls.
+const DECISION_SHAPE = {
+  purpose: Purpose,
+  acceptedRefs: arr(Ref, 8),
+  heldRefs: arr(Ref, 32),
+  reasonCodes: arr(ReasonCode, 32),
+  audience: Au,
+};
+const DECISION_ADMISSION_FIELDS = {
+  issuer: nullable(oneOf(DECISION_ISSUERS)),
+  permitKind: nullable(PermitKind),
+  judge: nullable(oneOf(DECISION_JUDGES)),
+  falseHold: nullable(bool),
+};
+export const DecisionPayload = union(obj({ ...DECISION_SHAPE, ...DECISION_ADMISSION_FIELDS }), obj(DECISION_SHAPE));
+
 export const LEDGER_PAYLOADS = {
   // Earlier calls have no indexed call ID. Their receipts remain readable and replayable.
   phoneCall: union(obj({ ...phoneCallFields, phoneCallId: ID }), obj(phoneCallFields)),
@@ -354,13 +402,7 @@ export const LEDGER_PAYLOADS = {
     response: nullable(plainObject),
     error: nullable(ErrorCode),
   }),
-  decision: obj({
-    purpose: Purpose,
-    acceptedRefs: arr(Ref, 8),
-    heldRefs: arr(Ref, 32),
-    reasonCodes: arr(ReasonCode, 32),
-    audience: Au,
-  }),
+  decision: DecisionPayload,
   action: obj({
     pendingId: ID,
     executor: oneOf(["makeReminder", "draftNote", "makeList", "holdTime"]),
@@ -388,6 +430,7 @@ export const LEDGER_PAYLOADS = {
     touched: arr(obj({ collection: SC, count: nat() }), 32),
     withdrawnCount: nat(),
   }),
+  gate: GatePayload,
 } satisfies Record<LedgerKind, Schema<unknown>>;
 
 const LedgerBase = obj({
@@ -589,6 +632,34 @@ export const AllergyRule = obj({
   dependsOn: arr(Dep, 32),
 });
 
+// ---------------------------------------------------------------------------------------------
+// Wave B of brief 012 (brief 018 task B2). The on-turn hard-rule route keeps its state on `core/rules`, the one
+// document it already writes, rather than on the Session or the Extract_Job (rulings in docs/briefs/018-report.md):
+// subject labels (CQ 103), late proposals (G39, CQ 125), what the route handled per turn (section 5, CQ 108) and
+// the open allergy question (6.4, CQ 106). Documents written before this read with defaults (`withRulesDefaults`).
+
+/** What the on-turn route handled for one route of one turn (design section 5). */
+export const OnTurnHandledRecord = obj({
+  route: oneOf(["hardRule", "correct", "transition"]),
+  outcome: oneOf(["ruleWritten", "ruleKept", "pendingWritten", "pendingKept", "pendingResolved", "denialRecorded", "notAllergy", "applied", "renamed", "retracted", "same", "careOnly", "deferred", "proposed"]),
+  keys: arr(ID, 8),
+  refs: arr(Ref, 16),
+  ruleKeys: arr(obj({ subjectId: nullable(EID), code: str(64, { min: 1 }) }), 32),
+});
+/** The `handled` ring: the most recent turns' entries, by Evidence. */
+export const HANDLED_RING_MAX = 16;
+export const HandledEntry = obj({ eid: ID, turnId: ID, entries: arr(OnTurnHandledRecord, 3) });
+/** A late hardRule result (a Parse_Repair's or the extraction backstop's), applied by the next turn or open (G39). */
+export const PROPOSALS_MAX = 16;
+export const RuleProposal = obj({ id: ID, origin: oneOf(["repair", "backstop"]), turnId: nullable(ID), eid: ID, install: arr(AllergyRule, 8) });
+/** The open allergy question (design 6.4), for the Session it was asked in. */
+export const AllergyAskRecord = tagged("kind", {
+  none: obj({ kind: literal("none") }),
+  planned: obj({ kind: literal("planned"), ruleId: ID, seq: nat() }),
+  asked: obj({ kind: literal("asked"), ruleId: nullable(ID), askedSeq: nat(), attempts: nat() }),
+});
+export const RulesAsk = obj({ sessionId: nullable(ID), q: AllergyAskRecord });
+
 export const CoreRules = obj({
   ...C_SHAPE,
   rulesRev: nat(),
@@ -597,6 +668,11 @@ export const CoreRules = obj({
   rulePages: nat(0, 256),
   gazetteerVersion: str(32),
   noneConfirmed: arr(EID, 256),
+  // Brief 018 task B2.
+  subjectLabels: arr(obj({ subjectId: EID, label: str(80, { min: 1 }) }), 256),
+  proposals: arr(RuleProposal, PROPOSALS_MAX),
+  handled: arr(HandledEntry, HANDLED_RING_MAX),
+  ask: RulesAsk,
 });
 export type CoreRules = Infer<typeof CoreRules>;
 
