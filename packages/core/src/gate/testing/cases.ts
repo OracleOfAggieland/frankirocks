@@ -18,6 +18,7 @@ export function gateCand(o: Partial<GateCandidate> = {}): GateCandidate {
     toldAt: null,
     topic: null,
     queryTerms: [],
+    aliases: [],
     purpose: "item",
     gravity: 0,
     food: false,

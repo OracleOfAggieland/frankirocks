@@ -21,11 +21,15 @@ export function ownerTokens(x: Pick<GateContext, "ownerTurn">): Set<string> | nu
   return new Set(tokenize(t.text));
 }
 
-/** A recall result counts as asked only on the recall trigger, when the owner's words hold one of its terms. */
-export function askedByOwner(c: Pick<GateCandidate, "queryTerms">, x: Pick<GateContext, "ownerTurn" | "trigger">): boolean {
+/**
+ * A recall result counts as asked only on the recall trigger, when the owner's own words hold one of the candidate's
+ * own aliases or open its topic (brief 033 finding 3). The model's query terms never count.
+ */
+export function askedByOwner(c: Pick<GateCandidate, "aliases" | "topic">, x: Pick<GateContext, "ownerTurn" | "trigger">): boolean {
   if (x.trigger !== "recall") return false;
   const words = ownerTokens(x);
-  return words !== null && terms(c.queryTerms).some((q) => words.has(q));
+  if (words === null) return false;
+  return terms(c.aliases).some((q) => words.has(q)) || (c.topic !== null && doorOpens(c.topic, x));
 }
 
 /** `opens(label)`: every label token of two or more characters is in the owner's words. */

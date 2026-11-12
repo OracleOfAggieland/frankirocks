@@ -48,11 +48,27 @@ describe("finding 15: an asked S2 recall goes to a card until the screen ask exi
 
 describe("finding 17: an asked recall is answered as asked, not by an unprompted path", () => {
   it("does not let company open what rushed held (the committed subtract-only property, seed 2120965385)", () => {
-    const c = gateCand({ sens: "S2", topic: { ...work, terms: [] }, queryTerms: ["biopsy"] });
+    const c = gateCand({ sens: "S2", topic: { ...work, terms: [] }, aliases: ["biopsy"] });
     const wide = gateCtx({ build: "plus200", modifiers: { rushed: true, crisis: false }, trigger: "recall", ownerTurn: ownerSaid("biopsy"), openedTopics: [WORK] });
     const w = gate(c, wide);
     const n = gate(c, { ...wide, audience: "company" });
     expect(w).toMatchObject({ verdict: "card", carveOut: "openedTopicRecall" });
     expect(n.verdict).toBe("card");
+  });
+});
+
+describe("finding 3: only the owner's words against the candidate's own terms ask", () => {
+  it("does not count the model's query terms as asked", () => {
+    const c = gateCand({ sens: "S1", queryTerms: ["long day mom"], aliases: ["mom"] });
+    const recall = { trigger: "recall" as const };
+    expect(gate(c, gateCtx({ ...recall, ownerTurn: ownerSaid("Long day") })).verdict).toBe("silent");
+    expect(gate(c, gateCtx({ ...recall, ownerTurn: ownerSaid("How's my mom?") })).verdict).toBe("say");
+    expect(gate({ ...c, queryTerms: [] }, gateCtx({ ...recall, ownerTurn: ownerSaid("How's my mom?") })).verdict).toBe("say");
+  });
+
+  it("asks through the candidate's own topic, never a third-party label", () => {
+    const c = gateCand({ sens: "S1", topic: work });
+    expect(gate(c, gateCtx({ trigger: "recall", ownerTurn: ownerSaid("how is work") })).verdict).toBe("say");
+    expect(gate({ ...c, topic: { ...work, labelClass: "T" } }, gateCtx({ trigger: "recall", ownerTurn: ownerSaid("how is work") })).verdict).toBe("silent");
   });
 });

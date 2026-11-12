@@ -42,8 +42,16 @@ export interface GateCandidate {
   /** When the owner volunteered it (world time), for the named check-in. */
   toldAt: TS | null;
   topic: GateTopic | null;
-  /** The recall's query terms and aliases, for the asked test. */
+  /**
+   * The recall's query terms, as the voice model sent them. They narrow retrieval only and never make a result asked
+   * (brief 033 finding 3).
+   */
   queryTerms: readonly string[];
+  /**
+   * The candidate's own names and aliases (its entity's), from U, C or O spans. A recall is asked only when the
+   * owner's words hold one of these or open the candidate's topic.
+   */
+  aliases: readonly string[];
   purpose: GatePurpose;
   gravity: 0 | 1 | 2 | 3;
   food: boolean;

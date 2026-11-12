@@ -24,6 +24,8 @@ function cand(o: Partial<GateCandidate> = {}): GateCandidate {
     toldAt: null,
     topic: null,
     queryTerms: [],
+    // Brief 033 finding 3: these cases' query terms stood for the candidate's own aliases, so they are kept as such.
+    aliases: o.queryTerms ?? [],
     purpose: "item",
     gravity: 0,
     food: false,

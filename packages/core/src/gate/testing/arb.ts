@@ -41,6 +41,7 @@ export const candidateArb: fc.Arbitrary<GateCandidate> = fc.record({
   toldAt: fc.option(near(24 * 10), { nil: null }),
   topic: fc.option(topicArb, { nil: null }),
   queryTerms: fc.array(word, { maxLength: 3 }),
+  aliases: fc.constant([] as string[]),
   purpose: fc.constantFrom("item", "wish", "ask", "insight", "celebrate", "suggest", "logistics" as const),
   gravity: fc.constantFrom(0, 1, 2, 3 as const),
   food: fc.oneof({ arbitrary: fc.constant(false), weight: 3 }, { arbitrary: fc.constant(true), weight: 1 }),
@@ -52,7 +53,11 @@ export const candidateArb: fc.Arbitrary<GateCandidate> = fc.record({
   ownRooted: fc.boolean(),
   checkInUsed: fc.boolean(),
   act: fc.constantFrom("say", "say", "say", "use" as const),
-});
+})
+  // Brief 033 finding 3: the aliases are drawn from the query terms. The committed ceiling property's oracle reads
+  // "asked" from the query terms, so it stays a sound upper bound only while the aliases are among them (with free
+  // aliases it fails: seed -2008636482). Properties that need the two apart set them apart themselves.
+  .chain((c) => fc.subarray([...c.queryTerms]).map((aliases) => ({ ...c, aliases })));
 
 export const authorizationArb: fc.Arbitrary<GateAuthorization> = fc.record({
   subjectId: fc.constantFrom("e:mom", "e:dad"),
