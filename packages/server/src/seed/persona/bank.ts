@@ -26,7 +26,9 @@ export const BANK: BankLine[] = [
   row("bank-takeout-5", -12, "19:15", "Pellwick Noodles", 2400, "takeout"),
   row("bank-takeout-6", -3, "19:40", "Marrowfield Pizza", 3600, "takeout"),
   // Decoys.
-  row("bank-takeout-pending", -1, "21:30", "Quillan Thai Kitchen", 1900, "takeout", true),
+  // The pending order is from after midnight today, outside the window: a pending row inside it makes the hero
+  // partial (design note 022), so the decoy sits where it can only be mistaken, never counted (brief 023, S-171).
+  row("bank-takeout-pending", 0, "00:20", "Quillan Thai Kitchen", 1900, "takeout", true),
   row("bank-restaurant", -16, "20:00", "Harrow & Vine Bistro", 5200, "restaurant"),
   // Groceries.
   row("bank-grocery-1", -21, "11:00", "Fennimore Market", 6420, "groceries"),

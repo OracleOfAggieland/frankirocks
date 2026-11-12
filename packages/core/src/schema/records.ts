@@ -791,3 +791,121 @@ export type Overlay = Infer<typeof Overlay>;
 export const LoopWindow = Window;
 export type LoopWindow = Infer<typeof Window>;
 export type LoopRecord = Infer<typeof Loop>;
+
+// ---------------------------------------------------------------------------------------------
+// Brief 023 (lane seed, F6): moments/{momentId} (contracts §1 `moments`; design note 023).
+
+import { Civil, Domain as MomentDomain } from "./primitives";
+
+export const MOMENT_KINDS = [
+  "wish",
+  "checkIn",
+  "expiryAsk",
+  "ask",
+  "commitmentDue",
+  "review",
+  "gap",
+  "prepare",
+  "connection",
+  "celebrate",
+  "griefAsk",
+  "transition",
+  "goalWake",
+  "warmth",
+  "insight",
+  "door",
+] as const;
+export type MomentKind = (typeof MOMENT_KINDS)[number];
+export const MOMENT_STATUSES = ["pending", "leased", "admitted", "delivered", "expired", "skipped", "cancelled"] as const;
+export type MomentStatus = (typeof MOMENT_STATUSES)[number];
+export const CANCEL_REASONS = ["revised", "closed", "expired", "policy", "forgotten", "declined"] as const;
+
+/** contracts §1 CueTiming. */
+export const CueTiming = tagged("basis", {
+  fixed: obj({ basis: literal("fixed"), at: TS }),
+  anchorDay: obj({ basis: literal("anchorDay"), anchorId: ID, dayOffset: signed, minute: int(0, 1439), zone: Zone }),
+  anchorStart: obj({ basis: literal("anchorStart"), anchorId: ID, offsetMinutes: signed }),
+  anchorEnd: obj({ basis: literal("anchorEnd"), anchorId: ID, offsetMinutes: signed }),
+});
+
+/** contracts §1 Auth. No floor writer; the field stays null there. */
+export const MomentAuth = obj({
+  subjectId: EID,
+  topicId: ID,
+  momentId: ID,
+  wording: str(256),
+  audience: Au,
+  worldWindow: obj({ from: TS, to: TS }),
+  expiresAt: TS,
+  consumedOpsAt: nullable(TS),
+  confirmRef: Ref,
+  ...L_SHAPE,
+});
+
+export const MomentPayload = tagged("kind", {
+  cue: obj({ kind: literal("cue"), noteRef: Ref, template: nullable(Tpl) }),
+  ask: obj({ kind: literal("ask"), pendingId: ID }),
+  offer: obj({ kind: literal("offer"), pendingId: ID, offer: oneOf(["makeReminder", "draftNote", "makeList", "holdTime"]) }),
+  pattern: obj({ kind: literal("pattern"), rollupId: ID }),
+  celebrate: obj({
+    kind: literal("celebrate"),
+    loopId: ID,
+    before: nullable(signed),
+    after: nullable(signed),
+    delta: nullable(signed),
+    unit: oneOf(["money", "count", "appraisal"]),
+    currency: nullable(Currency),
+  }),
+});
+export type MomentPayload = Infer<typeof MomentPayload>;
+
+export const Moment = refine(
+  obj({
+    ...C_SHAPE,
+    memoryId: nullable(ID),
+    rollupId: nullable(ID),
+    /** Design note 023 gap 3: a reminder's source is its ledger `makeReminder` action. */
+    actionId: nullable(ID),
+    kind: oneOf(MOMENT_KINDS),
+    /** Design note 023 gap 2: the original civil start (or civil date) of the occurrence. */
+    occurrenceKey: Civil,
+    scheduleRev: nat(),
+    domain: nullable(MomentDomain),
+    clockMode: oneOf(["live", "fixture"]),
+    backoffDays: nat(),
+    uptakeEid: nullable(ID),
+    cueTiming: nullable(CueTiming),
+    cueTokens: arr(str(64), 8),
+    status: oneOf(MOMENT_STATUSES),
+    dueAt: TS,
+    closeAt: TS,
+    nextReviewAt: TS,
+    anchorId: nullable(ID),
+    subjectIds: arr(EID, 16, 1),
+    topicIds: arr(ID, 16),
+    authorized: nullable(MomentAuth),
+    deliveryOverride: nullable(obj({ quietHours: bool, caps: bool, ...L_SHAPE })),
+    payload: MomentPayload,
+    leaseToken: nullable(ID),
+    leaseUntil: nullable(TS),
+    generation: nat(),
+    attempts: nat(),
+    admittedAt: nullable(TS),
+    saidAt: nullable(TS),
+    playbackAt: nullable(TS),
+    responseId: nullable(s128),
+    deliveryKey: ID,
+    saidMatch: oneOf(SAID_MATCH),
+    cancelReason: nullable(oneOf(CANCEL_REASONS)),
+  }),
+  (m, path) => {
+    const sources = [m.memoryId, m.rollupId, m.actionId].filter((s) => s !== null).length;
+    if (sources !== 1) return issue(`${path}.memoryId`, "exactly one of memoryId, rollupId and actionId");
+    if (m.closeAt < m.dueAt) return issue(`${path}.closeAt`, "closeAt is before dueAt");
+    if ((m.status === "leased") !== (m.leaseToken !== null && m.leaseUntil !== null)) return issue(`${path}.leaseToken`, "a lease is set exactly while leased");
+    if (m.saidAt !== null && (m.admittedAt === null || m.saidMatch === "none")) return issue(`${path}.saidAt`, "saidAt needs an admission and a match");
+    if ((m.status === "cancelled") !== (m.cancelReason !== null)) return issue(`${path}.cancelReason`, "a cancel reason is set exactly when cancelled");
+    return null;
+  },
+);
+export type Moment = Infer<typeof Moment>;

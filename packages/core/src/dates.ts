@@ -307,3 +307,38 @@ export function spokenOnLabel(spokenAtMs: number, zone: string): string {
   const p = partsAt(spokenAtMs, zone);
   return label({ y: p.y, m: p.m, d: p.d }, null, p.y);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Brief 023 (lane seed, F6): local wall times for derive and delivery.
+
+/**
+ * The instant of a local wall minute (0 to 1439) on a civil date (`YYYY-MM-DD`) in `zone`, or null for a date that
+ * is not one. A minute DST skips is shifted forward by the gap; a repeated minute takes the first
+ * instant (design note 023 gap 6).
+ */
+export function localMinuteAt(civilDate: string, minute: number, zone: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(civilDate);
+  if (m === null || !Number.isInteger(minute) || minute < 0 || minute > 1439) return null;
+  const c: Civil = { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
+  if (!realDay(c.y, c.m, c.d)) return null;
+  const wall = Date.UTC(c.y, c.m - 1, c.d, Math.floor(minute / 60), minute % 60);
+  const exact = candidates(wall, zone).filter((ms) => ms + offsetAt(ms, zone) === wall);
+  if (exact.length > 0) return Math.min(...exact);
+  // Inside a gap: read with the offset from before the gap, the wall time lands after it, shifted forward by the gap.
+  const after = candidates(wall, zone).filter((ms) => ms + offsetAt(ms, zone) > wall);
+  return after.length === 0 ? null : Math.min(...after);
+}
+
+/** The local wall minute (0 to 1439) of an instant in `zone`. */
+export function localMinuteOf(ms: number, zone: string): number {
+  const p = partsAt(ms, zone);
+  return p.hh * 60 + p.mm;
+}
+
+/** The civil date `n` days after `civilDate` (`YYYY-MM-DD`). */
+export function addCivilDays(civilDate: string, n: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(civilDate);
+  if (m === null) return civilDate;
+  const c = addDays({ y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) }, n);
+  return `${c.y}-${pad(c.m)}-${pad(c.d)}`;
+}

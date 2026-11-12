@@ -569,4 +569,9 @@ export type AdvanceRequest = Infer<typeof AdvanceRequest>;
 export { AdvanceResponse, ResetResponse };
 export type ResetResponse = Infer<typeof ResetResponse>;
 export type AdvanceResponse = Infer<typeof AdvanceResponse>;
+
+// Brief 023: POST /api/seed/advance (contracts §6 Routes). Its response is the stored shape above.
+
+export const SeedAdvanceRequest = obj({ requestId: ID, fixtureNamespace: ID, to: TS });
+export const SeedAdvanceResponse = AdvanceResponse;
 export type Proactive = Infer<typeof Proactive>;
