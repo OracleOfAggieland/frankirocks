@@ -83,7 +83,6 @@ const FT02 = friend("FT02", 2, "Vegetarian this month", [
     label: "a diet with an end is stored",
     do: "check",
     of: "open",
-    waits: W.G_FT02,
     expect: [storeHas("an active vegetarian preference.food with validTo set", (m) => m.predicate === "preference.food" && m.status === "active", (ms) => (ms.some((m) => m.validTo !== null) ? true : `validTo ${ms.map((m) => m.validTo).join(", ") || "none"}`))],
   },
   { label: "ask about dinner this month", do: "say", text: "What should I make for dinner?", answers: [parse()] },
