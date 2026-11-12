@@ -9,7 +9,7 @@ Every piece of code that holds state and moves it between named states is listed
 | Status | Meaning |
 |---|---|
 | `explicit` | One pure function decides, over a closed union. The block names the function and its types. |
-| `table` | A `const` table typed with `satisfies Record<State, ...>`, read by one function. |
+| `table` | A `const` table typed `Record<State, ...>` (by annotation or `satisfies`), read by one function. |
 | `view` | A pure function that derives a closed union from live state and is never written. |
 | `documented` | The state lives in fields or records that several functions write. The page says which, and what holds. |
 | `planned` | The home file is not on this branch yet. Its page block says where it will live; the test does not require the file. |
