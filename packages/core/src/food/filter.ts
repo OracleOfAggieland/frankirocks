@@ -9,7 +9,9 @@
  *      conflicts when its code is reached, or when the rule's code is under the ingredient's code. A covering rule
  *      whose code isn't a known allergen (`unresolved`, an off-table word, the `none` pseudo code) removes
  *      everything. A known code outside the food domain removes nothing.
- *   5. Excluded candidate IDs are removed.
+ *   5. A candidate holding a prepared food whose makeup varies by brand (profile `varies`) can rule out nothing
+ *      beyond its tags, so any covering food rule removes it (brief 037, finding 3).
+ *   6. Excluded candidate IDs are removed.
  */
 import type { Infer } from "../schema/v";
 import type { AllergyRule as AllergyRuleSchema } from "../schema/records";
@@ -19,7 +21,7 @@ import { type Ingredient, ingredient } from "./ingredients";
 
 export type FoodRule = Infer<typeof AllergyRuleSchema>;
 
-export type RemoveReason = "rulesUnavailable" | "unknownAllergen" | "unknownRule" | "rule" | "excluded";
+export type RemoveReason = "rulesUnavailable" | "unknownAllergen" | "unknownRule" | "rule" | "mayContain" | "excluded";
 
 export interface FilterInput {
   candidates: readonly FoodCandidate[];
@@ -92,6 +94,10 @@ export function filterFood(input: FilterInput): FilterResult {
     const hit = foodRules.find((r) => flags.some((f) => codesConflict(r.code, f.code))) ?? null;
     if (hit !== null) {
       removed.push({ id: c.id, reason: "rule", ruleId: hit.id });
+      continue;
+    }
+    if (foodRules.length > 0 && c.ingredientIds.some((id) => table(id)?.profile === "varies")) {
+      removed.push({ id: c.id, reason: "mayContain", ruleId: foodRules[0]!.id });
       continue;
     }
     if (excluded.has(c.id)) {
