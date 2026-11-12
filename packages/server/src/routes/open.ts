@@ -56,12 +56,29 @@ import { openingProactive } from "./delivery-wire";
  * cold process's first token check and Firestore channel, which the live check showed are not small.
  */
 export const OPEN_BUDGET_MS = 3_500;
+/** One Firestore round trip from a laptop to us-central1, as the emulator runs add it. */
+export const OPEN_ROUND_TRIP_MS = 75;
 /**
- * Kept back from the drain for the transaction and the prior Session's close. Measured on the emulator with 75 ms
- * added per Firestore round trip (laptop to us-central1): transaction 520–650 ms, and the prior close's own
- * transaction plus its Extract_Jobs 500–550 ms; the rest is margin for a slower machine.
+ * The open's transaction, counted as `store/firestore-store.ts` makes its round trips (`open-budget.test.ts` pins it):
+ * the core documents and the request entry together (1); the Sessions it may inherit from (1); the Head's snapshot,
+ * its Memories, their Evidence in two waves, and the blocks and overlays (4); the paths written but never read (1);
+ * the commit (1). The prior Session and the request entry are read again from what the transaction already read.
  */
-export const OPEN_TAIL_RESERVE_MS = 1_400;
+export const OPEN_TX_ROUND_TRIPS = 8;
+/**
+ * The prior Session's close at its worst: its transaction (the Session, its hang-up Job, core/epoch, the commit: 4),
+ * then `afterClosed`'s read of the Turns (1) and `ensureExtractJobs` (core/epoch with the Jobs, the Evidence, the
+ * commit: 3, whatever the number of Turns; `worker/extract-jobs.test.ts` pins it).
+ */
+export const PRIOR_CLOSE_ROUND_TRIPS = 8;
+/** How far the drain may run past its limit before its timer fires (9–10 ms on the emulator, Nov 12). */
+export const DRAIN_OVERSHOOT_MS = 25;
+/**
+ * Kept back from the drain for the transaction and the prior Session's close: one retried transaction (two of
+ * them, 2 × 8 = 16 round trips; the emulator's `collide` retry took 1,308–1,366 ms), the prior close at its worst
+ * (8), and the drain's overshoot. (16 + 8) × 75 ms + 25 ms = 1,825 ms.
+ */
+export const OPEN_TAIL_RESERVE_MS = (2 * OPEN_TX_ROUND_TRIPS + PRIOR_CLOSE_ROUND_TRIPS) * OPEN_ROUND_TRIP_MS + DRAIN_OVERSHOOT_MS;
 /** Kept back from the prior Session's hangups for its closing transaction and Extract_Jobs (500–550 ms measured). */
 export const PRIOR_CLOSE_RESERVE_MS = 700;
 /** The most the prior Session's hangups may wait, budget permitting. */
@@ -138,7 +155,9 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
 
     const sessionId = deps.hasher.id(idParts.session(uid, req.requestId));
     const { response, prior, stamp, session, narrow } = await deps.store.transaction(uid, async (tx) => {
-      const core = await readCoreDocs(tx, uid);
+      // The request entry is read with the core documents, in the same round trip: `completeRequest` reads it again
+      // at the end, which the transaction answers from what it already read (the tail reserve's count, below).
+      const [core] = await Promise.all([readCoreDocs(tx, uid), tx.get(key.path)]);
       const ops = deps.clock.read().opsClock.now;
       if (core.epoch.data.barrier !== null) {
         const blocked: OpenRes = { sessionId, generation: 0, deck: null, state: "blocked", ack: null, proactive: null, audience: null };
