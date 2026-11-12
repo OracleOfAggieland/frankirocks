@@ -974,6 +974,13 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
 // ---------------------------------------------------------------------------------------------
 // Open, connect, recovery and close
 
+/**
+ * The reason of every close the machine sends on its own (brief 040, item 5): a Session the swap leaves, a stale
+ * open's answer, an open answered after the call ended. Only the Owner's hang-up (hangUp) sends `user`, which marks
+ * a narrowed Session private on the server (brief 035, question V-172); `replace` keeps its audience. Fails closed.
+ */
+export const MACHINE_CLOSE_REASON = "replace" as const;
+
 /** The visit every open names: the one the controller last set (brief 040, item 4). */
 const openVisit = (st: VoiceState): string | null => st.visitId ?? null;
 
@@ -999,7 +1006,7 @@ function startOpen(s: Step, zone: string, retrying: boolean): void {
  */
 function dropStaleOpen(s: Step, res: Infer<typeof OpenResponse> | null): void {
   s.set({ staleOpen: false });
-  if (res !== null && res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: "user" } });
+  if (res !== null && res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: MACHINE_CLOSE_REASON } });
   if (s.st.phase !== "SWAPPING" || !s.st.awaitingOpen) return;
   s.push({ kind: "open", body: { initiator: "user", previousSessionId: s.st.narrowedFrom ?? s.st.lastSessionId, clientZone: s.st.zone, visitId: openVisit(s.st) } });
   s.arm("openWait", s.now + OPEN_LIMIT_MS);
@@ -1009,8 +1016,9 @@ function onOpen(s: Step, res: Infer<typeof OpenResponse>): void {
   const st = s.st;
   if (st.staleOpen) return dropStaleOpen(s, res);
   if (!st.awaitingOpen) {
-    // The Owner hung up before the open answered: close the Session it created.
-    if (res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: "user" } });
+    // The Owner hung up, or the open's wait ended, before the open answered: close the Session it created. The
+    // machine's own close: that Session was never the call's (brief 040, item 5; question V-182).
+    if (res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: MACHINE_CLOSE_REASON } });
     return;
   }
   s.disarm("openWait");
@@ -1224,7 +1232,7 @@ function startSwap(s: Step, from: string): void {
   s.push({ kind: "teardown" });
   flushRecent(s);
   const st = s.st;
-  if (st.session !== null && st.session.sessionId !== from) s.push({ kind: "close", body: { sessionId: st.session.sessionId, generation: st.session.generation, reason: "user" } });
+  if (st.session !== null && st.session.sessionId !== from) s.push({ kind: "close", body: { sessionId: st.session.sessionId, generation: st.session.generation, reason: MACHINE_CLOSE_REASON } });
   s.set({
     phase: "SWAPPING",
     lastSessionId: from,
