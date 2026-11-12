@@ -15,6 +15,11 @@ export interface RowContext {
   epoch: number;
   policyRev: number;
   clockMode: "live" | "fixture";
+  /**
+   * The owner's world time, when the caller knows it. Brief 036 finding 12: only with it may a wish skipped because
+   * its start passed be revived by a move that puts the start ahead again. Without it nothing is revived.
+   */
+  worldNow?: number;
 }
 
 /** contracts `deliveryKey = H(moment, occurrence, channel)`; the floor keys one delivery per occurrence. */
@@ -70,6 +75,7 @@ export function momentRow(p: MomentPlan, c: RowContext, hasher: Hasher): Moment 
     deliveryKey: deliveryKeyOf(hasher, p.momentId, p.occurrenceKey),
     saidMatch: "none",
     cancelReason: null,
+    rendered: null,
   };
 }
 
@@ -77,14 +83,35 @@ export function momentRow(p: MomentPlan, c: RowContext, hasher: Hasher): Moment 
 const planned = (m: Moment) =>
   canonicalJSON([m.scheduleRev, m.dueAt, m.closeAt, m.nextReviewAt, m.payload, m.subjectIds, m.domain, m.rootKeys, m.rootSlices, m.dependsOn]);
 
+/**
+ * A wish skipped because its start passed (by a move, or by time), never admitted or said, whose new plan puts the
+ * start ahead of the world time again (brief 036 finding 12). Each occurrence is still admitted at most once.
+ */
+function revivable(existing: Moment, p: MomentPlan, c: RowContext): boolean {
+  return (
+    existing.status === "skipped" &&
+    existing.kind === "wish" &&
+    p.kind === "wish" &&
+    existing.admittedAt === null &&
+    existing.saidAt === null &&
+    c.worldNow !== undefined &&
+    Number.isFinite(c.worldNow) &&
+    p.closeAt > c.worldNow
+  );
+}
+
 /** The row to write for a plan, or null when nothing changes. */
 export function mergeMoment(existing: Moment | null, p: MomentPlan, c: RowContext, hasher: Hasher): Moment | null {
   const fresh = momentRow(p, c, hasher);
   if (existing === null) return fresh;
-  if (existing.status !== "pending") return null;
+  if (existing.status !== "pending" && existing.status !== "leased" && !revivable(existing, p, c)) return null;
   if (planned(existing) === planned(fresh)) return null;
   return {
     ...existing,
+    status: "pending",
+    leaseToken: null,
+    leaseUntil: null,
+    rendered: null,
     scheduleRev: fresh.scheduleRev,
     dueAt: fresh.dueAt,
     closeAt: fresh.closeAt,
@@ -99,8 +126,11 @@ export function mergeMoment(existing: Moment | null, p: MomentPlan, c: RowContex
   };
 }
 
-/** A retired moment (a wish moved to at or after its start): a pending row is skipped; anything else stays. */
+/**
+ * A retired moment (a wish moved to at or after its start): a pending or leased row is skipped, and a lease is
+ * dropped (brief 036 finding 1); anything else stays.
+ */
 export function retireMoment(existing: Moment | null, c: RowContext): Moment | null {
-  if (existing === null || existing.status !== "pending") return null;
-  return { ...existing, status: "skipped", updatedAt: tsFromMs(c.opsNow) };
+  if (existing === null || (existing.status !== "pending" && existing.status !== "leased")) return null;
+  return { ...existing, status: "skipped", leaseToken: null, leaseUntil: null, updatedAt: tsFromMs(c.opsNow) };
 }

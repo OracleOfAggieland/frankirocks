@@ -44,5 +44,7 @@ export const IDLE_SILENCE_MS = 8_000;
 export const CHECKIN_GAP_TURNS = 2;
 /** A moment whose source has at least this gravity is heavy (design note 023 §5). One definition, the Gate's. */
 export { HEAVY_GRAVITY } from "../gate/gate";
+/** A commitment due within this long is mustSay (contracts line 332; brief 036 finding 8). */
+export const MUST_SAY_WITHIN_MS = DAY_MS;
 /** Cards a Proactive may carry (wire `Proactive.cards`). */
 export const DELIVERY_CARD_MAX = 2;

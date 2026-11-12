@@ -9,8 +9,9 @@ import { callRoute, patchRecord, type TestRig, testRig } from "../testing/fakes"
 import { resetAs, stateOf } from "../testing/seed";
 import { chooseNow, proactiveOf } from "./proactive";
 import { confirmReminder, offerReminder, recordPendingRendered } from "./reminder";
-import { admitMoment, deliveryEntryId, recordSaid } from "./said";
+import { admitMoment, deliveryEntryId, recordPlayback, recordSaid } from "./said";
 import { memoryTick, scanMoments } from "./tick";
+import { momentNoteId } from "./verdict";
 
 const UID = "owner-1";
 const ZONE = "America/Chicago";
@@ -118,12 +119,15 @@ describe("delivery, said and the reminder", () => {
     await memoryTick(ctx);
     const wishId = byKind(await moments(rig), "wish")[0]![0] as never;
     const tx = <T>(fn: (t: Parameters<Parameters<typeof rig.store.transaction>[1]>[0]) => Promise<T>) => rig.store.transaction(UID, fn);
-    expect(await tx((t) => admitMoment(t, UID, wishId, "resp_1", rig.clock))).toBe(true);
+    const noteIds = [momentNoteId(rig.deps.hasher, wishId, (await moments(rig)).get(wishId)!)];
+    expect(await tx((t) => admitMoment(t, UID, wishId, { responseId: "resp_1", noteIds }, rig.deps))).toBe(true);
     const counters = await rig.store.get<{ counts: { kind: string; count: number }[] }>(UID, paths.core(UID, "counters"));
     expect(counters?.data.counts).toContainEqual({ kind: "speech", count: 1 });
     const receipt = (text: string) => ({ kind: "transcript" as const, responseId: "resp_1", momentIds: [wishId], noteIds: [], text });
     expect(await tx((t) => recordSaid(t, UID, wishId, receipt("Hi there."), "proactive", rig.clock, rig.deps.hasher))).toBeNull();
     expect(await rig.store.get(UID, paths.ledger(UID, deliveryEntryId(rig.deps.hasher, wishId, "resp_1")))).toBeNull();
+    // Brief 036 finding 14: said needs the line's playback to have started.
+    await tx((t) => recordPlayback(t, UID, wishId, { kind: "playbackStarted", responseId: "resp_1" }, rig.clock));
     expect(await tx((t) => recordSaid(t, UID, wishId, receipt("Good luck at 2 PM: Tessellate Labs final interview!"), "proactive", rig.clock, rig.deps.hasher))).toBe("exactTemplate");
     const m = (await moments(rig)).get(wishId)!;
     expect(m).toMatchObject({ status: "delivered", saidMatch: "exactTemplate" });
@@ -135,14 +139,16 @@ describe("delivery, said and the reminder", () => {
   it("\"Want a reminder Thursday?\" then \"yes\": one action and one moment, only after the offer rendered", async () => {
     const { rig, ctx } = await clone();
     const world = msFromTs((await stateOf(rig.store, UID)).worldClock!);
-    const offer = offerReminder(rig.deps.hasher, { sourceId: testId("jordan-thread"), note: "Reply to Jordan about the platform role", spoken: "Thursday", worldNow: world, zone: ZONE })!;
+    // Brief 036 finding 10: a reminder's source must be a stored row that still stands: the seeded Jordan email.
+    const jordan = (await listTenantRows(rig.store, UID)).find((r) => r.path.includes("/evidence/") && JSON.stringify(r.data).includes("Jordan"))!;
+    const offer = offerReminder(rig.deps.hasher, { sourceId: jordan.id, note: "Reply to Jordan about the platform role", spoken: "Thursday", worldNow: world, zone: ZONE })!;
     expect(offer.line).toMatch(/^Want a reminder on Thursday/);
     expect(offerReminder(rig.deps.hasher, { sourceId: testId("x"), note: "x", spoken: "sometime soon", worldNow: world, zone: ZONE })).toBeNull();
-    const yes = sampleTurn({ text: "Yes.", sourceClass: "U", final: true, role: "user" });
+    // Brief 036 finding 9: the yes must come after the render.
+    const yes = sampleTurn({ text: "Yes.", sourceClass: "U", final: true, role: "user", committedAt: tsFromMs(rig.clock.read().opsClock.now + 60_000) });
     expect(await confirmReminder(ctx, offer, offer.yesId, yes)).toEqual({ state: "stale" });
     await rig.store.transaction(UID, (tx) => recordPendingRendered(tx, UID, offer.pendingId, rig.clock.read().opsClock.now, rig.deps.hasher));
     expect(await confirmReminder(ctx, offer, offer.yesId, sampleTurn({ text: "Yes, but not Thursday", sourceClass: "U", final: true, role: "user" }))).toEqual({ state: "clarify" });
-    expect(await confirmReminder(ctx, offer, offer.noId, yes)).toEqual({ state: "declined" });
     const applied = await confirmReminder(ctx, offer, offer.yesId, yes);
     expect(applied.state).toBe("applied");
     if (applied.state !== "applied") return;
@@ -156,5 +162,10 @@ describe("delivery, said and the reminder", () => {
     // The tick keeps it, and opens it on its day at 09:00.
     await memoryTick(ctx);
     expect((await moments(rig)).get(applied.momentId)?.status).toBe("pending");
+    // Brief 036 finding 9 reverses what this test pinned before: a "no" is recorded, and a later yes is refused.
+    const second = offerReminder(rig.deps.hasher, { sourceId: offer.sourceId, note: "Reply to Jordan again", spoken: "Thursday", worldNow: world, zone: ZONE })!;
+    await rig.store.transaction(UID, (tx) => recordPendingRendered(tx, UID, second.pendingId, rig.clock.read().opsClock.now, rig.deps.hasher));
+    expect(await confirmReminder(ctx, second, second.noId, yes)).toEqual({ state: "declined" });
+    expect(await confirmReminder(ctx, second, second.yesId, yes)).toEqual({ state: "stale" });
   });
 });

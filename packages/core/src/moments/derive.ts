@@ -192,15 +192,20 @@ export function deriveLoop(m: Memory, hasher: Hasher): DeriveResult {
 
 /**
  * A bounded fact or preference: one `expiryAsk` at `validTo` (spec §5 "Bounded fact or preference"). A rule or an
- * allergy never gets one: a bounded fact never applies to `core/rules`.
+ * allergy never gets one: a bounded fact never applies to `core/rules`. Brief 036 finding 11: the occurrence is
+ * keyed on `validTo` itself (its UTC date-time), never on the owner's zone, so a zone change can't ask an answered
+ * expiry question again. `_zone` is kept for callers and no longer read.
  */
-export function deriveExpiry(m: Memory, zone: string, hasher: Hasher): DeriveResult {
+export function deriveExpiry(m: Memory, _zone: string, hasher: Hasher): DeriveResult {
   if (m.validTo === null || m.status !== "active" || m.kind === "rule" || m.predicate === "allergy") return NO_MOMENTS;
   if (m.kind !== "fact" && m.kind !== "preference") return NO_MOMENTS;
   const due = msFromTs(m.validTo);
-  const key = civilDateAt(due, zone);
+  const key = expiryKeyOf(due);
   return { plans: [plan(m, m.logicalId, "expiryAsk", key, 0, due, due + OTHER_CLOSE_DAYS * DAY_MS, expiryAskLine(m), hasher)], retired: [] };
 }
+
+/** An expiry ask's occurrence key: `validTo` as a UTC civil date-time with milliseconds. */
+export const expiryKeyOf = (validToMs: number): string => new Date(validToMs).toISOString().slice(0, 23);
 
 /** A reminder written by the `makeReminder` executor: one `commitmentDue` at its time. */
 export function deriveReminder(actionId: string, action: Extract<Ledger, { kind: "action" }>, hasher: Hasher): DeriveResult {
@@ -224,7 +229,8 @@ export function deriveReminder(actionId: string, action: Extract<Ledger, { kind:
         subjectIds: ["self"],
         payload: { kind: "cue", noteRef: ref, template: { text: reminderLine(action.payload.note ?? "your reminder"), entityRefs: [], timeFields: [] } },
         noteRef: ref,
-        lineage: { rootKeys: action.rootKeys.slice(0, 128), rootSlices: action.rootSlices.slice(0, 128), dependsOn: [] },
+        // Brief 036 finding 10: the reminder keeps its source's lineage, and open rereads it.
+        lineage: { rootKeys: action.rootKeys.slice(0, 128), rootSlices: action.rootSlices.slice(0, 128), dependsOn: action.dependsOn.slice(0, 256) },
       },
     ],
     retired: [],

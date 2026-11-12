@@ -62,7 +62,8 @@ describe("said", () => {
   const m = occasionMemory(memId(1), { zone: ZONE, startMs: at(14 * 60), precision: "instant", endMinutes: null, extraDays: 0 });
   const plan = deriveOccasion(m, new Map([[m.logicalId, m]]), momentHasher).plans[0]!;
   const row = momentRow(plan, { uid: "owner-1", opsNow: at(8 * 60), epoch: 1, policyRev: 1, clockMode: "fixture" }, momentHasher);
-  const admitted = { ...row, status: "admitted" as const, admittedAt: tsFromMs(at(8 * 60 + 41)), responseId: "resp_1" };
+  // Brief 036 finding 14: a moment is said only once its playback started.
+  const admitted = { ...row, status: "admitted" as const, admittedAt: tsFromMs(at(8 * 60 + 41)), responseId: "resp_1", playbackAt: tsFromMs(at(8 * 60 + 41)) };
   const receipt = (text: string | null, kind: "transcript" | "admitted" = "transcript") => ({ kind, responseId: "resp_1", momentIds: [plan.momentId], noteIds: [], text });
 
   it("an admitted moment is said by its template, in any case and punctuation", () => {
@@ -76,6 +77,7 @@ describe("said", () => {
     expect(saidUpdate({ ...admitted, responseId: "resp_2" }, receipt(text), target, 1)).toBeNull();
     expect(saidUpdate(admitted, receipt(text, "admitted"), target, 1)).toBeNull();
     expect(saidUpdate(admitted, receipt("Good luck today."), target, 1)).toBeNull();
+    expect(saidUpdate({ ...admitted, playbackAt: null }, receipt(text), target, 1)).toBeNull();
   });
 
   it("idTagged needs the metadata and every token; candidateAndReason needs both parts", () => {
@@ -84,5 +86,46 @@ describe("said", () => {
     expect(matchSaid({ ...r, momentIds: [testId("other")] }, { momentId: plan.momentId, noteId: null, tokens: ["thai"], template: null, candidate: null })).toBe("none");
     expect(matchSaid(r, { momentId: testId("x"), noteId: null, tokens: [], template: null, candidate: { name: "Thai Basil", reason: "quick" } })).toBe("candidateAndReason");
     expect(matchSaid(r, { momentId: testId("x"), noteId: null, tokens: [], template: null, candidate: { name: "Thai Basil", reason: "" } })).toBe("none");
+  });
+});
+
+describe("brief 036 finding 4: crisis and transition are separate", () => {
+  it("crisis holds a wish and a check-in; a mustSay still plays", () => {
+    const crisis = (cands: DeliveryCandidate[]) => {
+      const { transitionOrCrisis: _, ...rest } = input(cands);
+      return chooseDelivery({ ...rest, transition: false, crisis: true });
+    };
+    const out = crisis([cand("w", "wish"), cand("c", "checkIn")]);
+    expect(out.spoken).toBeNull();
+    expect(out.reasons.map((r) => r.code)).toEqual(["crisisHold", "crisisHold"]);
+    expect(crisis([cand("w", "wish"), cand("m", "commitmentDue", { mustSay: true })]).spoken?.momentId).toBe("m");
+  });
+
+  it("a transition holds a grief ask, not a wish; the old single flag holds as both", () => {
+    const { transitionOrCrisis: _, ...rest } = input([cand("g", "griefAsk"), cand("w", "wish")]);
+    const out = chooseDelivery({ ...rest, transition: true, crisis: false });
+    expect(out.reasons.find((r) => r.momentId === "g")?.code).toBe("transitionHold");
+    expect(out.spoken?.momentId).toBe("w");
+    expect(chooseDelivery(input([cand("w", "wish")], { transitionOrCrisis: true })).reasons[0]?.code).toBe("crisisHold");
+  });
+});
+
+describe("brief 036 finding 5: a day the zone moved back reads as full", () => {
+  it("todayCounts for an earlier date than the stored day is at the caps; countDelivery counts it into the stored day", () => {
+    const counters = { ...sampleCoreDocs().counters, day: "2026-11-14", heavy: 0, counts: [{ kind: "speech" as const, count: 1 }] };
+    expect(todayCounts(counters, "2026-11-13")).toEqual({ proactive: 3, heavy: 1 });
+    const next = countDelivery(counters, "2026-11-13", false);
+    expect(next.day).toBe("2026-11-14");
+    expect(next.counts).toContainEqual({ kind: "speech", count: 2 });
+  });
+});
+
+describe("brief 036 finding 13: a non-finite world time is quiet hours", () => {
+  it("chooseDelivery with a NaN or infinite time speaks nothing and doesn't throw", () => {
+    for (const worldNow of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const out = chooseDelivery(input([cand("w", "wish")], { worldNow }));
+      expect(out.spoken).toBeNull();
+      expect(out.reasons[0]?.code).toBe("quietHours");
+    }
   });
 });

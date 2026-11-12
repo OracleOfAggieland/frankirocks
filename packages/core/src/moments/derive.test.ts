@@ -97,3 +97,14 @@ describe("derive: loops and bounded facts", () => {
     expect(deriveExpiry(sampleMemory({ validTo, predicate: "allergy" }), ZONE, momentHasher).plans).toEqual([]);
   });
 });
+
+describe("brief 036 finding 11: an expiry ask is keyed on validTo, not the owner's zone", () => {
+  it("a zone change keeps the same moment, so an answered expiry question isn't asked again", () => {
+    const validTo = tsFromMs(Date.UTC(2026, 11, 1, 3));
+    const m = sampleMemory({ validTo });
+    const chicago = deriveExpiry(m, "America/Chicago", momentHasher).plans[0]!;
+    const tokyo = deriveExpiry(m, "Asia/Tokyo", momentHasher).plans[0]!;
+    expect(tokyo.momentId).toBe(chicago.momentId);
+    expect(tokyo.occurrenceKey).toBe(chicago.occurrenceKey);
+  });
+});

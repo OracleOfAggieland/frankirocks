@@ -7,6 +7,7 @@ import { resetAs } from "../testing/seed";
 import { memoryTick, scanMoments } from "../time/tick";
 import { deliveryEntryId } from "../time/said";
 import { renderedEntryId } from "../time/reminder";
+import { momentNoteId } from "../time/verdict";
 import { openRoute } from "./open";
 import { receiptRoute } from "./receipt";
 
@@ -28,17 +29,21 @@ async function setup() {
   let n = 0;
   const receipt = (o: Record<string, unknown>) =>
     callRoute(rig, receiptRoute, { requestId: testId(`rc${++n}`), stamp, responseId: "resp_1", kind: "transcript", momentIds: [], noteIds: [], pendingId: null, permitKind: null, text: null, ...o }, { token: `token:${UID}` });
-  return { rig, wishId, all, receipt };
+  // Brief 036 finding 1: an admission names the note issued for the moment's current lease and generation.
+  const noteIds = [momentNoteId(rig.deps.hasher, wishId, (await all()).get(wishId)!)];
+  return { rig, wishId, all, receipt, noteIds };
 }
 
 describe("POST /api/receipt: moments (brief 030 P1-6)", () => {
   it("an admitted receipt under a proactive Permit admits the moment; only a matching transcript sets saidAt, with one delivery row", async () => {
-    const { rig, wishId, all, receipt } = await setup();
+    const { rig, wishId, all, receipt, noteIds } = await setup();
     expect((await all()).get(wishId)!.status).toBe("leased");
-    const adm = await receipt({ kind: "admitted", momentIds: [wishId], permitKind: "proactive" });
+    const adm = await receipt({ kind: "admitted", momentIds: [wishId], noteIds, permitKind: "proactive" });
     expect(adm.body).toEqual({ accepted: true, controlCheck: "none" });
     expect((await all()).get(wishId)).toMatchObject({ status: "admitted", responseId: "resp_1" });
 
+    // Brief 036 finding 14: said needs the line's playback to have started.
+    await receipt({ kind: "playbackStarted", momentIds: [wishId] });
     // Another response's words never say this one's moment.
     await receipt({ responseId: "resp_2", momentIds: [wishId], text: WISH });
     expect((await all()).get(wishId)!.saidAt).toBeNull();
@@ -52,8 +57,8 @@ describe("POST /api/receipt: moments (brief 030 P1-6)", () => {
   });
 
   it("a transcript that doesn't match leaves saidAt null and writes no delivery row", async () => {
-    const { rig, wishId, all, receipt } = await setup();
-    await receipt({ kind: "admitted", momentIds: [wishId], permitKind: "proactive" });
+    const { rig, wishId, all, receipt, noteIds } = await setup();
+    await receipt({ kind: "admitted", momentIds: [wishId], noteIds, permitKind: "proactive" });
     expect((await receipt({ momentIds: [wishId], text: "Hi there." })).body.accepted).toBe(true);
     expect((await all()).get(wishId)).toMatchObject({ status: "admitted", saidAt: null });
     expect(await rig.store.get(UID, paths.ledger(UID, deliveryEntryId(rig.deps.hasher, wishId, "resp_1")))).toBeNull();

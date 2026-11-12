@@ -897,6 +897,12 @@ export const Moment = refine(
     deliveryKey: ID,
     saidMatch: oneOf(SAID_MATCH),
     cancelReason: nullable(oneOf(CANCEL_REASONS)),
+    /**
+     * Brief 036 finding 6: the line this moment was put on the wire as, under its current lease (`noteId` binds the
+     * lease and generation), and the tokens an `idTagged` match needs. The `said` match targets it. Null until
+     * rendered; cleared by a re-plan or a new lease. Rows written before it read as null (`withMomentDefaults`).
+     */
+    rendered: nullable(obj({ noteId: ID, text: str(1024), tokens: arr(str(64), 8), at: TS })),
   }),
   (m, path) => {
     const sources = [m.memoryId, m.rollupId, m.actionId].filter((s) => s !== null).length;
@@ -909,3 +915,8 @@ export const Moment = refine(
   },
 );
 export type Moment = Infer<typeof Moment>;
+
+/** A stored moment with the fields added after brief 023 filled: rows written before brief 036 have no `rendered`. */
+export function withMomentDefaults(m: Omit<Moment, "rendered"> & { rendered?: Moment["rendered"] }): Moment {
+  return { ...m, rendered: m.rendered ?? null };
+}

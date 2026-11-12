@@ -59,18 +59,34 @@ export function matchSaid(r: SaidReceipt, t: SaidTarget): SaidMatch {
 
 /**
  * `saidAt` and the match for a transcript receipt, or null. Only a moment admitted on this very response (status
- * `admitted`, or `delivered` by an earlier message of it) can be said, and only by a transcript that matches.
+ * `admitted`, or `delivered` by an earlier message of it), whose playback started, can be said, and only by a
+ * transcript that matches.
  */
 export function saidUpdate(m: Moment, r: SaidReceipt, t: SaidTarget, opsNow: number): { saidAt: number; saidMatch: Exclude<SaidMatch, "none"> } | null {
   if (m.status !== "admitted" && m.status !== "delivered") return null;
   if (m.admittedAt === null || m.responseId === null || m.responseId !== r.responseId) return null;
+  // Brief 036 finding 14: the line must have started playing. A cancel before it ends the moment (`cancelled`),
+  // so the status check above already refuses a line that was cut.
+  if (m.playbackAt === null) return null;
   if (m.saidAt !== null) return null;
   const match = matchSaid(r, t);
   return match === "none" ? null : { saidAt: opsNow, saidMatch: match };
 }
 
-/** The target a stored moment is matched against: its ID, its template, and the template's words as tokens. */
+/**
+ * The target a stored moment is matched against. Brief 036 finding 6: the line it was put on the wire as
+ * (`rendered`), with that note's ID and tokens, when there is one; otherwise its code template.
+ */
 export function saidTargetOf(momentId: string, m: Moment): SaidTarget {
+  if (m.rendered !== null) return { momentId, noteId: m.rendered.noteId, tokens: m.rendered.tokens, template: m.rendered.text, candidate: null };
   const template = m.payload.kind === "cue" ? (m.payload.template?.text ?? null) : null;
   return { momentId, noteId: null, tokens: m.cueTokens, template, candidate: null };
+}
+
+/** Up to eight tokens of a spoken line for an `idTagged` match: numbers first, then the longest words. */
+export function saidTokens(line: string): string[] {
+  const words = [...new Set(normalizeSaid(line).split(" ").filter((w) => w.length >= 3 || /\d/.test(w)))].map((w) => w.slice(0, 64));
+  const digits = words.filter((w) => /\d/.test(w));
+  const rest = words.filter((w) => !/\d/.test(w)).sort((a, b) => b.length - a.length || (a < b ? -1 : 1));
+  return [...digits, ...rest].slice(0, 8);
 }

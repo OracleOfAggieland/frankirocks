@@ -18,6 +18,7 @@ import {
   type Permit,
   type Proactive,
   type Sens,
+  type SessionHolds,
   type Stamp,
   type W,
   PERMIT_TTL_MS,
@@ -26,7 +27,9 @@ import {
   civilDateAt,
   idParts,
   isHeavy,
+  gate,
   isMustSay,
+  saidTokens,
   todayCounts,
   tsFromMs,
 } from "@franki/core";
@@ -37,23 +40,42 @@ import { compareLoop, heroOffer } from "../routes/tool-food";
 import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 import { scanMoments } from "./tick";
+import { getMoment, momentNoteId, momentVerdict } from "./verdict";
+import { type GateSignals, gateCandidateOf, gateContextOf } from "./gate-candidate";
+import { isStoreError } from "../store/errors";
 
-export interface SessionSignals {
-  transitionOrCrisis: boolean;
-  turnsSinceCheckInAnswer: number | null;
-}
+/**
+ * The session's signals. Brief 036 finding 4: pass `transition` and `crisis` separately; the older
+ * `transitionOrCrisis` still reads, and holds as both (fails closed).
+ */
+export type SessionSignals = SessionHolds & GateSignals & { turnsSinceCheckInAnswer: number | null };
 
-/** The delivery choice now, over the opened moments whose lease still holds. */
+/** The delivery choice now, over the opened moments whose lease still holds and whose source rereads `ok`. */
 export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: SessionSignals): Promise<{ choice: DeliveryChoice; moments: Map<ID, Moment> }> {
   const { uid, deps } = ctx;
   const reader = storeReader(deps.store, uid);
   const core = await readCoreDocs(reader, uid);
   const pair = ownerClock(core.state.data, deps.clock);
   const all = (await scanMoments(reader, uid)) ?? [];
-  const rows = all.filter((r) => r.data.status === "leased" && r.data.leaseUntil !== null && Date.parse(r.data.leaseUntil) > pair.opsClock.now);
-  const moments = new Map(rows.map((r) => [r.id as ID, r.data]));
-  const candidates: DeliveryCandidate[] = [];
+  const leased = all.filter((r) => r.data.status === "leased" && r.data.leaseUntil !== null && Date.parse(r.data.leaseUntil) > pair.opsClock.now);
+  // Brief 036 finding 2: every candidate's source is reread with the tick's verdict; anything not `ok` is skipped.
+  const rollupLive = leased.some((r) => r.data.rollupId !== null) ? (await heroOffer(ctx, 0).catch(() => null)) !== null : null;
+  const rows: typeof leased = [];
+  for (const r of leased) if ((await momentVerdict(reader, uid, r.data, core, deps.clock, { rollupLive })) === "ok") rows.push(r);
+  const today = todayCounts(core.counters.data, civilDateAt(pair.worldClock.now, pair.worldClock.zone));
+  // Brief 036 finding 3: the Gate runs here, for every candidate, in the unprompted context of this session. Only a
+  // `say` that needs no sender's attribution (a code-worded line carries none) is offered to delivery.
+  const context = gateContextOf(core, pair, mode, signals, today);
+  const said: typeof rows = [];
   for (const r of rows) {
+    const candidate = await gateCandidateOf(reader, uid, r.id as ID, r.data, pair.worldClock.now);
+    if (candidate === null) continue;
+    const g = gate(candidate, context);
+    if (g.verdict === "say" && g.render !== "attributed") said.push(r);
+  }
+  const moments = new Map(said.map((r) => [r.id as ID, r.data]));
+  const candidates: DeliveryCandidate[] = [];
+  for (const r of said) {
     const source = r.data.memoryId === null ? null : await reader.get<Memory>(paths.memory(uid, r.data.memoryId));
     const override = r.data.deliveryOverride;
     candidates.push({
@@ -61,7 +83,7 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
       kind: r.data.kind,
       dueAt: Date.parse(r.data.dueAt),
       heavy: isHeavy(r.data.kind, source?.data.gravity ?? 0),
-      mustSay: isMustSay(r.data.kind),
+      mustSay: isMustSay(r.data.kind, Date.parse(r.data.dueAt), pair.worldClock.now),
       override: override === null ? null : { quietHours: override.quietHours, caps: override.caps },
     });
   }
@@ -69,7 +91,7 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
     candidates,
     mode,
     ...signals,
-    today: todayCounts(core.counters.data, civilDateAt(pair.worldClock.now, pair.worldClock.zone)),
+    today,
     worldNow: pair.worldClock.now,
     zone: pair.worldClock.zone,
   });
@@ -97,18 +119,46 @@ async function lineOf(ctx: RouteContext, m: Moment): Promise<{ text: string; sen
   return null;
 }
 
-/** The chosen moment as a `Proactive` for this session's stamp, or null (no words, or S2). */
+/**
+ * Records the line a moment goes on the wire as (brief 036 finding 6), in a transaction that rereads the moment
+ * (still leased under the same lease and generation) and its source. Returns false, writing nothing, otherwise.
+ */
+async function render(ctx: RouteContext, momentId: ID, m: Moment, noteId: string, text: string): Promise<boolean> {
+  const { uid, deps } = ctx;
+  try {
+    return await deps.store.transaction(uid, async (tx) => {
+      const doc = await getMoment(tx, paths.moment(uid, momentId));
+      if (doc === null || doc.data.status !== "leased" || doc.data.leaseToken !== m.leaseToken || doc.data.generation !== m.generation) return false;
+      const core = await readCoreDocs(tx, uid);
+      if (core.epoch.data.barrier !== null) return false;
+      const ops = ownerClock(core.state.data, deps.clock).opsClock.now;
+      if (doc.data.leaseUntil === null || Date.parse(doc.data.leaseUntil) <= ops) return false;
+      // The line was just worded from the rollup's detector, so it passes now.
+      if ((await momentVerdict(tx, uid, doc.data, core, deps.clock, { rollupLive: true })) !== "ok") return false;
+      tx.update(doc.path, { ...doc.data, rendered: { noteId, text, tokens: saidTokens(text), at: tsFromMs(ops) }, updatedAt: tsFromMs(ops) });
+      return true;
+    });
+  } catch (error) {
+    if (isStoreError(error, "staleRevision")) return false;
+    throw error;
+  }
+}
+
+/** The chosen moment as a `Proactive` for this session's stamp, or null (no words, S2, or no longer leased). */
 export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, stamp: Stamp): Promise<Proactive | null> {
   const { deps } = ctx;
   const line = await lineOf(ctx, m);
   if (line === null || line.sens === "S2") return null;
+  const noteId = momentNoteId(deps.hasher, momentId, m) as ID;
+  const text = line.text.slice(0, 1024);
+  if (!(await render(ctx, momentId, m, noteId, text))) return null;
   const ops = deps.clock.read().opsClock.now;
   const expiresAt = tsFromMs(ops + PERMIT_TTL_MS);
   const whisper: W = {
-    noteId: deps.hasher.id(["momentNote", momentId, m.generation]) as ID,
+    noteId,
     rev: 1,
     kind: "moment",
-    text: line.text.slice(0, 1024),
+    text,
     rootKeys: m.rootKeys.slice(0, 128),
     dependsOn: m.dependsOn.slice(0, 256),
     sens: line.sens,
