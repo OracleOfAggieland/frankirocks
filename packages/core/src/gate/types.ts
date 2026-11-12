@@ -6,6 +6,7 @@ export type GateTrigger = "unprompted" | "recall" | "jarTap";
 export type GatePurpose = "item" | "wish" | "ask" | "insight" | "celebrate" | "suggest" | "logistics";
 export type GateBuild = "floor" | "plus200";
 export type QuietKind = "unsolicited" | "all_output";
+export type GateMoment = "opener" | "idle";
 
 export interface GateTopic {
   topicId: ID;
@@ -81,6 +82,11 @@ export interface GateContext {
   audience: Au;
   modifiers: { rushed: boolean; crisis: boolean };
   trigger: GateTrigger;
+  /**
+   * What started an unprompted line (spec §3, the `proactive` row): a Franki-started `opener`, or an `idle` moment in
+   * a session. Required on the `unprompted` trigger, else null (brief 033 finding 7).
+   */
+  moment: GateMoment | null;
   /** This turn's owner words. Asked and doors read them only when the class is U or C and the speaker is certain. */
   ownerTurn: { text: string; sourceClass: Class; certain: boolean } | null;
   openedTopics: readonly ID[];

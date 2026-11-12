@@ -107,3 +107,24 @@ describe("findings 4 and 5: unknown, missing or malformed values are silence, ne
     expect(gate(gateCand({ sens: "S2" }), gateCtx({ build: "plus200", authorization: bad(undefined) }))).toMatchObject(invalid);
   });
 });
+
+describe("finding 7: an idle S1+ line needs a private audience", () => {
+  it("holds an idle S1 line unless the audience is private", () => {
+    const c = gateCand({ sens: "S1" });
+    expect(gate(c, gateCtx({ audience: "unknown", moment: "idle" }))).toMatchObject({ verdict: "hold", reasons: ["audience"] });
+    expect(gate(c, gateCtx({ audience: "private", moment: "idle" }))).toMatchObject({ verdict: "say", render: "free" });
+  });
+
+  it("gives a Franki-started opener S1 by code template only", () => {
+    const c = gateCand({ sens: "S1" });
+    expect(gate(c, gateCtx({ audience: "unknown", moment: "opener" }))).toMatchObject({ verdict: "say", render: "template" });
+    expect(gate(c, gateCtx({ audience: "private", moment: "opener" }))).toMatchObject({ verdict: "say", render: "template" });
+    expect(gate(gateCand(), gateCtx({ audience: "unknown", moment: "opener" }))).toMatchObject({ verdict: "say", render: "free" });
+  });
+
+  it("treats an unprompted context with no moment as invalid input", () => {
+    expect(gate(gateCand(), gateCtx({ moment: null }))).toMatchObject({ verdict: "silent", reasons: ["invalidInput"] });
+    expect(gate(gateCand(), gateCtx({ moment: "Idle" as unknown as "idle" }))).toMatchObject({ verdict: "silent", reasons: ["invalidInput"] });
+    expect(gate(gateCand({ aliases: ["mom"] }), gateCtx({ moment: null, trigger: "recall", ownerTurn: ownerSaid("mom") })).verdict).toBe("say");
+  });
+});

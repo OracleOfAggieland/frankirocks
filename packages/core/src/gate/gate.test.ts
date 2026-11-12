@@ -49,6 +49,8 @@ function ctx(o: Partial<GateContext> = {}): GateContext {
     audience: "private",
     modifiers: { rushed: false, crisis: false },
     trigger: "unprompted",
+    // Brief 033 finding 7: an unprompted context names its moment.
+    moment: "idle",
     ownerTurn: null,
     openedTopics: [],
     recentTurns: [],
@@ -180,7 +182,8 @@ describe("gate: the spec's examples", () => {
   });
 
   it("renders S1 through a template while the audience is unknown", () => {
-    expect(gate(cand({ sens: "S1" }), ctx({ audience: "unknown" }))).toMatchObject({ verdict: "say", render: "template" });
+    // Brief 033 finding 7: only a Franki-started opener gets S1 by template; an idle S1 line is held (review-033.test.ts).
+    expect(gate(cand({ sens: "S1" }), ctx({ audience: "unknown", moment: "opener" }))).toMatchObject({ verdict: "say", render: "template" });
   });
 
   it("never says a reason that is only used", () => {

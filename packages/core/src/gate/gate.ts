@@ -194,6 +194,8 @@ function contextOk(y: unknown): boolean {
     isBool(m.rushed) &&
     isBool(m.crisis) &&
     isIn(["unprompted", "recall", "jarTap"], y.trigger) &&
+    (y.moment === null || isIn(["opener", "idle"], y.moment)) &&
+    (y.trigger !== "unprompted" || y.moment !== null) &&
     (t === null || (isObj(t) && isStr(t.text) && isIn(CLASSES, t.sourceClass) && isBool(t.certain))) &&
     isStrs(y.openedTopics) &&
     Array.isArray(y.recentTurns) &&
@@ -303,6 +305,12 @@ export function gate(c: GateCandidate, x: GateContext): GateResult {
   } else if (x.audience === "unknown") {
     if (sens === "S2") r = lower(r, "hold", "audience");
     else if (sens === "S1" && r.verdict === "say" && r.render === "free") r = { ...r, render: "template" };
+  }
+  // Spec §3, the `proactive` row (brief 033 finding 7): "Idle S1+ also needs private audience"; a Franki-started
+  // opener gets S1 only by code template.
+  if (x.trigger === "unprompted" && sens !== "S0") {
+    if (x.moment === "idle" && x.audience !== "private") r = lower(r, "hold", "audience");
+    else if (x.moment === "opener" && sens === "S1" && r.verdict === "say" && r.render === "free") r = { ...r, render: "template" };
   }
   if (x.modifiers.rushed === true) {
     if (x.counts.notesThisReply >= 1 || r.form === "door" || c.purpose === "insight") r = lower(r, "hold", "rushed");

@@ -77,6 +77,7 @@ export const contextArb: fc.Arbitrary<GateContext> = fc.record({
   audience,
   modifiers: fc.record({ rushed: fc.boolean(), crisis: fc.boolean() }),
   trigger: fc.constantFrom("unprompted", "recall", "jarTap" as const),
+  moment: fc.constantFrom("opener", "idle" as const),
   // Mostly the owner's own certain words, so asked and doors are reached often.
   ownerTurn: fc.option(
     fc.record({

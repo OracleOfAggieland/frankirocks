@@ -42,6 +42,7 @@ export function gateCtx(o: Partial<GateContext> = {}): GateContext {
     audience: "private",
     modifiers: { rushed: false, crisis: false },
     trigger: "unprompted",
+    moment: "idle",
     ownerTurn: null,
     openedTopics: [],
     recentTurns: [],
