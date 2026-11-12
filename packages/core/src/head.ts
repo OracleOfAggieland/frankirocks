@@ -14,6 +14,7 @@ import type { CoreRules, Memory } from "./schema/records";
 import { renderedMemory } from "./memory-text";
 import { spokenGrade } from "./spoken";
 import { civilDay } from "./time";
+import { renameIndex, renameLine } from "./writes/renames";
 import { PENDING_PREFIX, renderRulesSection } from "./writes/rules-section";
 
 export type HeadSection = (typeof HEAD_SECTIONS)[number];
@@ -82,6 +83,8 @@ export interface HeadLine {
   text: string;
   /** The Memory behind the line; null for fixed text. */
   ref: Ref | null;
+  /** Name rows a renamed line now leans on (brief 025 task C4, G14); absent when none. */
+  nameRefs?: Ref[];
 }
 
 export type HeadResult = { ok: true; head: Head; lines: HeadLine[] } | { ok: false; error: "budgetExceeded" };
@@ -113,7 +116,13 @@ export function memoryLine(m: Memory): string {
   return `- ${renderedMemory(m)}`;
 }
 
-function sectionOf(m: Memory): "people" | "apply" | "know" {
+/**
+ * The section a line goes in. A line naming someone whose current life row says they died stays in `know`, never
+ * a proactive section (G15, CQ 110; brief 025 task D3): the join reads the truth, adds no text, and reaches only
+ * lines whose `entityIds` hold that EID.
+ */
+function sectionOf(m: Memory, deceased: ReadonlySet<string> = new Set()): "people" | "apply" | "know" {
+  if ((m.entityIds ?? []).some((e) => deceased.has(e)) || (m.subjectId !== "self" && deceased.has(m.subjectId))) return "know";
   if (m.predicate.startsWith("person.")) return "people";
   if (m.predicate.startsWith("preference.") || m.predicate === "handling") return "apply";
   return "know";
@@ -125,6 +134,15 @@ export function compileHead(input: HeadInput): HeadResult {
   const { clock, rules } = input;
   const cap = Math.min(input.tokenCap ?? HEAD_TOKEN_CAP, HEAD_TOKEN_CAP);
 
+  // The deceased join (G15): read from every current, eligible life row, S2 included, since the death's own words
+  // are S2 and never render.
+  const deceased = new Set<string>();
+  for (const hm of input.memories) {
+    const m = hm.memory;
+    if (m.predicate !== "person.life" || m.status !== "active" || m.value.kind !== "enum" || m.value.code !== "deceased" || m.subjectId === "self") continue;
+    if (eligible({ ref: memoryDocRef(hm), row: m }, { ...input.ec, stage: "project" }, input.snapshot).allow) deceased.add(m.subjectId);
+  }
+
   // Candidate Memory lines: eligible and spoken-grade only (R26.2, R26.3, R28.1–R28.3).
   const passing: { section: "people" | "apply" | "know"; m: HeadMemory }[] = [];
   for (const hm of input.memories) {
@@ -135,7 +153,7 @@ export function compileHead(input: HeadInput): HeadResult {
     // By audience (voice-control R14.2, task 45): outside a private audience only S0 lines, as the admission rule
     // lets only S0 notes through (`notesAllowed`) and the Gate holds S1+ in company. The rules section is untouched.
     if (!headAdmitsSens(input.audience ?? "private", hm.memory.sens)) continue;
-    passing.push({ section: sectionOf(hm.memory), m: hm });
+    passing.push({ section: sectionOf(hm.memory, deceased), m: hm });
   }
   // Deterministic order: (section, predicate, key, id), so input order never matters (R26.12).
   passing.sort(
@@ -159,8 +177,12 @@ export function compileHead(input: HeadInput): HeadResult {
     openers: [],
   };
 
+  // Renames (G14): old names become the current one, or the line is left out.
+  const renames = renameIndex(input.memories, passing.map((p) => p.m));
   for (const { section, m } of passing) {
-    const line: HeadLine = { section, text: memoryLine(m.memory), ref: { type: "memory", id: m.id, rev: m.memory.rev } };
+    const renamed = renameLine(memoryLine(m.memory), m.memory, renames);
+    if (renamed === null) continue;
+    const line: HeadLine = { section, text: renamed.text, ref: { type: "memory", id: m.id, rev: m.memory.rev }, ...(renamed.refs.length > 0 ? { nameRefs: renamed.refs } : {}) };
     if (section === "people" && sections.people.length >= PEOPLE_LINE_CAP) continue;
     if (section === "know") {
       // The heading is added after the loop; count it now so the section stays within its cap.
@@ -178,7 +200,7 @@ export function compileHead(input: HeadInput): HeadResult {
 
   // Drop whole lines in order until the total and the ref count fit (R26.4, R26.9).
   const total = () => HEAD_SECTIONS.reduce((n, id) => n + tokensOf(sections[id]), 0);
-  const refCount = () => HEAD_SECTIONS.reduce((n, id) => n + sections[id].filter((l) => l.ref !== null).length, 0);
+  const refCount = () => selected(HEAD_SECTIONS.flatMap((id) => sections[id])).length;
   for (const id of DROP_ORDER) {
     while ((total() > cap || refCount() > SELECTED_REF_CAP) && sections[id].length > 0) {
       sections[id].pop();
@@ -192,10 +214,18 @@ export function compileHead(input: HeadInput): HeadResult {
   const head: Head = {
     text: lines.map((l) => l.text).join("\n"),
     tokenCount: total(),
-    selectedRefs: lines.flatMap((l) => (l.ref === null ? [] : [l.ref])),
+    selectedRefs: selected(lines),
     sections: HEAD_SECTIONS.map((id) => ({ id, tokens: tokensOf(sections[id]) })),
   };
   return { ok: true, head, lines };
+}
+
+/** Each line's ref, then the name rows renamed lines lean on, once each. */
+function selected(lines: readonly HeadLine[]): Ref[] {
+  const out = lines.flatMap((l) => (l.ref === null ? [] : [l.ref]));
+  const seen = new Set(out.map((r) => r.id));
+  for (const l of lines) for (const r of l.nameRefs ?? []) if (!seen.has(r.id)) (seen.add(r.id), out.push(r));
+  return out;
 }
 
 function tokensOf(lines: readonly HeadLine[]): number {
