@@ -128,14 +128,14 @@ export async function resetVisit(ctx: RouteContext, req: ResetReq, key: RequestK
   await setPhase(ctx, opId, "close");
   await closeCalls(ctx);
   await setPhase(ctx, opId, "install");
-  await clearTenant(deps.store, uid, new Set([key.path]));
+  await clearTenant(deps.store, uid, new Set([key.path]), opId);
 
   const ops = deps.clock.read().opsClock.now;
   const worldStart = cloneWorldStart(ops, zone);
   const prior = await deps.store.transaction(uid, async (tx) => readCoreDocs(tx, uid));
   let rows;
   try {
-    rows = await loadSeed(deps, uid, { fixture, namespace, zone, worldStart, core: { epoch: prior.epoch.data.epoch, policyRev: prior.epoch.data.policyRev } });
+    rows = await loadSeed(deps, uid, { fixture, namespace, zone, worldStart, core: { epoch: prior.epoch.data.epoch, policyRev: prior.epoch.data.policyRev }, opId });
   } catch (error) {
     if (error instanceof SeedLoadError) {
       deps.log("seed.loadFailed", { check: error.check, line: error.lineId });

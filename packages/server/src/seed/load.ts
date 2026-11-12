@@ -12,6 +12,7 @@ import { type ClockPair, type ClockPort, type CoreDocs, type Hasher, type ID, ts
 import { initialCoreDocs } from "../core-docs";
 import type { StorePort } from "../store/port";
 import { type SeedRows, buildSeed } from "./build";
+import { assertBarrier } from "./clear";
 import { localInstant } from "./clock";
 import type { SeedFixture } from "./fixture";
 
@@ -32,6 +33,8 @@ export interface LoadInput {
   worldStart: number;
   /** The epoch and policyRev the rows are written under. */
   core: { epoch: number; policyRev: number };
+  /** The reset holding the barrier: each write transaction checks it still does (brief 038 finding 8). */
+  opId?: ID;
 }
 
 /** Builds and writes the seed. Throws `SeedLoadError` (nothing written) or a store error. */
@@ -48,6 +51,7 @@ export async function loadSeed(deps: LoadDeps, uid: string, input: LoadInput): P
   for (let i = 0; i < rows.groups.length; i += SEED_LINES_PER_TX) {
     const chunk = rows.groups.slice(i, i + SEED_LINES_PER_TX);
     await deps.store.transaction(uid, async (tx) => {
+      await assertBarrier(tx, uid, input.opId);
       for (const g of chunk) for (const w of g.writes) tx.create(w.path, w.record);
     });
   }
