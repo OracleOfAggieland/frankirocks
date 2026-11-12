@@ -37,21 +37,25 @@ import { compareLoop, heroOffer } from "../routes/tool-food";
 import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 import { scanMoments } from "./tick";
-import { momentNoteId } from "./verdict";
+import { momentNoteId, momentVerdict } from "./verdict";
 
 export interface SessionSignals {
   transitionOrCrisis: boolean;
   turnsSinceCheckInAnswer: number | null;
 }
 
-/** The delivery choice now, over the opened moments whose lease still holds. */
+/** The delivery choice now, over the opened moments whose lease still holds and whose source rereads `ok`. */
 export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: SessionSignals): Promise<{ choice: DeliveryChoice; moments: Map<ID, Moment> }> {
   const { uid, deps } = ctx;
   const reader = storeReader(deps.store, uid);
   const core = await readCoreDocs(reader, uid);
   const pair = ownerClock(core.state.data, deps.clock);
   const all = (await scanMoments(reader, uid)) ?? [];
-  const rows = all.filter((r) => r.data.status === "leased" && r.data.leaseUntil !== null && Date.parse(r.data.leaseUntil) > pair.opsClock.now);
+  const leased = all.filter((r) => r.data.status === "leased" && r.data.leaseUntil !== null && Date.parse(r.data.leaseUntil) > pair.opsClock.now);
+  // Brief 036 finding 2: every candidate's source is reread with the tick's verdict; anything not `ok` is skipped.
+  const rollupLive = leased.some((r) => r.data.rollupId !== null) ? (await heroOffer(ctx, 0).catch(() => null)) !== null : null;
+  const rows: typeof leased = [];
+  for (const r of leased) if ((await momentVerdict(reader, uid, r.data, core, deps.clock, { rollupLive })) === "ok") rows.push(r);
   const moments = new Map(rows.map((r) => [r.id as ID, r.data]));
   const candidates: DeliveryCandidate[] = [];
   for (const r of rows) {
