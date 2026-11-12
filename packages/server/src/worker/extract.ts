@@ -60,6 +60,9 @@ import {
   planItem,
   relevantOpen,
   renderedMemory,
+  type RenameIndex,
+  renameIndex,
+  renameLine,
   sameClaim,
   statusTransition,
   tsFromMs,
@@ -113,16 +116,27 @@ const NO_TURNS: PriorTurns = { turns: [], evidence: [] };
  * (`relevantOpen`), newest first, at most 40, each as its stored line. Read outside the commit transaction; the
  * commit re-reads every target it changes.
  */
-export function pickOpen(all: readonly HeadMemory[], said: readonly string[]): OpenContext {
+export function pickOpen(all: readonly HeadMemory[], said: readonly string[], renames: RenameIndex = workerRenames(all)): OpenContext {
   const candidates = all
-    .filter((m) => m.memory.status === "active" && m.memory.sourceClass === "U" && m.memory.sens !== "S2")
+    .filter(openable)
     .sort((a, b) => (a.memory.updatedAt < b.memory.updatedAt ? 1 : a.memory.updatedAt > b.memory.updatedAt ? -1 : a.id < b.id ? -1 : 1))
-    .map((m) => ({ id: m.id, rev: m.memory.rev, kind: m.memory.kind, rendered: renderedMemory(m.memory), memory: m.memory }));
+    // Task C4 (G14): each line with the current name, or left out when its old name can't be replaced.
+    .flatMap((m) => {
+      const renamed = renameLine(renderedMemory(m.memory), m.memory, renames);
+      return renamed === null ? [] : [{ id: m.id, rev: m.memory.rev, kind: m.memory.kind, rendered: renamed.text, memory: m.memory }];
+    });
   const picked = relevantOpen(candidates, said).slice(0, PACKET_OPEN_CAP);
   return {
     list: picked.map(({ id, rev, kind, rendered }) => ({ id, rev, kind, rendered })),
     refs: new Map(picked.map((p) => [p.id, openRefOf(p.memory)])),
   };
+}
+
+const openable = (m: HeadMemory) => m.memory.status === "active" && m.memory.sourceClass === "U" && m.memory.sens !== "S2";
+
+/** The worker's rename index (task C4): current names from the rows `pickOpen` may show. */
+export function workerRenames(all: readonly HeadMemory[]): RenameIndex {
+  return renameIndex(all, all.filter(openable));
 }
 
 /**
@@ -262,9 +276,11 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
   const said = evidenceFieldText(evidence, "text") ?? "";
   const [earlier, all] = await Promise.all([
     needsEarlierTurns(said) ? priorTurns(deps.store, uid, evidence) : Promise.resolve(NO_TURNS),
-    wantsOpen(said) ? readAllMemories(storeReader(deps.store, uid), uid) : Promise.resolve(null),
+    // Every turn reads the Memories: the rename index (task C4) decides whose a name is, even with no `open` list.
+    readAllMemories(storeReader(deps.store, uid), uid),
   ]);
-  const open = all === null ? NO_OPEN : pickOpen(all, [said, ...earlier.turns.map((t) => t.text)]);
+  const renames = workerRenames(all);
+  const open = !wantsOpen(said) ? NO_OPEN : pickOpen(all, [said, ...earlier.turns.map((t) => t.text)], renames);
   const context: ContextRef[] = [
     ...earlier.evidence.map((e) => ({ type: "evidence" as const, ...e })),
     ...open.list.map((o) => ({ type: "memory" as const, id: o.id, rev: o.rev })),
@@ -330,6 +346,7 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
       epoch: job.epoch,
       policyRev: job.policyRev,
       open: open.refs,
+      renames,
       context,
       zone: stateDoc?.data.currentZone ?? stateDoc?.data.homeZone ?? "UTC",
     };

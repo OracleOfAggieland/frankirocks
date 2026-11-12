@@ -14,6 +14,7 @@ import type { CoreRules, Memory } from "./schema/records";
 import { renderedMemory } from "./memory-text";
 import { spokenGrade } from "./spoken";
 import { civilDay } from "./time";
+import { renameIndex, renameLine } from "./writes/renames";
 import { PENDING_PREFIX, renderRulesSection } from "./writes/rules-section";
 
 export type HeadSection = (typeof HEAD_SECTIONS)[number];
@@ -82,6 +83,8 @@ export interface HeadLine {
   text: string;
   /** The Memory behind the line; null for fixed text. */
   ref: Ref | null;
+  /** Name rows a renamed line now leans on (brief 025 task C4, G14); absent when none. */
+  nameRefs?: Ref[];
 }
 
 export type HeadResult = { ok: true; head: Head; lines: HeadLine[] } | { ok: false; error: "budgetExceeded" };
@@ -159,8 +162,12 @@ export function compileHead(input: HeadInput): HeadResult {
     openers: [],
   };
 
+  // Renames (G14): old names become the current one, or the line is left out.
+  const renames = renameIndex(input.memories, passing.map((p) => p.m));
   for (const { section, m } of passing) {
-    const line: HeadLine = { section, text: memoryLine(m.memory), ref: { type: "memory", id: m.id, rev: m.memory.rev } };
+    const renamed = renameLine(memoryLine(m.memory), m.memory, renames);
+    if (renamed === null) continue;
+    const line: HeadLine = { section, text: renamed.text, ref: { type: "memory", id: m.id, rev: m.memory.rev }, ...(renamed.refs.length > 0 ? { nameRefs: renamed.refs } : {}) };
     if (section === "people" && sections.people.length >= PEOPLE_LINE_CAP) continue;
     if (section === "know") {
       // The heading is added after the loop; count it now so the section stays within its cap.
@@ -178,7 +185,7 @@ export function compileHead(input: HeadInput): HeadResult {
 
   // Drop whole lines in order until the total and the ref count fit (R26.4, R26.9).
   const total = () => HEAD_SECTIONS.reduce((n, id) => n + tokensOf(sections[id]), 0);
-  const refCount = () => HEAD_SECTIONS.reduce((n, id) => n + sections[id].filter((l) => l.ref !== null).length, 0);
+  const refCount = () => selected(HEAD_SECTIONS.flatMap((id) => sections[id])).length;
   for (const id of DROP_ORDER) {
     while ((total() > cap || refCount() > SELECTED_REF_CAP) && sections[id].length > 0) {
       sections[id].pop();
@@ -192,10 +199,18 @@ export function compileHead(input: HeadInput): HeadResult {
   const head: Head = {
     text: lines.map((l) => l.text).join("\n"),
     tokenCount: total(),
-    selectedRefs: lines.flatMap((l) => (l.ref === null ? [] : [l.ref])),
+    selectedRefs: selected(lines),
     sections: HEAD_SECTIONS.map((id) => ({ id, tokens: tokensOf(sections[id]) })),
   };
   return { ok: true, head, lines };
+}
+
+/** Each line's ref, then the name rows renamed lines lean on, once each. */
+function selected(lines: readonly HeadLine[]): Ref[] {
+  const out = lines.flatMap((l) => (l.ref === null ? [] : [l.ref]));
+  const seen = new Set(out.map((r) => r.id));
+  for (const l of lines) for (const r of l.nameRefs ?? []) if (!seen.has(r.id)) (seen.add(r.id), out.push(r));
+  return out;
 }
 
 function tokensOf(lines: readonly HeadLine[]): number {
