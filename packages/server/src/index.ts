@@ -18,4 +18,6 @@ export { toolRoute } from "./routes/tool";
 export { phoneWebhook } from "./phone/webhook";
 export { phoneStatusRoute } from "./phone/status";
 export { debugMemoryRoute } from "./routes/debug-memory";
+// Brief 020: GET /api/memory.
+export { memoryRoute } from "./routes/memory";
 export { TAKE_MAX_BYTES, listTakes, liveTakesDeps, saveTake } from "./dev/takes";
