@@ -81,7 +81,7 @@ const HEAVY_KINDS: readonly MomentKind[] = ["griefAsk", "transition", "door"];
 /** Heavy (design note 023 §5): the source's gravity is 2 or more, or the kind is heavy by nature. */
 export const isHeavy = (kind: MomentKind, gravity: number): boolean => gravity >= HEAVY_GRAVITY || HEAVY_KINDS.includes(kind);
 /**
- * mustSay (spec �6 Floors; contracts line 332 "commitment due<=24h"). Brief 036 finding 8: a confirmed reminder
+ * mustSay (spec §6 Floors; contracts line 332 "commitment due<=24h"). Brief 036 finding 8: a confirmed reminder
  * (`commitmentDue`, written only by the confirmed `makeReminder` executor) due within 24 hours of the world time is
  * mustSay. Nothing else in the floor is. A non-finite time is never mustSay.
  */
