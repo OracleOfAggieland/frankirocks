@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { testId } from "../testing/samples";
 import { S2_SCREEN_ASK_BUILT, gate } from "./gate";
+import { inQuietHours, localMinute } from "./quiet-hours";
 import { gateCand, gateCtx, ownerSaid } from "./testing/cases";
 
 const WORK = testId("topic-work");
@@ -126,5 +127,13 @@ describe("finding 7: an idle S1+ line needs a private audience", () => {
     expect(gate(gateCand(), gateCtx({ moment: null }))).toMatchObject({ verdict: "silent", reasons: ["invalidInput"] });
     expect(gate(gateCand(), gateCtx({ moment: "Idle" as unknown as "idle" }))).toMatchObject({ verdict: "silent", reasons: ["invalidInput"] });
     expect(gate(gateCand({ aliases: ["mom"] }), gateCtx({ moment: null, trigger: "recall", ownerTurn: ownerSaid("mom") })).verdict).toBe("say");
+  });
+});
+
+describe("finding 19 (the lead's item 17): quiet hours on an unreadable instant", () => {
+  it("counts a non-finite instant as quiet, never throwing", () => {
+    expect(inQuietHours(Number.NaN, "America/Los_Angeles")).toBe(true);
+    expect(inQuietHours(Number.POSITIVE_INFINITY, "America/Los_Angeles")).toBe(true);
+    expect(localMinute(Number.NaN, "America/Los_Angeles")).toBeNull();
   });
 });
