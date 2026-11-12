@@ -127,7 +127,7 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
 
 /**
  * Brief 045 finding 7: the moment kinds whose line asks for an answer (the hero offer, an offer, a question). A
- * typed screen neither shows nor admits them, and a Session with no call never admits one.
+ * typed screen neither shows nor admits them (a screen receipt admits none).
  */
 export const ASKS_FOR_ANSWER: ReadonlySet<string> = new Set(["pattern", "offer", "ask"]);
 export const asksForAnswer = (m: Pick<Moment, "payload">): boolean => ASKS_FOR_ANSWER.has(m.payload.kind);

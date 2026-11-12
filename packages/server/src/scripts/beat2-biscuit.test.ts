@@ -15,8 +15,10 @@ import { type Script, type Step, type World, allMemories, extract, item, memoryT
 const LINE = BISCUIT_LINE;
 const biscuit = { what: "the owner's words about Biscuit", pick: (m: Memory) => memoryText(m).includes("Biscuit") };
 
+// Brief 042 item 7: delivery's priority is right (spec §6: a check-in ranks above an insight, and chooseDelivery
+// ranks it so). The check-in never reaches delivery: the Gate holds it.
 const CHECKIN_WAITS =
-  "delivery after the bolt (brief 036's folder): the open now says delivery's choice (brief 030 part A), and at Thursday 18:00 it is the hero offer, not the check-in; the check-in's line is also moments/words.ts checkInLine (\"How did it go: ...?\"), not the whisper template `checkIn` the runner binds (\"How's {0} doing?\")";
+  "the Gate's ceiling, not delivery's order: \"surgery\" makes Biscuit's surgery S2 (core/lexicon.ts), and at the floor build the told S2 check-in is a +200 path (spec §6 `proactive` row; core/gate/ceiling.ts PLUS200_PATHS), so the Gate holds it as `ceiling` and the open says the hero offer, the one candidate left; the check-in's line is also moments/words.ts checkInLine (\"How did it go: ...?\"), not the S2 carve-out's exact `How's {e} doing?` the runner binds";
 
 /** What a careful extractor files for the line: Biscuit's surgery as an event, the time words left for code. */
 const biscuitItems = (w: World) => [

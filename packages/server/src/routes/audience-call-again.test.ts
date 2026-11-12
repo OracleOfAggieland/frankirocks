@@ -15,12 +15,8 @@ const UID = "owner-1";
 const ZONE = "America/Chicago";
 const WISH = "Good luck at 2 PM: Tessellate Labs final interview.";
 
-let calls = 0;
 async function call(rig: ReturnType<typeof testRig>) {
   const c = new ScriptCall(rig, ZONE);
-  // Each ScriptCall numbers its request IDs from 1, so a second call in one rig would replay the first call's open
-  // from the request ledger. A browser makes fresh IDs; start this call's numbering past the last one's.
-  (c as unknown as { n: number }).n = 1_000 * calls++;
   await c.ev({ type: "visitSet", visitId: testId("visit-v1") });
   await c.press();
   return c;

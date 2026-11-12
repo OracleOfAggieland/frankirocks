@@ -38,9 +38,18 @@ function spokenOf(e: RealtimeClientEvent): string {
   return quoted?.[1] ?? text;
 }
 
+/** How many calls each rig has started, so one script's calls never reuse an ID. */
+const CALLS_PER_RIG = new WeakMap<TestRig, number>();
+/** Each later call on a rig numbers its IDs from here times its index (the first call keeps 1, 2, 3...). */
+export const CALL_ID_STRIDE = 1_000_000;
+
 export class ScriptCall {
   st: VoiceState;
-  private n = 0;
+  /**
+   * The browser makes fresh request and event IDs for every call. Numbered from 1 per call, a second call in one rig
+   * would replay the first call's open from the request ledger, so each call on a rig starts past the last.
+   */
+  private n: number;
   private queue: VoiceCommand[] = [];
   log: CallLog = { answers: [], creates: [], heard: [] };
 
@@ -49,6 +58,9 @@ export class ScriptCall {
     zone: string,
   ) {
     this.st = initialVoiceState({ transcribeModel: "test-transcribe" }, zone);
+    const k = CALLS_PER_RIG.get(rig) ?? 0;
+    CALLS_PER_RIG.set(rig, k + 1);
+    this.n = k * CALL_ID_STRIDE;
   }
 
   private now(): number {
