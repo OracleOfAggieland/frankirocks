@@ -40,3 +40,6 @@ export * from "./writes";
 // Brief 020: the screen's memory views and the false "gone" check.
 export * from "./memory-views";
 export * from "./false-gone";
+
+// Brief 024: the Gate.
+export * from "./gate/index";

@@ -1,0 +1,49 @@
+/**
+ * "Asked" and doors, decided by code (spec §6 lines 216 and 220). Only the owner's own words this turn count: class
+ * U or C, speaker certain. The voice model's words never open anything.
+ */
+import { tokenize } from "../text";
+import type { GateCandidate, GateContext, GateTopic } from "./types";
+
+/** Shortest token that counts, as in `recallTerms`: a lone "s" from "dog's" must not match. */
+export const MIN_TERM_CHARS = 2;
+
+const terms = (words: readonly string[]) => words.flatMap((w) => tokenize(w)).filter((t) => t.length >= MIN_TERM_CHARS);
+
+/** The owner's tokens this turn, or null when the words can't open or ask anything. */
+export function ownerTokens(x: Pick<GateContext, "ownerTurn">): Set<string> | null {
+  const t = x.ownerTurn;
+  if (t === null || typeof t !== "object" || t.certain !== true) return null;
+  if (t.sourceClass !== "U" && t.sourceClass !== "C") return null;
+  if (typeof t.text !== "string") return null;
+  return new Set(tokenize(t.text));
+}
+
+/** A recall result counts as asked only on the recall trigger, when the owner's words hold one of its terms. */
+export function askedByOwner(c: Pick<GateCandidate, "queryTerms">, x: Pick<GateContext, "ownerTurn" | "trigger">): boolean {
+  if (x.trigger !== "recall") return false;
+  const words = ownerTokens(x);
+  return words !== null && terms(c.queryTerms).some((q) => words.has(q));
+}
+
+/** `opens(label)`: every label token of two or more characters is in the owner's words. */
+export function opensLabel(label: string, words: ReadonlySet<string>): boolean {
+  const need = terms([label]);
+  return need.length > 0 && need.every((t) => words.has(t));
+}
+
+/** A door opens this turn only on a term match or `opensLabel`, and only for a label and terms from U, C or O. */
+export function doorOpens(topic: GateTopic, x: Pick<GateContext, "ownerTurn">): boolean {
+  if (topic.labelClass !== "U" && topic.labelClass !== "C" && topic.labelClass !== "O") return false;
+  const words = ownerTokens(x);
+  if (words === null) return false;
+  return terms(topic.terms).some((t) => words.has(t)) || opensLabel(topic.label, words);
+}
+
+/** The topic is open: opened earlier this Session, or its door opens on this turn's words. */
+export function topicOpen(c: Pick<GateCandidate, "topic">, x: Pick<GateContext, "ownerTurn" | "openedTopics">): boolean {
+  const t = c.topic;
+  if (t === null) return false;
+  if (t.labelClass !== "U" && t.labelClass !== "C" && t.labelClass !== "O") return false;
+  return x.openedTopics.includes(t.topicId) || doorOpens(t, x);
+}
