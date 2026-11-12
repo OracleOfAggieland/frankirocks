@@ -19,6 +19,12 @@ export function jarMotes(s: SnapshotView | null): JarProps["motes"] {
   return motes;
 }
 
+/** The words for a `why` root: its label is an Evidence kind code; an unknown code is worded neutrally. */
+export function sourceLabel(kindCode: string): string {
+  const words: Readonly<Record<string, string>> = COPY.memory.sources;
+  return Object.hasOwn(words, kindCode) && kindCode !== "other" ? words[kindCode]! : COPY.memory.sources.other;
+}
+
 /** Lab limit codes the screen has words for; any other code is dropped. */
 const LIMIT_WORDS: Readonly<Record<string, string>> = { floorRecall: COPY.memory.lab.floorRecall };
 

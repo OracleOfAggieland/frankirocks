@@ -19,6 +19,7 @@ import {
   parseDep,
   tsFromMs,
 } from "@franki/core";
+import { forgetRowsFor } from "./forget/snapshot-rows";
 import { paths } from "./store/paths";
 import type { StorePort, Tx } from "./store/port";
 
@@ -80,17 +81,21 @@ export async function snapshotFor(
       rows.push(doc.data);
     });
   }
+  // Review 028 finding 3: the owner's forget blocks and overlays, so `eligible` denies what they name.
+  const forget = await forgetRowsFor(reader, uid);
+  const allRefs = [...refs, ...forget.refs];
+  const allRows = [...rows, ...forget.rows];
   return {
     uid,
     epoch,
     session: null,
     job: null,
     localGeneration: generation,
-    refs: refs.slice(0, 4096),
-    rows: rows.slice(0, 4096),
-    blocks: [],
+    refs: allRefs.slice(0, 4096),
+    rows: allRows.slice(0, 4096),
+    blocks: forget.blocks,
     coverage: { state: "complete", from: null, to: null, missingRanges: [], generation: 0 },
-    complete: refs.length <= 4096,
+    complete: allRefs.length <= 4096 && forget.complete,
   };
 }
 

@@ -95,3 +95,21 @@ export const FIXTURE_MEMORY: { overview: MemoryResponse; lab: MemoryResponse; st
     ],
   },
 };
+
+/** Brief 027: the `why` view for each fixture card: the row, then the words it came from. The gap year shows no source. */
+export function fixtureWhy(id: string): MemoryResponse {
+  const c = FIXTURE_SNAPSHOT.cards.find((x) => x.id === id);
+  if (c === undefined) return base;
+  const row = { id: c.id, kind: "memory" as const, label: c.title, body: c.lines[0] ?? c.title, status: "active" as const, refs: c.sources };
+  const evidence =
+    c.id === fid("gap")
+      ? []
+      : [{ id: fid(`e${c.id.slice(2, 8)}`), kind: "evidence" as const, label: c.id === fid("bakery") ? "An email" : "You said", body: c.lines[0] ?? "", status: "active" as const, refs: [] }];
+  return { ...base, items: [row, ...evidence] };
+}
+
+/** Brief 027: the `item` view for a fixture card. */
+export function fixtureItem(id: string): MemoryResponse {
+  const why = fixtureWhy(id);
+  return { ...why, items: why.items.slice(0, 1) };
+}

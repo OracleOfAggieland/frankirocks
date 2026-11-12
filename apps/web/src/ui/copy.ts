@@ -126,5 +126,53 @@ export const COPY = {
     /** The strip's last terminal while no comparison figure has a source. */
     stripResult: "Compared",
     goneAsk: { title: "A quick check", question: "Did you want that deleted?", yes: "Yes", no: "No" },
+    /** Where a `why` root came from, by Evidence kind code (review 028 finding 9); `other` for a code not listed. */
+    sources: {
+      turn: "You said",
+      message: "An email",
+      calendar: "Your calendar",
+      transaction: "Your bank",
+      receipt: "A receipt",
+      note: "A note",
+      task: "A task",
+      food: "A food log",
+      other: "A source",
+    },
+  },
+  /** Brief 027: the visit, the time bolt, start over and the sheet on real data. */
+  visit: {
+    cloning: "Setting up your month",
+    resetting: "Starting over",
+    endingCall: "Ending the call first",
+    failed: {
+      clone: "Your month didn't load.",
+      interrupted: "Your month didn't finish loading.",
+      barrier: "Franki is busy forgetting something. Try again in a moment.",
+    },
+    retry: "Try again",
+    startOver: "Start over",
+    confirm: { question: "Start over with a fresh month? What you added goes.", yes: "Start over", no: "Keep this month" },
+    bolt: {
+      label: "Jump ahead",
+      waiting: "Waiting for Franki to finish",
+      moving: "Moving the clock",
+      didNotMove: "The clock didn't move. Try again.",
+      today: "Today",
+      tomorrow: "Tomorrow",
+      weekdays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const,
+      evening: "6 PM",
+      morning: "9 AM",
+      weekOn: "A week on",
+      threeWeeksOn: "Three weeks on",
+    },
+  },
+  sheetData: {
+    /** Items whose area no view names yet (brief 020: no predicate-to-area source). */
+    unsorted: "Other things",
+    /** Where an item came from, when its why view did not answer. */
+    fromUnknown: "a source I can't show right now",
+    open: "What I know",
+    loading: "Reading what I know",
+    failed: "I couldn't read that just now.",
   },
 } as const;

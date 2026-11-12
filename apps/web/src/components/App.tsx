@@ -1,11 +1,11 @@
 "use client";
 
 import { type VoiceState, initialVoiceState } from "@franki/core";
-import { MotionConfig } from "motion/react";
+import { AnimatePresence, MotionConfig } from "motion/react";
 import { createContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createApiClient } from "../client/api";
 import { type AuthClient, type AuthState, createAuthClient } from "../client/auth";
-import { createBrowserClock } from "../client/clock";
+import { type BrowserClock, createBrowserClock } from "../client/clock";
 import { DEBUG_POLL_MS, type DebugPanelModel } from "../client/debug-panel";
 import { publicEnv, readFirebaseConfig } from "../client/firebase-config";
 import type { TypedState, TypedTurns } from "../client/typed-turns";
@@ -41,6 +41,14 @@ import { Jar } from "./surfaces/Jar";
 import { Lab } from "./surfaces/Lab";
 import { Receipt } from "./surfaces/Receipt";
 import { Strip } from "./surfaces/Strip";
+import { TimeBadge } from "./surfaces/TimeBadge";
+import { VisitBar } from "./surfaces/VisitBar";
+import { WhatIKnowSheet } from "./surfaces/WhatIKnowSheet";
+import { CLOSED_SHEET, type SheetState } from "../client/sheet-model";
+import { INITIAL_VISIT, type VisitState, boltEnabled, visitBadge } from "../ui/visit/visit-machine";
+import { boltTargets } from "../ui/visit/bolt-targets";
+import { proactiveCards, replyEntries, type ShownProactive } from "../ui/visit/proactive-view";
+import { COPY } from "../ui/copy";
 
 const SIGNED_OUT_VOICE = initialVoiceState({ transcribeModel: "" });
 const noop = () => {};
@@ -53,6 +61,19 @@ const noPhone = (): PhoneView => ABSENT_PHONE;
 /** Memory while signed out: nothing is read, so nothing shows. */
 const NO_MEMORY: MemoryState = { surfaces: NO_SURFACES, readout: null, goneAsk: false };
 const noMemory = (): MemoryState => NO_MEMORY;
+/** Brief 027: the visit, the sheet and the proactive line while signed out: none. */
+const noVisit = (): VisitState => INITIAL_VISIT;
+const noSheet = (): SheetState => CLOSED_SHEET;
+const noShown = (): ShownProactive | null => null;
+
+/** The browser's localStorage, or null where it cannot be reached (brief 027: the visit is kept there). */
+function browserStorage(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
 
 /** The output audio element: muted until a verified Permit unmutes it (KV02). */
 function outputAudio(): AudioLike {
@@ -90,12 +111,14 @@ export function App() {
   const authRef = useRef<AuthClient | null>(null);
   const [state, setState] = useState<AuthState>({ kind: "loading" });
   /** The signed-in user's ID token source, set with the auth state; null while signed out. */
-  const [tokens, setTokens] = useState<{ idToken: () => Promise<string> } | null>(null);
+  const [tokens, setTokens] = useState<{ idToken: () => Promise<string>; uid: string } | null>(null);
   const [busy, setBusy] = useState(false);
   // R21: read once on the client; the server snapshot is false, so the panel never renders on the server.
   const debugOn = useSyncExternalStore(noSubscribe, () => debugVisible(process.env.NODE_ENV, window.location.search), () => false);
   const [meter] = useState(() => createLevelMeter(() => sharedAudio()?.getContext() ?? null));
   const [screen] = useState(() => createScreen(meter));
+  // One browser clock for the controllers and the Time_Badge's real-time reading (brief 027).
+  const [clock] = useState(() => createBrowserClock());
   const [, setCopies] = useState(EMPTY_COPIES);
 
   useEffect(() => {
@@ -104,7 +127,7 @@ export function App() {
     authRef.current = client;
     return client.subscribe((user) => {
       setState(user === null ? { kind: "signedOut", error: null } : { kind: "signedIn", email: user.email ?? "(no email)", uid: user.uid });
-      setTokens(user === null ? null : { idToken: () => user.getIdToken() });
+      setTokens(user === null ? null : { idToken: () => user.getIdToken(), uid: user.uid });
     });
   }, [config]);
 
@@ -120,7 +143,7 @@ export function App() {
     const api = createApiClient({ getToken: () => tokens.idToken(), fetch: (input, init) => fetch(input, init) });
     return createSignedInControllers({
       api,
-      clock: createBrowserClock(),
+      clock,
       transcribeModel: transcribeModel(),
       debug: debugOn,
       audio: outputAudio,
@@ -128,8 +151,10 @@ export function App() {
       getMicrophone: () => navigator.mediaDevices.getUserMedia({ audio: true }),
       onStreams: (s) => meter.setStreams({ mic: s.mic as unknown as MediaStream | null, output: s.output as MediaStream | null }),
       inputLevel: () => meter.rawInput(),
+      uid: tokens.uid,
+      storage: browserStorage(),
     });
-  }, [tokens, debugOn, meter]);
+  }, [tokens, debugOn, meter, clock]);
 
   useEffect(() => {
     screen.setSources(signedIn !== null, signedIn?.voice ?? null);
@@ -155,12 +180,26 @@ export function App() {
     return () => memory.clear();
   }, [signedIn]);
 
+  // Brief 027: entering the lab signed in starts or resumes the visit; signing out stops it and closes the sheet.
+  useEffect(() => {
+    if (signedIn === null) return;
+    const { visit, sheet, proactive } = signedIn;
+    visit.enter();
+    return () => {
+      visit.stop();
+      sheet.clear();
+      proactive.clear();
+    };
+  }, [signedIn]);
+
   const snap = useSyncExternalStore(screen.subscribe, screen.getSnapshot, screen.getSnapshot);
   const forget = () => {
     setCopies((c) => onForgetComplete(signedIn?.typed ?? null, c));
     // A completed forget drops what the screen shows, then reads it again.
     signedIn?.memory.clear();
     void signedIn?.memory.refresh();
+    signedIn?.sheet.clear();
+    signedIn?.proactive.clear();
   };
 
   const signIn = async () => {
@@ -194,7 +233,7 @@ export function App() {
       <ForgetCompleteContext.Provider value={forget}>
         {/* The three.js ghost reads Franki's voice and the mic through the Level_Meter's second analysers (brief 013, D-1). */}
         <AvatarAudioContext.Provider value={meter.audio}>
-          <Screen snap={snap} auth={auth} controllers={signedIn} />
+          <Screen snap={snap} auth={auth} controllers={signedIn} clock={clock} />
         </AvatarAudioContext.Provider>
       </ForgetCompleteContext.Provider>
     </MotionConfig>
@@ -220,7 +259,7 @@ function StageFor({ snap, phone }: { snap: ScreenSnapshot; phone: PhoneView }) {
  * Signed out or loading (`controllers` null): Dormant, FRANKIROCKS, the sign-in button, and disabled
  * call and typed controls (R13).
  */
-function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React.ReactNode; controllers: SignedInControllers | null }) {
+function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth: React.ReactNode; controllers: SignedInControllers | null; clock: BrowserClock }) {
   const typed = controllers?.typed ?? null;
   const voice = controllers?.voice ?? null;
   const debug = controllers?.debug ?? null;
@@ -237,6 +276,13 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
   const subscribeMemory = controllers?.memory.subscribe ?? noSubscribe;
   const getMemory = controllers?.memory.getSnapshot ?? noMemory;
   const mem = useSyncExternalStore(subscribeMemory, getMemory, getMemory);
+  // Brief 027: the visit, the sheet and the proactive line.
+  const getVisit = controllers?.visit.getSnapshot ?? noVisit;
+  const vis = useSyncExternalStore(controllers?.visit.subscribe ?? noSubscribe, getVisit, getVisit);
+  const getSheet = controllers?.sheet.getSnapshot ?? noSheet;
+  const sheetState = useSyncExternalStore(controllers?.sheet.subscribe ?? noSubscribe, getSheet, getSheet);
+  const getShown = controllers?.proactive.getSnapshot ?? noShown;
+  const shown = useSyncExternalStore(controllers?.proactive.subscribe ?? noSubscribe, getShown, getShown);
 
   const stage = <StageFor snap={snap} phone={phone} />;
   const live = <LiveRegion message={snap.live.message} seq={snap.live.seq} />;
@@ -281,6 +327,48 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
     ...(mem.readout === null ? [] : [readoutCard(mem.readout, noop)]),
   ];
   const receipt = mem.surfaces.receipt === null ? null : <Receipt {...mem.surfaces.receipt} />;
+  // Brief 027: the proactive line's cards join the dock; the badge reads the real clock through the clock port.
+  const allCards = [...memoryCards, ...proactiveCards(shown)];
+  const pair = clock.read();
+  const badge = visitBadge(vis, pair.opsClock.now, pair.worldClock.zone);
+  const visitControls = controllers.visit;
+  const sheetModel = controllers.sheet;
+  const visitBar = (
+    <VisitBar
+      phase={vis.phase}
+      failure={vis.failure}
+      bolt={vis.bolt}
+      boltFailed={vis.boltFailed}
+      confirming={vis.confirming}
+      endingCall={vis.endingCall}
+      targets={vis.worldMs === null ? [] : boltTargets(vis.worldMs, pair.worldClock.zone)}
+      boltEnabled={boltEnabled(vis)}
+      onBolt={(to) => visitControls.press(to)}
+      onRetry={() => visitControls.retry()}
+      onStartOver={() => visitControls.askStartOver()}
+      onConfirm={() => visitControls.confirmStartOver()}
+      onCancel={() => visitControls.cancelStartOver()}
+    />
+  );
+  // The sheet is read-only while no control route reaches the browser (brief 027 ruling SHEET_READ_ONLY).
+  const sheetLayer = (
+    <AnimatePresence>
+      {sheetState.open && (sheetState.items.length > 0 || receipt !== null) ? (
+        <WhatIKnowSheet
+          key="sheet"
+          presentation="sheet"
+          items={sheetState.items}
+          readOnly
+          footer={receipt}
+          onWrong={noop}
+          onForget={noop}
+          onQuiet={noop}
+          onClose={() => sheetModel.close()}
+        />
+      ) : null}
+    </AnimatePresence>
+  );
+  const sheetNote = sheetState.open && sheetState.items.length === 0 ? (sheetState.loading ? COPY.sheetData.loading : sheetState.failed ? COPY.sheetData.failed : COPY.memory.readout.empty) : null;
 
   return (
     <MainScreen
@@ -315,12 +403,24 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
           onSubmit={submit}
         />
       }
-      reply={inCall ? null : <ReplyLine entries={t.entries} />}
-      cards={memoryCards}
+      reply={inCall ? null : <ReplyLine entries={replyEntries(t.entries, shown)} />}
+      cards={allCards}
       strip={mem.surfaces.strip === null ? null : <Strip {...mem.surfaces.strip} />}
       chips={<Chips chips={MAIN_CHIPS} disabled={t.sending || (inCall && v.phase !== "LISTENING")} onChip={chip} />}
-      jar={<Jar motes={mem.surfaces.jar} onOpen={() => (mem.readout === null ? void memory.openReadout() : memory.closeReadout())} />}
+      jar={<Jar motes={mem.surfaces.jar} onOpen={() => (sheetState.open ? sheetModel.close() : void sheetModel.open())} />}
       lab={<Lab counters={mem.surfaces.lab?.counters ?? []} limits={mem.surfaces.lab?.limits ?? []} receipt={receipt} />}
+      visit={
+        <div className="flex flex-col items-center gap-2">
+          {visitBar}
+          {sheetNote === null ? null : (
+            <p role="status" data-sheet-note="" className="text-xs text-ink-dim">
+              {sheetNote}
+            </p>
+          )}
+        </div>
+      }
+      timeBadge={<TimeBadge {...badge} />}
+      sheet={sheetLayer}
       debug={debug === null ? null : <DebugArea debug={debug} typed={typed} voice={v} />}
       live={live}
     />

@@ -28,6 +28,7 @@ import {
   type Ledger,
   type Memory,
   type Overlay,
+  type SC,
   type ResolveTurn,
   type Session,
   type Span,
@@ -57,7 +58,7 @@ export const FORGET_LEASE_MS = 30_000;
 export const FORGET_RETRY_MS = 5_000;
 /** Effects read per forget; past this, install stops `blocked` with LIMIT rather than retract only some. */
 export const FORGET_EFFECTS_MAX = 1_000;
-/** The floor reads one page of turns from the request's Session. */
+/** Turns read per page from the request's Session. */
 const TURNS_PAGE = 100;
 const SESSION_STATUSES_WITH_CALLS = ["minting", "active", "quarantined", "closing"] as const;
 
@@ -79,6 +80,8 @@ const forgetOf = (job: Job): ForgetPayload => job.payload as ForgetPayload;
 
 class LostLease extends Error {}
 class BarrierGone extends Error {}
+/** core/rules moved since install read it: the page commits nothing and the job retries from fresh rules. */
+class RulesMoved extends Error {}
 
 interface Lease {
   token: ID;
@@ -140,13 +143,22 @@ const sameRecord = (a: Record<string, unknown>, b: Record<string, unknown>) => {
   return canonicalJSON(strip(a)) === canonicalJSON(strip(b));
 };
 
-async function putAll(tx: Tx, uid: string, writes: readonly InstallWrite[]): Promise<void> {
+/** Writes what changed; returns how many documents it really wrote, by collection. */
+async function putAll(tx: Tx, uid: string, writes: readonly InstallWrite[]): Promise<Map<SC, number>> {
+  const written = new Map<SC, number>();
+  const count = (c: SC) => written.set(c, (written.get(c) ?? 0) + 1);
   for (const w of writes) {
     const path = docPath(uid, w);
     const prior = await tx.get<Record<string, unknown>>(path);
-    if (prior === null) tx.create(path, w.doc);
-    else if (!sameRecord(prior.data, w.doc as unknown as Record<string, unknown>)) tx.update(path, w.doc);
+    if (prior === null) {
+      tx.create(path, w.doc);
+      count(w.collection);
+    } else if (!sameRecord(prior.data, w.doc as unknown as Record<string, unknown>)) {
+      tx.update(path, w.doc);
+      count(w.collection);
+    }
   }
+  return written;
 }
 
 /** Q28 pages by document ID (no new index: ruling F-9), filtered in code, at most `max` kept rows. */
@@ -171,17 +183,39 @@ interface SessionView {
   sessionId: ID;
   requestTurns: { id: ID; turn: Turn }[];
   others: { id: ID; turn: Turn }[];
+  /** False when the read stopped at TURNS_READ_MAX before the Session's newest turn (review 028 finding 6). */
+  complete: boolean;
 }
+
+/** The most turns the floor reads from the request's Session; past it the manifest is not complete. */
+export const TURNS_READ_MAX = 1_000;
 
 async function readSession(store: StorePort, uid: string, job: Job): Promise<SessionView> {
   const sessionId = job.sourceIds[0]!;
   const requestIds = new Set<string>(forgetOf(job).requestTurnIds);
-  const rows = await store.query<Turn>(uid, { collection: paths.turns(uid, sessionId), where: [], orderBy: { field: "seq", dir: "asc" }, limit: TURNS_PAGE });
+  // Page by page (Q14 runs ascending only), so the request is found in a long Session (review 028 finding 6).
+  const rows: StoredDoc<Turn>[] = [];
+  let complete = false;
+  while (rows.length < TURNS_READ_MAX) {
+    const last = rows[rows.length - 1];
+    const page = await store.query<Turn>(uid, {
+      collection: paths.turns(uid, sessionId),
+      where: last === undefined ? [] : [{ field: "seq", op: ">", value: last.data.seq }],
+      orderBy: { field: "seq", dir: "asc" },
+      limit: TURNS_PAGE,
+    });
+    rows.push(...page);
+    if (page.length < TURNS_PAGE) {
+      complete = true;
+      break;
+    }
+  }
   const user = rows.filter((r) => r.data.role === "user");
   return {
     sessionId,
     requestTurns: user.filter((r) => requestIds.has(r.id)).map((r) => ({ id: r.id, turn: r.data })),
     others: user.filter((r) => !requestIds.has(r.id) && r.data.state !== "dead").map((r) => ({ id: r.id, turn: r.data })),
+    complete,
   };
 }
 
@@ -232,7 +266,9 @@ async function runResolve(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease
   const memories = await allPages<Memory>(deps.store, uid, paths.collection(uid, "memories"), () => true, 201);
   const rules = (await deps.store.get<CoreRules>(uid, paths.core(uid, "rules")))?.data;
   if (rules === undefined) throw new Error("core/rules is missing");
-  const manifest = resolveInput({ request, requestText, turns, memories: memories.map((m) => ({ id: m.id, memory: m.data })), rules });
+  const scanned = resolveInput({ request, requestText, turns, memories: memories.map((m) => ({ id: m.id, memory: m.data })), rules });
+  // A Session read that stopped at its cap is not a complete manifest, so the answer holds and asks.
+  const manifest = { ...scanned, complete: scanned.complete && view.complete };
   const output = await deps.resolver.resolve(manifest.input);
   const evidence = await readEvidence(deps.store, uid, [...turns.flatMap((t) => (t.eid === null ? [] : [t.eid])), ...manifest.input.candidates.flatMap((c) => c.roots.map((r) => r.eid))]);
   const before = view.others.filter((t) => first !== undefined && msFromTs(t.turn.committedAt) <= msFromTs(first.turn.committedAt)).at(-1);
@@ -310,27 +346,51 @@ async function runInstall(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease
     rules,
     // No entity store on this branch: a non-self rule touched by a forget goes pending (ruling F-8).
     roster: [],
-    uncommittedAtFence: view.others.some((t) => t.turn.parseState === "pending"),
+    // An unread older turn may be uncommitted: a capped read counts as one (fails closed).
+    uncommittedAtFence: !view.complete || view.others.some((t) => t.turn.parseState === "pending"),
     hasher: deps.hasher,
   });
   if (plan.writes.filter((w) => w.order === 3).length > FORGET_PAGE_DOCS) return "limit";
+  const baseRulesRev = rules.rulesRev;
   const pages = installPages(plan.writes);
+  const receiptPath = paths.ledger(uid, forgetReceiptId(f.opId, deps.hasher));
+  // Review 028 finding 8: the stop commits with the last page, so the sanitized eids and the rules' counts come
+  // from the plan whose evidence page committed; the receipt's touched counts add up the writes each page really made,
+  // so a retry that finds earlier pages committed still counts them.
   let current = job;
-  for (let k = 0; k < pages.length; k++) {
-    const page = pages[k]!;
-    const last = page[page.length - 1]!;
-    current = await commitStep(store, uid, jobId, lease, async (tx, j) => {
-      await putAll(tx, uid, page);
-      return withPhase(j, "install", now, { cursor: { collection: last.collection, lastId: last.collection === "core" ? null : last.id } });
+  for (let k = 0; k < Math.max(pages.length, 1); k++) {
+    const page = pages[k] ?? [];
+    const final = k >= pages.length - 1;
+    current = await commitStep(store, uid, jobId, lease, async (tx, j, epoch) => {
+      // Review 028 finding 7: a hard rule written since install read core/rules is never overwritten.
+      const coreWrite = page.find((w) => w.collection === "core");
+      if (coreWrite !== undefined) {
+        const cur = await tx.get<CoreRules>(paths.core(uid, "rules"));
+        if (cur === null || (cur.data.rulesRev !== baseRulesRev && !sameRecord(cur.data as unknown as Record<string, unknown>, coreWrite.doc as unknown as Record<string, unknown>))) throw new RulesMoved();
+      }
+      const receipt = await tx.get<Ledger>(receiptPath);
+      const written = await putAll(tx, uid, page);
+      if (receipt !== null && receipt.data.kind === "forgetReceipt") {
+        const payload = receiptPayload(f.opId, plan, f.scopePending);
+        tx.update(receipt.path, { ...receipt.data, updatedAt: now, payload: { ...payload, touched: addTouched(receipt.data.payload.touched, written) } });
+      }
+      if (!final) {
+        const last = page[page.length - 1]!;
+        return withPhase(j, "install", now, { cursor: { collection: last.collection, lastId: last.collection === "core" ? null : last.id } });
+      }
+      barrierAt(tx, epoch, FORGET_STOP_PHASE, now);
+      const stopped = withPhase(j, nextForgetPhase("install"), now, { blockedKeys: plan.blockedKeys.slice(0, 128), stagedSanitizedEids: plan.sanitizedEids.slice(0, 128) });
+      return { ...stopped, status: "blocked", leaseToken: null, leaseUntil: null };
     });
   }
-  return commitStep(store, uid, jobId, lease, async (tx, j, epoch) => {
-    const receipt = await tx.get<Ledger>(paths.ledger(uid, forgetReceiptId(f.opId, deps.hasher)));
-    if (receipt !== null) tx.update(receipt.path, { ...receipt.data, updatedAt: now, payload: receiptPayload(f.opId, plan, f.scopePending) });
-    barrierAt(tx, epoch, FORGET_STOP_PHASE, now);
-    const stopped = withPhase(j, nextForgetPhase("install"), now, { blockedKeys: plan.blockedKeys.slice(0, 128), stagedSanitizedEids: plan.sanitizedEids.slice(0, 128) });
-    return { ...stopped, status: "blocked", leaseToken: null, leaseUntil: null };
-  });
+  return current;
+}
+
+/** Receipt touched rows plus this page's real writes, at most 32 rows (contracts §1). */
+function addTouched(prior: readonly { collection: SC; count: number }[], written: ReadonlyMap<SC, number>): { collection: SC; count: number }[] {
+  const out = new Map(prior.map((t) => [t.collection, t.count] as const));
+  for (const [c, n] of written) out.set(c, (out.get(c) ?? 0) + n);
+  return [...out].map(([collection, count]) => ({ collection, count })).slice(0, 32);
 }
 
 async function settleJob(store: StorePort, uid: string, jobId: ID, lease: Lease, patch: (job: Job) => Job): Promise<void> {

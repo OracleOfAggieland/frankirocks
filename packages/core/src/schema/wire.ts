@@ -557,3 +557,16 @@ export type SnapshotView = Infer<typeof SnapshotView>;
 export type LabView = Infer<typeof LabView>;
 export type StripView = Infer<typeof StripView>;
 export type MemoryResponse = Infer<typeof MemoryResponse>;
+
+// ---------------------------------------------------------------------------------------------
+// POST /api/seed/reset and /api/seed/advance (contracts §6 Routes; brief 027). The requests, and the responses
+// declared above for the request ledger, exported for the browser's half.
+
+export const ResetRequest = obj({ requestId: ID, sessionId: nullable(ID), fixtureId: ID, visitId: ID });
+export type ResetRequest = Infer<typeof ResetRequest>;
+export const AdvanceRequest = obj({ requestId: ID, fixtureNamespace: ID, to: TS });
+export type AdvanceRequest = Infer<typeof AdvanceRequest>;
+export { AdvanceResponse, ResetResponse };
+export type ResetResponse = Infer<typeof ResetResponse>;
+export type AdvanceResponse = Infer<typeof AdvanceResponse>;
+export type Proactive = Infer<typeof Proactive>;

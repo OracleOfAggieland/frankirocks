@@ -175,6 +175,8 @@ export function checkResolve(a: CheckArgs): Resolution {
     ...a.manifest.input.candidates.flatMap((c) => c.roots.map((r) => r.eid)),
   ]);
   const remove = out.remove.filter((s) => verifySpan(s, a.evidence, allowed));
+  // Review 028 finding 4: a named removal that does not verify means the answer is not what it says; ask.
+  if (remove.length < out.remove.length) return pending("invalid", held);
   if (a.fragmentGapMs !== null && a.fragmentGapMs < FRAGMENT_CONFIRM_MS) return pending("fragment", held);
   if (!a.manifest.complete || out.needsMore) return pending("incomplete", held);
   if (out.clarification !== null) return pending(out.clarification.reason === "protected_rule" ? "protectedRule" : "which", held);
