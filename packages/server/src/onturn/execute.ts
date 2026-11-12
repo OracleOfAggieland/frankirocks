@@ -168,6 +168,8 @@ export function executeHardRule(run: HardRuleRun): HardRuleResult {
   let q = prior.sessionId === run.sessionId ? prior.q : pendingNext(prior.q, { kind: "sessionClosed" });
   if (answeringQ !== null) q = pendingNext(q, { kind: "userTurn", seq: run.clientSeq, final: true, slotsValid: run.slots.kind === "valid" });
   if (plan.outcome.kind === "pendingWritten" && plan.outcome.question !== null && plan.outcome.ruleIds.length > 0) q = pendingNext(q, { kind: "ask", ruleId: plan.outcome.ruleIds[0]!, seq: run.clientSeq });
+  // W-187 (brief 025): a pending rule a denial reached but could not remove is asked about again.
+  else if (plan.reask != null) q = pendingNext(q, { kind: "ask", ruleId: plan.reask, seq: run.clientSeq });
   const askedRule = q.kind === "none" ? null : q.ruleId;
   if (askedRule !== null && !rules.allergies.some((r) => r.id === askedRule && r.state === "pending")) q = pendingNext(q, { kind: "ruleGone", ruleId: askedRule });
   const ask = q.kind === "none" ? NO_ASK : { sessionId: run.sessionId, q };

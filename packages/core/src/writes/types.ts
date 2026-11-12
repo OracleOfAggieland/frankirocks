@@ -251,6 +251,11 @@ export interface HardRulePlan {
   outcome: HardRuleOutcome;
   note: RouteNoteKind[];
   ledger: LedgerDecision[];
+  /**
+   * A pending rule a denial reached but could not remove (W-187): it stays, and Franki asks about it again. Absent or
+   * null: nothing to ask again.
+   */
+  reask?: ID | null;
 }
 
 // ---------------------------------------------------------------------------------------------
