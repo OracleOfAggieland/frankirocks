@@ -231,6 +231,34 @@ describe("call swap transitions", () => {
     expect(d.st.pending?.notes[0]?.text).toBe(COMPANY_LINE);
   });
 
+  it("SWAPPING + turnOk blocked for a Session swapped away from two swaps back -> SWAPPING (nothing happens)", () => {
+    const { d, play } = rig();
+    play({ k: "typed" }, 300);
+    const first = d.pending.posts.at(-1)!;
+    play({ k: "blocked", pick: 0, care: false }, 300);
+    for (const [a, dt] of [
+      [{ k: "openOk" }, 300],
+      [{ k: "channelOpen" }, 200],
+      [{ k: "stateOk", variant: "fresh" }, 100],
+      [{ k: "hash", pick: 0, ok: true }, 0],
+      [{ k: "created", pick: 0 }, 30],
+      [{ k: "started", pick: 0 }, 200],
+      [{ k: "stopped" }, 1_500],
+    ] as [SwapAction, number][])
+      play(a, dt);
+    expect(d.st.phase).toBe("LISTENING");
+    play({ k: "typed" }, 300);
+    const second = d.st.session!.sessionId;
+    play({ k: "blocked", pick: 0, care: false }, 300);
+    expect(d.st).toMatchObject({ phase: "SWAPPING", narrowedFrom: second });
+    // A late answer for another post of the first narrowed Session.
+    d.pending.posts.push({ ...first, answered: false });
+    const cmds = play({ k: "blocked", pick: 0, care: false }, 100);
+    expect(d.trace.steps.at(-1)!.event.type).toBe("turnOk");
+    expect(cmds).toEqual([]);
+    expect(d.st).toMatchObject({ phase: "SWAPPING", narrowedFrom: second });
+  });
+
   it("SWAPPING + turnOk blocked for the Session already swapped away from -> SWAPPING (nothing happens)", () => {
     const { d, play } = rig();
     play({ k: "typed" }, 300);

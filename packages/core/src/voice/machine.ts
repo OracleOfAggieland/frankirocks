@@ -398,6 +398,8 @@ export interface VoiceState {
   proactive: Infer<typeof Proactive> | null;
   /** The Session a `blocked` answer narrowed and this call swapped away from; a later `blocked` for it does nothing. */
   narrowedFrom: string | null;
+  /** Every Session this call swapped away from, narrowedFrom among them; a later `blocked` for any does nothing (brief 031). */
+  swappedFrom: string[];
   /** The last loud input frame the Voice_Client reported (Latency_Clock). */
   lastLoudAt: number | null;
   latency: { current: LatencyTimes | null; rows: LatencyRow[] };
@@ -452,6 +454,7 @@ export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState
     afterReply: null,
     proactive: null,
     narrowedFrom: null,
+    swappedFrom: [],
     lastLoudAt: null,
     latency: { current: null, rows: [] },
     eventSeq: 0,
@@ -1052,6 +1055,7 @@ function openFailed(s: Step): void {
  *   stateSentAt, afterReply   null                      null                           null            -
  *   proactive                 null                      null                           the answer's    -
  *   narrowedFrom              null                      keep                           keep            -
+ *   swappedFrom               []                        keep                           keep            -
  *   outstanding               keep                      keep                           keep            -
  *   speech                    []                        keep                           []              -
  *   instructions              null                      keep                           null            -
@@ -1086,7 +1090,7 @@ function openFailed(s: Step): void {
  * Not an exit, but a reset: when CONFIGURING reaches LISTENING, onState sets recovery to null and retryVisible to
  * false, and disarms ack, connect, retryUi and reconnect.
  * A fifth exit, startSwap (a `blocked` answer, or the end of a care reply after one), resets as `recovery` does,
- * except: phase SWAPPING; lastSessionId and narrowedFrom the narrowed Session; recovery null, retryVisible,
+ * except: phase SWAPPING; lastSessionId and narrowedFrom the narrowed Session, which swappedFrom gains; recovery null, retryVisible,
  * stateFailures and stateRetryVisible cleared; instructions null; speech []; deadlines {}, then swap and openWait
  * (the open in flight keeps its own deadline); awaitingOpen true; staleOpen true when an open was already in
  * flight, else kept; error null; micMuted kept. staleOpen is cleared only by the next open answer (onOpen or
@@ -1107,6 +1111,7 @@ function closedFields(st: VoiceState): Partial<VoiceState> {
     judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, retryPost: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
     proactive: null,
     narrowedFrom: null,
+    swappedFrom: [],
     deadlines: {},
     recovery: null,
     retryVisible: false,
@@ -1198,6 +1203,7 @@ function startSwap(s: Step, from: string): void {
     phase: "SWAPPING",
     lastSessionId: from,
     narrowedFrom: from,
+    swappedFrom: st.swappedFrom.includes(from) ? st.swappedFrom : [...st.swappedFrom, from],
     session: null,
     deck: null,
     ack: null,
@@ -1240,7 +1246,7 @@ function startSwap(s: Step, from: string): void {
  */
 function onBlocked(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void {
   const from = res.stamp.sessionId;
-  if (s.st.phase === "CLOSED" || s.st.narrowedFrom === from) return;
+  if (s.st.phase === "CLOSED" || s.st.narrowedFrom === from || s.st.swappedFrom.includes(from)) return;
   // The care reply for this Session's narrowing is already under way, and the swap follows it: another `blocked`
   // for the same Session (a stale resend, or another of its posts) neither cuts nor restarts it (brief 031, finding 3).
   if (s.st.afterReply === "swap" && s.st.session?.sessionId === from) return;
