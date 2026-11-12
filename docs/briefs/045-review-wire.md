@@ -161,6 +161,11 @@ No trace moved in any of the three commits. At the merge of `build/plan-stages` 
 - **Delivery.** In `delivery-wire.ts`, `open.ts` and `state.ts`, plan-stages' deadlines, budgets and verdict rows are kept, and the Deck parameter is still threaded through as before. In `proactive.ts`, `lineOf` keeps brief 042 item 3's late text for a held reminder, and its sensitivity now comes from the Gate's source facts, as for any line.
 - **Store calls.** `time/life-cost.test.ts` was red at 43 calls against its bound of 38. The extra 5 came from finding 8's `sensOf`, not from Deck hashing, which reads nothing. `sensOf` had read the core docs for a world time that sensitivity never uses, so it now calls `candidateSensOf` (`gate-candidate.ts`), which makes the same source read as `gateCandidateOf`. The pass is back within 38, and the bound is unchanged. The "beat 3 on a live call" script passed under finding 6 with no change to its inputs.
 
+### Every line has a named end (after 03ea738)
+
+- Property 1 failed on build/plan-stages with seed 1243384230, path `263:2:1:2:2:5:5:6:6:6:6`. After a poll and a lost connection, `onState` returned early and ignored a state answer's line without a word, and setup ignored one the same way. Now `onState` sets `proactiveDropped` with the existing reasons: `session` for an answer with no Session or another Session's (a lost connection, a hang-up, a failed open, visitGone), and `phase` for every branch during setup. No reason value was added, and no new way to play a line.
+- `proactive-drop.test.ts` is red on 03ea738 and green now. The property at that seed and path passes, and so do six fresh-seed runs of both machine properties. No golden trace moved. The voice client sends no receipt for any dropped line, so nothing changed there.
+
 ## Outcome, part D
 
 Lane `wire`. Findings 6 and 9 are done; findings 7, 10 and 12, and the open's tail reserve, are not started and go to a fresh builder. Brief 042's items 1 to 5 were built in the same lane; see that brief's "Outcome".
