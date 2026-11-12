@@ -15,9 +15,11 @@
 import {
   type Card,
   type ClockPair,
+  type CoreRules,
   type Cov,
   type Evidence,
   type FoodCandidate,
+  type FoodRule,
   type Infer,
   type Ledger,
   type LoopRecord,
@@ -214,10 +216,18 @@ export async function heroOffer(ctx: RouteContext, generation: number): Promise<
 // ---------------------------------------------------------------------------------------------
 // suggest(food)
 
-async function readRules(ctx: RouteContext) {
+/**
+ * The rules every food path reads (brief 037, finding 11): `core/rules.allergies` and every open proposal's rules (a
+ * late repair's or the backstop's, not yet installed by a turn or `open`). Pending filters as if active.
+ */
+export function foodRulesOf(rules: Pick<CoreRules, "allergies" | "proposals">): FoodRule[] {
+  return [...rules.allergies, ...(rules.proposals ?? []).flatMap((p) => p.install)];
+}
+
+async function readRules(ctx: RouteContext): Promise<FoodRule[] | null> {
   try {
     const core = await readCoreDocs(storeReader(ctx.deps.store, ctx.uid), ctx.uid);
-    return core.rules.data.allergies;
+    return foodRulesOf(core.rules.data);
   } catch {
     return null;
   }
