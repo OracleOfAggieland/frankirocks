@@ -56,7 +56,7 @@ import { type HardRuleResult, type HardRuleRun, applyOpenProposals, executeHardR
 import { readOnTurnContext } from "../onturn/context";
 import { readSnapshot } from "../store/port";
 import { type TypedPlan, planTypedReply, readPreRoute, runHardRuleSlots, typedRouteNote } from "../onturn/route";
-import { askedHere, candidateOpens, regexOpens, routeEligible, speakerCertain } from "../onturn/trigger";
+import { anyMemoryRoute, askedHere, candidateOpens, memoryRegexOpens, regexOpens, routeEligible, speakerCertain } from "../onturn/trigger";
 import { planKey } from "../onturn/typed";
 import { lateSlots, routeHandled } from "../onturn/late";
 import { storeReader } from "../head-build";
@@ -178,7 +178,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
     const typedNoCall = req.source !== "asr" && cls.cls === "U" && (await noCallOpen(ctx, req.sessionId));
     // G17: with a trigger known at arrival the first typed reply isn't started; a parse-opened route abandons it.
     const replyP =
-      typedNoCall && (regex || askedAtArrival !== null)
+      typedNoCall && (regex || anyMemoryRoute(memoryRegexOpens(arrival)) || askedAtArrival !== null)
         ? Promise.resolve(null)
         : typedReplyNote(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx), cls.cls === "U" && req.source === "typed");
     replyP.catch(() => {});

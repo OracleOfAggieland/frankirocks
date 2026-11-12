@@ -216,7 +216,7 @@ export const SuggestCall = obj({
   }),
 });
 // Brief 040, item 2: a card's tap sends both IDs; a call sends both null, and code resolves the offer bound to the
-// turn and reads the choice from the owner's own words (routes/tool-food.ts, answerTool). Contract question H-180.
+// turn and reads the choice from the owner's own words (routes/tool-food.ts, answerTool). Contract question H-186.
 export const AnswerCall = obj({ name: literal("answer"), args: obj({ pendingId: nullable(ID), choiceId: nullable(ID) }) });
 
 export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall, suggest: SuggestCall, answer: AnswerCall });
@@ -330,7 +330,7 @@ export const SUGGEST_TOOL = {
 } as const;
 
 /**
- * Brief 040, item 2 (H-180): no parameters, as `make_phone_call` has none. The model never sees a pending ID or a
+ * Brief 040, item 2 (H-186): no parameters, as `make_phone_call` has none. The model never sees a pending ID or a
  * choice ID and is never asked for one; the call sends both null and code decides.
  */
 export const ANSWER_TOOL = {

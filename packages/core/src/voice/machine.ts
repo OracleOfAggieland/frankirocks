@@ -571,7 +571,7 @@ export const TRANSCRIBE_PROMPT = "A friendly conversation in English with Franki
 
 /**
  * The tools a call offers the model, in every session and every reply that may call one (brief 040, item 1). All four
- * are dispatched under one rule (dispatchTool, behind the reply's Permit); `answer` has no parameters (H-180).
+ * are dispatched under one rule (dispatchTool, behind the reply's Permit); `answer` has no parameters (H-186).
  */
 export const CALL_TOOLS = [RECALL_TOOL, PHONE_TOOL, SUGGEST_TOOL, ANSWER_TOOL] as const;
 
@@ -1872,7 +1872,7 @@ function replyKnown(s: Step, a: ActiveReply): void {
 
 /** KV02: a function call of an admitted reply goes to `/api/tool`. */
 function dispatchTool(s: Step, a: ActiveReply, call: ToolCallItem): void {
-  // The same rule for every tool: arguments that don't parse send nothing. `answer` sends both IDs null (H-180).
+  // The same rule for every tool: arguments that don't parse send nothing. `answer` sends both IDs null (H-186).
   const sent = callToolArgs(call.name, call.arguments);
   if (sent === null) return;
   const args = sent.args;

@@ -11,7 +11,7 @@ import { type Memory } from "@franki/core";
 import { ok } from "../openai/fake";
 import { completed } from "../openai/responses";
 import { type MailLine, at, q } from "../seed/fixture";
-import { type Step, type World, allMemories, extract, item, memoryText, parse, reply, rulesOf, spanOf } from "../testing/script-runner";
+import { type Step, type World, allMemories, extract, item, memoryText, parse, reply, rulesOf, slots, spanOf } from "../testing/script-runner";
 import { type GateScript, W, foodSafe, fsEmpty, suggestCall } from "./gate-kit";
 
 // ---------------------------------------------------------------------------------------------
@@ -26,6 +26,18 @@ function tell(text: string, why: string, items: Items, more: Step["answers"] = [
     { label: `extraction of: ${text}`, do: "work", answers: [extract(why, items)] },
   ];
 }
+
+/**
+ * A life change typed with an RX7 cue opens the transition route at arrival (brief 025, wave D), so FastSlots answers
+ * for the line: what a careful model returns for it.
+ */
+const lifeChange = (text: string, why: string, transition: string, whenSpoken: string | null, who: { subject?: string; counterpart?: string }) =>
+  slots(why, (eid) => {
+    const span = (q: string) => ({ eid, fieldPath: "text", start: text.indexOf(q), end: text.indexOf(q) + q.length, quote: q });
+    const of = (words: string | undefined, self: boolean) => (words === undefined ? (self ? { entityId: null, mention: null, isSelf: true } : null) : { entityId: null, mention: span(words), isSelf: false });
+    const quote = text.replace(/[.!?]$/, "").split(". ")[0]!;
+    return [{ kind: "transition", transition, subject: of(who.subject, true), counterpart: of(who.counterpart, false), whenSpoken, polarity: "affirmed", act: "direct", span: span(quote) }];
+  });
 
 const mention = (w: World, localId: string, type: string, name: string, existingId: string | null = null) => ({ localId, type, observedName: name, span: spanOf(w, name), existingId });
 
@@ -83,19 +95,16 @@ const FT02 = friend("FT02", 2, "Vegetarian this month", [
     label: "a diet with an end is stored",
     do: "check",
     of: "open",
-    waits: W.G_FT02,
     expect: [storeHas("an active vegetarian preference.food with validTo set", (m) => m.predicate === "preference.food" && m.status === "active", (ms) => (ms.some((m) => m.validTo !== null) ? true : `validTo ${ms.map((m) => m.validTo).join(", ") || "none"}`))],
   },
   { label: "ask about dinner this month", do: "say", text: "What should I make for dinner?", answers: [parse()] },
   {
     ...suggestCall("suggest this month", [foodSafe("suggest this month", MEAT)]),
-    waits: W.G_FT02,
   },
   { label: "the month ends", do: "advance", to: at(33, "18:00"), called: "December 2, after the month" },
   { label: "ask about dinner after the month", do: "say", text: "What's for dinner tonight?", answers: [parse()] },
   {
     ...suggestCall("suggest after the month", [{ mustSay: { has: ["vegetarian"], channel: "tool" } }]),
-    waits: "suggest(food)'s open domain moments first (spec §10, 'Still vegetarian, or was November it?'): suggestTool's question is only the rules-unavailable line",
   },
 ]);
 
@@ -139,7 +148,7 @@ const FT03 = friend("FT03", 3, "Mom in hospital, later dies", [
         changes: target === null ? [] : [{ verb: "transition", targetMid: target }],
       }),
     ];
-  }),
+  }, [lifeChange(MOM_DIED, "a death: the owner's mom, last night", "death", "last night", { subject: "My mom" })]),
   {
     label: "the death is stored; the hospital stay is history",
     do: "check",
@@ -244,7 +253,7 @@ const FT08 = friend("FT08", 8, "Breakup, restaurants", [
   ...tell("Sam and I broke up. We used to go to Lupa every Friday.", "the breakup, and the place they used to go", (w) => [
     item({ act: "statement", kind: "fact", predicate: "person.relation", value: { kind: "enum", code: "ex_partner" }, args: { otherRef: "m1", label: "ex", employerRef: null }, mentions: [mention(w, "m1", "person", "Sam")], spans: [spanOf(w, "Sam and I broke up")], sens: "S1" }),
     factItem(w, "We used to go to Lupa every Friday", "the owner and Sam used to go to Lupa every Friday", "food", "S1"),
-  ]),
+  ], [lifeChange("Sam and I broke up. We used to go to Lupa every Friday.", "a breakup: the owner and Sam", "breakup", null, { counterpart: "Sam" })]),
   { label: "ask for dinner out", do: "say", text: "Where should I eat tonight?", answers: [parse()] },
   suggestCall("suggest dinner", [{ neverSay: ["Lupa"], channels: ["tool", "card", "note"] }], "somewhere to eat tonight"),
 ], { silentGreen: "suggest(food) offers recipes only (places are always removed for unknown allergen status, brief 022 'Not built: venues'), so Lupa can't be offered; the relation-to-history effect is not tested" });
@@ -267,7 +276,7 @@ const FT09 = friend("FT09", 9, "\"That place\"", [
 const FT10 = friend("FT10", 10, "Coffee 200 times vs one diagnosis", [
   { label: "open", do: "open" },
   ...tell("I had my third coffee already.", "a coffee habit, S0", (w) => [factItem(w, "I had my third coffee already", "the owner drinks a lot of coffee", "food", "S0")]),
-  ...tell("I was diagnosed with cancer last week.", "a diagnosis: S2, gravity 3", (w) => [factItem(w, "I was diagnosed with cancer last week", "the owner was diagnosed with cancer", "health", "S2", { gravity: 3 })]),
+  ...tell("I was diagnosed with cancer last week.", "a diagnosis: S2, gravity 3", (w) => [factItem(w, "I was diagnosed with cancer last week", "the owner was diagnosed with cancer", "health", "S2", { gravity: 3 })], [lifeChange("I was diagnosed with cancer last week.", "an illness: the owner, last week", "illness", "last week", {})]),
   { label: "close", do: "close" },
   { label: "the next Head: coffee freely, the diagnosis waits", do: "open", expect: [head("the next Head: coffee freely, the diagnosis waits", ["coffee"]), { neverSay: ["cancer", "diagnosed"], channels: ["head"] }] },
   { label: "small talk", do: "type", text: "Morning! Long day ahead.", answers: [reply("Morning! Want a quick rundown?"), parse()], expect: [{ neverSay: ["cancer", "diagnosed"], channels: ["head", "model", "note"] }] },
@@ -288,7 +297,6 @@ const FT11 = friend("FT11", 11, "Dinner with twenty relevant memories", [
   { label: "ask again", do: "say", text: "Anything else for dinner?", answers: [parse()] },
   {
     ...suggestCall("the disliked ingredient is left off", [foodSafe("the disliked ingredient is left off", ["mushroom"])]),
-    waits: W.G_FT02,
   },
 ]);
 

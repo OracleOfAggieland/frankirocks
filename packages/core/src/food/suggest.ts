@@ -6,6 +6,7 @@ import type { FoodRule } from "./filter";
 import { CATALOG, type FoodCandidate } from "./catalog";
 import { type FilterResult, filterFood } from "./filter";
 import { type Ingredient, ingredient } from "./ingredients";
+import { type FoodPrefs, NO_PREFS, type PrefFilterResult, dietQuestion, filterPrefs } from "./prefs";
 
 /** The most candidates one `suggest` returns (contracts: candidateIds ID[0..3]). */
 export const SUGGEST_MAX = 3;
@@ -23,6 +24,8 @@ export interface SuggestFoodInput {
   catalog?: readonly FoodCandidate[];
   table?: (id: string) => Ingredient | null;
   maxMinutes?: number;
+  /** The owner's diets and dislikes, and those of anyone the owner named (brief 039). They run after the allergy filter. */
+  prefs?: FoodPrefs;
 }
 
 export interface SuggestFoodResult {
@@ -31,6 +34,10 @@ export interface SuggestFoodResult {
   reason: { code: "fitsGap"; text: string } | null;
   question: string | null;
   filter: FilterResult;
+  /** What diets and dislikes removed from what the allergy filter kept, by code only (brief 039). */
+  prefs: PrefFilterResult["removed"];
+  /** The diet the question asks about, when it does. */
+  dietAsked: ReturnType<typeof dietQuestion>;
   attendeeIds: string[];
 }
 
@@ -39,7 +46,10 @@ export function suggestFood(input: SuggestFoodInput): SuggestFoodResult {
   const table = input.table ?? ingredient;
   const filter = filterFood({ candidates: input.catalog ?? CATALOG, rules: input.rules, attendeeIds, excludeIds: input.excludeIds ?? [], table });
   const max = input.maxMinutes ?? QUICK_DINNER_MAX_MINUTES;
-  const candidates = filter.kept
+  // Brief 039: diets and dislikes only take away from what the allergy filter kept, never put anything back.
+  const prefs = filterPrefs(filter.kept, input.prefs ?? NO_PREFS, table);
+  const asked = input.rules === null ? null : dietQuestion(input.prefs ?? NO_PREFS);
+  const candidates = prefs.kept
     .filter((c) => c.meal === "dinner" && c.minutes <= max)
     .sort((a, b) => a.minutes - b.minutes || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .slice(0, SUGGEST_MAX);
@@ -48,8 +58,10 @@ export function suggestFood(input: SuggestFoodInput): SuggestFoodResult {
     candidates,
     selectedId: first?.id ?? null,
     reason: first === null ? null : { code: "fitsGap", text: `Ready in ${first.minutes} minutes` },
-    question: input.rules === null ? RULES_UNAVAILABLE_LINE : null,
+    question: input.rules === null ? RULES_UNAVAILABLE_LINE : (asked?.line ?? null),
     filter,
+    prefs: prefs.removed,
+    dietAsked: asked,
     attendeeIds,
   };
 }

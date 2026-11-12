@@ -5,7 +5,7 @@
  * must parse as JSON, or nothing is sent. What is sent differs by tool:
  *   recall, suggest, make_phone_call   the model's arguments, as parsed (the route validates them; the phone call's
  *                                      are empty, and the server reads the number from the owner's own turn).
- *   answer                             both IDs null, whatever the model wrote (H-180): the model never sees a pending
+ *   answer                             both IDs null, whatever the model wrote (H-186): the model never sees a pending
  *                                      ID or a choice ID, and code resolves the offer and the choice on the server.
  */
 export const CALL_TOOL_NAMES = ["recall", "make_phone_call", "suggest", "answer"] as const;

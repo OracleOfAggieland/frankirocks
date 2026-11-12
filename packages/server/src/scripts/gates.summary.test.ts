@@ -72,11 +72,11 @@ describe("release gates: the count per gate (spec §13)", () => {
     expect(counted.filter((t) => !covered.has(t))).toEqual([]);
     expect(summary(FRIEND)).toEqual({
       written: 20,
-      green: 7,
-      waiting: 13,
-      waitingSteps: 17,
+      green: 9,
+      waiting: 11,
+      waitingSteps: 13,
       silent: 1,
-      byWait: { other: 9, G_FT02: 2, G_FT16: 1, GATE_WIRE: 2, MAIL_READ: 1 },
+      byWait: { other: 8, G_FT16: 1, GATE_WIRE: 2, MAIL_READ: 1 },
     });
   });
 });
