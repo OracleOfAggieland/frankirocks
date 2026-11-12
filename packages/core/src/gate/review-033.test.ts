@@ -82,3 +82,28 @@ describe("finding 18: a label opens only on all of its words", () => {
     expect(gate({ ...c, topic: { ...work, label: "it is", terms: [] } }, gateCtx({ ownerTurn: ownerSaid("it is") })).verdict).toBe("silent");
   });
 });
+
+describe("findings 4 and 5: unknown, missing or malformed values are silence, never a throw", () => {
+  const invalid = { verdict: "silent", reasons: ["invalidInput"] };
+  const bad = <T>(v: unknown) => v as T;
+
+  it("does not fail open on an unknown or missing value (finding 4)", () => {
+    expect(gate(gateCand({ act: bad(undefined) }), gateCtx())).toMatchObject(invalid);
+    expect(gate(gateCand({ topic: { ...work, quiet: bad("ALL_OUTPUT") } }), gateCtx())).toMatchObject(invalid);
+    expect(gate(gateCand({ gravity: 3 }), gateCtx({ counts: bad({}) }))).toMatchObject(invalid);
+    expect(gate(gateCand(), gateCtx({ modifiers: { rushed: false, crisis: bad("true") } }))).toMatchObject(invalid);
+    const asked = gateCtx({ trigger: "recall", ownerTurn: ownerSaid("how is mom"), modifiers: { rushed: false, crisis: true } });
+    expect(gate(gateCand({ purpose: bad("Suggest"), aliases: ["mom"] }), asked)).toMatchObject(invalid);
+    expect(gate(gateCand({ sens: "S2", allergy: bad("no") }), gateCtx())).toMatchObject(invalid);
+    expect(gate(gateCand({ offerUsed: bad(undefined), sourceClass: "M", attestedPremises: 2 }), gateCtx())).toMatchObject(invalid);
+    expect(gate(gateCand({ checkInUsed: bad(undefined) }), gateCtx())).toMatchObject(invalid);
+  });
+
+  it("does not throw on malformed shapes (finding 5)", () => {
+    expect(gate(gateCand({ purpose: "insight" }), gateCtx({ recentTurns: bad([null]) }))).toMatchObject(invalid);
+    expect(gate(gateCand({ queryTerms: bad([1]) }), gateCtx({ trigger: "recall", ownerTurn: ownerSaid("mom") }))).toMatchObject(invalid);
+    expect(gate(gateCand({ aliases: bad([1]) }), gateCtx({ trigger: "recall", ownerTurn: ownerSaid("mom") }))).toMatchObject(invalid);
+    expect(gate(gateCand({ topic: bad({ ...work, terms: undefined }) }), gateCtx({ ownerTurn: ownerSaid("work") }))).toMatchObject(invalid);
+    expect(gate(gateCand({ sens: "S2" }), gateCtx({ build: "plus200", authorization: bad(undefined) }))).toMatchObject(invalid);
+  });
+});

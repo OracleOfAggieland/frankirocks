@@ -12,7 +12,7 @@ import { msFromTs } from "../schema/primitives";
 import { CEILING, PLUS200_PATHS, type CeilingPath, classGroup } from "./ceiling";
 import { askedByOwner, doorOpens, topicOpen } from "./doors";
 import { inQuietHours } from "./quiet-hours";
-import { GATE_VERDICTS, type GateReason, type GateVerdict, type MustSayKind } from "./reasons";
+import { GATE_VERDICTS, MUST_SAY_KINDS, type GateReason, type GateVerdict, type MustSayKind } from "./reasons";
 import type { GateCandidate, GateContext, GateResult } from "./types";
 
 export const HARD_RULE_FAIL_LINE = "Allergy data unavailable, recommend no food.";
@@ -131,28 +131,108 @@ function authorized(c: GateCandidate, x: GateContext, now: number): boolean {
   );
 }
 
-function wellFormed(c: unknown, x: unknown): boolean {
-  if (!isPlainObject(c) || !isPlainObject(x)) return false;
-  const k = c as unknown as GateCandidate;
-  const y = x as unknown as GateContext;
+// Brief 033 findings 4 and 5: every field the Gate reads is checked, so an unknown, missing or malformed value is
+// `invalidInput`, never a default that fails open and never a throw.
+const CLASSES = ["U", "C", "O", "T", "M"] as const;
+const AUDIENCES = ["private", "company", "unknown"] as const;
+const isIn = (set: readonly unknown[], v: unknown) => set.includes(v);
+const isBool = (v: unknown) => v === true || v === false;
+const isStr = (v: unknown) => typeof v === "string";
+const isCount = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0;
+const isStrs = (v: unknown) => Array.isArray(v) && v.every(isStr);
+const isTs = (v: unknown) => ts(v) !== null;
+const isObj = (v: unknown): v is Record<string, unknown> => isPlainObject(v);
+
+function topicOk(t: unknown): boolean {
+  if (t === null) return true;
+  return isObj(t) && isStr(t.topicId) && isStr(t.label) && isIn(CLASSES, t.labelClass) && isStrs(t.terms) && (t.quiet === null || isIn(["unsolicited", "all_output"], t.quiet));
+}
+
+function candidateOk(k: unknown): boolean {
+  if (!isObj(k)) return false;
+  const e = k.eligibility;
+  const s = k.sender;
   return (
-    ["U", "C", "O", "T", "M"].includes(k.sourceClass) &&
-    ["S0", "S1", "S2"].includes(k.sens) &&
-    isPlainObject(k.eligibility) &&
-    Array.isArray(k.queryTerms) &&
-    ["private", "company", "unknown"].includes(y.audience) &&
-    ["unprompted", "recall", "jarTap"].includes(y.trigger) &&
-    isPlainObject(y.modifiers) &&
-    isPlainObject(y.counts) &&
-    Array.isArray(y.openedTopics) &&
-    Array.isArray(y.recentTurns) &&
-    ts(y.worldNow) !== null
+    isStr(k.id) &&
+    isIn(["memory", "moment"], k.kind) &&
+    isStr(k.subjectId) &&
+    isIn(CLASSES, k.sourceClass) &&
+    isIn(["S0", "S1", "S2"], k.sens) &&
+    isBool(k.allergy) &&
+    isObj(e) &&
+    isBool(e.allow) &&
+    (k.toldAt === null || isTs(k.toldAt)) &&
+    topicOk(k.topic) &&
+    isStrs(k.queryTerms) &&
+    isStrs(k.aliases) &&
+    isIn(["item", "wish", "ask", "insight", "celebrate", "suggest", "logistics"], k.purpose) &&
+    isIn([0, 1, 2, 3], k.gravity) &&
+    isBool(k.food) &&
+    (k.mustSay === null || isIn(MUST_SAY_KINDS, k.mustSay)) &&
+    (k.dueAt === null || isTs(k.dueAt)) &&
+    (s === null || (isObj(s) && isBool(s.mailedByOwner))) &&
+    isCount(k.attestedPremises) &&
+    isBool(k.offerUsed) &&
+    isBool(k.ownRooted) &&
+    isBool(k.checkInUsed) &&
+    isIn(["say", "use"], k.act)
   );
+}
+
+function contextOk(y: unknown): boolean {
+  if (!isObj(y)) return false;
+  const m = y.modifiers;
+  const t = y.ownerTurn;
+  const n = y.counts;
+  const a = y.authorization;
+  return (
+    isTs(y.worldNow) &&
+    isStr(y.zone) &&
+    isIn(["floor", "plus200"], y.build) &&
+    isIn(AUDIENCES, y.audience) &&
+    isObj(m) &&
+    isBool(m.rushed) &&
+    isBool(m.crisis) &&
+    isIn(["unprompted", "recall", "jarTap"], y.trigger) &&
+    (t === null || (isObj(t) && isStr(t.text) && isIn(CLASSES, t.sourceClass) && isBool(t.certain))) &&
+    isStrs(y.openedTopics) &&
+    Array.isArray(y.recentTurns) &&
+    y.recentTurns.every((r: unknown) => isObj(r) && isIn(["user", "assistant"], r.role) && isBool(r.checkInAnswer) && isBool(r.transitionOrCrisis)) &&
+    isObj(n) &&
+    isCount(n.proactive) &&
+    isCount(n.heavy) &&
+    isCount(n.senderAsks) &&
+    isCount(n.notesThisReply) &&
+    isIn(["ready", "missing", "unreadable"], y.rules) &&
+    (a === null ||
+      (isObj(a) &&
+        isStr(a.subjectId) &&
+        (a.topicId === null || isStr(a.topicId)) &&
+        (a.momentId === null || isStr(a.momentId)) &&
+        isIn(AUDIENCES, a.audience) &&
+        isTs(a.expiresAt) &&
+        isBool(a.used) &&
+        isIn(CLASSES, a.sourceClass)))
+  );
+}
+
+function wellFormed(c: unknown, x: unknown): boolean {
+  try {
+    return candidateOk(c) && contextOk(x);
+  } catch {
+    // An accessor that throws is malformed input too.
+    return false;
+  }
 }
 
 export function gate(c: GateCandidate, x: GateContext): GateResult {
   if (!wellFormed(c, x)) {
-    const food = isPlainObject(c) && (c as { food?: unknown }).food !== false;
+    let food = false;
+    try {
+      food = isPlainObject(c) && (c as { food?: unknown }).food !== false;
+    } catch {
+      // An unreadable candidate gets no line; it is silent either way.
+    }
     return result("silent", ["invalidInput"], { fixedLine: food ? HARD_RULE_FAIL_LINE : null });
   }
   const now = ts(x.worldNow)!;
