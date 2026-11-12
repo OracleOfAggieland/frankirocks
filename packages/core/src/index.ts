@@ -43,3 +43,6 @@ export * from "./false-gone";
 
 // Brief 024: the Gate.
 export * from "./gate/index";
+
+// Brief 024: third-party labels.
+export * from "./safe-name";
