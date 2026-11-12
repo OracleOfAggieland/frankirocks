@@ -4,10 +4,10 @@ import { type CoreRules, type Memory, type Session, buildSlice, rootKey, tsFromM
 import { sampleSession, testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { paths } from "../store/paths";
-
+import type { StorePort } from "../store/port";
 import { commitUserTurnForTest, insertMemoryForTest, insertTurnForTest } from "../testing/extract-fixtures";
 import { T0_MS, patchRecord, testRig } from "../testing/fakes";
-import { advanceForget } from "./executor";
+import { FORGET_RETRY_MS, advanceForget } from "./executor";
 import { fenceForget } from "./fence";
 import { fakeForgetResolve } from "./resolve-port";
 
@@ -66,3 +66,39 @@ describe("finding 6: resolve finds the request in a long session", () => {
   });
 });
 
+/** A store whose `get` of one path runs `hook` once, after the read, on the call numbered `nth`. */
+function hookedGet(inner: StorePort, path: string, nth: number, hook: () => Promise<void>): StorePort {
+  let seen = 0;
+  return {
+    query: (uid, spec) => inner.query(uid, spec),
+    transaction: (uid, fn) => inner.transaction(uid, fn),
+    get: async (uid, p) => {
+      const out = await inner.get(uid, p);
+      if (p === path && ++seen === nth) await hook();
+      return out as never;
+    },
+  };
+}
+
+describe("finding 7: a hard rule added mid-install is never lost", () => {
+  it("keeps a rule written between install's read of core/rules and its page", async () => {
+    const { store, hasher, dannyId, get, fence, at } = await setup();
+    const NEW = testId("peanut");
+    const rulesPath = paths.core(UID, "rules");
+    // Read 1 is resolve's, read 2 is install's: the rule lands right after install read the rules.
+    const racing = hookedGet(store, rulesPath, 2, async () => {
+      const cur = (await store.get<CoreRules>(UID, rulesPath))!.data;
+      await patchRecord<CoreRules>(store, UID, rulesPath, {
+        rulesRev: cur.rulesRev + 1,
+        allergies: [...cur.allergies, { id: NEW, subjectId: "self", code: "peanut", state: "active", anonymous: false, proof: null, proofRev: null, rootKeys: [], dependsOn: [] }],
+      });
+    });
+    const resolver = fakeForgetResolve(() => exact([dannyId]));
+    let r = await advanceForget({ store: racing, hasher, resolver }, UID, fence.jobId, at);
+    if (r.kind === "retry") r = await advanceForget({ store: racing, hasher, resolver }, UID, fence.jobId, at + FORGET_RETRY_MS);
+    expect(r).toEqual({ kind: "stopped", phase: "closure" });
+    const rules = await get<CoreRules>(rulesPath);
+    expect(rules.allergies.map((a) => a.id).sort()).toEqual([NEW, RULE].sort());
+    expect(rules.allergies.find((a) => a.id === RULE)!.state).toBe("active");
+  });
+});

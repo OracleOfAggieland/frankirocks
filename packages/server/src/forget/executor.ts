@@ -79,6 +79,8 @@ const forgetOf = (job: Job): ForgetPayload => job.payload as ForgetPayload;
 
 class LostLease extends Error {}
 class BarrierGone extends Error {}
+/** core/rules moved since install read it: the page commits nothing and the job retries from fresh rules. */
+class RulesMoved extends Error {}
 
 interface Lease {
   token: ID;
@@ -339,12 +341,19 @@ async function runInstall(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease
     hasher: deps.hasher,
   });
   if (plan.writes.filter((w) => w.order === 3).length > FORGET_PAGE_DOCS) return "limit";
+  const baseRulesRev = rules.rulesRev;
   const pages = installPages(plan.writes);
   let current = job;
   for (let k = 0; k < pages.length; k++) {
     const page = pages[k]!;
     const last = page[page.length - 1]!;
     current = await commitStep(store, uid, jobId, lease, async (tx, j) => {
+      // Review 028 finding 7: a hard rule written since install read core/rules is never overwritten.
+      const coreWrite = page.find((w) => w.collection === "core");
+      if (coreWrite !== undefined) {
+        const cur = await tx.get<CoreRules>(paths.core(uid, "rules"));
+        if (cur === null || (cur.data.rulesRev !== baseRulesRev && !sameRecord(cur.data as unknown as Record<string, unknown>, coreWrite.doc as unknown as Record<string, unknown>))) throw new RulesMoved();
+      }
       await putAll(tx, uid, page);
       return withPhase(j, "install", now, { cursor: { collection: last.collection, lastId: last.collection === "core" ? null : last.id } });
     });
