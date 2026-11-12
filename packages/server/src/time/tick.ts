@@ -31,6 +31,7 @@ import {
   mergeMoment,
   msFromTs,
   planTick,
+  withMomentDefaults,
   retireMoment,
   tickRowOf,
   tsFromMs,
@@ -42,7 +43,7 @@ import type { RouteContext } from "../routes/runtime";
 import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
 import type { Reader, StoredDoc } from "../store/port";
-import { momentVerdict } from "./verdict";
+import { getMoment, momentVerdict } from "./verdict";
 
 /** Memories one tick reads for derive; past it, derive writes nothing that tick (fails closed). */
 export const MEMORY_SCAN_MAX = 2_000;
@@ -96,7 +97,7 @@ export async function scanMoments(reader: Reader, uid: string): Promise<StoredDo
       orderBy: { field: "__name__", dir: "asc" },
       limit: 100,
     });
-    out.push(...page);
+    out.push(...page.map((d) => ({ ...d, data: withMomentDefaults(d.data) })));
     if (out.length > MOMENT_SCAN_MAX) return null;
     if (page.length < 100) return out;
     cursor = page[page.length - 1]!.id;
@@ -152,7 +153,7 @@ async function writePlan(ctx: RouteContext, plan: MomentPlan | null, retiredId: 
   const id = plan?.momentId ?? retiredId!;
   const path = paths.moment(uid, id);
   // A plain read first: most ticks change nothing, and a no-op needs no transaction.
-  const seen = await deps.store.get<Moment>(uid, path);
+  const seen = await getMoment({ get: (p) => deps.store.get(uid, p), query: (q) => deps.store.query(uid, q) }, path);
   const ops = deps.clock.read().opsClock.now;
   // Brief 036 finding 1: a leased row is re-planned too, so a moved occasion never speaks its old time.
   const movable = (m: Moment | undefined) => m?.status === "pending" || m?.status === "leased";
@@ -161,7 +162,7 @@ async function writePlan(ctx: RouteContext, plan: MomentPlan | null, retiredId: 
   return deps.store.transaction(uid, async (tx) => {
     const core = await readCoreDocs(tx, uid);
     if (core.epoch.data.barrier !== null) return false;
-    const doc = await tx.get<Moment>(path);
+    const doc = await getMoment(tx, path);
     const c = rowContext(uid, { epoch: core.epoch.data, state: core.state.data }, ops);
     const next = plan !== null ? mergeMoment(doc?.data ?? null, plan, c, deps.hasher) : retireMoment(doc?.data ?? null, c);
     if (next === null) return false;
@@ -186,8 +187,8 @@ function candidates(moments: readonly StoredDoc<Moment>[], worldNow: number, ops
 function applied(m: Moment, ts: readonly Transition[], opsNow: number, leaseToken: ID): Moment {
   let next: Moment = { ...m, updatedAt: tsFromMs(opsNow) };
   for (const t of ts) {
-    if (t.to === "pending") next = { ...next, status: "pending", leaseToken: null, leaseUntil: null, attempts: next.attempts + 1 };
-    else if (t.to === "leased") next = { ...next, status: "leased", leaseToken, leaseUntil: tsFromMs(opsNow + 15 * 60_000), generation: next.generation + 1 };
+    if (t.to === "pending") next = { ...next, status: "pending", leaseToken: null, leaseUntil: null, attempts: next.attempts + 1, rendered: null };
+    else if (t.to === "leased") next = { ...next, status: "leased", leaseToken, leaseUntil: tsFromMs(opsNow + 15 * 60_000), generation: next.generation + 1, rendered: null };
     else if (t.to === "cancelled") next = { ...next, status: "cancelled", cancelReason: t.why === "forgotten" ? "forgotten" : "policy", leaseToken: null, leaseUntil: null };
     else next = { ...next, status: t.to, leaseToken: null, leaseUntil: null };
   }
@@ -199,13 +200,13 @@ async function moveMoment(ctx: RouteContext, id: ID, rollupLive: boolean): Promi
   const { uid, deps } = ctx;
   const path = paths.moment(uid, id);
   // A celebrate's predicate reads money rows outside the transaction; the loop is reread inside it.
-  const peek = await deps.store.get<Moment>(uid, path);
+  const peek = await getMoment({ get: (p) => deps.store.get(uid, p), query: (q) => deps.store.query(uid, q) }, path);
   const loopId = peek?.data.payload.kind === "celebrate" ? peek.data.payload.loopId : null;
   const comparison = loopId === null ? null : await compareLoop(ctx, loopId, 0).catch(() => null);
   return deps.store.transaction(uid, async (tx) => {
     const core = await readCoreDocs(tx, uid);
     if (core.epoch.data.barrier !== null) return "barrier" as const;
-    const doc = await tx.get<Moment>(path);
+    const doc = await getMoment(tx, path);
     if (doc === null) return [];
     const m = doc.data;
     const pair = ownerClock(core.state.data, deps.clock);

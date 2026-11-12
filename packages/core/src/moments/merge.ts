@@ -70,6 +70,7 @@ export function momentRow(p: MomentPlan, c: RowContext, hasher: Hasher): Moment 
     deliveryKey: deliveryKeyOf(hasher, p.momentId, p.occurrenceKey),
     saidMatch: "none",
     cancelReason: null,
+    rendered: null,
   };
 }
 
@@ -88,6 +89,7 @@ export function mergeMoment(existing: Moment | null, p: MomentPlan, c: RowContex
     status: "pending",
     leaseToken: null,
     leaseUntil: null,
+    rendered: null,
     scheduleRev: fresh.scheduleRev,
     dueAt: fresh.dueAt,
     closeAt: fresh.closeAt,

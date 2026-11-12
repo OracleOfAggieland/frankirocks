@@ -8,7 +8,7 @@ import type { Tx } from "../store/port";
 import { type TestRig, patchRecord, testRig } from "../testing/fakes";
 import { resetAs, stateOf } from "../testing/seed";
 import { chooseNow, proactiveOf } from "./proactive";
-import { admitMoment } from "./said";
+import { admitMoment, deliveryEntryId, recordSaid } from "./said";
 import { momentsOf, moveOccasion, ofKind } from "./testing";
 import { memoryTick } from "./tick";
 
@@ -37,6 +37,8 @@ const interviewId = async (rig: TestRig) => {
   const wish = ofKind(await momentsOf(rig, UID), "wish")[0]![1];
   return wish.payload.kind === "cue" ? wish.payload.noteRef.id : "";
 };
+/** A playback start for the moment's response, once that seam exists (finding 14); a no-op before. */
+async function playback(_rig: TestRig, _momentId: string, _responseId: string): Promise<void> {}
 const admit = (rig: TestRig, momentId: string, responseId: string, noteIds: string[]) =>
   tx(rig, (t) => admitMoment(t, UID, momentId as never, { responseId, noteIds }, rig.deps));
 
@@ -101,5 +103,21 @@ describe("finding 5: the day's caps hold at admission", () => {
     const after = await rig.store.get<CoreCounters>(UID, paths.core(UID, "counters"));
     expect(after?.data.counts).toContainEqual({ kind: "speech", count: 3 });
     expect((await momentsOf(rig, UID)).get(wishId)?.status).toBe("leased");
+  });
+});
+
+describe("finding 6: the hero insight can be marked said", () => {
+  it("an insight admitted on a response whose transcript is the exact offer line is said, with its ledger row", async () => {
+    const { rig, ctx } = await clone();
+    await memoryTick(ctx);
+    const [[insightId, insight]] = ofKind(await momentsOf(rig, UID), "insight") as [[string, Moment]];
+    const p = (await proactiveOf(ctx, insightId as never, insight, STAMP))!;
+    expect(p.whisper.text).toMatch(/takeout/);
+    expect(await admit(rig, insightId, "resp_hero", [p.whisper.noteId])).toBe(true);
+    const receipt = { kind: "transcript" as const, responseId: "resp_hero", momentIds: [insightId], noteIds: [p.whisper.noteId], text: p.whisper.text };
+    await playback(rig, insightId, "resp_hero");
+    const match = await tx(rig, (t) => recordSaid(t, UID, insightId as never, receipt, "proactive", rig.clock, rig.deps.hasher));
+    expect(match).not.toBeNull();
+    expect(await rig.store.get(UID, paths.ledger(UID, deliveryEntryId(rig.deps.hasher, insightId, "resp_hero")))).not.toBeNull();
   });
 });

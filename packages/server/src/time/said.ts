@@ -16,7 +16,7 @@ import { cFields } from "../records";
 import { paths } from "../store/paths";
 import type { ClockPort } from "@franki/core";
 import type { Tx } from "../store/port";
-import { momentNoteId, momentVerdict } from "./verdict";
+import { getMoment, momentNoteId, momentVerdict } from "./verdict";
 
 export const deliveryEntryId = (hasher: { id(parts: unknown): string }, momentId: string, responseId: string): ID => hasher.id(["delivery", momentId, responseId]) as ID;
 
@@ -33,7 +33,7 @@ export interface MomentAdmission {
  */
 export async function admitMoment(tx: Tx, uid: string, momentId: ID, admission: MomentAdmission, deps: { clock: ClockPort; hasher: Hasher }): Promise<boolean> {
   const { clock } = deps;
-  const doc = await tx.get<Moment>(paths.moment(uid, momentId));
+  const doc = await getMoment(tx, paths.moment(uid, momentId));
   if (doc === null || doc.data.status !== "leased") return false;
   const core = await readCoreDocs(tx, uid);
   if (core.epoch.data.barrier !== null) return false;
@@ -70,7 +70,7 @@ export async function recordSaid(
   clock: ClockPort,
   hasher: { id(parts: unknown): string },
 ): Promise<Moment["saidMatch"] | null> {
-  const doc = await tx.get<Moment>(paths.moment(uid, momentId));
+  const doc = await getMoment(tx, paths.moment(uid, momentId));
   if (doc === null) return null;
   const ops = clock.read().opsClock.now;
   const said = saidUpdate(doc.data, receipt, saidTargetOf(momentId, doc.data), ops);

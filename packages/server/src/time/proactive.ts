@@ -28,6 +28,7 @@ import {
   idParts,
   isHeavy,
   isMustSay,
+  saidTokens,
   todayCounts,
   tsFromMs,
 } from "@franki/core";
@@ -38,7 +39,8 @@ import { compareLoop, heroOffer } from "../routes/tool-food";
 import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 import { scanMoments } from "./tick";
-import { momentNoteId, momentVerdict } from "./verdict";
+import { getMoment, momentNoteId, momentVerdict } from "./verdict";
+import { isStoreError } from "../store/errors";
 
 /**
  * The session's signals. Brief 036 finding 4: pass `transition` and `crisis` separately; the older
@@ -104,18 +106,46 @@ async function lineOf(ctx: RouteContext, m: Moment): Promise<{ text: string; sen
   return null;
 }
 
-/** The chosen moment as a `Proactive` for this session's stamp, or null (no words, or S2). */
+/**
+ * Records the line a moment goes on the wire as (brief 036 finding 6), in a transaction that rereads the moment
+ * (still leased under the same lease and generation) and its source. Returns false, writing nothing, otherwise.
+ */
+async function render(ctx: RouteContext, momentId: ID, m: Moment, noteId: string, text: string): Promise<boolean> {
+  const { uid, deps } = ctx;
+  try {
+    return await deps.store.transaction(uid, async (tx) => {
+      const doc = await getMoment(tx, paths.moment(uid, momentId));
+      if (doc === null || doc.data.status !== "leased" || doc.data.leaseToken !== m.leaseToken || doc.data.generation !== m.generation) return false;
+      const core = await readCoreDocs(tx, uid);
+      if (core.epoch.data.barrier !== null) return false;
+      const ops = ownerClock(core.state.data, deps.clock).opsClock.now;
+      if (doc.data.leaseUntil === null || Date.parse(doc.data.leaseUntil) <= ops) return false;
+      // The line was just worded from the rollup's detector, so it passes now.
+      if ((await momentVerdict(tx, uid, doc.data, core, deps.clock, { rollupLive: true })) !== "ok") return false;
+      tx.update(doc.path, { ...doc.data, rendered: { noteId, text, tokens: saidTokens(text), at: tsFromMs(ops) }, updatedAt: tsFromMs(ops) });
+      return true;
+    });
+  } catch (error) {
+    if (isStoreError(error, "staleRevision")) return false;
+    throw error;
+  }
+}
+
+/** The chosen moment as a `Proactive` for this session's stamp, or null (no words, S2, or no longer leased). */
 export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, stamp: Stamp): Promise<Proactive | null> {
   const { deps } = ctx;
   const line = await lineOf(ctx, m);
   if (line === null || line.sens === "S2") return null;
+  const noteId = momentNoteId(deps.hasher, momentId, m) as ID;
+  const text = line.text.slice(0, 1024);
+  if (!(await render(ctx, momentId, m, noteId, text))) return null;
   const ops = deps.clock.read().opsClock.now;
   const expiresAt = tsFromMs(ops + PERMIT_TTL_MS);
   const whisper: W = {
-    noteId: momentNoteId(deps.hasher, momentId, m) as ID,
+    noteId,
     rev: 1,
     kind: "moment",
-    text: line.text.slice(0, 1024),
+    text,
     rootKeys: m.rootKeys.slice(0, 128),
     dependsOn: m.dependsOn.slice(0, 256),
     sens: line.sens,

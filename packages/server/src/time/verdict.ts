@@ -25,11 +25,12 @@ import {
   msFromTs,
   parseDep,
   sourceVerdict,
+  withMomentDefaults,
 } from "@franki/core";
 import { ownerClock } from "../core-docs";
 import { foregroundEC } from "../head-build";
 import { paths } from "../store/paths";
-import type { Reader } from "../store/port";
+import type { Reader, StoredDoc } from "../store/port";
 
 /** Blocks and effects reread at open (contracts Snapshot `blocks` cap). */
 const REREAD_MAX = 100;
@@ -100,6 +101,12 @@ async function rowVerdict(r: Reader, uid: string, moment: Moment, current: Memor
     (e) => HOLDING_EFFECTS.includes(e.data.kind) && (targets.includes(e.data.target.id) || (e.data.scope.subjectId !== null && subjects.has(e.data.scope.subjectId))),
   );
   return held ? "gone" : "ok";
+}
+
+/** A stored moment by path, read with its defaults (brief 036: `rendered`), or null. */
+export async function getMoment(r: Reader, path: string): Promise<StoredDoc<Moment> | null> {
+  const doc = await r.get<Moment>(path);
+  return doc === null ? null : { ...doc, data: withMomentDefaults(doc.data) };
 }
 
 /** What a reread says about `moment`'s source now. `r` is a transaction when the caller writes on the answer. */

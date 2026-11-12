@@ -69,8 +69,20 @@ export function saidUpdate(m: Moment, r: SaidReceipt, t: SaidTarget, opsNow: num
   return match === "none" ? null : { saidAt: opsNow, saidMatch: match };
 }
 
-/** The target a stored moment is matched against: its ID, its template, and the template's words as tokens. */
+/**
+ * The target a stored moment is matched against. Brief 036 finding 6: the line it was put on the wire as
+ * (`rendered`), with that note's ID and tokens, when there is one; otherwise its code template.
+ */
 export function saidTargetOf(momentId: string, m: Moment): SaidTarget {
+  if (m.rendered !== null) return { momentId, noteId: m.rendered.noteId, tokens: m.rendered.tokens, template: m.rendered.text, candidate: null };
   const template = m.payload.kind === "cue" ? (m.payload.template?.text ?? null) : null;
   return { momentId, noteId: null, tokens: m.cueTokens, template, candidate: null };
+}
+
+/** Up to eight tokens of a spoken line for an `idTagged` match: numbers first, then the longest words. */
+export function saidTokens(line: string): string[] {
+  const words = [...new Set(normalizeSaid(line).split(" ").filter((w) => w.length >= 3 || /\d/.test(w)))].map((w) => w.slice(0, 64));
+  const digits = words.filter((w) => /\d/.test(w));
+  const rest = words.filter((w) => !/\d/.test(w)).sort((a, b) => b.length - a.length || (a < b ? -1 : 1));
+  return [...digits, ...rest].slice(0, 8);
 }
