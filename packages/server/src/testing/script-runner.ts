@@ -617,7 +617,7 @@ function mustSay(script: Script, step: Step, mine: Output[], say: Say): void {
     if (!mine.some((o) => o.channel === "card" && o.text.includes(say.card))) fail(script, step, `a card titled "${say.card}"`, summary(mine));
     return;
   }
-  const pool = mine.filter((o) => SPOKEN.includes(o.channel) && (say.channel === undefined || o.channel === say.channel));
+  const pool = mine.filter((o) => (say.channel === undefined ? SPOKEN.includes(o.channel) : o.channel === say.channel));
   let matcher: RegExp | null = null;
   if ("template" in say) {
     matcher = TEMPLATES[say.template];
