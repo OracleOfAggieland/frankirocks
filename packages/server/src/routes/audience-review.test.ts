@@ -310,7 +310,7 @@ describe("finding 12: a typed reply's note takes the sensitivity of the earlier 
     const s = await openTestSession(rig);
     const req = typedTurn(s.stamp, 1, "What did I just say?");
     const earlier: SafeTurn[] = [{ turnId: testId("t0") as never, role: "user", text: "My diagnosis came back.", sens: "S1", rootKeys: [], dependsOn: [], policyRev: s.stamp.policyRev }];
-    const note = await settle(typedReplyNote({ uid: UID, deps: rig.deps, schedule: rig.sched.schedule }, req as never, req.text, async () => earlier, false), rig.clock, rig.timers).then((r) => r.value);
+    const note = await settle(typedReplyNote({ uid: UID, deps: rig.deps, schedule: rig.sched.schedule }, req as never, req.transcript, async () => earlier, false), rig.clock, rig.timers).then((r) => r.value);
     expect(note).not.toBeNull();
     expect(typeof note === "object" && note !== null ? note.sens : null).toBe("S1");
   });
