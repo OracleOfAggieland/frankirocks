@@ -207,9 +207,9 @@ Earlier, after A10b, logs in `_sm/logs/f3/a11-*.log`:
 2. `node --env-file=apps/web/.env.development.local --env-file=apps/web/.env.local scripts/extract-check/run.mjs --live`. It prints one line per frozen line and the pass count by class, and writes `scripts/extract-check/results/<time>-extract-check.json` (IDs, indexes and plan kinds, no words).
 3. If more than a small share of FastSlots calls are over 900 ms, or the speaker gate fails many clean lines, the deadline and the gate are your call before wave B goes live (design section 11, step 1).
 
-## Wave B: allergies and hard rules (brief 018, tasks 0 and B1 to B8)
+## Wave B: allergies and hard rules (brief 018, tasks 0 and B1 to B12)
 
-Built by Claude on lane `writes`. Kiro wrote none of this wave. Tasks B9 to B11 are not built; B9 is next.
+Built by Claude on lane `writes`. Kiro wrote none of this wave. Every task, 0 and B1 to B12, is built. The lane merged `build/plan-stages` at `21a7f7e` before B9.
 
 ### The build
 
@@ -224,6 +224,10 @@ Built by Claude on lane `writes`. Kiro wrote none of this wave. Tasks B9 to B11 
 | B6 | `c7e87d4` | `server/onturn/`: `trigger`, `context`, `execute`, `proposals`, `route`, `typed`. `postTurn` runs FastSlots through `nextSlots` and the executor in its transaction. `open` applies proposals before it compiles. P3, P4, P8 and P9 route are green, with 15 cases in `routes/turn.rules.test.ts`. |
 | B7 | `8f09cbc` | A receipt moves `core/rules.ask`. The state route returns no ack while a question is asked (`routes/receipt.ask.test.ts`). |
 | B8 | `5f6927f` | Extraction skips allergies the route handled (skip reason `handled`). `writes/backstop.ts` turns the rest into a pending proposal. Every turn transaction applies open proposals. P1 worker and P15 are green, with 4 cases in `worker/extract.backstop.test.ts`. |
+| B9 | `0c64049` | `onturn/late.ts`. A Superseding_Post runs `executeHardRule` in its own transaction and returns the higher Deck with no Permit. A Parse_Repair commits the parse under its lease as before, then runs the route once outside the lease and writes a `repair` proposal (no `rulesRev` rise) with a `proposed` entry in `handled`. Both skip when `handled` already has a hardRule entry for the Evidence. 4 cases in `intents/repair.test.ts`, 3 in `routes/supersede.test.ts`. |
+| B10 | `fbc9099` | The composer reports paste events, and `TypedTurns` sends the line as `source: "pasted"` until the box is cleared (`PASTE_STICKS_UNTIL_CLEARED`). `classifyTurn` reads it as T. A pasted line in a call is held back with `COPY.typed.pastedInCall`. Tests: `client/typed-paste.test.ts` (4, on the real routes), `TypedLine.test.tsx` (2), `routes/turn.rules.test.ts` (1). |
+| B11 | `36f682d` | Debug section `rules`: one item with `core/rules` and a proof check per rule and proposed rule (`routes/debug-rules.ts`). The panel's "Hard rules" box lists rules, pending rules and proposals with their proof spans and mismatches, then `noneConfirmed` and the open question. Tests: `routes/debug-rules.test.ts` (2), `DebugPanel.test.tsx` (2). |
+| B12 | this commit | The checks below and this section. |
 
 ### Red first
 
@@ -248,11 +252,16 @@ Built by Claude on lane `writes`. Kiro wrote none of this wave. Tasks B9 to B11 
 - `npm run typecheck`: 4 of 4 packages pass.
 - `npm run build`: not run, because `apps/web` is unchanged.
 
+### Checks (Nov 12, at `36f682d`, after B11)
+
+- `npx vitest run --maxWorkers=3`: exit 0, 349 files, 3,558 passed, 0 expected fails (the voice lane's merge fixed the 20).
+- `npm run lint`: exit 0, 0 errors and the same 1 warning in `brass.ts`. `npm run typecheck`: 4 of 4 packages pass. `npm run build`: exit 0, `specimens-absent` and `three-chunk-check` pass. `copy-check`, `token-check` and `ui-boundaries`: exit 0.
+- No committed property file was edited. `parse-gap.property.test.ts` is green. The only changed assertion in an existing test is the Debug_Panel's load count, from 12 to 14 calls, for the added section.
+
 ### Not built
 
-- **B9:** repair and supersede for hardRule. A superseding post and a Parse_Repair still run no route. A turn first posted `missing` gets its rule only through the backstop.
-- **B10:** pasted text as T. The composer doesn't send `source: "pasted"` yet, so a pasted one-line allergy still counts as the owner's own words.
-- **B11:** the Debug_Panel's rules section. `wire.ts` is unchanged.
+- **In a call, a pasted line is held back, not sent as T** (W-179). The voice machine's `typedSubmitted` has no source, and `voice/**` belongs to the voice lane.
+- **A late route never answers the open question**, and a repair's proposal never removes or upgrades a rule (W-177, W-178). The owner's next turn does that.
 - **Typed path (G17):** the first typed reply is abandoned only once the parse returns, not cancelled.
 - **Proposals:** a turn the route didn't open reads the context only when proposals are open at arrival.
 
