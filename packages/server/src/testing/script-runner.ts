@@ -22,6 +22,7 @@ import {
   WHISPER_TEMPLATES,
   canonicalJSON,
   msFromTs,
+  tsFromMs,
 } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, it } from "vitest";
@@ -33,12 +34,12 @@ import { memoryRoute } from "../routes/memory";
 import { openRoute } from "../routes/open";
 import type { RouteContext } from "../routes/runtime";
 import { seedResetRoute } from "../routes/seed-reset";
+import { seedAdvanceRoute } from "../routes/seed-advance";
 import { toolRoute } from "../routes/tool";
 import { turnRoute } from "../routes/turn";
 import { buildSeed } from "../seed/build";
 import { listTenantRows } from "../seed/clear";
 import { cloneWorldStart, relInstant } from "../seed/clock";
-import { setWorldClock } from "../seed/clock-state";
 import { type BankLine, type CalendarLine, type MailLine, type RelTime, type SeedFixture, at } from "../seed/fixture";
 import { PERSONA, PERSONA_FIXTURE_ID } from "../seed/persona";
 import { paths } from "../store/paths";
@@ -236,9 +237,12 @@ export type Action =
   | { do: "open" }
   | { do: "close" }
   | { do: "type"; text: string }
-  | { do: "say"; text: string }
+  /** `judge` (brief 034, optional): the fast judge's verdict on the turn; without it, "timeout" as before. */
+  | { do: "say"; text: string; judge?: "O" | "H" | "U" | "timeout" | "error" }
   | { do: "chip"; text: string }
   | { do: "tap"; control: string }
+  /** Brief 034: text a paste event supplied (source "pasted", class T; brief 018 B10). */
+  | { do: "paste"; text: string }
   | { do: "tool"; tool: (w: World) => { name: string; args: unknown } }
   | { do: "advance"; to: RelTime; /** The labeled time the bolt shows. */ called: string }
   | { do: "mail"; lines: MailLine[] }
@@ -430,6 +434,7 @@ async function act(step: Step, w: World): Promise<Res> {
     case "chip":
     case "say":
     case "tap":
+    case "paste":
       return turn(step, w);
     case "tool": {
       if (w.stamp === null || w.lastTurn === null) throw new Error("tool: no turn");
@@ -444,17 +449,18 @@ async function act(step: Step, w: World): Promise<Res> {
       return res;
     }
     case "advance": {
-      // A clone moves its world clock through the seam brief 023's route will call (seed/clock-state.ts). With no
-      // seed (the memory-off control) the tenant is live, and the fake clock's world moves instead.
+      // With no seed (the memory-off control) the tenant is live, and the fake clock's world moves instead.
       if (w.namespace === null) {
         const friday = localDateOf(cloneWorldStart(rig.clock.read().worldClock.now, w.zone), w.zone);
         w.friday ??= friday;
         rig.clock.setWorld(relInstant(w.friday, step.to, w.zone));
         return null;
       }
+      // Brief 030: a clone jumps through POST /api/seed/advance, which moves the world clock and forces the tick.
       const to = relInstant(w.friday!, step.to, w.zone);
-      await rig.store.transaction(w.uid, (tx) => setWorldClock(tx, w.uid, w.namespace!, to, rig.clock.read().opsClock.now));
-      return null;
+      const res = await callRoute(rig, seedAdvanceRoute, { requestId: nextId(w, "advance"), fixtureNamespace: w.namespace, to: tsFromMs(to) });
+      if (res.status === 200 && res.body.proactive !== null) push(w, step.label, "proactive", res.body.proactive, proactiveText(res.body.proactive));
+      return res;
     }
     case "mail":
     case "bank":
@@ -491,7 +497,7 @@ async function act(step: Step, w: World): Promise<Res> {
   }
 }
 
-async function turn(step: Step & { do: "type" | "chip" | "say" | "tap" }, w: World): Promise<Res> {
+async function turn(step: Step & { do: "type" | "chip" | "say" | "tap" | "paste" }, w: World): Promise<Res> {
   if (w.stamp === null) throw new Error(`${step.do}: no session`);
   const seq = w.nextSeq;
   const turnId = nextId(w, "turn");
@@ -514,8 +520,10 @@ async function turn(step: Step & { do: "type" | "chip" | "say" | "tap" }, w: Wor
   };
   let body: Record<string, unknown> = base;
   // A chip's text counts as the owner's words and goes down the typed path (spec §15; brief 020 task 5).
-  if (step.do === "say") body = { ...base, source: "asr", judge: "timeout", items: [{ itemId: `item_${seq}_${w.counter}`, commitSeq: seq, final: true, audioEndOpsAt: "2026-11-03T12:00:00.000Z", audioDurationMs: 800 }] };
+  if (step.do === "say") body = { ...base, source: "asr", judge: step.judge ?? "timeout", items: [{ itemId: `item_${seq}_${w.counter}`, commitSeq: seq, final: true, audioEndOpsAt: "2026-11-03T12:00:00.000Z", audioDurationMs: 800 }] };
   if (step.do === "tap") body = { ...base, source: "trustedTap", judge: "typed", transcriptState: "final", transcript: step.control, uiControl: step.control };
+  // Brief 034 (addition): a pasted line, as the typed box posts it after a paste event.
+  if (step.do === "paste") body = { ...base, source: "pasted" };
   w.vars.set(`request:${step.label}`, body);
   const res = await callRoute(w.rig, turnRoute, body);
   if (res.status === 200 && res.body.status !== "stale" && res.body.status !== "hold") {

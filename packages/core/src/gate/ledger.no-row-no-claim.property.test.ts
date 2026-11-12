@@ -40,7 +40,7 @@ const gateEntry = fc
     return { ...base, state: g.state, at: g.at } as Ledger;
   });
 const entry: fc.Arbitrary<Ledger> = fc.oneof(arbitraryFor(Ledger) as fc.Arbitrary<Ledger>, gateEntry, gateEntry);
-const rows = fc.array(fc.tuple(fc.constantFrom(...POOL.map((_, i) => testId(`row${i}`)), testId("row9")), entry).map(([id, e]) => ({ id, entry: e })), { maxLength: 6 });
+const rows = fc.uniqueArray(fc.tuple(fc.constantFrom(...POOL.map((_, i) => testId(`row${i}`)), testId("row9")), entry).map(([id, e]) => ({ id, entry: e })), { maxLength: 6, selector: (r) => r.id });
 
 describe("ledger: no row, no claim", () => {
   it("answers \"why\" only from a said row naming the ID", () => {

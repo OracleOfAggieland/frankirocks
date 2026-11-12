@@ -2,20 +2,20 @@
 // route to a surface's props, or to null when there is nothing true to show (the surface then renders nothing).
 // The specimen runs its fixture through these same functions.
 //
-// Not filled here, because no view carries them yet: the jar's rule motes (hard rules live in core/rules, which
-// no view reads), the strip's money figure (the comparison's numbers live in rollups, which no view reads; the
-// last terminal says "Compared"), and the Lab counters the server names `uncounted:<field>`.
+// Not filled here, because no view carries them yet: the Lab counters the server names `uncounted:<field>`.
 import { type InspectItem, type LabView, type MemoryResponse, type SnapshotView, type StripView, readoutFromPages } from "@franki/core";
 import { COPY } from "./copy";
 import { receiptFrom } from "./receipt-from";
 import type { CardProps, JarProps, LabProps, MoteKind, ReceiptProps, StripProps } from "./surface-props";
 
 /** Jar motes: one per shown card on the first page, one per guess, one per private thing held back. */
-export function jarMotes(s: SnapshotView | null): JarProps["motes"] {
+export function jarMotes(s: SnapshotView | null, hardRules = 0): JarProps["motes"] {
   if (s === null) return [];
   const motes: { id: string; kind: MoteKind }[] = s.cards.map((c) => ({ id: c.id, kind: "told" }));
   for (let i = 0; i < s.overview.guesses; i++) motes.push({ id: `guess-${i}`, kind: "guessed" });
   for (let i = 0; i < s.overview.heldPrivate; i++) motes.push({ id: `private-${i}`, kind: "private" });
+  // Brief 030 P1-11: one mote per hard rule, counted from core/rules.
+  for (let i = 0; i < hardRules; i++) motes.push({ id: `rule-${i}`, kind: "rule" });
   return motes;
 }
 
@@ -51,7 +51,10 @@ export function stripProps(s: StripView | null): StripProps | null {
   if (s === null || s.loopId === null || s.steps.length === 0) return null;
   let filled = 0;
   while (filled < s.steps.length && s.steps[filled]!.state === "complete") filled++;
-  return { open: true, filled: Math.min(5, filled) as StripProps["filled"], resultLabel: COPY.memory.stripResult };
+  // Brief 030 P1-4: a compared loop's last step carries the hero lane's "$115 less on takeout." line.
+  const last = s.steps[s.steps.length - 1]!;
+  const figure = last.kind === "comparison" && last.state === "complete" && last.label !== "comparison" ? last.label : null;
+  return { open: true, filled: Math.min(5, filled) as StripProps["filled"], resultLabel: figure ?? COPY.memory.stripResult };
 }
 
 const nat = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0;
@@ -116,7 +119,7 @@ export const NO_SURFACES: MemorySurfaces = { jar: [], lab: null, strip: null, re
 
 export function memorySurfaces(r: { overview: MemoryResponse | null; lab: MemoryResponse | null; strip: MemoryResponse | null; receipt: MemoryResponse | null }): MemorySurfaces {
   return {
-    jar: jarMotes(r.overview?.snapshot ?? null),
+    jar: jarMotes(r.overview?.snapshot ?? null, r.overview?.hardRules ?? 0),
     lab: labProps(r.lab?.lab ?? null),
     strip: stripProps(r.strip?.strip ?? null),
     receipt: receiptProps(r.receipt?.items ?? []),

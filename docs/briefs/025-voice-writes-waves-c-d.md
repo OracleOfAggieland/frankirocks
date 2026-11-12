@@ -11,6 +11,14 @@ Wave B put the hard-rule route into `/api/turn`. This brief builds the last two 
 - `docs/briefs/012-report.md` with wave B's section, and `docs/briefs/018-report.md`.
 - Spec §4 lines 122 to 166 (the bitemporal rule and the evidence ladder), §7 lines 243 to 257. Contracts lines 822 to 823 and 839 (`applyCorrection`, `applyTransition`).
 
+## First: question W-187, left open by brief 032
+
+Brief 032 fixed the review's findings on the hard-rule route and left one case open, as contract question W-187 at the end of section 8 of `012-design.md`: a wrong polarity from the model against a stored pending rule for the same subject still resolves that rule, so the allergen can end up unfiltered. Read the question and the "Outcome" section of `docs/briefs/032-review-hard-rules.md` first.
+
+Ruling for this build, the lead's, for the owner to confirm: the model's polarity alone never removes a rule. A denial resolves a stored rule, pending or active, only when all of these hold: the turn answers the question Franki asked about that rule (it is the asked rule); the owner's own words carry a denial that code can see, from a short closed list of forms tied to the allergen or to the question ("no", "not allergic", "isn't allergic", "no allergy", and the like); and the same text carries no affirming cue for that allergen ("allergic to", "can't eat"). If the words carry both, the rule stays and Franki asks again. Anything else leaves the rule in place.
+
+Build it before wave C: the failing cases first (a wrong `denied` against a pending rule on a turn that affirms the allergy; a true "no" to the asked question still clears it; both a denial and an affirmation in one turn keeps it), a new property "a rule is never removed by the model's polarity alone" red first with its seed, then the fix in one commit. Route cases that relied on a denial off an answering turn clearing a pending rule change on purpose; list each in the report.
+
 ## What to build
 
 Tasks C1 to C6, then D1 to D4, in order, as the design note's tables give them: the files, the dependencies and the witnesses. One commit per task. The properties of C1 and D1 run red first, with seeds in the report.

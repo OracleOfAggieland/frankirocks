@@ -150,7 +150,7 @@ function virtualTimers(rig: TestRig): TimerApi & { advance(ms: number): Promise<
   };
 }
 
-async function setup(opts: { hang?: string[]; hash?: (p: unknown) => Promise<string>; inputLevel?: () => number; wrapApi?: (api: ApiClient, rig: TestRig) => ApiClient } = {}) {
+async function setup(opts: { hang?: string[]; hash?: (p: unknown) => Promise<string>; inputLevel?: () => number; wrapApi?: (api: ApiClient, rig: TestRig) => ApiClient; onControlCheck?: () => void } = {}) {
   const rig = testRig();
   // One Memory to recall; extraction requests fail, recall requests answer from `recallAnswer`.
   const t = await commitUserTurnForTest(rig.store, UID, testId("src"), "My dog is called Pip", rig.clock, rig.deps.hasher);
@@ -188,6 +188,7 @@ async function setup(opts: { hang?: string[]; hash?: (p: unknown) => Promise<str
     newId: () => testId(`b${++n}`),
     ...(opts.hash === undefined ? {} : { hash: opts.hash as never }),
     ...(opts.inputLevel === undefined ? {} : { inputLevel: opts.inputLevel }),
+    ...(opts.onControlCheck === undefined ? {} : { onControlCheck: opts.onControlCheck }),
   });
   const peer = () => peers.at(-1)!;
   const sent = () => peer().channel.sent;
@@ -285,6 +286,23 @@ describe("Voice_Client", () => {
     const sessionId = await sessionIdOf(rig);
     const aturn = await rig.store.get<Turn>(UID, paths.turn(UID, sessionId, rig.deps.hasher.id(idParts.assistantTurn(sessionId, "resp_1"))));
     expect(aturn?.data).toMatchObject({ role: "assistant", seq: 1, text: "Your dog is called Pip." });
+  });
+
+  it("a spoken line that claims gone with no receipt asks the screen (brief 030 P1-7)", async () => {
+    const asks: string[] = [];
+    const { connect, speak, peer, routeCalls } = await setup({ onControlCheck: () => asks.push("pending") });
+    await connect();
+    await speak("item_1", "Forget my dog");
+    const spec = specCreate(peer().channel.sent);
+    const metadata = spec.response.metadata;
+    peer().channel.emit({ type: "response.created", response: { id: "resp_1", metadata } });
+    peer().channel.emit({ type: "output_audio_buffer.started", response_id: "resp_1" });
+    peer().channel.emit({ type: "response.output_audio_transcript.done", response_id: "resp_1", transcript: "Done, that's deleted." });
+    peer().channel.emit({ type: "response.done", response: { id: "resp_1", metadata } });
+    peer().channel.emit({ type: "output_audio_buffer.stopped", response_id: "resp_1" });
+    await until(() => routeCalls("/api/receipt").some((c) => c.body.kind === "transcript" && c.res !== undefined), "the transcript receipt");
+    await flush(50);
+    expect(asks).toEqual(["pending"]);
   });
 
   it("a Permit whose payload hash does not match plays nothing and sends no response.create", async () => {

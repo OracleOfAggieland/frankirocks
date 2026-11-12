@@ -58,16 +58,20 @@ export function renderRulesSection(rules: CoreRules, audience: Au): string[] {
   };
   if (rules.allergies.length === 0 && rules.noneConfirmed.length === 0) return [RULES_NONE];
 
-  // Groups by (state, rendered subject), in order: active then pending; the owner first, then first appearance.
-  const groups: { state: "active" | "pending"; subject: string; codes: string[] }[] = [];
+  // Groups by (state, subject), in order: active then pending; the owner first, then first appearance. Two subjects
+  // never share a line, even when they render with the same words ("Someone else", "someone", one label); each
+  // anonymous rule is a subject of its own, since nobody knows whose it is (brief 032 M2).
+  const keyOf = (r: CoreRules["allergies"][number]) => (r.anonymous || r.subjectId === null ? `anon:${r.id}` : r.subjectId);
+  const groups: { state: "active" | "pending"; key: string; subject: string; codes: string[] }[] = [];
   for (const state of ["active", "pending"] as const) {
     const of = rules.allergies.filter((r) => r.state === state);
     const ordered = [...of.filter((r) => r.subjectId === "self"), ...of.filter((r) => r.subjectId !== "self")];
     for (const r of ordered) {
       const subject = subjectName(r.subjectId, state);
-      let g = groups.find((x) => x.state === state && x.subject === subject);
+      const key = keyOf(r);
+      let g = groups.find((x) => x.state === state && x.key === key);
       if (g === undefined) {
-        g = { state, subject, codes: [] };
+        g = { state, key, subject, codes: [] };
         groups.push(g);
       }
       g.codes.push(codeLabel(r.code));

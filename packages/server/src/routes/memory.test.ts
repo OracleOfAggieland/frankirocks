@@ -1,4 +1,4 @@
-import { type Ledger, MemoryResponse, tsFromMs, validate } from "@franki/core";
+import { type CoreRules, type Ledger, MemoryResponse, tsFromMs, validate } from "@franki/core";
 import { commonFields, testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { paths } from "../store/paths";
@@ -61,6 +61,19 @@ describe("GET /api/memory", () => {
     expect(s.overview.heldPrivate).toBe(1);
     const text = JSON.stringify(res.body);
     for (const never of ["Denver", "brother", "job hunting", "A private thing", "forgotten line"]) expect(text).not.toContain(never);
+  });
+
+  it("overview counts the owner's hard rules from core/rules, as a count only (brief 030 P1-11)", async () => {
+    const { rig } = await seeded();
+    expect((await get(rig, { view: "overview" })).body.hardRules).toBe(0);
+    await rig.store.transaction(UID, async (tx) => {
+      const rules = (await tx.get<CoreRules>(paths.core(UID, "rules")))!;
+      const rule = (code: string, state: "active" | "pending") => ({ id: testId(`rule-${code}`), subjectId: "self", code, state, anonymous: false, proof: null, proofRev: null, rootKeys: [], dependsOn: [] });
+      tx.update(rules.path, { ...rules.data, allergies: [rule("shellfish", "active"), rule("peanut", "pending")] });
+    });
+    const res = await get(rig, { view: "overview" });
+    expect(res.body.hardRules).toBe(2);
+    expect(JSON.stringify(res.body)).not.toContain("shellfish");
   });
 
   it("item and why return only a shown row; why quotes its root", async () => {

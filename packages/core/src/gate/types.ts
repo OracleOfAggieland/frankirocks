@@ -6,6 +6,7 @@ export type GateTrigger = "unprompted" | "recall" | "jarTap";
 export type GatePurpose = "item" | "wish" | "ask" | "insight" | "celebrate" | "suggest" | "logistics";
 export type GateBuild = "floor" | "plus200";
 export type QuietKind = "unsolicited" | "all_output";
+export type GateMoment = "opener" | "idle";
 
 export interface GateTopic {
   topicId: ID;
@@ -42,8 +43,16 @@ export interface GateCandidate {
   /** When the owner volunteered it (world time), for the named check-in. */
   toldAt: TS | null;
   topic: GateTopic | null;
-  /** The recall's query terms and aliases, for the asked test. */
+  /**
+   * The recall's query terms, as the voice model sent them. They narrow retrieval only and never make a result asked
+   * (brief 033 finding 3).
+   */
   queryTerms: readonly string[];
+  /**
+   * The candidate's own names and aliases (its entity's), from U, C or O spans. A recall is asked only when the
+   * owner's words hold one of these or open the candidate's topic.
+   */
+  aliases: readonly string[];
   purpose: GatePurpose;
   gravity: 0 | 1 | 2 | 3;
   food: boolean;
@@ -73,6 +82,11 @@ export interface GateContext {
   audience: Au;
   modifiers: { rushed: boolean; crisis: boolean };
   trigger: GateTrigger;
+  /**
+   * What started an unprompted line (spec §3, the `proactive` row): a Franki-started `opener`, or an `idle` moment in
+   * a session. Required on the `unprompted` trigger, else null (brief 033 finding 7).
+   */
+  moment: GateMoment | null;
   /** This turn's owner words. Asked and doors read them only when the class is U or C and the speaker is certain. */
   ownerTurn: { text: string; sourceClass: Class; certain: boolean } | null;
   openedTopics: readonly ID[];
@@ -94,4 +108,11 @@ export interface GateResult {
   /** A fixed line said instead of the candidate (hard rules fail closed). */
   fixedLine: string | null;
   reasons: GateReason[];
+  /**
+   * The candidate this result is for, and its sensitivity as given (brief 033 finding 6). `gate` always sets both
+   * (null on invalid input); `buildWhisper` refuses a result without them. Optional in the type only so results
+   * written before them still type-check.
+   */
+  candidateId?: ID | null;
+  sens?: Sens | null;
 }

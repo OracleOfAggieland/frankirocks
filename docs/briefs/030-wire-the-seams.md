@@ -47,7 +47,9 @@ Three fix lanes are still open when this brief starts: the voice fixes (brief 03
 
 **Phase two: everything that does.** Delivery's choice as the `Proactive` on open and state and as an idle whisper; the hero offer and `celebrate` said; the Gate in front of all of it; the ledger rows; `suggest` and `answer` in a call; the pasted line in a call. Nothing in phase two may be built so that a candidate reaches the wire without passing the Gate, not even for one commit.
 
-Before phase two, merge `build/plan-stages` and look for an "Outcome" section at the end of `docs/briefs/033-review-gate.md` and of `docs/briefs/031-review-voice.md`. If both are there, go on. If either is missing, stop at that boundary with the tree green and everything committed, and report what phase one did. The lead will send you on when the fixes have landed.
+A later review of the time lane (brief 036) moved the Gate for delivery inside `chooseNow`: it gates every candidate with the session's audience and modifiers, rereads the source at admission and enforces the caps there. So for delivery a route passes the audience and modifiers in and puts the answer on the wire, and does not gate a second way. That lane is the one writer on `packages/core/src/moments/**` and `packages/server/src/time/**`.
+
+Before phase two, merge `build/plan-stages` and look for an "Outcome" section at the end of `docs/briefs/033-review-gate.md`, `docs/briefs/036-review-time.md` and `docs/briefs/031-review-voice.md`. If all are there, go on. If any is missing, stop at that boundary with the tree green and everything committed, and report what phase one did. The lead will send you on when the fixes have landed.
 
 ## How to work
 

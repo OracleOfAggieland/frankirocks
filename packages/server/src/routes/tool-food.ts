@@ -34,6 +34,7 @@ import {
   type MeetingRow,
   type ReceiptRow,
   CATALOG_VERSION,
+  addCivilDays,
   celebration,
   civilDateAt,
   docRef,
@@ -53,6 +54,8 @@ import {
   tsFromMs,
 } from "@franki/core";
 import { readCoreDocs, ownerClock } from "../core-docs";
+import { heroAnchor } from "../time/hero-anchor";
+import { forgetRowsFor } from "../forget/snapshot-rows";
 import { foregroundEC, storeReader } from "../head-build";
 import { cFields } from "../records";
 import type { Reader } from "../store/port";
@@ -83,6 +86,8 @@ interface MoneyRows {
   coverage: Cov;
   clock: ClockPair;
   evidence: Map<string, Evidence>;
+  /** Brief 030 P1-1: the last date of the live hero insight's window, or null (the window then ends yesterday). */
+  anchor: string | null;
 }
 
 async function scanEvidence(reader: Reader, uid: string): Promise<{ id: string; data: Evidence }[] | null> {
@@ -111,20 +116,24 @@ async function readMoneyRows(ctx: RouteContext, generation: number): Promise<Mon
   const docs = await scanEvidence(reader, uid);
   if (docs === null) return null;
   const money = docs.filter((d) => ["transaction", "receipt", "calendar"].includes(d.data.kind));
+  // Brief 030 P1-9 (brief 028 finding 3): the owner's blocks and overlays, as the read route's Snapshot carries them.
+  const forget = await forgetRowsFor(reader, uid);
+  const refs = [...money.map((d) => docRef("evidence", d.id, d.data.rev)), ...forget.refs];
   const snapshot: Snapshot = {
     uid,
     epoch: core.epoch.data,
     session: null,
     job: null,
     localGeneration: generation,
-    refs: money.map((d) => docRef("evidence", d.id, d.data.rev)),
-    rows: money.map((d) => d.data),
-    blocks: [],
+    refs: refs.slice(0, 4096),
+    rows: [...money.map((d) => d.data), ...forget.rows].slice(0, 4096),
+    blocks: forget.blocks,
     coverage: core.state.data.coverage,
-    complete: true,
+    complete: refs.length <= 4096 && forget.complete,
   };
   const ec = { ...foregroundEC(uid, core.epoch.data, clock, generation), stage: "toolReturn" as const };
-  const out: MoneyRows = { bank: [], receipts: [], events: [], coverage: core.state.data.coverage, clock, evidence: new Map() };
+  const anchor = await heroAnchor(reader, uid, deps.hasher, clock.worldClock.now);
+  const out: MoneyRows = { bank: [], receipts: [], events: [], coverage: core.state.data.coverage, clock, evidence: new Map(), anchor };
   for (const d of money) {
     if (!eligible({ ref: docRef("evidence", d.id, d.data.rev), row: d.data }, ec, snapshot).allow) continue;
     const o = d.data.observation;
@@ -160,7 +169,8 @@ const evidenceRefs = (ids: readonly string[], evidence: Map<string, Evidence>, m
 
 function patternFor(rows: MoneyRows): PatternResult {
   const zone = rows.clock.worldClock.zone;
-  const today = civilDateAt(rows.clock.worldClock.now, zone);
+  // Brief 030 P1-1: a live insight keeps its own window across a jump; heroWindow ends the day before `today`.
+  const today = rows.anchor !== null ? addCivilDays(rows.anchor, 1) : civilDateAt(rows.clock.worldClock.now, zone);
   return takeoutLateMeetingV1({
     purchases: rows.bank,
     receipts: rows.receipts,
@@ -250,13 +260,24 @@ export async function suggestTool(ctx: RouteContext, _stamp: Stamp, args: Sugges
 
 type ActionEntry = Extract<Ledger, { kind: "action" }>;
 
+/**
+ * Brief 030 P1-2 (brief 029 finding 4; question X-166). Ruling, fails closed: a cited row's root Slice is its first
+ * Slice with a text range. W-LINEAGE checks a root Slice's hash over its range, and a typed Slice (`bank.amount`,
+ * `calendar.time`) has none, so it could never pass; the check itself stays as it is. Null when a cited row has no
+ * such Slice: the yes is then stale, and nothing is written.
+ */
+export function loopRootSlice(e: Evidence): Evidence["fieldSlices"][number] | null {
+  return e.fieldSlices.find((x) => x.start !== null && x.end !== null && x.start < x.end) ?? null;
+}
+
+function loopCited(pattern: PatternResult, evidence: Map<string, Evidence>): string[] {
+  return [...pattern.window.purchaseIds, ...pattern.meetingIds, ...pattern.receiptIds].filter((eid) => evidence.has(eid)).slice(0, 128);
+}
+
 function loopMemory(ctx: RouteContext, at: string, epoch: number, policyRev: number, id: string, loop: LoopRecord, pattern: PatternResult, evidence: Map<string, Evidence>): Memory {
-  const cited = [...pattern.window.purchaseIds, ...pattern.meetingIds, ...pattern.receiptIds].filter((eid) => evidence.has(eid)).slice(0, 128);
-  // Lineage (KC03): one root Slice per cited row: the amount of a purchase, the time of a meeting, else its first.
-  const rootSlices = cited.map((eid) => {
-    const slices = evidence.get(eid)!.fieldSlices;
-    return slices.find((x) => x.fieldPath === "bank.amount" || x.fieldPath === "calendar.time") ?? slices[0]!;
-  });
+  const cited = loopCited(pattern, evidence);
+  // Lineage (KC03): one root Slice per cited row, the row's first Slice with a range (checked by the caller).
+  const rootSlices = cited.map((eid) => loopRootSlice(evidence.get(eid)!)!);
   return {
     ...cFields(ctx.uid, at, epoch, policyRev),
     rootSlices,
@@ -325,6 +346,7 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerAr
   const loopId = deps.hasher.id(["heroLoop", offer.pendingId]);
   const loop = planHeroLoop(offer.pattern, rows.clock.worldClock.now, actionId);
   if (loop === null) return answer("stale");
+  if (loopCited(offer.pattern, rows.evidence).some((eid) => loopRootSlice(rows.evidence.get(eid)!) === null)) return answer("stale");
   const card = foodCard(ctx, dinners.candidates, "Three quick dinners for those nights");
 
   await deps.store.transaction(uid, async (tx) => {

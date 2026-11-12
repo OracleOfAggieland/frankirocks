@@ -47,6 +47,7 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 import { type Proactive, type Session, turnRef } from "@franki/core";
 import { admitRule } from "../admission/seam";
 import { inheritedAudience, inheritedSession, speaksSwapLine, swapLineRule, swapLineTurnId } from "../audience-swap";
+import { checkOpenVisit } from "./open-visit";
 
 /**
  * Server time for one open, from runRoute's first line to the answer. The browser gives the whole request 5 s
@@ -144,6 +145,7 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
         return { response: blocked, prior: null };
       }
 
+      checkOpenVisit(core.state.data, req.visitId); // Brief 030 P1-8: a named visit opens only on its clone.
       const state: CoreState = { ...core.state.data, currentZone: req.clientZone };
       const pair = ownerClock(state, deps.clock);
       // Open proposals (brief 012 G39) are applied before the Head is compiled, so the Deck carries them.
