@@ -1,5 +1,6 @@
 // Brief 035: the review of the audience wave. One block per finding, each the reviewer's sequence as a route test.
 import { type CoreBundle, type CoreEpoch, type CoreRules, type Job, type SS, type Session } from "@franki/core";
+import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { never, ok } from "../openai/fake";
 import { paths } from "../store/paths";
@@ -59,5 +60,26 @@ describe("finding 1: a company hit through the Parse_Repair narrows", () => {
     const bundle = (await rig.store.get<{ head: { text: string } }>(UID, paths.core(UID, "bundle")))!.data;
     expect(bundle.head.text).not.toContain(PERSONAL_FACT);
     expect(bundle.head.text).toContain("Audience: company.");
+  });
+});
+
+describe("finding 2: a Superseding_Post with a company line narrows", () => {
+  it("answers blocked, stores company, raises policyRev, closes the Session and writes the hangup Job", async () => {
+    const { rig, s } = await doorRig(true);
+    const before = await epochOf(rig);
+    const first = await postTurn(rig, { ...asrTurn(s.stamp, 1, "", [{ itemId: "item_1", commitSeq: 1 }], "missing"), judge: "H" });
+    expect(first.body.status).toBe("hold");
+    rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9 })));
+    const late = await postTurn(rig, { ...voice(s.stamp, 1, "My boss just walked in."), requestId: testId("req-1-late"), supersedesRequestId: testId("req-1") });
+    expect(late.status).toBe(200);
+    expect(late.body).toMatchObject({ status: "blocked", permit: null, notes: [], deck: null });
+    const after = await sessionOf(rig, s.sessionId);
+    expect(after).toMatchObject({ audience: "company", status: "closing", parseLease: null });
+    expect(after.waitDeadline).not.toBeNull();
+    expect((await epochOf(rig)).policyRev).toBe(before.policyRev + 1);
+    expect((await epochOf(rig)).activeSessionId).toBeNull();
+    expect(await jobOf(rig, s.sessionId)).not.toBeNull();
+    await runScheduled(rig);
+    expect(rig.openai.requestsTo("realtime.calls.hangup")).toHaveLength(1);
   });
 });
