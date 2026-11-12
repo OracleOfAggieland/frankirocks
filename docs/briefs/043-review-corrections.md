@@ -147,3 +147,30 @@ Conflicts, both sides kept: `core/extract.ts` `planItem` (brief 041's ambiguous-
 - Finding 12 stays a known limit (W-227).
 - The typed plan now reads the memory plan outside the transaction; a write landing between that read and the commit makes the keys differ, and the turn then falls back to the closed or care line. Not tested under a race.
 - Nothing ran against the emulator, a live model or a real call.
+
+### Follow-up items from the lead (after the merge as `ef1232c`)
+
+| Item | Test first | Commit | Ruling |
+|---|---|---|---|
+| 1. The span's edges chose whose allergy it was (hard-rule miss; `others-words-never-clear`, seed 190244370, path "658:3:5:5:8:7:7:7:9") | `core/src/writes/hard-rule.reslice.test.ts`, red on `deb3553` | `1a1560c` | W-230 |
+| 1b. A model entityId or mention the sentence doesn't name chose the person (SU4) | `core/src/writes/hard-rule.unnamed-entity.test.ts`, red on `1a1560c` | `ba13041` | W-231 |
+| 2. Class-T text reached the brain model as a user message | `server/src/routes/turn.pasted-not-owner.test.ts`, red on the old code | `8327737` | W-232 |
+
+New properties, 1,000 runs each, red first:
+
+| Property | File | Seed | Counterexample on the old code |
+|---|---|---|---|
+| A reslice never chooses whose allergy it is | `core/src/writes/reslice-never-chooses.property.test.ts` | 1879678608 | no rules, nothing asked, isSelf, span "'m allergic to peanuts" in "I'm allergic to peanuts.": no owner peanut rule, where the full span wrote one |
+| An unnamed entityId or mention chooses no one | `core/src/writes/unnamed-subject-never-chooses.property.test.ts` | 512382791 | no rules, nothing asked, "I'm allergic to peanuts." with entityId = the brother (Sam): his rule written |
+
+`others-words-never-clear` with the seed and path above passes in a temporary copy, deleted before the commit. No existing assertion changed.
+
+What the typed path sent for a T-class turn with no call open, before item 2: `instructions` = the Head text; `input` = the last four safe turns as `{ role, content }`, earlier T turns among them as `user`, then `{ role: "user", content: <the pasted text> }`; `tools: []`. Now each T text is `PASTED_STAND_IN`, and nothing else changed. `routes/turn.ts` is unchanged by these items.
+
+Not verified, or left out:
+- `reslice-never-chooses` keeps the words "allergic to <allergen>" whole. A cut inside the cue word changes active to pending (W-230).
+- `unnamed-subject-never-chooses` leaves out a turn answering the asked rule of that same person, where the existing lend applies.
+- What a real model says to the stand-in is not tested. The test only checks the request structure.
+- The decisions parse never runs on T (R8.10). Extraction's reading of T turns, and the voice path (brief 045, lane `voice-c`), were not touched.
+
+Checks after the second merge of `build/plan-stages` (`af83916`): `npx vitest run --maxWorkers=3` exit 0, 558 files passed, 4,466 tests passed, 23 expected fail; `npm run typecheck` exit 0; `npm run lint` exit 0 (the one existing warning in `avatar/three/brass.ts`); `npm run build` exit 0.
