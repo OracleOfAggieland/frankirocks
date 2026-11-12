@@ -28,7 +28,7 @@ import {
   withMomentDefaults,
 } from "@franki/core";
 import { ownerClock } from "../core-docs";
-import { foregroundEC } from "../head-build";
+import { foregroundEC, readAllMemories } from "../head-build";
 import { paths } from "../store/paths";
 import type { Reader, StoredDoc } from "../store/port";
 
@@ -141,14 +141,44 @@ async function reminderSourceVerdict(r: Reader, uid: string, moment: Moment, dep
 
 /** What a reread says about `moment`'s source now. `r` is a transaction when the caller writes on the answer. */
 export async function momentVerdict(r: Reader, uid: string, moment: Moment, core: Core, clock: ClockPort, opts: VerdictOptions): Promise<MomentVerdict> {
-  if (moment.memoryId !== null) return memoryVerdict(r, uid, moment, moment.memoryId, core, clock);
-  if (moment.rollupId !== null) return opts.rollupLive === false ? "gone" : "ok";
-  if (moment.actionId !== null) {
+  let v: MomentVerdict = "gone";
+  if (moment.memoryId !== null) v = await memoryVerdict(r, uid, moment, moment.memoryId, core, clock);
+  else if (moment.rollupId !== null) v = opts.rollupLive === false ? "gone" : "ok";
+  else if (moment.actionId !== null) {
     const action = await r.get<Ledger>(paths.ledger(uid, moment.actionId));
     if (action === null || action.data.kind !== "action" || action.data.state !== "complete") return "gone";
-    return reminderSourceVerdict(r, uid, moment, action.data.dependsOn, core, clock);
+    v = await reminderSourceVerdict(r, uid, moment, action.data.dependsOn, core, clock);
   }
-  return "gone";
+  // Brief 041 part 3 (spec §7, the death and illness rows), reread wherever this verdict is (the tick, `chooseNow`,
+  // the render and admission), so a life change committed at any point before admission holds: a moment about
+  // someone recorded deceased is `gone`, except the one grief form the spec names; a wish or celebrate about someone
+  // whose care is open at gravity 3, or about anyone one hop from them, waits as `gone`; a check-in about a person
+  // whose care is all recorded resolved is `gone`. The tick then closes it with a reason code (`policy`).
+  if (v !== "ok" || moment.kind === "griefAsk") return v;
+  const source = moment.memoryId === null ? null : ((await r.get<Memory>(paths.memory(uid, moment.memoryId)))?.data ?? null);
+  const roots = new Set([...moment.subjectIds, ...(source === null ? [] : [source.subjectId, ...source.entityIds])].filter((e) => e !== "self"));
+  if (roots.size === 0) return v;
+  const rows = (await readAllMemories(r, uid)).map((h) => h.memory).filter((m) => m.status === "active");
+  const code = (m: Memory) => (m.value.kind === "enum" ? m.value.code : null);
+  if (rows.some((m) => m.predicate === "person.life" && roots.has(m.subjectId) && code(m) === "deceased")) return "gone";
+  const careOf = (m: Memory): string | null => (m.predicate !== "care" ? null : String((m.args as { careSubjectRef?: unknown }).careSubjectRef ?? m.subjectId));
+  if (moment.kind === "wish" || moment.kind === "celebrate") {
+    const ill = new Set(rows.filter((m) => careOf(m) !== null && code(m) === "open" && m.gravity >= 3).map((m) => careOf(m)!));
+    // One hop (spec §7: "code walks one hop over entities"): an entity that shares an active row with the ill person.
+    const linked = new Set(ill);
+    for (const m of rows) {
+      const es = [m.subjectId, ...m.entityIds].filter((e) => e !== "self");
+      if (es.some((e) => ill.has(e))) for (const e of es) linked.add(e);
+    }
+    if ([...roots].some((e) => linked.has(e))) return "gone";
+  }
+  if (moment.kind === "checkIn") {
+    for (const e of roots) {
+      const care = rows.filter((m) => careOf(m) === e);
+      if (care.length > 0 && care.every((m) => code(m) === "resolved")) return "gone";
+    }
+  }
+  return v;
 }
 
 /**

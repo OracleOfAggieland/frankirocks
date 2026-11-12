@@ -17,7 +17,7 @@ import { scheduleTick } from "../worker/tick";
 import { askOpen } from "../onturn/ask";
 import { barrierError, scopeError, staleError } from "./errors";
 import { safeTurnsOf } from "./turn";
-import { idleProactive } from "./delivery-wire";
+import { STATE_BUDGET_MS, idleProactive } from "./delivery-wire";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 035: no ack and no Deck on a Session narrowed here (finding 9).
 import { narrowedHere } from "../audience-swap";
@@ -99,7 +99,9 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
     }),
   );
   // Brief 030 part A: an idle whisper, gated inside `chooseNow`, only where the ack checks passed.
-  return res.ack === null ? res : { ...res, proactive: await idleProactive(ctx, res.stamp) };
+  // Coordinator ruling on brief 042: the poll's budget holds; the whisper gets what is left of it, or waits.
+  const spent = ctx.deps.clock.read().opsClock.now - (ctx.startedOpsAt ?? ctx.deps.clock.read().opsClock.now);
+  return res.ack === null ? res : { ...res, proactive: await idleProactive(ctx, res.stamp, STATE_BUDGET_MS - spent) };
 }
 
 export const stateRoute: RouteSpec<StateReq> = {

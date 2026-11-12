@@ -290,7 +290,6 @@ const MOMENTS: Moment[] = [
   },
   {
     id: "F11",
-    waits: { rules: W.PASTE, head: W.PASTE, food: W.PASTE },
     stated: "plainly, pasted into the typed box",
     path: "suggest",
     state: "rules ready",
@@ -298,7 +297,7 @@ const MOMENTS: Moment[] = [
     rules: [{ codes: CODES.egg, who: "self" }],
     head: [{ subjects: YOU, allergen: "eggs" }],
     forbid: forbidOf("egg"),
-    note: "pasted text is T: by design it writes no rule (brief 018 B10, G34). The script asks for the fail-closed reading: a pasted allergy still keeps eggs off the card, or Franki asks",
+    note: "pasted text is T and writes no rule (brief 018 B10, G34). Brief 041 part 1: the paste writes an anonymous pending filter for eggs and one question, so eggs stay off the card until the owner answers",
   },
   {
     id: "F12",
