@@ -1,1 +1,147 @@
 /* The front door's house rules, build and switch: keyframes and loops. */
+
+/* House rules. A plaque lifts 2 px on hover and its glyph turns from stitch to brass-hi. */
+.lower-glyph {
+  color: var(--color-stitch);
+  transition: color var(--dur-quick) var(--ease-ecto);
+}
+.lower-plaque {
+  transition: transform var(--dur-quick) var(--ease-ecto);
+}
+.lower-plaque:hover .lower-glyph {
+  color: var(--color-brass-hi);
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .lower-plaque:hover {
+    transform: translateY(-2px);
+  }
+}
+[data-reduced="true"] .lower-plaque:hover {
+  transform: none;
+}
+
+/* The build. FRANKIROCKS scales with its container: 11 letters at 0.6 em plus 0.3 em tracking each, and the
+   0.3 em pad, come to 10.2 em, so 9.4 cqw keeps it on one line at any width. */
+.lower-word {
+  font-size: min(var(--text-hero), 9.4cqw);
+}
+/* K-I-R-O wait, unlit, until the whole word is in view. With scripting off nothing marks the word seen and this
+   rule does not apply, so the letters light on load as the Wordmark's do. */
+@media (scripting: enabled) {
+  [data-kiro-word]:not([data-seen]) .franki-kiro {
+    animation-play-state: paused;
+  }
+}
+
+/* The anatomy. Linework stays 1.25 CSS pixels at any size. */
+.anatomy-drawing * {
+  vector-effect: non-scaling-stroke;
+}
+.anatomy-drawing path,
+.anatomy-drawing circle,
+.anatomy-drawing ellipse,
+.anatomy-drawing rect {
+  stroke-width: 1.25px;
+}
+/* A part's ecto linework fades in over its stitch drawing as its callout enters view. In the stacked layout
+   all four light as the drawing enters view, one after another (the end of this section). `--lit-step` is a
+   part's place in that order, 0 unless stacked. */
+.anatomy-lit {
+  opacity: 0;
+  transition: opacity var(--dur-ritual) var(--ease-ecto) calc(var(--stagger) * 3 * var(--lit-step, 0));
+}
+.anatomy-lit[data-on] {
+  opacity: 0.9;
+}
+/* A leader draws from the callout's side toward the part; its end dot follows once it arrives. */
+.anatomy-leader {
+  transform-box: fill-box;
+  transition:
+    transform calc(var(--dur-base) * 2) var(--ease-ecto) calc(var(--stagger) * 3 * var(--lit-step, 0)),
+    opacity var(--dur-base) var(--ease-ecto) calc(var(--stagger) * 3 * var(--lit-step, 0));
+}
+.anatomy-leader[data-leader="left"] {
+  transform-origin: left center;
+}
+.anatomy-leader[data-leader="right"] {
+  transform-origin: right center;
+}
+.anatomy-dot {
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-ecto) calc(var(--dur-base) * 1.5 + var(--stagger) * 3 * var(--lit-step, 0));
+}
+.anatomy-dot[data-on] {
+  opacity: 1;
+}
+@media (scripting: enabled) {
+  .anatomy-leader:not([data-on]) {
+    transform: scaleX(0);
+  }
+  [data-reduced="true"] .anatomy-leader:not([data-on]) {
+    transform: none;
+    opacity: 0;
+  }
+}
+/* Reduced motion: the leader fades in whole instead of drawing. */
+@media (scripting: enabled) and (prefers-reduced-motion: reduce) {
+  .anatomy-leader:not([data-on]) {
+    transform: none;
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .anatomy-dot {
+    transition: opacity var(--dur-base) linear calc(var(--stagger) * 3 * var(--lit-step, 0));
+  }
+}
+/* The stacked layout: the callouts sit below the drawing, so a callout entering view would light a part
+   already scrolled away. There the drawing entering view lights all four, in copy order. */
+@container (width < 58rem) {
+  [data-drawing-seen] [data-part-lit],
+  [data-drawing-seen] [data-leader-for] {
+    --lit-step: var(--n, 0);
+  }
+  [data-drawing-seen] .anatomy-lit {
+    opacity: 0.9;
+  }
+  [data-drawing-seen] .anatomy-dot {
+    opacity: 1;
+  }
+  [data-anatomy] [data-drawing-seen] .anatomy-leader {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* The switch. A vertical swipe that starts on it still scrolls the page; a sideways drag moves the blade. */
+.lower-switch {
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+.lower-handle {
+  cursor: grab;
+}
+.lower-switch[data-phase="drag"] .lower-handle {
+  cursor: grabbing;
+}
+
+/* The flash behind the spark across the contacts: one bright breath, never under reduced motion. */
+@keyframes lower-flash {
+  0% { opacity: 0; transform: scale(0.6); }
+  18% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.15); }
+}
+.lower-flash {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lower-flash {
+    animation: lower-flash calc(var(--dur-base) * 2) var(--ease-ecto) 1 both;
+  }
+}
+[data-reduced="true"] .lower-flash {
+  animation: none;
+  opacity: 0;
+}
