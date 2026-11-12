@@ -23,7 +23,7 @@ import { canonicalJSON } from "../ids";
 import type { EID, ID, Span } from "../schema/primitives";
 import type { CoreRules } from "../schema/records";
 import { GAZETTEER_VERSION, NONE_CODE, gazetteerEntry, lookupAllergen, scanAliases } from "./gazetteer";
-import { affirmsAllergen, hasDenialForm } from "./denial-words";
+import { affirmsAllergen, hasDenialForm, isWholeDenial } from "./denial-words";
 import { type Range, cueSentenceRanges, cueSentenceUParts, cueSentences, cueSpan, notAllergyByCode } from "./not-allergy";
 import { ruleTransition } from "./rule-state";
 import { spanClass, uParts, verifyTurnSpan } from "./spans";
@@ -164,11 +164,12 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
   /**
    * W-187 (brief 025): the model's polarity alone never removes a rule. A denial resolves a stored pending rule only
    * when it is the asked rule this turn answers, the owner's words (the verdict's verified span) hold a denial from the
-   * closed list, and the turn holds no affirming cue for that allergen. Otherwise the rule stays and Franki asks
+   * closed list, the owner's whole answer is one whole denial (`isWholeDenial`, brief 043 finding 3), and the turn
+   * holds no affirming cue for that allergen. Otherwise the rule stays and Franki asks
    * about it again (`reask`).
    */
   const mayRemove = (rule: AllergyRule, proof: Span): boolean =>
-    turn.answering !== null && R !== null && rule.id === R.id && hasDenialForm(proof.quote) && !affirmsAllergen(ev.text, rule.code);
+    turn.answering !== null && R !== null && rule.id === R.id && hasDenialForm(proof.quote) && isWholeDenial(ev.text, rule.code) && !affirmsAllergen(ev.text, rule.code);
   let reask: ID | null = null;
   /** A pending rule a denial reached but may not remove: kept, and asked about again. */
   const keepDenied = (rule: AllergyRule) => {

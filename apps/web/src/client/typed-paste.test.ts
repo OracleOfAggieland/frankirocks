@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { ok } from "../../../../packages/server/src/openai/fake";
 import { completed } from "../../../../packages/server/src/openai/responses";
 import { paths } from "../../../../packages/server/src/store/paths";
+import { expectPasteFilters } from "../../../../packages/server/src/testing/arb-paste";
 import { T0_MS, type TestRig, settle, testRig } from "../../../../packages/server/src/testing/fakes";
 import { type FetchLike, createApiClient } from "./api";
 import { createBrowserClock } from "./clock";
@@ -51,14 +52,15 @@ function setup() {
 }
 
 describe("pasted text is T (B10)", () => {
-  it("a pasted one-line allergy goes as pasted and writes nothing in core/rules", async () => {
+  it("a pasted one-line allergy goes as pasted and writes only an anonymous pending filter in core/rules (brief 041 G-A2)", async () => {
     const { rig, fetch, typed, rules } = setup();
     typed.markPasted();
     typed.setText(LINE);
     expect(await typed.submit()).toBe(true);
     expect(JSON.parse(fetch.turnBodies[0]!).source).toBe("pasted");
     const r = await rules();
-    expect(r.allergies).toEqual([]);
+    await expectPasteFilters(rig.store, { ...r, allergies: [] }, r, LINE);
+    expect(r.allergies.filter((x) => x.state === "active")).toEqual([]);
     expect(r.proposals).toEqual([]);
     expect(rig.fastSlots.calls).toHaveLength(0);
     // The box is clear and the next line is the owner's own again.

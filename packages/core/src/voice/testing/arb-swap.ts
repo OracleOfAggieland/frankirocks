@@ -52,7 +52,7 @@ export class SwapDriver extends WideDriver {
   /** For each `openOk` event, by its step index: the step that sent the open it answers. */
   openOf = new Map<number, number>();
   /** The `previousSessionId` of every open sent and not yet answered, oldest first, with the step that sent it. */
-  private opensPrev: { prev: string | null; at: number }[] = [];
+  protected opensPrev: { prev: string | null; at: number }[] = [];
   private seenOpens = 0;
   /**
    * When set, an open with no answer this long after it was sent is answered `openFailed` at that moment, before the

@@ -55,6 +55,8 @@ import {
   extractOutputJsonSchema,
   needsEarlierTurns,
   openRefOf,
+  peopleRoster,
+  statedPeople,
   parseDep,
   parseExtractOutput,
   planItem,
@@ -379,6 +381,9 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
       policyRev: job.policyRev,
       open: open.refs,
       renames,
+      // Brief 041 part 2 (G-FT16): who a name may already be, and the roles this job states.
+      people: peopleRoster(all),
+      statedPeople: statedPeople(call.items),
       context,
       zone: stateDoc?.data.currentZone ?? stateDoc?.data.homeZone ?? "UTC",
     };
@@ -450,6 +455,25 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
         const fromMs = msFromTs(m.validFrom ?? m.assertedAt);
         const toMs = Math.min(nowMs, Math.max(fromMs, Math.min(...later.map((d) => msFromTs(d.data.validFrom ?? d.data.assertedAt)))));
         if (place({ from: fromMs, to: toMs, cls: m.sourceClass, change: plan.change }, nowMs) === "history") {
+          // Brief 043, finding 7 (W-194 reversed for corrections): what the correction refuted is still `wrong`. Only
+          // the later row is spared. Refuted: the earlier-asserted rows on the key that were current when it was said
+          // (active, or closed after it), and its named targets asserted before it.
+          if (plan.change === "correct") {
+            const onKey = [];
+            for (const status of ["active", "history"] as const) {
+              onKey.push(...(await tx.query<Memory>({ collection: paths.collection(uid, "memories"), where: [{ field: "key", op: "==", value: m.key }, { field: "status", op: "==", value: status }], orderBy: { field: "validFromKey", dir: "desc" }, limit: 32 })));
+            }
+            const named = new Set<string>(plan.targetIds);
+            for (const d of onKey) {
+              if (closed.has(d.id) || protectedRow(d.data) || d.data.assertedAt >= m.assertedAt || sameValue(d.data, m)) continue;
+              const current = d.data.status === "active" || (d.data.status === "history" && (named.has(d.id) || (d.data.validTo !== null && d.data.validTo > m.assertedAt)));
+              if (!current || (!plan.single && !named.has(d.id))) continue;
+              const status = statusTransition(d.data.status, "correct");
+              if (status === "refuse") continue;
+              closed.add(d.id);
+              tx.update(d.path, { ...d.data, status, validTo: d.data.validTo ?? m.validFrom, updatedAt: now });
+            }
+          }
           written.push({ id: plan.id, memory: { ...m, status: "history", validTo: tsFromMs(toMs) } });
           continue;
         }

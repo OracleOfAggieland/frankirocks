@@ -54,7 +54,9 @@ import { MEMORY_TEXT_CHARS, claimText } from "./memory-text";
 import { checkRange, tokenize, utf8 } from "./text";
 import { lookupAllergen } from "./writes/gazetteer";
 import type { RenameIndex } from "./writes/renames";
+import { type PeopleRoster, type PersonRole, personWithRole, sameRole } from "./writes/people";
 import { mentionName } from "./writes/subject";
+import { lifeMentionOwned } from "./writes/life-subject";
 
 // ---------------------------------------------------------------------------------------------
 // Literal prompts (contracts §5). Schema prompt = PREFIX + job literal.
@@ -530,6 +532,13 @@ export interface PlanContext {
    */
   renames?: RenameIndex;
   /**
+   * The stored people (brief 041 part 2, G-FT16): which entities a name may already be, and their relations to the
+   * owner. Absent: no namesake is known, and every person resolves by name as before.
+   */
+  people?: PeopleRoster;
+  /** The roles this job's items state, by name (`statedPeople`), so two people named in one turn stay two. */
+  statedPeople?: ReadonlyMap<string, readonly PersonRole[]>;
+  /**
    * The memory keys and Memory IDs the on-turn correct and transition routes handled for this Evidence (brief 012
    * section 5, brief 025 task C5): an item on one of the keys is skipped `handled`, and none of the IDs can be named
    * as a target.
@@ -731,20 +740,114 @@ const NO_TM_PROMOTION = (p: string) =>
  * their type and name. `existingId` is ignored: the roster is empty in this slice, so no supplied ID exists, and an
  * unsupplied ID would let the model point a Memory at an arbitrary entity.
  */
-export function resolveMention(token: string, item: ExtractItem, hasher: Hasher, rn?: MentionRenames): string {
-  if (token === "self") return "self";
-  const mention = item.mentions.find((m) => m.localId === token);
-  if (mention?.existingId === "self") return "self";
-  // Task C2: the one function that turns words into a name ("my dad" and "Dad" are one name).
-  const name = mentionName(mention?.observedName ?? token);
-  const id = hasher.id(["mention", mention?.type ?? "topic", name]);
-  if (rn === undefined) return id;
-  // Task C4 (G14): the new name is the renamed entity; the old name, said after the rename, is somebody else.
-  for (const [entity, r] of rn.index.renames) {
-    if (r.to !== null && mentionName(r.to.name) === name) return entity;
-    if (id === entity && rn.at > r.at) return hasher.id(["mention", mention?.type ?? "topic", name, r.renameId]);
+export function resolveMention(token: string, item: ExtractItem, hasher: Hasher, rn?: MentionRenames, people?: MentionPeople): string {
+  const c = chooseMention(token, item, hasher, rn, people);
+  // An ambiguous person resolves to nobody stored; `planItem` holds such an item before it writes anything.
+  return c.kind === "one" ? c.id : c.base;
+}
+
+/** The stored people and the roles this job's items state, by name, for `resolveMention` (brief 041 part 2). */
+export interface MentionPeople {
+  roster: PeopleRoster;
+  /** The roles the job's items state for each name (`mentionName`), in item order. */
+  stated?: ReadonlyMap<string, readonly PersonRole[]>;
+}
+
+export type MentionChoice = { kind: "one"; id: string } | { kind: "ambiguous"; name: string; base: string; ids: string[] };
+
+/** The role an item states for one of its mentions: a `person.relation` whose other person is that mention. */
+function statedRole(item: ExtractItem, token: string): PersonRole | null {
+  if (item.predicate !== "person.relation" || item.value?.kind !== "enum") return null;
+  const args = (item.args ?? {}) as { otherRef?: unknown; label?: unknown };
+  if (args.otherRef !== token) return null;
+  return { code: item.value.code, label: typeof args.label === "string" ? args.label : null };
+}
+
+/** The roles a job's raw items state, by name, in item order (malformed items state nothing). */
+export function statedPeople(raw: readonly unknown[]): Map<string, PersonRole[]> {
+  const out = new Map<string, PersonRole[]>();
+  for (const r of raw) {
+    const it = r as Partial<ExtractItem> | null;
+    if (it === null || typeof it !== "object" || !Array.isArray(it.mentions)) continue;
+    for (const m of it.mentions) {
+      if (m?.type !== "person" || typeof m.observedName !== "string") continue;
+      const role = statedRole(it as ExtractItem, m.localId);
+      if (role === null) continue;
+      const name = mentionName(m.observedName);
+      const list = out.get(name) ?? [];
+      if (!list.some((x) => sameRole(x, role))) list.push(role);
+      out.set(name, list);
+    }
   }
-  return id;
+  return out;
+}
+
+/**
+ * Which entity a mention is (brief 041 part 2, G-FT16). A person joins a stored person of the same name only when
+ * nothing stated conflicts: the same relation, or no relation stated and exactly one person of that name. A stated
+ * relation that conflicts with every stored person of the name is a new person, whose ID takes the role into the hash;
+ * a bare name that fits two people is ambiguous. The rename index (task C4) answers the same way: its renamed entity
+ * is one more person of the new name, never a merge on the name alone (brief 043 finding). Entity IDs that exist
+ * keep their value: a person with no namesake is still `H("mention", "person", name)`.
+ */
+export function chooseMention(token: string, item: ExtractItem, hasher: Hasher, rn?: MentionRenames, people?: MentionPeople): MentionChoice {
+  if (token === "self") return { kind: "one", id: "self" };
+  const mention = item.mentions.find((m) => m.localId === token);
+  if (mention?.existingId === "self") return { kind: "one", id: "self" };
+  // Task C2: the one function that turns words into a name ("my dad" and "Dad" are one name).
+  const type = mention?.type ?? "topic";
+  const name = mentionName(mention?.observedName ?? token);
+  const id = hasher.id(["mention", type, name]);
+  // Task C4 (G14): the old name, said after the rename, is somebody else.
+  if (rn !== undefined) for (const [entity, r] of rn.index.renames) if (id === entity && rn.at > r.at) return { kind: "one", id: hasher.id(["mention", type, name, r.renameId]) };
+  if (type !== "person") return { kind: "one", id };
+
+  const roster = people?.roster.roles ?? new Map<string, readonly PersonRole[]>();
+  const rolesOf = (e: string) => roster.get(e) ?? [];
+  // The stored people of this name: the name's own ID, a role-salted ID that matches one of its stored roles, and a
+  // person renamed to this name.
+  const stored = new Set<string>();
+  if (roster.has(id)) stored.add(id);
+  for (const [e, roles] of roster) if (roles.some((r) => personWithRole(name, r, hasher) === e)) stored.add(e);
+  if (rn !== undefined) for (const [entity, r] of rn.index.renames) if (r.to !== null && mentionName(r.to.name) === name) stored.add(entity);
+  const cands = [...stored];
+
+  const ofRole = (role: PersonRole): string => {
+    const same = cands.filter((e) => rolesOf(e).some((r) => sameRole(r, role)));
+    if (same.length === 1) return same[0]!;
+    if (same.length === 0 && cands.length === 1 && rolesOf(cands[0]!).length === 0) return cands[0]!;
+    if (same.length === 0 && cands.length === 0) {
+      // Nobody of this name is stored: the job's first role keeps the name's own ID, a later conflicting one is salted.
+      const first = people?.stated?.get(name)?.[0];
+      return first === undefined || sameRole(first, role) ? id : personWithRole(name, role, hasher);
+    }
+    return same.length > 1 ? "" : personWithRole(name, role, hasher);
+  };
+
+  const role = statedRole(item, token);
+  if (role !== null) {
+    const one = ofRole(role);
+    return one === "" ? { kind: "ambiguous", name: mention?.observedName ?? name, base: id, ids: cands } : { kind: "one", id: one };
+  }
+  // A bare name: the stored people of the name and the people this job's roles make of it.
+  const all = new Set(cands);
+  for (const r of people?.stated?.get(name) ?? []) {
+    const e = ofRole(r);
+    if (e !== "") all.add(e);
+  }
+  if (all.size === 0) return { kind: "one", id };
+  if (all.size === 1) return { kind: "one", id: [...all][0]! };
+  return { kind: "ambiguous", name: mention?.observedName ?? name, base: id, ids: [...all] };
+}
+
+/** The verified words of the item's subject mention, on its Evidence's text, or null (brief 043, finding 1). */
+function mentionWords(item: ExtractItem, ctx: PlanContext): { text: string; start: number; end: number } | null {
+  const m = item.mentions.find((x) => x.localId === item.subject);
+  if (m === undefined) return null;
+  const span = anchorSpan(m.span, ctx);
+  if (verifySpan(span, ctx) === null) return null;
+  const text = evidenceFieldText(ctx.packet.get(span.eid)!.evidence, span.fieldPath);
+  return text === null || text === undefined ? null : { text, start: span.start, end: span.end };
 }
 
 /** The rename index and when the item's Evidence was said, for `resolveMention`. */
@@ -753,8 +856,19 @@ export interface MentionRenames {
   at: string;
 }
 
-function resolveValue(v: ExtractItem["value"], item: ExtractItem, hasher: Hasher, rn?: MentionRenames): Value {
-  return v.kind === "entity" ? { kind: "entity", ref: resolveMention(v.mention, item, hasher, rn) } : v;
+function resolveValue(v: ExtractItem["value"], item: ExtractItem, hasher: Hasher, rn?: MentionRenames, people?: MentionPeople): Value {
+  return v.kind === "entity" ? { kind: "entity", ref: resolveMention(v.mention, item, hasher, rn, people) } : v;
+}
+
+/** The first mention token of an item that names two stored people at once (brief 041 part 2), or null. */
+function ambiguousMention(item: ExtractItem, hasher: Hasher, rn?: MentionRenames, people?: MentionPeople): Extract<MentionChoice, { kind: "ambiguous" }> | null {
+  const tokens = [item.subject, item.value.kind === "entity" ? item.value.mention : null, ...Object.entries(item.args).map(([k, v]) => (isEntityField(item.predicate, k) && typeof v === "string" ? v : null))];
+  for (const t of tokens) {
+    if (t === null) continue;
+    const c = chooseMention(t, item, hasher, rn, people);
+    if (c.kind === "ambiguous") return c;
+  }
+  return null;
 }
 
 function isEntityField(predicate: string, key: string): boolean {
@@ -764,9 +878,9 @@ function isEntityField(predicate: string, key: string): boolean {
   return field === EID || (field?.meta.t === "nullable" && field.meta.inner === EID);
 }
 
-function resolveArgs(predicate: string, args: Record<string, unknown>, item: ExtractItem, hasher: Hasher, rn?: MentionRenames): Record<string, unknown> {
+function resolveArgs(predicate: string, args: Record<string, unknown>, item: ExtractItem, hasher: Hasher, rn?: MentionRenames, people?: MentionPeople): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(args)) out[k] = isEntityField(predicate, k) && typeof v === "string" ? resolveMention(v, item, hasher, rn) : v;
+  for (const [k, v] of Object.entries(args)) out[k] = isEntityField(predicate, k) && typeof v === "string" ? resolveMention(v, item, hasher, rn, people) : v;
   return out;
 }
 
@@ -940,9 +1054,16 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
   // Transcript order (G35): an item is asserted when its root Evidence was, never when its job commits.
   const saidAt = verified.reduce((at, v) => (v.evidence.assertedAt > at ? v.evidence.assertedAt : at), verified[0]!.evidence.assertedAt);
   const rn: MentionRenames | undefined = ctx.renames === undefined || ctx.renames.renames.size === 0 ? undefined : { index: ctx.renames, at: saidAt };
-  const subjectId = resolveMention(item.subject, item, ctx.hasher, rn);
-  const value = resolveValue(item.value, item, ctx.hasher, rn);
-  const args = resolveArgs(item.predicate, item.args, item, ctx.hasher, rn);
+  // Brief 041 part 2 (G-FT16): a name that fits two stored people attaches to neither; what was said waits.
+  const people: MentionPeople | undefined = ctx.people === undefined ? undefined : { roster: ctx.people, stated: ctx.statedPeople };
+  if (ambiguousMention(item, ctx.hasher, rn, people) !== null) return { kind: "hold", index, reasons: ["ambiguous"], eids };
+  const subjectId = resolveMention(item.subject, item, ctx.hasher, rn, people);
+  // Brief 043, finding 1: a life change about someone else is written only on the owner's own words for them.
+  if (item.predicate === "person.life" && subjectId !== "self" && !lifeMentionOwned(mentionWords(item, ctx), item.mentions.find((m) => m.localId === item.subject)?.observedName ?? item.subject)) {
+    return { kind: "skip", index, reason: "target" };
+  }
+  const value = resolveValue(item.value, item, ctx.hasher, rn, people);
+  const args = resolveArgs(item.predicate, item.args, item, ctx.hasher, rn, people);
 
   // Time (memory-spec §5): the model gives the words said; code resolves them against when and where they were
   // said. Unresolved words keep the day they were said, so "next Friday" is never read against a later week.
