@@ -250,8 +250,9 @@ export async function runCorrection(spec: CorrectionSpec): Promise<CorrectionTra
   // A call is open, so the route note reaches the reply (with no call, a typed turn gets one Franki line, G17).
   await patchRecord<Session>(rig.store, UID, paths.session(UID, s.sessionId), { status: "active", registeredCallIds: ["rtc_a"], callId: "rtc_a" });
   const t = correctionTurn(spec, seeded);
-  rig.openai.script("decisions.create", ok(decisionAnswer({ correct: 0.9, uncertainSpeaker: spec.uncertain ? 0.4 : 0.01 })));
-  rig.fastSlots.script(slotsAnswer(spec, t.item));
+  // The same answers on a retried commit, as a real retry would get them again.
+  rig.openai.always("decisions.create", ok(decisionAnswer({ correct: 0.9, uncertainSpeaker: spec.uncertain ? 0.4 : 0.01 })));
+  rig.fastSlots.always(slotsAnswer(spec, t.item));
   const before = await memoriesOf(rig.store);
   const body = spec.source === "asr" ? asrTurn(s.stamp, 1, t.text, [{ itemId: "item_1", commitSeq: 1 }]) : typedTurn(s.stamp, 1, t.text);
   failNext = spec.commitFails;
@@ -270,7 +271,11 @@ export async function runCorrection(spec: CorrectionSpec): Promise<CorrectionTra
   await settle(rig.sched.runAll(), rig.clock, rig.timers);
   const afterExtract = await memoriesOf(rig.store);
   const certain = spec.source === "typed" || !spec.uncertain;
-  const applicable = res.status === 200 && spec.slots === "valid" && certain && (spec.kind === "rename" ? spec.newName !== spec.oldName : spec.kind === "value" || spec.kind === "retract");
+  // The route acts only on a target the packet showed: code chooses them as extraction's `open` does, so a line that
+  // shares no content word with the turn ("May" is a stop word) is never a target.
+  const target = spec.kind === "value" ? seeded.selfNameId : seeded.relId;
+  const shown = rig.fastSlots.calls.some((c) => c.input.targets.some((x) => x.id === target));
+  const applicable = res.status === 200 && spec.slots === "valid" && certain && shown && (spec.kind === "rename" ? spec.newName !== spec.oldName : spec.kind === "value" || spec.kind === "retract");
   return { rig, spec, seeded, text: t.text, status: res.status, response: res.body, failed, evidenceId, before, afterRoute, afterExtract, applicable };
 }
 

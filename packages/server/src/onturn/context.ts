@@ -17,6 +17,12 @@ export interface OnTurnContext {
   memories: HeadMemory[];
   snapshot: Snapshot;
   known: SubjectIndex;
+  /**
+   * Brief 025: the correct and transition routes this turn opened (RX6, RX7 or a parse candidate), and the targets the
+   * FastSlots packet showed. Absent: neither route opened, no targets.
+   */
+  memoryRoutes?: { correct: boolean; transition: boolean };
+  targets?: Map<ID, OnTurnTarget>;
 }
 
 export async function readOnTurnContext(reader: Reader, uid: string, epoch: CoreEpoch, generation: number): Promise<OnTurnContext> {

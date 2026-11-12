@@ -52,7 +52,7 @@ import { extractJobId, extractJobRecord } from "../worker/extract-jobs";
 import { barrierError, parseError, scopeError, staleError } from "./errors";
 import { Unrecorded, mutation } from "./mutation";
 import { typedReplyNote } from "./typed-reply";
-import { type HardRuleResult, type HardRuleRun, applyOpenProposals, executeHardRule } from "../onturn/execute";
+import { type HardRuleResult, type HardRuleRun, applyOpenProposals, executeHardRule, executeOnTurn } from "../onturn/execute";
 import { readOnTurnContext } from "../onturn/context";
 import { readSnapshot } from "../store/port";
 import { type TypedPlan, planTypedReply, readPreRoute, runHardRuleSlots, typedRouteNote } from "../onturn/route";
@@ -306,7 +306,8 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           let write: TurnWrite = { kind: "none" };
           let note: W | null = null;
           if (route !== null && evidence !== null) {
-            hr = executeHardRule({ ...hardRuleRun(evidence, audienceNow), rules: core.rules.data as CoreRules, epoch: core.epoch.data, bundle: core.bundle.data, clock: pair });
+            // Brief 025: the executor also plans the correct and transition routes, with reads in this transaction.
+            hr = await executeOnTurn(tx, { ...hardRuleRun(evidence, audienceNow), rules: core.rules.data as CoreRules, epoch: core.epoch.data, bundle: core.bundle.data, clock: pair, fastO: fastO !== null });
             tx.update(paths.core(uid, "rules"), hr.rules);
             if (hr.bundle !== null) tx.update(paths.core(uid, "bundle"), hr.bundle);
             if (typedPlan !== null) {
