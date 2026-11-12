@@ -214,6 +214,8 @@ async function narrowedThenSwapped() {
   const { rig, s } = await doorRig(true);
   rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9 })));
   await postTurn(rig, voice(s.stamp, 1, "My boss just walked in."));
+  // Brief 045: B opens after A's turn, as it always does in real time (a frozen clock would tie them).
+  rig.clock.advance(1_000);
   const b = await openNaming(rig, s.sessionId, "open-b");
   expect(headText(b.body)).not.toContain(PERSONAL_FACT);
   const bId: string = b.body.sessionId;

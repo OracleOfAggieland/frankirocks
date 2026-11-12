@@ -46,7 +46,7 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 026: a narrowed audience carried into the fresh call, with the swap line (voice-control task 50).
 import { type Proactive, type Session, turnRef } from "@franki/core";
 import { admitRule } from "../admission/seam";
-import { inheritedAudience, inheritedSession, speaksSwapLine, swapLineRule, swapLineTurnId } from "../audience-swap";
+import { inheritCandidates, inheritedSession, narrowestInherited, speaksSwapLine, swapLineRule, swapLineTurnId } from "../audience-swap";
 import { checkOpenVisit } from "./open-visit";
 import { openingProactive } from "./delivery-wire";
 
@@ -155,8 +155,9 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       if (applied.changed) tx.update(paths.core(uid, "rules"), rules);
       // Brief 026 (R14.2, R14.8): the Session this open replaces, read under the Owner's uid, passes on a narrowed
       // audience while its waitDeadline holds; the Head is compiled for that audience. Otherwise private, as before.
-      const previous = req.previousSessionId === null ? null : await tx.get<Session>(paths.session(uid, req.previousSessionId));
-      const inherited = inheritedAudience(previous?.data ?? null, ops);
+      // Brief 045 (finding 2): also the Owner's active Session and the latest closing or closed one; the narrowest wins.
+      const candidates = await inheritCandidates(tx, uid, { named: req.previousSessionId, active: core.epoch.data.activeSessionId, sessionId });
+      const inherited = narrowestInherited(candidates, ops);
       const compiled = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: core.epoch.data, rules }, pair, 1, inherited?.audience));
       if (!compiled.ok) throw configError(500, "head fixed sections exceed the token cap");
       const head = compiled.head;

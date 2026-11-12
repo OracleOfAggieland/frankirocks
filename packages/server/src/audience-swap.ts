@@ -213,6 +213,45 @@ export function inheritedAudience(prev: Session | null, opsNow: number): { audie
   return { audience: expired ? "unknown" : audience, crisis: prev.modifiers.crisis !== null, crisisAt: prev.modifiers.crisis };
 }
 
+/** Brief 045 (finding 2): the most recent Sessions an open reads, by last turn, for the latest closing or closed one. */
+export const RECENT_SESSIONS_READ = 3;
+
+/**
+ * Brief 045 (finding 2): the Sessions an open inherits from, read in one round trip (three reads in parallel): the one
+ * it names, the Owner's active one, and the most recent closing or closed one. An open with no name (the typed bar,
+ * voice after a reload) still finds a narrowed room.
+ */
+export async function inheritCandidates(tx: Pick<Tx, "get" | "query">, uid: string, x: { named: string | null; active: string | null; sessionId: string }): Promise<Session[]> {
+  const get = (id: string | null) => (id === null || id === x.sessionId ? Promise.resolve(null) : tx.get<Session>(paths.session(uid, id)));
+  const [named, active, recent] = await Promise.all([
+    get(x.named),
+    get(x.active === x.named ? null : x.active),
+    tx.query<Session>({ collection: paths.collection(uid, "sessions"), where: [], orderBy: { field: "lastTurnAt", dir: "desc" }, limit: RECENT_SESSIONS_READ }),
+  ]);
+  // Newest by last turn; a tie (one instant) goes to the narrower Session, which fails closed.
+  const closed = recent
+    .filter((d) => d.id !== x.sessionId && (d.data.status === "closing" || d.data.status === "closed"))
+    .sort((a, b) => (a.data.lastTurnAt === b.data.lastTurnAt ? AU_RANK[b.data.audience] - AU_RANK[a.data.audience] : a.data.lastTurnAt < b.data.lastTurnAt ? 1 : -1));
+  const latestClosed = closed[0];
+  return [named, active, latestClosed ?? null].filter((d): d is NonNullable<typeof d> => d !== null).map((d) => d.data);
+}
+
+/** How narrow an audience is: `company` is the narrowest, since the Gate allows an S1 template under `unknown`. */
+const AU_RANK: Readonly<Record<Au, number>> = { private: 0, unknown: 1, company: 2 };
+
+/**
+ * Brief 045 (finding 2): the narrowest of what each candidate passes on (`inheritedAudience`): `company` over
+ * `unknown` over private (`AU_RANK`), and a crisis from any of them. Only the Owner's own hang-up (`userCloseCarry`) or an
+ * `alone` line, which make that Session private, widen.
+ */
+export function narrowestInherited(candidates: readonly Session[], opsNow: number): ReturnType<typeof inheritedAudience> {
+  const all = candidates.map((c) => inheritedAudience(c, opsNow)).filter((i): i is NonNullable<typeof i> => i !== null);
+  if (all.length === 0) return null;
+  const crisisAt = all.map((i) => i.crisisAt).filter((t): t is NonNullable<typeof t> => t !== null).sort().at(-1) ?? null;
+  const audience = all.map((i) => i.audience).reduce((a, b) => (AU_RANK[b] > AU_RANK[a] ? b : a));
+  return { audience, crisis: all.some((i) => i.crisis), crisisAt };
+}
+
 /** The inheriting Session: the fresh one with the inherited audience and, brief 035 (finding 13), the crisis modifier. */
 export const inheritedSession = (fresh: Session, i: NonNullable<ReturnType<typeof inheritedAudience>>): Session => ({
   ...fresh,
