@@ -1,6 +1,8 @@
 // policyRev raise sites (brief 014, S6; design CQ 162). policyRev is the counter that cancels speech and Decks.
 // Only a late control hit that changes what is said raises it: the turn route's late hit and the Parse_Repair,
 // each behind changesWhatIsSaid. No write, proposal, the repair's hardRule route or the extraction backstop does.
+// Wave B (brief 026, tasks 48 and 49) adds one designed site: the turn route's own company, quiet or alone hit,
+// also behind changesWhatIsSaid (design "Audience effects in the transaction").
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -43,9 +45,9 @@ describe("policyRev raise sites", () => {
     expect(RAISE.test("policyRev + 10")).toBe(false);
   });
 
-  it("raises policyRev only in the turn route's late hit and the Parse_Repair, each behind changesWhatIsSaid", () => {
+  it("raises policyRev only in the turn route's late hit, its wave B audience hit and the Parse_Repair, each behind changesWhatIsSaid", () => {
     const sites = raiseSites();
-    expect(sites.map((s) => s.file).sort(), sites.map((s) => `${s.file}:${s.line}: ${s.text}`).join("\n")).toEqual(["packages/server/src/intents/repair.ts", "packages/server/src/routes/turn.ts"]);
+    expect(sites.map((s) => s.file).sort(), sites.map((s) => `${s.file}:${s.line}: ${s.text}`).join("\n")).toEqual(["packages/server/src/intents/repair.ts", "packages/server/src/routes/turn.ts", "packages/server/src/routes/turn.ts"]);
     for (const s of sites) {
       const before = readFileSync(join(REPO_ROOT, s.file), "utf8").split(/\r?\n/).slice(Math.max(0, s.line - 6), s.line).join("\n");
       expect(before, `${s.file}:${s.line}`).toContain("changesWhatIsSaid(");

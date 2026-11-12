@@ -108,7 +108,7 @@ export function headBundle(bundle: CoreBundle, head: Head, rulesRev: number, ops
 export interface AudienceEffect {
   /** Merged into the turn's one Session update. */
   session: Partial<Session>;
-  /** core/epoch with policyRev + 1. */
+  /** core/epoch with the raised policyRev the route passed in. */
   epoch: CoreEpoch;
   /** core/bundle with the new Head, or null when the Deck keeps its Head. */
   bundle: CoreBundle | null;
@@ -118,6 +118,11 @@ export interface AudienceEffect {
 
 export interface AudienceInput {
   sessionId: string;
+  /**
+   * core/epoch with policyRev raised, which the turn route computes behind `changesWhatIsSaid` (the one place a
+   * route raises it; `scripts/policy-rev-raises.test.ts`), or null when no wave B route fired: then nothing changes.
+   */
+  raisedEpoch: CoreEpoch | null;
   /** The Session's modifiers before this turn; row 6 adds crisis and keeps the rest. */
   modifiers: Session["modifiers"];
   epoch: CoreEpoch;
@@ -133,16 +138,17 @@ export interface AudienceInput {
 
 /**
  * The audience effects of a wave B outcome (design "Audience effects in the transaction"):
- *   row 8, company or quiet with a live call: `company`, policyRev + 1, waitDeadline + 10 s, the Session `closing`,
+ *   row 8, company or quiet with a live call: `company`, policyRev raised, waitDeadline + 10 s, the Session `closing`,
  *     core/epoch's active Session cleared as `/api/session/close` does, and the hangup Job;
- *   row 6, crisis with company: `company`, policyRev + 1, waitDeadline + 60 s, the crisis modifier set, no hang-up;
- *   row 9, company with no call: `company`, policyRev + 1, and the narrow Head when it was compiled;
- *   row 10, alone: `private`, policyRev + 1 and the full Head; waitDeadline unchanged; a gap stays a gap.
+ *   row 6, crisis with company: `company`, policyRev raised, waitDeadline + 60 s, the crisis modifier set, no hang-up;
+ *   row 9, company with no call: `company`, policyRev raised, and the narrow Head when it was compiled;
+ *   row 10, alone: `private`, policyRev raised and the full Head; waitDeadline unchanged; a gap stays a gap.
  * Quiet is recorded as company (question 79). Anything else changes nothing: null.
  */
 export function audienceEffect(o: RuleOutcome, x: AudienceInput): AudienceEffect | null {
   const ts = tsFromMs(x.opsNow);
-  const raised: CoreEpoch = { ...x.epoch, policyRev: x.epoch.policyRev + 1, updatedAt: ts };
+  if (x.raisedEpoch === null) return null;
+  const raised = x.raisedEpoch;
   const bundleFor = (audience: Au): CoreBundle | null =>
     x.head !== null && x.head.audience === audience && !x.bundleWritten && x.head.rulesRev === x.rules.rulesRev && x.head.epoch === x.epoch.epoch
       ? headBundle(x.bundle, x.head.head, x.rules.rulesRev, x.opsNow, x.hasher)
