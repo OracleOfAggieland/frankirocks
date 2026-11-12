@@ -323,3 +323,35 @@ Built by Claude on lane `writes`. Kiro wrote none of this wave. No live model ca
 ### Checks
 
 `npx vitest run --maxWorkers=3`: 440 files, 3,889 passed, 34 expected fail. `npm run lint` (one existing web warning), `npm run typecheck` and `npm run build` exit 0. `apps/web` was not touched.
+
+## Wave D: life changes (brief 025, tasks D1 to D4)
+
+Built by Claude on lane `writes`. Kiro wrote none of this wave. No live model call was made.
+
+### The build
+
+| Task | Commit | What |
+|---|---|---|
+| D1 | `a358056` | P13 (`writes/transition-orders`) and P14 (`head-deceased`). P14 was red; P13 passed on its first run, since `applyTransition` was built in wave A. Its guard checks that more than 50 of the 1,000 runs reach real writes. |
+| D2 | `0588f64` | The transition route. RX7 or the parse's transition candidate reads code's own truth-order targets (`truthOrderTargets`), kept out of the FastSlots packet. Hedged or uncertain changes are `careOnly`, and a change dated after now defers. No route note. A transition-only write under fastO writes no bundle (G1). Fail closed: an active row on a new row's key that the plan didn't read defers the change. 8 cases in `routes/turn.transitions.test.ts`. |
+| D3 | `afbac92` | The Head's deceased join (G15). A current, eligible `person.life = deceased`, S2 included, moves every line naming that EID into `know`. P14 green. The `head.test.ts` witness: "Dad" and "my dad" are reached, "my father" is not. |
+| D4 | this commit | The checks below and this section. |
+
+### Red first
+
+| Property | Seed | Counterexample |
+|---|---|---|
+| P13 | none | green on the first run (see D1) |
+| P14 | `165581234`, path `0:1:0:0:0` | dad's active `person.life` is deceased (S0) with one relation line naming him; "The owner's dad is deceased." was in people |
+
+### How "nothing cheerful afterwards" is reached
+
+Only through the record. The death writes `person.life = deceased` and resolves dad's care rows, and the Head reads that truth. `moments/**`, `time/**` and the Gate were not touched. Moments or whispers that read the stored rows see `deceased` and `resolved` care. Whether delivery checks either is the lead's seam (see brief 025's report).
+
+### Checks
+
+`npx vitest run --maxWorkers=3`: 443 files, 3,901 passed, 34 expected fail. Lint (one existing web warning) and build exit 0. `npm run typecheck` fails on one line of the committed P13 file (D1's generator reads `value.code` on a `Value`). That file may not be edited under the brief's rule, so it is left for the lead.
+
+### Live-check step for the owner (paid; needs your yes first)
+
+Step 8 of the design's live list, not run: say "My dad passed away last night." Expect a care reply and no "saved", and no cut and restart on a fast-path take. The Memories should show `person.life` deceased. In the next call, nothing about him should be raised unprompted.

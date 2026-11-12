@@ -1,0 +1,49 @@
+# Brief 025 report: voice writes, waves C and D (lane `writes`)
+
+Built by Claude Code from brief 025 and `012-design.md` section 9, not from a Kiro spec. No commit ends `Built-with: Kiro`. No live model call, push, deploy or emulator run was made. Per-task detail and seeds are in `012-report.md`, under "Wave C" and "Wave D".
+
+## Built
+
+W-187 (`3e06aeb`), C1 to C6 (`81bc7d2`, `330e386`, `c81234e`, `a7927f6`, `86862d8`, `7c800ea`) and D1 to D4 (`a358056`, `0588f64`, `afbac92`, this commit). Every task is built.
+
+Checks at the tip:
+- `npx vitest run --maxWorkers=3`: 443 files, 3,901 passed, 34 expected fail.
+- `npm run lint`: 0 errors, 1 existing web warning.
+- `npm run build`: exits 0.
+- `npm run typecheck`: **fails on one line**, `packages/core/src/writes/transition-orders.property.test.ts:67`, which reads `value.code` on a `Value`. The file is a committed property, so it is left as committed. The fix is type-only: read the code from `pick(relCodes)` instead. That is the lead's call.
+
+`apps/web` was not touched. No demo-script step changed state: beat 4's and beat 5's `waits` marks are about persona tuning, forget and the walked-in tap, which this brief doesn't reach.
+
+## Rulings needed (each fails closed as built)
+
+- **W-188.** `DENIAL_FORMS` and `CUE_NEGATION_REACH = 3` (W-187) are closed lists. A denial off the answering turn keeps a pending rule and asks `isAllergy` again.
+- **W-189.** `ROUTE_ROWS_ROOT_AT_TURN_SLICE`: route rows are rooted at the covering turn slice, not the span slice. P8's root-key clause relies on it.
+- **W-190.** The correct route acts only on targets that were in the packet. Those go in only when the route is known open at call start (RX6, or the parse was awaited). A parse-only correction on a turn whose FastSlots call already started is extraction's.
+- **W-191.** A turn that opened only the correct or transition route plans no allergy rule and writes no hardRule `handled` entry (G38).
+- **W-192.** Two speakable current names for one entity name nothing, so its old-name lines are left out.
+- **W-193.** A `wrong` row with no `validTo` negates every later restatement of its value.
+- **W-194.** An item meeting a later-asserted row is written `history` even when it is a correction.
+- **W-195.** The worker reads all Memories on every job, since the rename index decides whose a name is. This is one more query per job.
+- **W-196.** Truth-order targets are code's pick, at most `TRUTH_TARGETS_MAX = 48`, never shown to FastSlots. An active row on a new row's key that the plan didn't read defers the change.
+
+## Contract questions
+
+- **W-197.** `HandledEntry.entries` is `arr(…, 3)` in the schema, while the design's `WorkJob.handled` says 8. The executor caps at 3 (one per route).
+- **W-198.** P7's D includes the named targets only when the route applied them. P11 excludes the case where the old and new names are equal.
+- **W-199.** A typed turn with no call that corrects gets the closed line "Corrected." The typed plan has no memory routes of its own.
+
+## Changed assertions in existing tests
+
+- `writes/hard-rule.test.ts`, `writes/hard-rule.review.test.ts`, `routes/turn.rules.test.ts` (W-187): a certain denial off an answering turn keeps the pending rule and asks again.
+- `worker/extract.fixture-clock.test.ts` (C5, by design): `assertedAt` and `validFrom` come from the root Evidence. The owner's world clock is checked through `nextReviewAt`, and the test title changed to match.
+
+## Seams left for the lead
+
+- Delivery (`moments/**`, `time/**`, whispers) doesn't yet check `person.life = deceased` or resolved care before raising something about a person. The record holds both.
+- `routes/turn.ts`: one call changed, at line 310 (`executeOnTurn` with `fastO`).
+- Repair and supersede still call `executeHardRule` without memory routes, so corrections on those paths are extraction's.
+- The typecheck line above.
+
+## Hot files touched
+
+`server/onturn/{execute,route,context,trigger,memory-route}.ts`, `server/routes/turn.ts` (one line), `server/worker/extract.ts`, `core/extract.ts`, `core/head.ts`, `core/recall.ts`, `core/writes/{hard-rule,types,denial-words,entities,renames,index}.ts`.
