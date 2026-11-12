@@ -8,7 +8,7 @@ import { type Script, type World, allEvidence, memoryText, scriptSuite } from ".
 const interview = { what: "the interview occasion", pick: (m: Memory) => m.kind === "event" && memoryText(m).includes("interview") };
 const gapYear = { what: "Tuesday's gap-year answer", pick: (m: Memory) => m.kind === "episode" && memoryText(m).includes("good answer about the gap year") };
 
-const WISH_WAITS = "brief 023 (derive the wish from the occasion, delivery) and a route calling brief 024's Gate and whispers (built, not called); open answers proactive: null today";
+const WISH_WAITS = "the wish is said on open (brief 030 part A) but its line names the occasion only; nothing in moments derive or the wish words joins the gap-year answer to it (brief 036's folder)";
 
 async function interviewMoved(w: World): Promise<true | string> {
   const revs = (await allEvidence(w))
@@ -47,7 +47,6 @@ const BEAT1: Script = {
       label: "the wish for the interview at 2 is said first",
       do: "check",
       of: "open a session",
-      waits: WISH_WAITS,
       expect: [{ mustSay: { template: "occasion.wish", has: ["2"], channel: "proactive" } }],
     },
     {

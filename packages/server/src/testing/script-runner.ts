@@ -196,8 +196,8 @@ export const TEMPLATES = {
   "lab.line": null,
   /** The card under an occasion that moved ("moved from yesterday", spec §15 beat 1). No card source yet. */
   "occasion.moved": null,
-  /** An occasion's wish on open (spec §15 beat 1). No moment wording on the server yet (brief 023, 024). */
-  "occasion.wish": null,
+  /** An occasion's wish on open (spec §15 beat 1): moments/words.ts wishLine, "Good luck at 2 PM: ...". */
+  "occasion.wish": /Good luck at \d{1,2}(:\d\d)? (AM|PM): /,
   /** The check-in after an occasion (spec §15 beat 2): a moment whisper from brief 024's `checkIn` template. */
   "occasion.checkin": whisperPattern("checkIn"),
   /** "Gone." after a completed forget (spec §8 step 7). Reserved in brief 021. */

@@ -50,7 +50,9 @@ describe("POST /api/receipt: moments (brief 030 P1-6)", () => {
 
     await receipt({ momentIds: [wishId], text: WISH });
     const m = (await all()).get(wishId)!;
-    expect(m).toMatchObject({ status: "delivered", saidMatch: "exactTemplate" });
+    // The open rendered the wish (brief 030 part A), so the receipt naming it with the line's tokens is `idTagged`,
+    // the first match in the order of contracts §6.
+    expect(m).toMatchObject({ status: "delivered", saidMatch: "idTagged" });
     expect(m.saidAt).not.toBeNull();
     const row = await rig.store.get<Ledger>(UID, paths.ledger(UID, deliveryEntryId(rig.deps.hasher, wishId, "resp_1")));
     expect(row?.data).toMatchObject({ kind: "delivery", payload: { momentId: wishId, permitKind: "proactive" } });

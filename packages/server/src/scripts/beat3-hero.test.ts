@@ -23,7 +23,7 @@ import { BISCUIT_LINE } from "./lines";
 
 const SIGN_WAITS =
   "a fit between briefs 019 and 022: the seed writes a purchase as a negative amountCents (seed/build.ts buildBank) and the detector counts only positive ones (core/patterns/spend.ts spendRows), so the seeded pattern is `insufficient` with 0 orders";
-const HERO_WAITS = "brief 023 (the offer's moment, due after the bolt, and delivery) and a route calling brief 024's Gate; nothing calls heroOffer today";
+const HERO_WAITS = "a card on open: the offer is said as the Proactive (brief 030 part A), but no route returns its card (S2_SCREEN_ASK_BUILT is false; no card route)";
 const COMPARE_WAITS = "brief 023 (the comparison moment at checkAt, delivery) and a route calling brief 024's Gate; nothing calls compareLoop or markCelebrated today";
 // LINEAGE_WAITS and WINDOW_WAITS were fixed by brief 030 (P1-2 and P1-1); no step waits for them now.
 const LINEAGE_WAITS =
@@ -162,7 +162,7 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
       label: "the offer plays after the bolt, with $186",
       do: "check",
       of: "open after the bolt",
-      ...needsOffer(HERO_WAITS),
+      ...needsOffer(),
       expect: [{ mustSay: { template: "hero.offer", has: ["$186"], channel: "proactive" } }],
     },
     {
