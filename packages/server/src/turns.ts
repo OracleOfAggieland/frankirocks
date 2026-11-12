@@ -24,9 +24,11 @@ import { evidenceId } from "./store/evidence";
 
 export type TurnClass = { source: "voice" | "pasted"; turnSource: "voice" | "typed" | "pasted"; cls: "U" | "T" };
 
-/** Server classification (R18.2, R18.3): ASR is U; typed text is pasted/T or ordinary/U by `classifyTyped`. */
+/** Server classification (R18.2, R18.3): ASR is U; a `pasted` source is T (G34); typed text is pasted/T or ordinary/U by `classifyTyped`. */
 export function classifyTurn(req: TurnRequest): TurnClass {
   if (req.source === "asr") return { source: "voice", turnSource: "voice", cls: "U" };
+  // Brief 012 G34 (task B10): text a paste event supplied is T whatever its length.
+  if (req.source === "pasted") return { source: "pasted", turnSource: "pasted", cls: "T" };
   const c = classifyTyped(req.transcript);
   return c.kind === "pasted" ? { source: "pasted", turnSource: "pasted", cls: "T" } : { source: "voice", turnSource: "typed", cls: "U" };
 }

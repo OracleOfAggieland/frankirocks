@@ -12,6 +12,7 @@ import type { TypedState, TypedTurns } from "../client/typed-turns";
 import { type AudioLike, type PeerLike, SIGN_OUT_LIMIT_MS } from "../client/voice-client";
 import { TRANSCRIBE_VAR, transcribeModel } from "../client/voice-config";
 import { MAIN_CHIPS, type MemoryState } from "../client/memory-model";
+import { COPY } from "../ui/copy";
 import { NO_SURFACES, goneAskCard, readoutCard } from "../ui/memory-screen";
 import { sharedAudio } from "../ui/audio/context";
 import { debugVisible } from "../ui/debug-flag";
@@ -263,6 +264,8 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
   };
   const submit = () => {
     if (!inCall || voice === null) return void typed.submit();
+    // Brief 012 G34 (task B10): the call's typed line can't carry `pasted`, so pasted text waits for the call to end.
+    if (t.pasted) return typed.refuse(COPY.typed.pastedInCall);
     if (voice.sendTyped(t.text)) typed.setText("");
   };
 
@@ -308,6 +311,7 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
           canSend={typed.canSend() && (!inCall || v.phase === "LISTENING")}
           error={t.error}
           onChange={(text) => typed.setText(text)}
+          onPaste={() => typed.markPasted()}
           onSubmit={submit}
         />
       }

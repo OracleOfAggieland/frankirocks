@@ -9,13 +9,15 @@ export interface TypedInputProps {
   error: string | null;
   onChange: (text: string) => void;
   onSubmit: () => void;
+  /** A paste event in the box (brief 012 G34): the line is sent as pasted. */
+  onPaste?: () => void;
 }
 
 /**
  * The typed-line box (R18.1, R18.8–R18.10). Enter sends; Shift+Enter adds a line break, so pasted multi-line text
  * can be sent and is classified as pasted by the server. Presentational only; state lives in `TypedTurns`.
  */
-export function TypedInput({ text, enabled, sending, canSend, error, onChange, onSubmit }: TypedInputProps) {
+export function TypedInput({ text, enabled, sending, canSend, error, onChange, onSubmit, onPaste }: TypedInputProps) {
   const sendDisabled = !enabled || !canSend;
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -39,6 +41,7 @@ export function TypedInput({ text, enabled, sending, canSend, error, onChange, o
           rows={2}
           disabled={!enabled}
           onChange={(e) => onChange(e.target.value)}
+          onPaste={() => onPaste?.()}
           onKeyDown={onKeyDown}
           className="flex-1 resize-y rounded border border-ink-dim bg-night-1 p-2 text-left text-sm text-ink disabled:opacity-50"
         />
