@@ -100,6 +100,15 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
       void memory.refresh();
     },
   });
+  // Brief 040, item 4: the call's opens name the visit, read as the typed line's open reads it.
+  if (voice !== null) {
+    const named = (): string | null => {
+      const v: StoredVisit | null = visit.getSnapshot().visit;
+      return v !== null && v.fixtureNamespace !== null ? v.visitId : null;
+    };
+    voice.setVisit(named());
+    visit.subscribe(() => voice.setVisit(named()));
+  }
   return {
     typed,
     debug: deps.debug ? new DebugPanelModel({ api, clock }) : null,

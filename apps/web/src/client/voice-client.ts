@@ -186,6 +186,10 @@ export class VoiceClient {
     this.dispatch({ type: "typedSubmitted", turnId: this.newId(), text, source });
     return true;
   }
+  /** The visit the screen's visit model holds (brief 040, item 4): every open the call makes names it. */
+  setVisit(visitId: string | null): void {
+    if ((this.state.visitId ?? null) !== visitId) this.dispatch({ type: "visitSet", visitId });
+  }
   get inCall(): boolean {
     return this.state.phase !== "CLOSED";
   }

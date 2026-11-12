@@ -411,6 +411,11 @@ export interface VoiceState {
   latency: { current: LatencyTimes | null; rows: LatencyRow[] };
   /** Counter for client `event_id`s. */
   eventSeq: number;
+  /**
+   * The visit the screen's visit model holds, set by the controller (`visitSet`; brief 040, item 4). Every open names
+   * it. Never reset by an exit: it belongs to the tab's visit, not to a call. Absent (older states) reads as null.
+   */
+  visitId?: string | null;
   /** Audio of a response this call doesn't own started since the last clear; the next reply clears first (R3.2). */
   strayAudio?: boolean;
   /** Realtime `error` events this visit, by the client event they name (review of wave A, item 15). */
@@ -516,6 +521,8 @@ export type VoiceEvent =
   | { type: "specHashed"; eventId: string; hash: string }
   /** A typed line sent while a call is live (design "One typed turn" step 4). */
   | { type: "typedSubmitted"; turnId: string; text: string; source: "typed" | "pasted" }
+  /** The visit the screen's visit model holds now, or null for none (brief 040, item 4); the controller sends it on every change. */
+  | { type: "visitSet"; visitId: string | null }
   /** `freshId` is a new random ID, used as the turnId if this event starts a Turn. `lastLoudAt` is the Voice_Client's
    * last loud input frame on the opsClock, sent with commits for the Latency_Clock. */
   | { type: "realtime"; event: RealtimeServerEvent; freshId: string; lastLoudAt?: number | null }
@@ -535,7 +542,7 @@ export type VoiceCommand =
   /** Stop the microphone track, close the data channel, close the peer connection, in that order (R14.1). */
   | { kind: "teardown" }
   | { kind: "send"; event: RealtimeClientEvent }
-  | { kind: "open"; body: { initiator: "user"; previousSessionId: string | null; clientZone: string; visitId: null } }
+  | { kind: "open"; body: { initiator: "user"; previousSessionId: string | null; clientZone: string; visitId: string | null } }
   | { kind: "state"; body: Infer<typeof StateRequest> }
   /** `supersedesTurnId` names a Turn posted `missing`; the Voice_Client fills `supersedesRequestId` with that request's ID (R7.8). */
   | { kind: "turn"; body: TurnBody; supersedesTurnId?: string }
@@ -947,6 +954,10 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
         postTurn(s, "final");
       }
       break;
+    case "visitSet":
+      // Changes no phase and sends nothing: the next open names it (brief 040, item 4).
+      if ((state.visitId ?? null) !== event.visitId) s.set({ visitId: event.visitId });
+      break;
     case "realtime":
       onRealtime(s, event.event, event.freshId, event.lastLoudAt ?? null);
       break;
@@ -963,6 +974,9 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
 // ---------------------------------------------------------------------------------------------
 // Open, connect, recovery and close
 
+/** The visit every open names: the one the controller last set (brief 040, item 4). */
+const openVisit = (st: VoiceState): string | null => st.visitId ?? null;
+
 function startOpen(s: Step, zone: string, retrying: boolean): void {
   s.set({
     phase: "CONNECTING",
@@ -974,7 +988,7 @@ function startOpen(s: Step, zone: string, retrying: boolean): void {
     recovery: retrying ? s.st.recovery : null,
     retryVisible: retrying ? s.st.retryVisible : false,
   });
-  s.push({ kind: "open", body: { initiator: "user", previousSessionId: s.st.lastSessionId, clientZone: zone, visitId: null } });
+  s.push({ kind: "open", body: { initiator: "user", previousSessionId: s.st.lastSessionId, clientZone: zone, visitId: openVisit(s.st) } });
   s.arm("openWait", s.now + OPEN_LIMIT_MS);
 }
 
@@ -987,7 +1001,7 @@ function dropStaleOpen(s: Step, res: Infer<typeof OpenResponse> | null): void {
   s.set({ staleOpen: false });
   if (res !== null && res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: "user" } });
   if (s.st.phase !== "SWAPPING" || !s.st.awaitingOpen) return;
-  s.push({ kind: "open", body: { initiator: "user", previousSessionId: s.st.narrowedFrom ?? s.st.lastSessionId, clientZone: s.st.zone, visitId: null } });
+  s.push({ kind: "open", body: { initiator: "user", previousSessionId: s.st.narrowedFrom ?? s.st.lastSessionId, clientZone: s.st.zone, visitId: openVisit(s.st) } });
   s.arm("openWait", s.now + OPEN_LIMIT_MS);
 }
 
@@ -1098,7 +1112,7 @@ function openFailed(s: Step): void {
  *                             done; openFailed: keep
  *   zone                      -                         -                              -               the press's
  * Never reset by any exit: config, lastTurnResponseAt, ackDroppedStale, lastLoudAt, latency, eventSeq, strayAudio,
- * realtimeErrors.
+ * realtimeErrors, visitId.
  * Not an exit, but a reset: when CONFIGURING reaches LISTENING, onState sets recovery to null and retryVisible to
  * false, and disarms ack, connect, retryUi and reconnect.
  * A fifth exit, startSwap (a `blocked` answer, or the end of a care reply after one), resets as `recovery` does,
@@ -1242,7 +1256,7 @@ function startSwap(s: Step, from: string): void {
     s.arm("openWait", st.deadlines.openWait ?? s.now + OPEN_LIMIT_MS);
   } else {
     s.set({ awaitingOpen: true });
-    s.push({ kind: "open", body: { initiator: "user", previousSessionId: from, clientZone: s.st.zone, visitId: null } });
+    s.push({ kind: "open", body: { initiator: "user", previousSessionId: from, clientZone: s.st.zone, visitId: openVisit(s.st) } });
     s.arm("openWait", s.now + OPEN_LIMIT_MS);
   }
   s.arm("swap", s.now + SWAP_LIMIT_MS);
