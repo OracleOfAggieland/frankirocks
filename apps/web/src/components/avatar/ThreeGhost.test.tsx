@@ -66,11 +66,12 @@ describe("ThreeGhost: server render", () => {
   });
 
   for (const { label, input } of cases()) {
-    it(`renders the SVG ghost with no canvas and no three.js: ${label}`, () => {
+    it(`renders the empty box, with no SVG ghost, no canvas and no three.js: ${label}`, () => {
       const html = renderToStaticMarkup(<Avatar look={lookFor(input)} input={input} renderer={ThreeGhost} />);
-      expect(html).toContain('data-renderer="svg-ghost"');
+      expect(html).not.toContain('data-renderer="svg-ghost"');
+      expect(html).not.toContain("<svg");
       expect(html).toContain('data-three-phase="svg"');
-      expect(html).toContain('data-three-layer="svg"');
+      expect(html).not.toContain('data-three-layer="svg"');
       expect(html).not.toContain('data-three-layer="canvas"');
       expect(html).not.toContain("<canvas");
       expect(html.match(/role="img"/g)).toHaveLength(1);
@@ -78,9 +79,9 @@ describe("ThreeGhost: server render", () => {
     });
   }
 
-  it("the default Avatar still renders the SVG ghost on the server", () => {
+  it("the default Avatar never renders the SVG ghost on the server", () => {
     const html = renderToStaticMarkup(<Avatar look={lookFor(BASE)} input={BASE} />);
-    expect(html).toContain('data-renderer="svg-ghost"');
+    expect(html).not.toContain('data-renderer="svg-ghost"');
     expect(html).not.toContain("<canvas");
   });
 
@@ -113,7 +114,6 @@ describe("ThreeGhost: layers", () => {
     for (const cls of [...Object.values(CANVAS_LAYER_CLASS), ...Object.values(SVG_LAYER_CLASS)]) {
       expect(findTokenViolations("apps/web/src/components/avatar/ThreeGhost.tsx", `className="${cls}"`)).toEqual([]);
     }
-    expect(SVG_LAYER_CLASS.leaving).toContain("delay-(--dur-base)");
     expect(CANVAS_LAYER_CLASS.entering).not.toContain("delay-");
     expect(SVG_LAYER_CLASS.entering).toBe("franki-fade");
     expect(CANVAS_LAYER_CLASS.hidden).toBe("opacity-0");

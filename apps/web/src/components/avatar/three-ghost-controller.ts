@@ -44,9 +44,12 @@ function viewOf(s: RendererState, granted: boolean): ThreeGhostView {
 
 let serverView: ThreeGhostView | null = null;
 
-/** The SVG view of a fresh state: the server render and the first client render. One object, so React sees it stable. */
-function svgView(): ThreeGhostView {
-  if (serverView === null) serverView = Object.freeze(viewOf(INITIAL_RENDERER, false));
+/**
+ * The empty view of a fresh state: the server render and the first client render draw the box and nothing in it.
+ * One object, so React sees it stable.
+ */
+function emptyView(): ThreeGhostView {
+  if (serverView === null) serverView = Object.freeze({ ...viewOf(INITIAL_RENDERER, false), svg: "absent" as const });
   return serverView;
 }
 
@@ -90,7 +93,7 @@ export class ThreeGhostController {
   private size: Size | null = null;
   private audio: AvatarAudioSource | null = null;
   private readonly listeners = new Set<() => void>();
-  private snapshot: ThreeGhostView = svgView();
+  private snapshot: ThreeGhostView = emptyView();
   private readonly queue: RendererEvent[] = [];
   private draining = false;
 
@@ -112,8 +115,8 @@ export class ThreeGhostController {
 
   getSnapshot = (): ThreeGhostView => this.snapshot;
 
-  /** The SVG view: the server and the first client render always show the SVG ghost. */
-  getServerSnapshot = (): ThreeGhostView => svgView();
+  /** The empty view: the server and the first client render never show the SVG ghost. */
+  getServerSnapshot = (): ThreeGhostView => emptyView();
 
   /** Effect setup. Restartable: start, stop, start ends equal to one fresh start. */
   start(): void {
@@ -163,7 +166,7 @@ export class ThreeGhostController {
     if (container !== null && this.run !== null) this.observe(container);
   };
 
-  /** From the SVG layer's own transitionend or animationend (event.target is the layer itself). */
+  /** From a layer's own transitionend or animationend (event.target is the layer itself). */
   fadeDone(): void {
     if (this.run === null) return;
     this.send({ kind: "fade-done" });

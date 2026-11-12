@@ -4,6 +4,7 @@ import { lookFor } from "../../ui/avatar/look";
 import type { AvatarInput, AvatarRendererProps } from "../../ui/avatar/types";
 import { Avatar } from "./Avatar";
 import { Stage } from "./Stage";
+import { SvgGhost } from "./SvgGhost";
 
 const input: AvatarInput = {
   state: "thinking", micMuted: false, outputMuted: false, inputLevel: 0, outputLevel: 0,
@@ -12,7 +13,7 @@ const input: AvatarInput = {
 
 describe("Avatar", () => {
   it("renders through the contract with role, label and data attributes", () => {
-    const html = renderToStaticMarkup(<Avatar look={lookFor(input)} input={input} />);
+    const html = renderToStaticMarkup(<Avatar look={lookFor(input)} input={input} renderer={SvgGhost} />);
     expect(html).toContain('role="img"');
     expect(html).toContain('aria-label="Franki is thinking"');
     expect(html).toContain('data-look="Thinking"');

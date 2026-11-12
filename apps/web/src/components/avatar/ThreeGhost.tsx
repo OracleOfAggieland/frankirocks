@@ -4,9 +4,10 @@
 //
 // The box is the SVG ghost's own (viewBox 200 x 220), so the stage keeps its size in every phase, including three,
 // when the SVG layer is unmounted. The canvas layer comes first, so the SVG layer paints over it; it is placed by
-// CANVAS_FRAME, which imports nothing, so reading it here pulls no three.js into the page. The fade is sequential:
-// the canvas fades in under the still-opaque SVG, then the SVG fades out after one base duration; fading out, the SVG
-// fades in over the opaque canvas. A lost context shows the SVG at once. Opacity is set by class, never inline.
+// CANVAS_FRAME, which imports nothing, so reading it here pulls no three.js into the page. The SVG ghost is the
+// fallback only (reduced motion, no WebGL 2, a lost context, a failed engine): the box is empty on the server and
+// while three.js loads, and the canvas fades in on its own. Fading out, the SVG fades in over the opaque canvas.
+// A lost context shows the SVG at once. Opacity is set by class, never inline.
 import { type AnimationEvent, type CSSProperties, type TransitionEvent, useEffect, useState, useSyncExternalStore } from "react";
 import type { CanvasLayer, SvgLayer } from "../../ui/avatar/renderer-phase";
 import type { AvatarRenderer, AvatarRendererProps } from "../../ui/avatar/types";
@@ -43,10 +44,9 @@ export const CANVAS_LAYER_CLASS: Readonly<Record<Exclude<CanvasLayer, "absent">,
   shown: "opacity-100",
 };
 
-/** §4.3 item 5. leaving waits one base duration (the canvas fading in under it), then fades; entering is franki-fade. */
+/** §4.3 item 5. entering is franki-fade. */
 export const SVG_LAYER_CLASS: Readonly<Record<Exclude<SvgLayer, "absent">, string>> = {
   shown: "opacity-100",
-  leaving: "opacity-0 transition-opacity duration-(--dur-base) delay-(--dur-base) ease-(--ease-ecto)",
   entering: "franki-fade",
 };
 
@@ -73,7 +73,8 @@ export function createThreeGhost(makeDeps: () => ThreeHostDeps = browserThreeHos
       ctl.syncGrant();
     }, [ctl, view.phase, look.electric]);
 
-    // Only the layer's own fade ends the phase: the SVG ghost's inner animations bubble up through it.
+    // Only a layer's own fade ends the phase: the SVG ghost's inner animations bubble up through it. The canvas
+    // layer's transition ends fading-in; the SVG layer's animation ends fading-out.
     const onFadeEnd = (e: AnimationEvent<HTMLDivElement> | TransitionEvent<HTMLDivElement>) => {
       if (e.target === e.currentTarget) ctl.fadeDone();
     };
@@ -88,6 +89,7 @@ export function createThreeGhost(makeDeps: () => ThreeHostDeps = browserThreeHos
             data-layer-state={view.canvas}
             className={`pointer-events-none absolute ${CANVAS_MASK} ${CANVAS_LAYER_CLASS[view.canvas]}`}
             style={CANVAS_STYLE}
+            onTransitionEnd={onFadeEnd}
           />
         ) : null}
         {view.svg !== "absent" ? (

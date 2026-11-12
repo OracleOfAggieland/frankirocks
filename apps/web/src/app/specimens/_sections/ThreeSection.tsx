@@ -21,7 +21,7 @@ import type { AvatarEngine, EngineEvent, EngineOptions, EngineStats, EngineTimin
 import { QUIET_BUTTON } from "../../../components/surfaces/classes";
 import type { Acting } from "../../../ui/avatar/acting";
 import { lookFor } from "../../../ui/avatar/look";
-import type { AvatarInput } from "../../../ui/avatar/types";
+import type { AvatarInput, AvatarRenderer } from "../../../ui/avatar/types";
 import { createElectricityBudget } from "../../../ui/electricity-budget";
 import { ReducedMotionOverride } from "../../../ui/hooks/reduced-motion";
 import { EVENT_MS } from "../../../ui/motion";
@@ -217,6 +217,9 @@ interface PairSpec {
   cycle?: CycleKind;
 }
 
+/** The three.js slot of a tile that is off screen: the box, and nothing in it. No engine, and no SVG stand-in. */
+const EmptyGhost: AvatarRenderer = () => <div className="aspect-[10/11] w-full" />;
+
 function ThreePair({ spec }: { spec: PairSpec }) {
   const cycled = useCycle(spec.cycle ?? null);
   const input = cycled ?? spec.input;
@@ -249,7 +252,7 @@ function ThreePair({ spec }: { spec: PairSpec }) {
           <div className="flex w-36 flex-col items-center gap-1">
             <Stage reduced={input.reducedMotion}>
               <AvatarAudioContext.Provider value={source}>
-                <Avatar look={look} input={input} renderer={onScreen ? Renderer : SvgGhost} />
+                <Avatar look={look} input={input} renderer={onScreen ? Renderer : EmptyGhost} />
               </AvatarAudioContext.Provider>
             </Stage>
             <span className="font-mono text-xs text-ink-dim">three.js</span>

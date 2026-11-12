@@ -1,8 +1,8 @@
 "use client";
 // The avatar slot (lab-ui-foundation R4.1, R4.2, R4.5, R18.1). The only place a renderer is chosen.
 // The Main_Screen and the Specimens_Page render <Avatar> only. The default is the three.js ghost
-// (brief 013), which shows the SVG ghost itself on the server, while three.js loads, under reduced
-// motion and wherever WebGL 2 can't run; SvgGhost stays available as an explicit renderer.
+// (brief 013), which draws nothing until the 3D ghost is ready and shows the SVG ghost itself only under
+// reduced motion and wherever WebGL 2 can't run; SvgGhost stays available as an explicit renderer.
 import type { AvatarRenderer, AvatarRendererProps } from "../../ui/avatar/types";
 import { FrameTimeContext } from "./frame-time";
 import { ThreeGhost } from "./ThreeGhost";

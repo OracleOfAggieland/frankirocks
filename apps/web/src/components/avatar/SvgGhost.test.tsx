@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { LOOK_NAMES, lookFor } from "../../ui/avatar/look";
 import type { AvatarInput, LookName } from "../../ui/avatar/types";
 import { Avatar } from "./Avatar";
-import { ARC_WAYPOINTS, BODY, HAIR, HAIR_TUFTS, HEM, SCAR_STITCHES, SPECULAR, STRIKE_WAYPOINTS, ghostDefIds, squishScale } from "./SvgGhost";
+import { ARC_WAYPOINTS, BODY, HAIR, HAIR_TUFTS, HEM, SCAR_STITCHES, SPECULAR, STRIKE_WAYPOINTS, SvgGhost, ghostDefIds, squishScale } from "./SvgGhost";
 
 const base: AvatarInput = {
   state: "listening", micMuted: false, outputMuted: false, inputLevel: 0, outputLevel: 0,
@@ -23,7 +23,7 @@ const BY_NAME: Record<LookName, Partial<AvatarInput>> = {
 };
 const render = (patch: Partial<AvatarInput>) => {
   const input = { ...base, ...patch };
-  return renderToStaticMarkup(<Avatar look={lookFor(input)} input={input} />);
+  return renderToStaticMarkup(<Avatar look={lookFor(input)} input={input} renderer={SvgGhost} />);
 };
 const squishAttr = (html: string) => /data-squish="([^"]+)"/.exec(html)?.[1];
 
@@ -170,8 +170,8 @@ describe("SvgGhost drawing (Brief 004 item 4)", () => {
     const celebrate = { ...base, event: "celebrate" as const };
     const html = renderToStaticMarkup(
       <>
-        <Avatar look={lookFor(listening)} input={listening} />
-        <Avatar look={lookFor(celebrate)} input={celebrate} />
+        <Avatar look={lookFor(listening)} input={listening} renderer={SvgGhost} />
+        <Avatar look={lookFor(celebrate)} input={celebrate} renderer={SvgGhost} />
       </>,
     );
     const svgs = html.split("<svg").slice(1);

@@ -187,11 +187,11 @@ function harness(opts: { probe?: boolean | (() => boolean); budget?: Electricity
 }
 
 describe("ThreeGhostController: server and first paint", () => {
-  it("serves the SVG view, one stable object, before anything starts", () => {
+  it("serves the empty view, one stable object, before anything starts", () => {
     const { ctl } = harness();
     const s = ctl.getServerSnapshot();
     expect(s).toBe(ctl.getServerSnapshot());
-    expect(s).toMatchObject({ phase: "svg", svg: "shown", canvas: "absent", engine: "none", loop: "none", failure: null, granted: false });
+    expect(s).toMatchObject({ phase: "svg", svg: "absent", canvas: "absent", engine: "none", loop: "none", failure: null, granted: false });
     expect(ctl.getSnapshot()).toEqual(s);
   });
 
@@ -287,7 +287,7 @@ describe("ThreeGhostController: mount, size, ready, settle, fade", () => {
     h.set(THINKING);
     h.loads[0].resolve(h.mod);
     await flush();
-    expect(h.ctl.getSnapshot()).toMatchObject({ phase: "mounting", svg: "shown", canvas: "hidden", engine: "await-size" });
+    expect(h.ctl.getSnapshot()).toMatchObject({ phase: "mounting", svg: "absent", canvas: "hidden", engine: "await-size" });
     expect(h.builds).toHaveLength(0);
     h.ctl.attach(h.container);
     h.resize(0, 0);
@@ -308,7 +308,7 @@ describe("ThreeGhostController: mount, size, ready, settle, fade", () => {
     await h.toBuilding();
     h.set(LISTENING);
     const e = await h.ready();
-    expect(h.ctl.getSnapshot()).toMatchObject({ phase: "fading-in", svg: "leaving", canvas: "entering", loop: "runs" });
+    expect(h.ctl.getSnapshot()).toMatchObject({ phase: "fading-in", svg: "absent", canvas: "entering", loop: "runs" });
     const settle = e.log.indexOf("settle Listening");
     expect(settle).toBeGreaterThanOrEqual(0);
     expect(e.log.indexOf("run")).toBeGreaterThan(settle);
@@ -370,12 +370,12 @@ describe("ThreeGhostController: one-shots", () => {
     expect(h.phase()).toBe("three");
   });
 
-  it("a one-shot whose start the build missed waits under the SVG, then fades in with a settle", async () => {
+  it("a one-shot whose start the build missed waits with the box empty, then fades in with a settle", async () => {
     const h = harness();
     await h.toBuilding(CONNECTING);
     h.set(WAKING);
     const e = await h.ready();
-    expect(h.ctl.getSnapshot()).toMatchObject({ phase: "waiting", svg: "shown", canvas: "hidden", loop: "runs" });
+    expect(h.ctl.getSnapshot()).toMatchObject({ phase: "waiting", svg: "absent", canvas: "hidden", loop: "runs" });
     expect(e.settled).toHaveLength(0);
     expect(e.log).toContain("run");
     h.set(WAKING);
@@ -474,7 +474,7 @@ describe("ThreeGhostController: start and stop (Strict Mode, Fast Refresh, unmou
     expect(h.budget.active()).toBe(0);
     expect(h.observers.every((o) => !o.live)).toBe(true);
     expect(h.told).toEqual([e, null]);
-    expect(h.ctl.getSnapshot()).toMatchObject({ phase: "svg", svg: "shown", canvas: "absent", granted: false });
+    expect(h.ctl.getSnapshot()).toMatchObject({ phase: "svg", svg: "absent", canvas: "absent", granted: false });
     h.ctl.stop();
     expect(e.disposed).toBe(1);
   });

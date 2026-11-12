@@ -226,12 +226,12 @@ describe("seesOneShots", () => {
 
 describe("rendererView: the §4.2 view table", () => {
   const VIEWS: Record<Phase, RendererView> = {
-    svg: { svg: "shown", canvas: "absent", engine: "probe", loop: "none" },
-    loading: { svg: "shown", canvas: "absent", engine: "load", loop: "none" },
-    mounting: { svg: "shown", canvas: "hidden", engine: "await-size", loop: "none" },
-    building: { svg: "shown", canvas: "hidden", engine: "build", loop: "not-yet" },
-    waiting: { svg: "shown", canvas: "hidden", engine: "keep", loop: "runs" },
-    "fading-in": { svg: "leaving", canvas: "entering", engine: "keep", loop: "runs" },
+    svg: { svg: "absent", canvas: "absent", engine: "probe", loop: "none" },
+    loading: { svg: "absent", canvas: "absent", engine: "load", loop: "none" },
+    mounting: { svg: "absent", canvas: "hidden", engine: "await-size", loop: "none" },
+    building: { svg: "absent", canvas: "hidden", engine: "build", loop: "not-yet" },
+    waiting: { svg: "absent", canvas: "hidden", engine: "keep", loop: "runs" },
+    "fading-in": { svg: "absent", canvas: "entering", engine: "keep", loop: "runs" },
     three: { svg: "absent", canvas: "shown", engine: "keep", loop: "runs" },
     "fading-out": { svg: "entering", canvas: "shown", engine: "keep", loop: "runs" },
     held: { svg: "shown", canvas: "hidden", engine: "keep", loop: "held" },
@@ -243,9 +243,9 @@ describe("rendererView: the §4.2 view table", () => {
       expect(rendererView(st(phase))).toEqual(VIEWS[phase]);
     });
   }
-  it("svg probes only while reduced motion is off", () => {
+  it("svg probes only while reduced motion is off, and fades the SVG ghost in only while it is on", () => {
     expect(rendererView(st("svg", { reduced: true })).engine).toBe("none");
-    expect(rendererView(INITIAL_RENDERER)).toEqual({ svg: "shown", canvas: "absent", engine: "none", loop: "none" });
+    expect(rendererView(INITIAL_RENDERER)).toEqual({ svg: "entering", canvas: "absent", engine: "none", loop: "none" });
   });
   it("every other phase ignores reduced and skipped", () => {
     for (const phase of PHASES.filter((p) => p !== "svg")) {

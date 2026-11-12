@@ -144,8 +144,11 @@ export function seesOneShots(s: RendererState): boolean {
   return s.phase === "waiting" || s.phase === "fading-in" || s.phase === "three" || s.phase === "fading-out";
 }
 
-/** shown: opacity 1. leaving: fades 1 to 0 after a delay of one base duration. entering: the franki-fade keyframe, 0 to 1. */
-export type SvgLayer = "shown" | "leaving" | "entering" | "absent";
+/**
+ * shown: opacity 1. entering: the franki-fade keyframe, 0 to 1. The SVG ghost is the fallback only: it is absent
+ * before the 3D ghost has shown (owner ruling, Nov 12), so the box is empty while three.js loads and builds.
+ */
+export type SvgLayer = "shown" | "entering" | "absent";
 /** hidden: mounted at opacity 0. entering: fades 0 to 1. */
 export type CanvasLayer = "absent" | "hidden" | "entering" | "shown";
 export type EngineAction = "none" | "probe" | "load" | "await-size" | "build" | "keep" | "dispose";
@@ -162,18 +165,21 @@ export interface RendererView {
 export function rendererView(s: RendererState): RendererView {
   switch (s.phase) {
     case "svg":
-      return { svg: "shown", canvas: "absent", engine: s.reduced ? "none" : "probe", loop: "none" };
+      // Reduced motion is the SVG's own case, so it fades in. The screen's first input says reduced before it has
+      // asked, and a fade that starts at 0 shows nothing in the frame or two until the real answer arrives.
+      return { svg: s.reduced ? "entering" : "absent", canvas: "absent", engine: s.reduced ? "none" : "probe", loop: "none" };
     case "loading":
-      return { svg: "shown", canvas: "absent", engine: "load", loop: "none" };
+      return { svg: "absent", canvas: "absent", engine: "load", loop: "none" };
     case "mounting":
       // The canvas container is mounted at opacity 0, empty, waiting for a non-zero box.
-      return { svg: "shown", canvas: "hidden", engine: "await-size", loop: "none" };
+      return { svg: "absent", canvas: "hidden", engine: "await-size", loop: "none" };
     case "building":
-      return { svg: "shown", canvas: "hidden", engine: "build", loop: "not-yet" };
+      return { svg: "absent", canvas: "hidden", engine: "build", loop: "not-yet" };
     case "waiting":
-      return { svg: "shown", canvas: "hidden", engine: "keep", loop: "runs" };
+      return { svg: "absent", canvas: "hidden", engine: "keep", loop: "runs" };
     case "fading-in":
-      return { svg: "leaving", canvas: "entering", engine: "keep", loop: "runs" };
+      // The canvas layer's own transition ends the phase.
+      return { svg: "absent", canvas: "entering", engine: "keep", loop: "runs" };
     case "three":
       return { svg: "absent", canvas: "shown", engine: "keep", loop: "runs" };
     case "fading-out":

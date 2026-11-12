@@ -217,12 +217,14 @@ describe("rendererStep", () => {
     );
   });
 
-  it("the SVG layer is never absent unless the canvas is shown, so the box never shows the backdrop alone", () => {
+  it("the SVG layer shows only as the fallback: never before the canvas has shown, unless motion is reduced", () => {
     fc.assert(
       fc.property(arbAnyState, (s) => {
         const v = rendererView(s);
-        if (v.svg === "absent") expect(v.canvas).toBe("shown");
-        if (v.svg === "leaving") expect(v.canvas).toBe("entering");
+        const fallback = s.phase === "fading-out" || s.phase === "held" || s.phase === "lost" || s.phase === "failed";
+        expect(v.svg !== "absent").toBe(fallback || (s.phase === "svg" && s.reduced));
+        // The two layers never fade at once.
+        if (v.canvas === "entering") expect(v.svg).toBe("absent");
       }),
     );
   });
