@@ -224,9 +224,10 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
     }
     // Brief 030 part A: delivery's opening line, gated inside `chooseNow`, only where no swap line was spoken.
     // Brief 045 (finding 4): an open that inherited a narrowed audience says the swap line or nothing.
-    if (stamp === null || response.state !== "connecting" || response.proactive !== null || narrow) return response;
+    // Brief 045, finding 3: no Deck, no line (its Permit binds the Deck's Head and safe turns).
+    if (stamp === null || response.state !== "connecting" || response.proactive !== null || narrow || response.deck === null) return response;
     // The budget is the contract; the line is optional: delivery gets what is left of it, as one deadline.
-    const proactive = await openingProactive(ctx, stamp, OPEN_BUDGET_MS - times.elapsed(), session ?? undefined);
+    const proactive = await openingProactive(ctx, stamp, OPEN_BUDGET_MS - times.elapsed(), session ?? undefined, response.deck);
     times.lap("deliveryMs");
     return { ...response, proactive };
   });

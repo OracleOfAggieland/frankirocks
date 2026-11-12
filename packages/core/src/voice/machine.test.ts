@@ -17,6 +17,7 @@ import {
   MISSING_WINDOW_MS,
   POLL_MS,
   type RealtimeServerEvent,
+  THIRD_PARTY_STAND_IN,
   TOOL_LIMIT_MS,
   TURN_RESPONSE_LIMIT_MS,
   type VoiceCommand,
@@ -1084,7 +1085,7 @@ describe("wave A review fixes, Part 2", () => {
     expect(sends(answerVerify(r)).map((e) => e.type)).toContain("response.create");
   });
 
-  it("brief 040 item 3: a pasted line during a call is posted as pasted, with its text, and gets its reply like a typed one", () => {
+  it("brief 040 item 3, brief 045 finding 1: a pasted line during a call is posted as pasted, with its text, and its reply gets a stand-in, never the text", () => {
     const r = listening();
     r.ev({ type: "typedSubmitted", turnId: testId("pasted-1"), text: "I'm allergic to sesame, from an email", source: "pasted" });
     expect(turnBody(r)).toMatchObject({ source: "pasted", transcriptState: "final", judge: "typed", items: [], transcript: "I'm allergic to sesame, from an email" });
@@ -1092,7 +1093,18 @@ describe("wave A review fixes, Part 2", () => {
     r.ev({ type: "turnOk", turnId: testId("pasted-1"), response: admitted(r, "slowOrdinary") }, 400);
     const create = sends(answerVerify(r)).find((e) => e.type === "response.create");
     expect(create).toBeDefined();
-    expect(JSON.stringify(create)).toContain("allergic to sesame");
+    // Brief 045, finding 1 (reverses brief 040's reading): the pasted text never reaches the model; a stand-in does.
+    expect(JSON.stringify(create)).not.toContain("allergic to sesame");
+    expect(JSON.stringify(create)).toContain(JSON.stringify(THIRD_PARTY_STAND_IN).slice(1, -1));
+  });
+
+  it("brief 045 finding 1: a typed line the server classifies T (a URL) reaches the model as the stand-in, and an ordinary one as itself", () => {
+    const r = listening();
+    r.ev({ type: "typedSubmitted", turnId: testId("typed-url"), text: "look at https://example.com/x please", source: "typed" });
+    r.ev({ type: "turnOk", turnId: testId("typed-url"), response: admitted(r, "slowOrdinary") }, 400);
+    const create = JSON.stringify(sends(answerVerify(r)).find((e) => e.type === "response.create"));
+    expect(create).not.toContain("example.com");
+    expect(create).toContain("someone else's words");
   });
 
   it("item 4: speech start while HELD with nothing in flight drops the wait; the late Permit doesn't play over the owner", () => {

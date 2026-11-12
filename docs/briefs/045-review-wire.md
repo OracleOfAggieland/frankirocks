@@ -94,6 +94,73 @@ Properties, red first, 1,000 runs:
 
 The fixes with their red-first tests, one finding per commit, the part's properties green with seeds and counterexamples recorded, the checks of brief 016 with `npm run build` and the repo's check scripts, and a section "Outcome, part V" (or S, or D) at the end of this file: per finding, the test, the commit and the ruling it changed as a numbered question in that lane's report; per property, the seed; every existing assertion changed and why; what only a live call can show. Merge `build/plan-stages` before the final checks and run the full suite after it.
 
+## Outcome, part V
+
+Built on `lane/voice-c` from `a974866`. Findings 1, 3 and 8 are fixed, one commit each, each red first. Parts S and D were not touched. The comment in `a-tool-is-a-tool.property.test.ts` naming H-180 is unchanged.
+
+### Finding 1: third-party text never reaches the voice model (`e653a58`)
+
+- **Fix.** A pasted line, or typed text the server would class T (`isThirdPartyLine` in `core/src/voice/third-party.ts`, which mirrors `classifyTyped`), is still posted to `/api/turn` as written and stored as third-party text. The reply's `response.create` carries `THIRD_PARTY_STAND_IN`, worded by code, never the text. `safeTurn` (`server/src/turns.ts`) returns null for a class-T Turn, so no Deck's `turns` holds it.
+- **Ruling changed:** question V-183. It reverses brief 040 item 3, which passed the pasted text to the model.
+- **Property 2, machine half** (`core/src/voice/third-party-never-to-model.property.test.ts`): red with seed 1006022383, path `1:0:0:0:0:0:0:0`, which shrank to setup, a pasted line, `turnOk` ready, hash, created; "step 6 sent zq0marker".
+- **Property 2, Deck half** (`server/src/turns.third-party.property.test.ts`): red with seed -1483023018, path `1:0:0:1`, counterexample `[" ","T","S0","user"]`, where a SafeTurn came back.
+- **Assertion changed:** in `machine.test.ts`, the brief 040 item 3 test now expects the reply not to contain the pasted text, and to contain the stand-in. It also gained a test that a typed line with a URL gets the stand-in.
+
+### Finding 8: the sensitivity on the wire is the Gate's (`d70f1f5`)
+
+- **Fix.** `lineOf` now only words the line. `proactiveOf` reads the moment's Gate candidate (`gateCandidateOf`, the same reader `chooseNow` judges by) and puts its sensitivity on `whisper.sens`. A reminder is as sensitive as the rows it came from: it is no longer S0 just because its cue points at an action. When the source can't be read, no line goes out.
+- **`chooseNow` is unchanged.** No field was added to its result.
+- **Property 3** (`server/src/time/whisper-sens-is-gate.property.test.ts`): red with seed 1114930082, path `2:2`. Counterexample: a reminder from an S1 source went out as S0.
+
+### Finding 3: delivery's lines play through the machine (`6d2b2a6`)
+
+- **Server.** The `proactive` Permit is now bound to `payloadHash` over:
+  - the stamp;
+  - the Head and safe turns of the Deck in the same answer;
+  - the whisper as the one note, no audio and no tool output.
+
+  That is the payload the machine checks. The open and state routes pass their answer's Deck. With no Deck the Permit binds a null Head and never plays. Before, the hash covered `{whisper, momentId}`, which no browser could match.
+- **Machine, Permits.**
+  - `KINDS_FOR.speech` gains `proactive`. `permitProblem` accepts that kind only for one unprompted `moment` note the Permit names, on its own synthetic Turn.
+  - `onState` reads `res.proactive` outside setup. `offerProactive` plays the line only from LISTENING, with no Turn, reply, judge, speculation, held-back speech or other line under way, no speech open and none started since the state request went out, and only for this Session and generation.
+  - A line that fails those checks is dropped, and `proactiveDropped` names why (`ProactiveDrop`).
+  - The open's line still plays when setup reaches its ack.
+- **Machine, playing and receipts.**
+  - The line is spoken verbatim, since code worded it.
+  - Two receipt gaps the scripts exposed are fixed. The `admitted` receipt now goes for `proactive` Permits, and the transcript receipt names the response's moments and notes. Without both, a line the machine played was never admitted or recorded as said.
+  - Two new optional state fields, `lastSpeechAt` and `proactiveDropped`, are never reset.
+- **Docs.** `docs/machines/voice-call.md` gained "Unprompted lines" and "Third-party text".
+- **Script runner.**
+  - New steps `call`, `callQuiet`, `callType` and `hangUp` (`server/src/testing/voice-call.ts`) run the real machine against the real routes and hash as the browser does. Channel `heard` holds what the model was told to say.
+  - New scripts: "beat 1 … on a live call" (the wish is heard once and not on the next call) and "beat 3 … on a live call". In beat 3 the wish plays, the $186 offer plays as an idle line, the yes is typed on the call and posted by the machine, then the list, the loop and the strip follow.
+  - Neither script uses a `play` or `idle` stand-in.
+- **Property 1** (`core/src/voice/permitted-line-plays.property.test.ts`): red on the committed machine with seed 884158789, path `3:1:0:1`. An ok line on a quiet poll was "neither checked nor dropped by name".
+- **Property 4** (`core/src/voice/unprompted-never-interrupts.property.test.ts`): it held trivially before, because no state-answer line ever played. It was red against a fix that plays every state answer's line without the checks: seed -674550830, path `8:3:2:4:3:3:4:3:3:3:3:5:7:4`, "played from WAIT_ITEM" after a commit.
+- **Assertions changed:** none.
+
+### Golden corpus
+
+No trace moved in any of the three commits. At the merge of `build/plan-stages` (`c921531`): none moved, and no re-record was needed. The merge kept plan-stages' delivery budgets and threaded the Deck through `deliver`, `openingProactive` and `idleProactive` as a last optional parameter, so a caller with no Deck gets no playable line.
+
+### Findings for the lead
+
+- After the merge, `core/src/writes/others-words-never-clear.property.test.ts` fails on some random seeds. Seed 190244370 (path `658:3:5:5:8:7:7:7:9`) reproduces it, and a rerun passed. It comes from the writes code, not this lane's.
+
+- **Out of a call, pasted text still reaches the brain model.** A pasted (T) line typed with no call open is still sent to the brain model by `typedReplyNote` (`server/src/routes/typed-reply.ts`, called from `turn.ts`). Finding 1 covers the voice model and the Deck only. That file is not this lane's.
+- **A typed line on a live call** also gets a brain-model reply from `/api/turn`, as before. The beat 3 call script declares it.
+
+### What only a live call can show
+
+- That the Realtime model speaks the verbatim line as given.
+- That `speech_started` arrives before the owner's words reach a state answer's line on a real microphone.
+- That the browser's WebCrypto hash matches the server's for a real Deck. Here it is matched with Node's SHA-256 over the same canonical bytes.
+
+### Second merge of `build/plan-stages` (27936b1)
+
+- **Voice machine.** Brief 044's visitGone and the call's cards are kept alongside the proactive Permit kind, onState's line and the receipts. Only the reset comment conflicted. No golden trace moved, so there was no re-record. `voice-call.md` took brief 044's lines as they came.
+- **Delivery.** In `delivery-wire.ts`, `open.ts` and `state.ts`, plan-stages' deadlines, budgets and verdict rows are kept, and the Deck parameter is still threaded through as before. In `proactive.ts`, `lineOf` keeps brief 042 item 3's late text for a held reminder, and its sensitivity now comes from the Gate's source facts, as for any line.
+- **Store calls.** `time/life-cost.test.ts` was red at 43 calls against its bound of 38. The extra 5 came from finding 8's `sensOf`, not from Deck hashing, which reads nothing. `sensOf` had read the core docs for a world time that sensitivity never uses, so it now calls `candidateSensOf` (`gate-candidate.ts`), which makes the same source read as `gateCandidateOf`. The pass is back within 38, and the bound is unchanged. The "beat 3 on a live call" script passed under finding 6 with no change to its inputs.
+
 ## Outcome, part D
 
 Lane `wire`. Findings 6 and 9 are done; findings 7, 10 and 12, and the open's tail reserve, are not started and go to a fresh builder. Brief 042's items 1 to 5 were built in the same lane; see that brief's "Outcome".

@@ -291,6 +291,27 @@ function beat3YesOnFriday(): Script {
   return { name: "beat 3: the hero, yes on the clone's Friday (past the seed mismatches)", scores: "spec §15 0:50–1:30, spec §10", steps };
 }
 
+/**
+ * Brief 045, finding 3: the yes on Friday on a live call. The wish and the offer play through the real voice machine
+ * and the real routes (the `call` steps), each only once the machine has verified its Permit, and the yes is typed
+ * on that call and posted by the machine. No `play` or `idle` stands in for the browser.
+ */
+function beat3OnCall(): Script {
+  const friday = beat3YesOnFriday().steps;
+  const pick = (label: string) => friday.find((s) => s.label === label)!;
+  const upTo = friday.findIndex((s) => s.label === "open on Friday");
+  const steps: Step[] = [
+    ...friday.slice(0, upTo),
+    { label: "call on Friday", do: "call", expect: [{ mustSay: { template: "occasion.wish", channel: "heard", times: 1 } }] },
+    { label: "a quiet moment on the call", do: "callQuiet", expect: [{ mustSay: { template: "hero.offer", has: ["$186"], channel: "heard", times: 1 } }] },
+    { label: "the owner says yes on the call", do: "callType", text: "Yes, let's do it", answers: [reply("Great, I'll plan three quick dinners."), parse()] },
+    pick("Franki writes the list and the loop"),
+    pick("the strip after the yes"),
+    { label: "hang up", do: "hangUp" },
+  ];
+  return { name: "beat 3: the hero on a live call, yes on the clone's Friday (past the seed mismatches)", scores: "spec §15 0:50–1:30, spec §10", steps };
+}
+
 /** Memory off: no seed. The same turns; no offer, no comparison, nothing about takeout. */
 const BEAT3_MEMORY_OFF: Script = {
   name: "beat 3, memory-off control",
@@ -311,4 +332,5 @@ const BEAT3_MEMORY_OFF: Script = {
 scriptSuite(beat3("as merged"));
 scriptSuite(beat3("past the seed mismatches"));
 scriptSuite(beat3YesOnFriday());
+scriptSuite(beat3OnCall());
 scriptSuite(BEAT3_MEMORY_OFF);

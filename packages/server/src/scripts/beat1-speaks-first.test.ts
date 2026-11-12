@@ -76,4 +76,20 @@ const BEAT1: Script = {
   ],
 };
 
+/**
+ * Brief 045, finding 3: beat 1 on a live call. The wish plays through the real voice machine and the real routes
+ * (the `call` step) once the machine has verified its Permit; no `play` stands in for the browser. Said once.
+ */
+const BEAT1_ON_CALL: Script = {
+  name: "beat 1: Franki speaks first, on a live call",
+  scores: "spec §15 0:00–0:20, Friend Test 1",
+  steps: [
+    { label: "load the seed for a visit", do: "seed", visit: "beat1" },
+    { label: "call", do: "call", expect: [{ mustSay: { template: "occasion.wish", has: ["2"], channel: "heard", times: 1 } }] },
+    { label: "hang up", do: "hangUp" },
+    { label: "call again", do: "call", expect: [{ mustSay: { template: "occasion.wish", channel: "heard", times: 0 } }] },
+  ],
+};
+
 scriptSuite(BEAT1);
+scriptSuite(BEAT1_ON_CALL);
