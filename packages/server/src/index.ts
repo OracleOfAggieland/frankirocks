@@ -19,3 +19,7 @@ export { phoneWebhook } from "./phone/webhook";
 export { phoneStatusRoute } from "./phone/status";
 export { debugMemoryRoute } from "./routes/debug-memory";
 export { TAKE_MAX_BYTES, listTakes, liveTakesDeps, saveTake } from "./dev/takes";
+// Forget, part one (brief 021). No route calls these yet.
+export * from "./forget/fence";
+export * from "./forget/executor";
+export * from "./forget/resolve-port";
