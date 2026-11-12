@@ -65,7 +65,7 @@ export const FIXTURE_MEMORY: { overview: MemoryResponse; lab: MemoryResponse; st
       overForget: 0,
       foodWithoutSuggest: 0,
       coverage: COMPLETE,
-      limits: ["floorRecall", "uncounted:steered", "uncounted:declined", "uncounted:falseHolds", "uncounted:overForget", "uncounted:foodWithoutSuggest"],
+      limits: ["floorRecall", "uncounted:falseHolds", "uncounted:overForget", "uncounted:foodWithoutSuggest"],
     },
   },
   strip: {

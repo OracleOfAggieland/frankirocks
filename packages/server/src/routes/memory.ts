@@ -171,6 +171,7 @@ export async function getMemory(ctx: RouteContext, req: MemoryRequest): Promise<
         memories: rows,
         evidence: evidence.rows.map((d) => ({ id: d.id, evidence: d.data })),
         decisions: ledger.rows.filter((d) => d.data.kind === "decision").map((d) => ({ id: d.id, entry: d.data })),
+        gates: ledger.rows.filter((d) => d.data.kind === "gate").map((d) => ({ id: d.id, entry: d.data })),
         complete: evidence.complete && ledger.complete,
       });
       return { ...empty, lab, coverage: lab.coverage };
