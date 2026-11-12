@@ -26,8 +26,8 @@ export const SEED_ZONES = [
 ] as const;
 
 /** The body of a reset request, as the browser sends it. */
-export function resetBody(visit: string, request: string, _zone: string, fixtureId: string = PERSONA_FIXTURE_ID) {
-  return { requestId: testId(`req-${request}`), sessionId: null, fixtureId, visitId: testId(`visit-${visit}`) };
+export function resetBody(visit: string, request: string, zone: string, fixtureId: string = PERSONA_FIXTURE_ID) {
+  return { requestId: testId(`req-${request}`), sessionId: null, fixtureId, visitId: testId(`visit-${visit}`), clientZone: zone };
 }
 
 /** Calls POST /api/seed/reset as `uid`, after the first open would have set the zone. */

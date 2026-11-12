@@ -13,7 +13,7 @@ function fake(respond: () => Response | Promise<Response>) {
   return { api: createApiClient({ getToken: async () => "tok", fetch }), seen };
 }
 
-const RESET = { requestId: vid("r"), sessionId: null, fixtureId: PERSONA_FIXTURE_ID, visitId: vid("v") };
+const RESET = { requestId: vid("r"), sessionId: null, fixtureId: PERSONA_FIXTURE_ID, visitId: vid("v"), clientZone: "America/Chicago" };
 const ADVANCE = { requestId: vid("r2"), fixtureNamespace: vid("ns"), to: THURSDAY_WORLD };
 
 describe("seed fixtures", () => {

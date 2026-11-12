@@ -406,7 +406,7 @@ async function act(step: Step, w: World): Promise<Res> {
   switch (step.do) {
     case "seed": {
       await ensureCoreDocs(w.uid, rig.deps, w.zone);
-      const res = await callRoute(rig, seedResetRoute, { requestId: nextId(w, "reset"), sessionId: null, fixtureId: PERSONA_FIXTURE_ID, visitId: testId(`visit-${step.visit}`) });
+      const res = await callRoute(rig, seedResetRoute, { requestId: nextId(w, "reset"), sessionId: null, fixtureId: PERSONA_FIXTURE_ID, visitId: testId(`visit-${step.visit}`), clientZone: w.zone });
       if (res.status === 200) {
         w.namespace = res.body.fixtureNamespace;
         const state = (await rig.store.get<CoreState>(w.uid, paths.core(w.uid, "state")))!.data;

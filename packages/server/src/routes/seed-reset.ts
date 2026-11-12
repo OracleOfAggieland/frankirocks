@@ -10,7 +10,8 @@ import { mutation } from "./mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 
 export async function seedReset(ctx: RouteContext, req: ResetReq): Promise<ResetRes> {
-  await ensureCoreDocs(ctx.uid, ctx.deps);
+  // Brief 038 finding 3: a visitor's first reset comes before any open, so its own zone creates the core documents.
+  await ensureCoreDocs(ctx.uid, ctx.deps, req.clientZone);
   return mutation(ctx, "reset", req.requestId, req, (key) => resetVisit(ctx, req, key));
 }
 

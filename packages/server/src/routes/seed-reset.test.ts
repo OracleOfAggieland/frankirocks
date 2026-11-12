@@ -110,7 +110,7 @@ describe("POST /api/seed/reset", () => {
 
   it("answers SCOPE for a fixture it does not hold", async () => {
     const rig = testRig();
-    const res = await callRoute(rig, seedResetRoute, { requestId: testId("r1"), sessionId: null, fixtureId: testId("no-such-fixture"), visitId: testId("v1") });
+    const res = await callRoute(rig, seedResetRoute, { requestId: testId("r1"), sessionId: null, fixtureId: testId("no-such-fixture"), visitId: testId("v1"), clientZone: ZONE });
     expect(res.status).toBe(404);
     expect(PERSONA_FIXTURE_ID).toHaveLength(43);
   });

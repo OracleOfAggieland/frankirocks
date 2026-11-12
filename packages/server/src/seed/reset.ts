@@ -64,8 +64,8 @@ async function setPhase(ctx: RouteContext, opId: ID, phase: "close" | "install")
   });
 }
 
-/** Steps 1: raises the barrier. Returns the visitor's zone. */
-async function fence(ctx: RouteContext, namespace: ID, opId: ID): Promise<string> {
+/** Step 1: raises the barrier and the epoch. */
+async function fence(ctx: RouteContext, namespace: ID, opId: ID): Promise<void> {
   const { uid, deps } = ctx;
   return deps.store.transaction(uid, async (tx) => {
     const core = await readCoreDocs(tx, uid);
@@ -91,7 +91,6 @@ async function fence(ctx: RouteContext, namespace: ID, opId: ID): Promise<string
       updatedAt: now,
     });
     tx.update(paths.core(uid, "state"), { ...core.state.data, fixtureNamespace: namespace, updatedAt: now });
-    return core.state.data.currentZone;
   });
 }
 
@@ -132,7 +131,9 @@ export async function resetVisit(ctx: RouteContext, req: ResetReq, key: RequestK
   const namespace = namespaceFor(ctx, req);
   const opId = opIdFor(ctx, namespace);
 
-  const zone = await fence(ctx, namespace, opId);
+  // Brief 038 finding 3: the clone is laid out in the zone the browser sends now, never the one stored before.
+  const zone = req.clientZone;
+  await fence(ctx, namespace, opId);
   await setPhase(ctx, opId, "close");
   await closeCalls(ctx);
   await setPhase(ctx, opId, "install");

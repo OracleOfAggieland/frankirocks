@@ -30,6 +30,7 @@ function harness(opts: { answer?: (url: string, body: unknown) => Response; stor
     storage,
     newId: () => vid(`id${++ids}`),
     call: opts.call ?? null,
+    zone: () => "America/Chicago",
     sessionId: () => null,
     onShow: (p) => shown.push(p),
     onAfterReset: () => void resets++,
@@ -47,7 +48,7 @@ describe("VisitModel", () => {
     h.model.enter();
     expect(parseStoredVisit(h.storage.data.get(KEY) ?? null)).toEqual({ visitId: vid("id1"), fixtureNamespace: null, worldClockMs: null });
     await flush();
-    expect(h.seen).toEqual([{ url: RESET_PATH, body: { requestId: vid("id2"), sessionId: null, fixtureId: PERSONA_FIXTURE_ID, visitId: vid("id1") } }]);
+    expect(h.seen).toEqual([{ url: RESET_PATH, body: { requestId: vid("id2"), sessionId: null, fixtureId: PERSONA_FIXTURE_ID, visitId: vid("id1"), clientZone: "America/Chicago" } }]);
     expect(h.model.getSnapshot()).toMatchObject({ phase: "ready", worldMs: Date.parse(CLONE_WORLD) });
     expect(parseStoredVisit(h.storage.data.get(KEY) ?? null)).toEqual({ visitId: vid("id1"), fixtureNamespace: RESET_ANSWER.fixtureNamespace, worldClockMs: Date.parse(CLONE_WORLD) });
     expect(h.afterResets()).toBe(1);

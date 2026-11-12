@@ -29,6 +29,8 @@ export interface VisitModelDeps {
   storage: StorageLike | null;
   newId: () => string;
   call: CallLike | null;
+  /** Brief 038 finding 3: the browser's zone, sent with every reset so the clone is laid out in it. */
+  zone: () => string;
   /** The Session a reset should close: the call's, else the typed one's, else null. */
   sessionId: () => string | null;
   /** Shows a proactive line and its cards the way a typed reply shows. */
@@ -164,7 +166,7 @@ export class VisitModel {
   }
 
   private async reset(seq: number, visitId: string): Promise<void> {
-    const r = await resetVisit(this.deps.api, { requestId: this.deps.newId(), sessionId: this.deps.sessionId(), fixtureId: PERSONA_FIXTURE_ID, visitId });
+    const r = await resetVisit(this.deps.api, { requestId: this.deps.newId(), sessionId: this.deps.sessionId(), fixtureId: PERSONA_FIXTURE_ID, visitId, clientZone: this.deps.zone() });
     if (r.ok) this.dispatch({ kind: "resetAnswered", seq, fixtureNamespace: r.body.fixtureNamespace, worldMs: msFromTs(r.body.worldClock) });
     else this.dispatch({ kind: "resetFailed", seq, why: r.why });
   }

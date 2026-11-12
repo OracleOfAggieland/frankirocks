@@ -88,6 +88,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     storage: deps.storage ?? null,
     newId: () => randomId(),
     call: voice === null ? null : { inCall: () => voice.getSnapshot().phase !== "CLOSED", hangUp: () => voice.hangUp(), subscribe: voice.subscribe },
+    zone: () => clock.read().worldClock.zone,
     sessionId: () => voice?.getSnapshot().session?.sessionId ?? typed.getSnapshot().sessionId,
     onShow: (p) => proactive.show(p, typed.getSnapshot().entries.length),
     onAfterReset: () => {
