@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { CoreRules } from "../schema/records";
 import { planHardRule } from "./hard-rule";
 import { notAllergyByCode } from "./not-allergy";
+import { renderRulesSection } from "./rules-section";
 import { TURN_AT, TURN_EID, buildEvidence, emptyRules, hardRuleTurn, spanAt, turnEvidenceOf, validateContext } from "./testing/arb-writes";
 import type { FastItem, FastSlotsOut, Subject } from "./types";
 import { validateItems } from "./validate";
@@ -132,5 +133,25 @@ describe("M1: an allergen outside the gazetteer is never passed as not-an-allerg
   it("the code half needs the cue's object in the closed non-food list, or the trait reading of 'intolerant'", () => {
     for (const t of ["I'm allergic to Mondays.", "Ugh, I'm allergic to meetings.", "I'm allergic to my boss.", "My boss is so intolerant.", "I took an allergy pill."]) expect(notAllergyByCode(ev(t)), t).toBe(true);
     for (const t of ["I'm allergic to durian.", "I'm allergic to jackfruit.", "I'm intolerant of fructose.", "I'm allergic.", "I had an allergic reaction."]) expect(notAllergyByCode(ev(t)), t).toBe(false);
+  });
+});
+
+describe("M2: each unlabeled subject is its own line", () => {
+  const rule = (id: string, subjectId: string | null, code: string, state: "active" | "pending"): Rule => ({ id: id.padEnd(43, "x"), subjectId, code, state, anonymous: subjectId === null, proof: null, proofRev: null, rootKeys: [], dependsOn: [] });
+
+  it("the brother with peanuts and a guest with shellfish, neither labeled, are two lines", () => {
+    const rules = { ...emptyRules(), allergies: [rule("b", "b".repeat(43), "peanut", "active"), rule("g", "g".repeat(43), "shellfish", "active")] };
+    const lines = renderRulesSection(rules, "private");
+    expect(lines).toContain("- Someone else: peanuts.");
+    expect(lines).toContain("- Someone else: shellfish.");
+    expect(lines.some((l) => l.includes("peanuts") && l.includes("shellfish"))).toBe(false);
+  });
+
+  it("two anonymous rules, and two subjects' pending rules outside private, never share a line", () => {
+    const rules = { ...emptyRules(), allergies: [rule("a1", null, "peanut", "pending"), rule("a2", null, "shellfish", "pending"), rule("s", "self", "kiwi", "pending"), rule("b", "b".repeat(43), "sesame", "pending")] };
+    for (const audience of ["private", "company", "unknown"] as const) {
+      const lines = renderRulesSection(rules, audience).filter((l) => l.startsWith("- "));
+      expect(lines, audience).toHaveLength(4);
+    }
   });
 });
