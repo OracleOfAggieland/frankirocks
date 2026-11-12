@@ -176,6 +176,9 @@ export function audienceEffect(o: RuleOutcome, x: AudienceInput): AudienceEffect
     return { session: { audience: "company", waitDeadline: tsFromMs(x.opsNow + CARE_SWAP_WAIT_MS), modifiers: { ...x.modifiers, crisis: ts } }, epoch: raised, bundle: null, hangup: false };
   }
   if (o.line === COMPANY_LINE) return { session: { audience: "company" }, epoch: raised, bundle: bundleFor("company"), hangup: false };
+  // Brief 035 (finding 3): row 7 with company or quiet and no call (a typed crisis line): company, policyRev raised,
+  // the crisis modifier and the narrow Head; no hang-up and no swap wait, since no call is open.
+  if (o.line === null && o.reasons.includes("audience")) return { session: { audience: "company", modifiers: { ...x.modifiers, crisis: ts } }, epoch: raised, bundle: bundleFor("company"), hangup: false, wantsHead: "company" };
   if (o.line === ALONE_LINE) return { session: { audience: "private" }, epoch: raised, bundle: bundleFor("private"), hangup: false };
   return null;
 }

@@ -6,7 +6,7 @@ import { never, ok } from "../openai/fake";
 import { paths } from "../store/paths";
 import { decisionAnswer } from "../testing/decisions";
 import { type TestRig, runScheduled } from "../testing/fakes";
-import { asrTurn } from "../testing/session-fixtures";
+import { asrTurn, typedTurn } from "../testing/session-fixtures";
 import { PERSONAL_FACT } from "../testing/two-memories";
 import { UID, doorRig, postTurn } from "../testing/audience-doors";
 import { hangupJobId } from "../worker/hangup";
@@ -81,5 +81,24 @@ describe("finding 2: a Superseding_Post with a company line narrows", () => {
     expect(await jobOf(rig, s.sessionId)).not.toBeNull();
     await runScheduled(rig);
     expect(rig.openai.requestsTo("realtime.calls.hangup")).toHaveLength(1);
+  });
+});
+
+describe("finding 3: a typed crisis line with company and no call open narrows", () => {
+  it("records company, raises policyRev, sets the crisis modifier, admits only S0 notes and leaves the hang-up out", async () => {
+    const { rig, s } = await doorRig(false);
+    const before = await epochOf(rig);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ crisis: 0.6, company: 0.9 })));
+    const res = await postTurn(rig, typedTurn(s.stamp, 1, "My sister is reading this and I can't do this anymore."));
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: "ready", permit: { kind: "postCommitControl", scope: "ack" } });
+    for (const n of res.body.notes) expect(n.sens).toBe("S0");
+    expect(headText(res.body)).not.toContain(PERSONAL_FACT);
+    const after = await sessionOf(rig, s.sessionId);
+    expect(after).toMatchObject({ audience: "company", waitDeadline: null });
+    expect(after.modifiers.crisis).not.toBeNull();
+    expect(after.status).not.toBe("closing");
+    expect((await epochOf(rig)).policyRev).toBe(before.policyRev + 1);
+    expect(await jobOf(rig, s.sessionId)).toBeNull();
   });
 });

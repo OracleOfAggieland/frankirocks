@@ -394,7 +394,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           // A wave B route that fires changes what is said, so it raises policyRev (KV05; design "Audience effects").
           const routed = rule.parse.kind === "hit" && changesWhatIsSaid(rule.parse, rule.judge, "B");
           const raisedEpoch: CoreEpoch | null = routed ? { ...core.epoch.data, policyRev: core.epoch.data.policyRev + 1, updatedAt: tsFromMs(ops) } : null;
-          const aud = audienceEffect(serverRule(rule), {
+          const aud0 = audienceEffect(serverRule(rule), {
             sessionId: req.sessionId,
             raisedEpoch,
             modifiers: s.modifiers,
@@ -406,6 +406,9 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             bundleWritten: (changed?.bundle ?? null) !== null,
             hasher: deps.hasher,
           });
+          // Brief 035: a narrowing whose Head no longer fits compiles it here; without it, no Deck goes out.
+          const aud = await withNarrowHead(tx, uid, aud0, { epoch: core.epoch.data, rules: changed?.rules ?? (core.rules.data as CoreRules), bundle: changed?.bundle ?? core.bundle.data, clock: pair, generation: s0.generation, opsNow: ops, hasher: deps.hasher, bundleWritten: (changed?.bundle ?? null) !== null });
+          const headless = (aud?.wantsHead ?? null) !== null && aud!.bundle === null && (changed?.bundle ?? null) === null;
           if (aud !== null) {
             tx.update(paths.core(uid, "epoch"), aud.epoch);
             if (aud.bundle !== null) tx.update(paths.core(uid, "bundle"), aud.bundle);
@@ -430,7 +433,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             updatedAt: now,
           });
 
-          const deck = headOut2 === null ? null : issueDeck(stampOut2, headOut2, ops, safe);
+          const deck = headOut2 === null || headless ? null : issueDeck(stampOut2, headOut2, ops, safe);
           // Every reply's Permit comes from the Admission_Seam, which writes its decision ledger entry in this
           // transaction and runs in production too (R8.1, R8.2).
           const admitted = admitRule(

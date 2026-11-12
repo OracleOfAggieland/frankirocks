@@ -119,7 +119,9 @@ export function serverRule(i: RuleInput): RuleOutcome {
     if (crisis && i.wave === "B" && narrows && i.callLive) return permit("postCommitControl", "ack", "none", true, { swap: "afterReply", reasons: ["audience", ...quietReason] });
     // 7. Crisis always takes the reply (R12.1). A typed line with no call open has no spoken care reply: its typed
     // reply, which the Head's crisis instruction governs, travels as an S0 note, still with scope ack (item 17).
-    if (crisis) return permit("postCommitControl", "ack", i.source === "typed" && !i.callLive ? typedPrivate : "none", true);
+    // Brief 035 (finding 3): with company or quiet too, the audience is recorded (R14.7) and the typed reply is S0.
+    const careNarrows = i.wave === "B" && narrows;
+    if (crisis) return permit("postCommitControl", "ack", i.source === "typed" && !i.callLive ? (careNarrows ? "S0" : typedPrivate) : "none", true, careNarrows ? { reasons: ["audience", ...quietReason] } : {});
     if (i.wave === "B" && (p.chosen === "company" || p.chosen === "quiet") && fires(p.chosen)) {
       const reasons: ReasonCode[] = p.chosen === "quiet" ? ["audience", "quiet"] : ["audience"];
       // 8. Narrow with a live call: hang up and swap (R14.1).
