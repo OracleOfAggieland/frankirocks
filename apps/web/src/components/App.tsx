@@ -48,7 +48,6 @@ import { CLOSED_SHEET, type SheetState } from "../client/sheet-model";
 import { INITIAL_VISIT, type VisitState, boltEnabled, visitBadge } from "../ui/visit/visit-machine";
 import { boltTargets } from "../ui/visit/bolt-targets";
 import { proactiveCards, replyEntries, type ShownProactive } from "../ui/visit/proactive-view";
-import { COPY } from "../ui/copy";
 
 const SIGNED_OUT_VOICE = initialVoiceState({ transcribeModel: "" });
 const noop = () => {};
