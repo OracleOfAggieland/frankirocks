@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, expectTypeOf, it } from "vitest";
+import { ReducedMotionOverride } from "../../ui/hooks/reduced-motion";
 import type { ReceiptKind, ReceiptProps } from "../../ui/surface-props";
 import { Receipt } from "./Receipt";
 
@@ -38,6 +39,29 @@ describe("Receipt", () => {
 
   it("renders nothing when nothing completed", () => {
     expect(renderToStaticMarkup(<Receipt blocked={false} cleaned={false} kept={[]} touched={[]} />)).toBe("");
+  });
+
+  it("is paper with perforated ends, in mono, with a printed seal on the kept line", () => {
+    const html = renderToStaticMarkup(<Receipt {...full} />);
+    expect(html).toMatch(/aria-label="Receipt" data-receipt="" class="receipt-paper mat-paper [^"]*font-mono/);
+    expect(html).toMatch(/data-line="kept"[^]*?data-receipt-seal=""[^]*?<\/dd>/);
+    expect(html.match(/data-receipt-seal/g)).toHaveLength(1);
+    expect(html).toContain("border-dashed");
+    // Labels and values are joined by dotted leaders drawn in CSS, not by text.
+    expect(html).toContain('class="receipt-row ');
+    expect(html).toContain('<span class="receipt-leader">memories</span>');
+  });
+
+  it("feeds up out of a clipping slot, and under reduced motion only fades", () => {
+    const moving = renderToStaticMarkup(
+      <ReducedMotionOverride reduced={false}>
+        <Receipt {...full} />
+      </ReducedMotionOverride>,
+    );
+    expect(moving).toMatch(/^<div data-receipt-feed="" class="[^"]*overflow-hidden[^"]*"><div class="receipt-slip" style="[^"]*translateY\(100%\)/);
+    const still = renderToStaticMarkup(<Receipt {...full} />);
+    expect(still).toMatch(/<div class="receipt-slip" style="opacity:0"/);
+    expect(still).not.toContain("translateY");
   });
 
   it("has no string field that could carry item text", () => {
