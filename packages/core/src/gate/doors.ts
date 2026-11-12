@@ -32,10 +32,14 @@ export function askedByOwner(c: Pick<GateCandidate, "aliases" | "topic">, x: Pic
   return terms(c.aliases).some((q) => words.has(q)) || (c.topic !== null && doorOpens(c.topic, x));
 }
 
-/** `opens(label)`: every label token of two or more characters is in the owner's words. */
+/**
+ * `opens(label)`: every label token of two or more characters is in the owner's words, function words included, and
+ * the label has at least one word that is not a function word (brief 033 finding 18: dropping a label's function
+ * words first made a label easier to open than the spec's rule).
+ */
 export function opensLabel(label: string, words: ReadonlySet<string>): boolean {
-  const need = terms([label]);
-  return need.length > 0 && need.every((t) => words.has(t));
+  const need = tokenize(label).filter((t) => t.length >= MIN_TERM_CHARS);
+  return need.some((t) => !FUNCTION_WORDS.has(t)) && need.every((t) => words.has(t));
 }
 
 /** A door opens this turn only on a term match or `opensLabel`, and only for a label and terms from U, C or O. */

@@ -72,3 +72,13 @@ describe("finding 3: only the owner's words against the candidate's own terms as
     expect(gate({ ...c, topic: { ...work, labelClass: "T" } }, gateCtx({ trigger: "recall", ownerTurn: ownerSaid("how is work") })).verdict).toBe("silent");
   });
 });
+
+describe("finding 18: a label opens only on all of its words", () => {
+  it("does not drop a label's function words before matching (the committed ceiling property, seed 555205424)", () => {
+    const c = gateCand({ sourceClass: "M", topic: { ...work, label: "is biopsy", terms: [] } });
+    expect(gate(c, gateCtx({ ownerTurn: ownerSaid("biopsy") })).verdict).toBe("silent");
+    expect(gate(c, gateCtx({ ownerTurn: ownerSaid("is it the biopsy") })).verdict).toBe("say");
+    // A label of function words alone never opens.
+    expect(gate({ ...c, topic: { ...work, label: "it is", terms: [] } }, gateCtx({ ownerTurn: ownerSaid("it is") })).verdict).toBe("silent");
+  });
+});
