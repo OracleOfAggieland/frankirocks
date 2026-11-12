@@ -1,6 +1,6 @@
 // Review 028, findings 6 to 8: the forget executor in a long session, a rule written mid-install, and a retry
 // after the evidence page.
-import { type CoreRules, type Memory, type Session, buildSlice, rootKey, tsFromMs } from "@franki/core";
+import { type CoreRules, type Job, type Ledger, type Memory, type Session, buildSlice, rootKey, tsFromMs } from "@franki/core";
 import { sampleSession, testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { paths } from "../store/paths";
@@ -8,7 +8,7 @@ import type { StorePort } from "../store/port";
 import { commitUserTurnForTest, insertMemoryForTest, insertTurnForTest } from "../testing/extract-fixtures";
 import { T0_MS, patchRecord, testRig } from "../testing/fakes";
 import { FORGET_RETRY_MS, advanceForget } from "./executor";
-import { fenceForget } from "./fence";
+import { fenceForget, forgetReceiptId } from "./fence";
 import { fakeForgetResolve } from "./resolve-port";
 
 const UID = "owner-1";
@@ -100,5 +100,46 @@ describe("finding 7: a hard rule added mid-install is never lost", () => {
     const rules = await get<CoreRules>(rulesPath);
     expect(rules.allergies.map((a) => a.id).sort()).toEqual([NEW, RULE].sort());
     expect(rules.allergies.find((a) => a.id === RULE)!.state).toBe("active");
+  });
+});
+
+describe("finding 8: a retry after the evidence page keeps what it committed", () => {
+  it("keeps the sanitized eids and the receipt's counts", async () => {
+    const { store, hasher, dannyId, get, fence, at } = await setup();
+    const receiptPath = paths.ledger(UID, forgetReceiptId(fence.opId, hasher));
+    let failed = false;
+    // Fails the first transaction that reads the receipt, after its body ran.
+    const flaky: StorePort = {
+      get: (uid, p) => store.get(uid, p),
+      query: (uid, spec) => store.query(uid, spec),
+      transaction: (uid, fn) =>
+        store.transaction(uid, async (tx) => {
+          let readsReceipt = false;
+          const spy = new Proxy(tx, {
+            get(t, k) {
+              if (k === "get") return (p: string) => ((readsReceipt ||= p === receiptPath), t.get(p));
+              const v = (t as unknown as Record<string | symbol, unknown>)[k];
+              return typeof v === "function" ? v.bind(t) : v;
+            },
+          });
+          const result = await fn(spy);
+          if (readsReceipt && !failed) {
+            failed = true;
+            throw new Error("injected commit failure");
+          }
+          return result;
+        }),
+    };
+    const resolver = fakeForgetResolve(() => exact([dannyId]));
+    expect(await advanceForget({ store: flaky, hasher, resolver }, UID, fence.jobId, at)).toEqual({ kind: "retry", phase: "install" });
+    expect(await advanceForget({ store: flaky, hasher, resolver }, UID, fence.jobId, at + FORGET_RETRY_MS)).toEqual({ kind: "stopped", phase: "closure" });
+    const job = await get<Job>(paths.job(UID, fence.jobId));
+    const staged = (job.payload as { stagedSanitizedEids: string[] }).stagedSanitizedEids;
+    expect(staged).toHaveLength(1);
+    expect(await store.get(UID, paths.evidence(UID, staged[0]!))).not.toBeNull();
+    const receipt = await get<Ledger>(receiptPath);
+    expect(receipt.payload).toMatchObject({ retainedRuleIds: [RULE] });
+    const touched = Object.fromEntries((receipt.payload as { touched: { collection: string; count: number }[] }).touched.map((t) => [t.collection, t.count]));
+    expect(touched).toMatchObject({ memories: 1, evidence: 2, core: 1 });
   });
 });
