@@ -9,7 +9,7 @@ import { type Head, type ID, type Memory, type OnTurnHandled, type RouteNoteKind
 import { withDeadline } from "../clock/timers";
 import { requireModel } from "../config/models";
 import type { ResponsesResult } from "../openai/responses";
-import { NOTE_TTL_MS, TYPED_REPLY_DEADLINE_MS, typedReplyRequest } from "../routes/typed-reply";
+import { NOTE_TTL_MS, TYPED_REPLY_DEADLINE_MS, ownerSafeTurns, typedReplyRequest } from "../routes/typed-reply";
 import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 
@@ -27,7 +27,9 @@ export async function typedRouteReply(ctx: RouteContext, at: { sessionId: string
   const instructions = noteText === null ? head.text : `${head.text}\n\nNote for this reply: ${noteText}`;
   let result: ResponsesResult;
   try {
-    result = (await withDeadline(deps.openai.call("responses.create", typedReplyRequest(requireModel("brain", deps.env), instructions, turns, text, false)), ms, deps.timers)) as ResponsesResult;
+    // W-232: an earlier class-T turn's text never goes in as the owner's message.
+    const owned = await ownerSafeTurns({ get: (p) => deps.store.get(uid, p) }, uid, at.sessionId, turns);
+    result = (await withDeadline(deps.openai.call("responses.create", typedReplyRequest(requireModel("brain", deps.env), instructions, owned, text, false)), ms, deps.timers)) as ResponsesResult;
   } catch {
     return null;
   }
