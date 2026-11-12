@@ -132,12 +132,12 @@ export async function openingProactive(ctx: RouteContext, stamp: Omit<Stamp, "tu
     if (ops >= deadline) return null;
     return deliver(ctx, { kind: "opening" }, stamp, signalsOf(s, ops, null), deadline);
   })();
-  return withinDeadline(work, deadline - start, deps.timers);
+  return withinDeadline(work.catch((e: unknown) => logged(ctx, "opening", e)), deadline - start, deps.timers);
 }
 
 /** Logs a failed delivery read by name only, and says nothing. */
-function logged(ctx: RouteContext, mode: string): null {
-  ctx.deps.log("delivery.failed", { mode, error: "read" });
+function logged(ctx: RouteContext, mode: string, e: unknown): null {
+  ctx.deps.log("delivery.failed", { mode, error: e instanceof Error ? e.name : "unknown" });
   return null;
 }
 
@@ -163,9 +163,9 @@ async function withinDeadline<T>(work: Promise<T | null>, ms: number, timers: Pa
 export async function idleProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, budgetMs = Infinity): Promise<Proactive | null> {
   if (!(budgetMs > 0)) return null;
   // Brief 045 finding 9: every read delivery makes is inside the catch; a store blip never fails the route.
-  if (budgetMs === Infinity) return idleOnce(ctx, stamp, Infinity).catch(() => logged(ctx, "session"));
+  if (budgetMs === Infinity) return idleOnce(ctx, stamp, Infinity).catch((e: unknown) => logged(ctx, "session", e));
   const start = ctx.deps.clock.read().opsClock.now;
-  return withinDeadline(idleOnce(ctx, stamp, start + budgetMs), budgetMs, ctx.deps.timers);
+  return withinDeadline(idleOnce(ctx, stamp, start + budgetMs).catch((e: unknown) => logged(ctx, "session", e)), budgetMs, ctx.deps.timers);
 }
 
 async function idleOnce(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, deadline: number): Promise<Proactive | null> {
