@@ -1,6 +1,6 @@
 // Franki's voice on the front door (brief 015, package H2). Pure and deterministic: no clock, no random
 // source but a seeded one. A sentence becomes a plan of syllables; the plan gives the loudness envelope at
-// any moment, and fills an analysis window the way the avatar's audio source contract describes: the newest
+// any moment, and fills an analysis frame the way the avatar's audio source contract describes: the newest
 // AUDIO_FFT_SIZE samples (a harmonic stack shaped by a vowel's formants, under the envelope) and their dB
 // spectrum. createDemoVoice wraps that as an AvatarAudioSource that advances by the reader's `dt`.
 import { mulberry32 } from "../electricity";
@@ -24,7 +24,7 @@ const SYLLABLE_SPREAD_S = 0.08;
 /** The sum of the harmonic amplitudes at full envelope: about -16 dBFS of speech. */
 const PEAK = 0.42;
 const HARMONICS = 24;
-/** A Blackman window's coherent gain over two, as an analyser reports a sinusoid's magnitude. */
+/** The Blackman taper's coherent gain over two, as an analyser reports a sinusoid's magnitude. */
 const WINDOW_GAIN = 0.21;
 
 /** First three formants of seven vowels, in Hz. */
@@ -154,9 +154,9 @@ function formantGain(f: number, formants: readonly [number, number, number]): nu
 }
 
 /**
- * Pure over its buffers. Fills `time` with the window of samples that ends at `t` seconds and `db` with its
- * spectrum (`time.length / 2` bins), as an analyser would: magnitude over N with a Blackman window. In a pause
- * the window is silent and every bin is AUDIO_MIN_DB.
+ * Pure over its buffers. Fills `time` with the frame of samples that ends at `t` seconds and `db` with its
+ * spectrum (`time.length / 2` bins), as an analyser would: magnitude over N with a Blackman taper. In a pause
+ * the frame is silent and every bin is AUDIO_MIN_DB.
  */
 export function renderVoice(plan: VoicePlan, t: number, time: Float32Array, db: Float32Array, rate = VOICE_RATE): void {
   const env = envelopeAt(plan, t);
@@ -244,5 +244,5 @@ export function createDemoVoice(rate = VOICE_RATE): DemoVoice {
   };
 }
 
-/** The window size the contract asks for, re-exported for the tests. */
+/** The analysis frame size the contract asks for, re-exported for the tests. */
 export const VOICE_WINDOW = AUDIO_FFT_SIZE;

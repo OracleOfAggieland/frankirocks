@@ -23,7 +23,7 @@ import {
   vec,
 } from "./geometry";
 import { type GaitState, initialGait, stepGait } from "./gait";
-import { MAX_DT_MS, START_HEADING, nextHeading, nextVelocity } from "./heading";
+import { MAX_DT_MS, START_HEADING, smoothHeading, smoothVelocity } from "./heading";
 import { type SpringValue, at, stepSpring } from "./spring";
 
 export const REST_MS = 2000;
@@ -125,8 +125,8 @@ export function stepSpider(s: SpiderState, input: SpiderInput): SpiderState {
   // A fresh start when the pointer comes back onto the page or frames stopped for a while (a hidden
   // tab): the feet go to rest under the body. A fast move is never a reset; the gait keeps up with it.
   const reset = s.origin === null || !s.present || gap > MAX_DT_MS;
-  const velocity = reset ? vec(0, 0) : nextVelocity(s.velocity, sub(origin, s.origin as Vec), dt);
-  const heading = nextHeading(s.heading, velocity, dt);
+  const velocity = reset ? vec(0, 0) : smoothVelocity(s.velocity, sub(origin, s.origin as Vec), dt);
+  const heading = smoothHeading(s.heading, velocity, dt);
   const gait = stepGait(s.gait, { t, body: origin, heading, velocity, reset });
   const hanging = drop.x / REST_DROP > 1e-3;
   const swayPhase = hanging ? (s.swayPhase + (2 * Math.PI * dt) / SWAY_PERIOD_MS) % (2 * Math.PI) : 0;

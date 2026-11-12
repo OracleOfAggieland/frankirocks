@@ -11,7 +11,7 @@ import type { AvatarInput, AvatarLook } from "../avatar/types";
 import type { Levels } from "../levels/level-meter";
 import { type SoundTrack, initialSoundTrack, scheduleCues } from "../sound/schedule";
 import type { Cue } from "../sound/score";
-import { FrameLoop, type FrameScheduler } from "./frame-loop";
+import { ELECTRIC_STEP_MS, FrameLoop, type FrameScheduler } from "./frame-loop";
 
 export interface VoiceSource {
   getSnapshot(): VoiceState;
@@ -38,8 +38,6 @@ export interface ScreenSnapshot {
   paused: boolean;
 }
 
-/** Electricity regenerates every 60 to 90 ms; one React update per 60 ms is enough. */
-const ELECTRIC_STEP_MS = 60;
 
 const CLOSED_INPUT: AvatarInput = {
   state: "closed", micMuted: false, outputMuted: true, inputLevel: 0, outputLevel: 0,

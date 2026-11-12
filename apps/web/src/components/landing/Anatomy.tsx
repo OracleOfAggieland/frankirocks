@@ -15,14 +15,6 @@ import { useSeen } from "./use-seen";
 
 export type PartId = (typeof LANDING.build.parts)[number]["id"];
 
-/** What each callout's fig label names: the part of the drawing its leader points at. */
-const POINTS_AT: Record<PartId, string> = {
-  skeleton: "centre line",
-  brain: "head",
-  reflexes: "neck bolts",
-  immune: "outer edge",
-};
-
 /** The callouts' fig letters, in copy order. */
 const LETTERS = ["A", "B", "C", "D"] as const;
 
@@ -239,7 +231,7 @@ export function Anatomy() {
                 style={{ "--y": pct(leaderTop(p.id)), "--side": SIDE_WIDTH } as CSSProperties}
               >
                 <FigLabel n={LETTERS[i]} side={left ? "right" : "left"}>
-                  {POINTS_AT[p.id]}
+                  {p.pointsAt}
                 </FigLabel>
                 <h3 className="font-display text-2xl text-ink">{p.part}</h3>
                 <p className="font-mono text-xs text-brass">{p.feature}</p>

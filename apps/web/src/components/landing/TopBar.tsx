@@ -6,9 +6,6 @@ import { LANDING } from "../../ui/copy-landing";
 import type { SectionId } from "../../ui/landing/steps";
 import { FOCUS, TARGET } from "../surfaces/classes";
 
-/** The bar's section links, named apart from the rail's, which lists the same sections. */
-const BAR_NAV_LABEL = "On this page";
-
 /** Unlayered, so it outranks the `opacity-0` utility on the glass and the seam. */
 const NOSCRIPT_GLASS = "[data-bar-glass],[data-bar-seam]{opacity:1}";
 
@@ -73,7 +70,7 @@ export function TopBar({ scrolled = false, section }: TopBarProps) {
           <BrassBolt />
           <span aria-hidden="true">{LANDING.build.wordmark}</span>
         </a>
-        <nav aria-label={BAR_NAV_LABEL} className="ml-auto hidden items-center md:flex lg:gap-1">
+        <nav aria-label={LANDING.bar.nav}className="ml-auto hidden items-center md:flex lg:gap-1">
           {LANDING.bar.links.map((link) => {
             const current = section === link.id;
             return (

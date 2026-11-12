@@ -40,6 +40,26 @@ export const PURE_MODULES = [
   "debug-flag.ts",
   "receipt-from.ts",
   "surface-props.ts",
+  // Brief 015. Not here: cursor/preference.ts, which reads localStorage.
+  "copy-landing.ts",
+  "dock-layout.ts",
+  "cursor/geometry.ts",
+  "cursor/heading.ts",
+  "cursor/gait.ts",
+  "cursor/spring.ts",
+  "cursor/spider.ts",
+  "cursor/web.ts",
+  "cursor/targets.ts",
+  "instruments/odometer.ts",
+  "instruments/print-feed.ts",
+  "landing/steps.ts",
+  "landing/sample.ts",
+  "landing/scroll-step.ts",
+  "landing/seen.ts",
+  "landing/demo-voice.ts",
+  "landing/stage-script.ts",
+  "landing/switch-blade.ts",
+  "landing/switch-machine.ts",
 ].map((f) => UI + f);
 
 const BROWSER_WORDS = ["window", "document", "navigator", "localStorage", "fetch", "requestAnimationFrame", "AudioContext"];

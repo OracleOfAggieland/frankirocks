@@ -1,5 +1,6 @@
 // The lab spider's sense of travel: a lightly smoothed velocity and a heading that follows it. Pure.
-// Times are Frame_Time milliseconds; speeds are px per ms.
+// Times are Frame_Time milliseconds; speeds are px per ms. Two low-pass filters with no named states, so not a
+// machine: the spider's step that holds their output is `ui.spider` in docs/machines/ui-surfaces.md.
 import { type Vec, wrapAngle } from "./geometry";
 
 /** The heading follows the direction of travel through a low-pass of this time constant. */
@@ -20,14 +21,14 @@ export function lowPassShare(dt: number, tau: number): number {
 }
 
 /** Smooths the velocity toward the raw displacement over `dt`. */
-export function nextVelocity(v: Vec, delta: Vec, dt: number): Vec {
+export function smoothVelocity(v: Vec, delta: Vec, dt: number): Vec {
   if (dt <= 0) return v;
   const k = lowPassShare(dt, VELOCITY_TAU_MS);
   return { x: v.x + (delta.x / dt - v.x) * k, y: v.y + (delta.y / dt - v.y) * k };
 }
 
 /** Turns the heading toward the direction of `v` along the shortest arc, or holds it when nearly still. */
-export function nextHeading(heading: number, v: Vec, dt: number): number {
+export function smoothHeading(heading: number, v: Vec, dt: number): number {
   if (Math.hypot(v.x, v.y) < HOLD_SPEED) return heading;
   const target = Math.atan2(v.y, v.x);
   return wrapAngle(heading + wrapAngle(target - heading) * lowPassShare(dt, HEADING_TAU_MS));

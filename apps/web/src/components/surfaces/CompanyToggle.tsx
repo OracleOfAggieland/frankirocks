@@ -20,8 +20,6 @@ export interface CompanyToggleProps {
   onChange(next: boolean): void;
 }
 
-/** The switch's stable name; the visible label follows it, so the name always says what is on or off. */
-const NAME = "Company mode";
 
 const CAPSULE = `${TARGET} ${FOCUS} group mat-glass relative isolate inline-flex items-center justify-center rounded-chip border-brass! px-4 text-sm font-medium transition-colors duration-(--dur-base) disabled:cursor-not-allowed disabled:opacity-40`;
 const OFF = "text-ink enabled:hover:bg-night-2/90";
@@ -71,7 +69,7 @@ export function CompanyToggle({ company, disabled = false, onChange }: CompanyTo
       type="button"
       role="switch"
       aria-checked={company}
-      aria-label={`${NAME}: ${label}`}
+      aria-label={`${COPY.company.name}: ${label}`}
       disabled={disabled}
       data-company={company ? "on" : "off"}
       onClick={() => onChange(!company)}

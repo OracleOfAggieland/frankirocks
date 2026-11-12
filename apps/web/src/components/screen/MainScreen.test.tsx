@@ -2,7 +2,7 @@ import { type VoiceState, avatarState, initialVoiceState } from "@franki/core";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { lookFor } from "../../ui/avatar/look";
 import type { AvatarInput } from "../../ui/avatar/types";
 import type { CardProps } from "../../ui/surface-props";
@@ -16,6 +16,19 @@ import { Avatar } from "../avatar/Avatar";
 import { STAGE_WIDTH, Stage } from "../avatar/Stage";
 import { CANVAS_FRAME } from "../avatar/canvas-frame";
 import { GRID_AREAS, HEADER, MainScreen } from "./MainScreen";
+
+/** The props each CardDock render receives; the real CardDock still draws. */
+const dockCalls = vi.hoisted(() => [] as Record<string, unknown>[]);
+vi.mock("../surfaces/CardDock", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../surfaces/CardDock")>();
+  return {
+    ...real,
+    CardDock: (p: Parameters<typeof real.CardDock>[0]) => {
+      dockCalls.push(p as unknown as Record<string, unknown>);
+      return real.CardDock(p);
+    },
+  };
+});
 
 const noop = () => {};
 const storage = () => {
@@ -126,6 +139,21 @@ describe("MainScreen", () => {
     expect(html.indexOf('data-area="dock"')).toBeLessThan(html.indexOf('data-card="read"'));
     // An empty Card is not a Card: the layout stays centred.
     expect(render(true, undefined, [{ ...card, lines: [] }])).toContain('data-layout="center"');
+  });
+
+  it("the Card_Dock is always mounted and tells the screen when its last card has left (ui.dockLayout)", () => {
+    const card: CardProps = { kind: "read", id: "r", title: "Your list", sources: [], onOpenSource: noop, lines: ["Milk"] };
+    for (const cards of [undefined, [], [{ ...card, lines: [] }], [card]]) {
+      dockCalls.length = 0;
+      const html = render(true, undefined, cards);
+      // Mounted with or without a card, so a leaving card can finish its exit before the column goes.
+      expect(dockCalls).toHaveLength(1);
+      expect(typeof dockCalls[0].onExitComplete).toBe("function");
+      expect(dockCalls[0].cards).toEqual(cards ?? []);
+      // With nothing to show, the dock draws nothing inside its area.
+      if (cards?.[0]?.kind === "read" && cards[0].lines.length > 0) expect(html).toContain("data-dock=");
+      else expect(html).not.toContain("data-dock=");
+    }
   });
 
   it("the stage, controls and reply each sit in a glide wrapper in both motion settings", () => {

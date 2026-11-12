@@ -17,7 +17,7 @@ import {
   vec,
   wrapAngle,
 } from "./geometry";
-import { nextHeading, nextVelocity } from "./heading";
+import { smoothHeading, smoothVelocity } from "./heading";
 
 const arbAngle = fc.double({ min: -Math.PI, max: Math.PI, noNaN: true });
 
@@ -96,19 +96,19 @@ describe("spider heading", () => {
     let h = -Math.PI / 2;
     let v = vec(0, 0);
     for (let i = 0; i < 60; i++) {
-      v = nextVelocity(v, vec(8, 0), 16);
-      h = nextHeading(h, v, 16);
+      v = smoothVelocity(v, vec(8, 0), 16);
+      h = smoothHeading(h, v, 16);
     }
     expect(h).toBeCloseTo(0, 3);
   });
 
   it("is a low-pass: one frame turns only part of the way", () => {
-    const h = nextHeading(0, vec(0, 1), 16);
+    const h = smoothHeading(0, vec(0, 1), 16);
     expect(h).toBeGreaterThan(0);
     expect(h).toBeLessThan(Math.PI / 4);
   });
 
   it("holds when the pointer is nearly still", () => {
-    expect(nextHeading(1.2, vec(0.01, -0.02), 16)).toBe(1.2);
+    expect(smoothHeading(1.2, vec(0.01, -0.02), 16)).toBe(1.2);
   });
 });

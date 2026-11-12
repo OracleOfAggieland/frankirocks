@@ -34,7 +34,7 @@ export type OdometerCell =
   | { readonly kind: "drum"; readonly key: string; readonly digit: number }
   /** A character that stands still between drums: a group separator, or a sign. */
   | { readonly kind: "still"; readonly key: string; readonly char: string }
-  /** A leading place the number does not reach yet: an empty window, or the gap a separator will fill. */
+  /** A leading place the number does not reach yet: an empty well, or the gap a separator will fill. */
   | { readonly kind: "empty"; readonly key: string; readonly slot: "drum" | "still" }
   /** The missing-value mark on a blank drum, in the ones place. */
   | { readonly kind: "dash"; readonly key: string };

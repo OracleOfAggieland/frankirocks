@@ -4,7 +4,8 @@
 // and render nothing. Below 1024 px the dock is a bottom sheet (the Card_Dock positions itself); below
 // 640 px the corners stack. No element is wider than 343 px at 375 px.
 // With no Card the grid has one column, so the stage sits on the page's centre axis with the call
-// button and the Wordmark (Brief 004 item 1). A Card adds the dock column from 1024 px; the stage,
+// button and the Wordmark (Brief 004 item 1). A Card adds the dock column from 1024 px, and the column
+// stays until the last Card has finished leaving (ui.dockLayout); the stage,
 // chips, controls and reply all stay in the first column, so Franki and his controls keep one axis,
 // and each glides between the two positions as a motion layout animation on spring.settle; instant
 // under Reduced_Motion. The signed-out Wordmark sits outside the glide wrapper, on one line, so the
@@ -13,7 +14,8 @@
 // The header is a slim rail: the Wordmark and its bolt, the Time_Badge slot, then the sound toggle and the
 // signed-in identity, over a stitched seam that fades at both ends.
 import { motion } from "motion/react";
-import type { ReactNode } from "react";
+import { type ReactNode, useCallback, useState } from "react";
+import { type DockLayout, dockLayoutInit, dockLayoutStep, hasDockColumn } from "../../ui/dock-layout";
 import { SPRING } from "../../ui/motion";
 import type { CardProps } from "../../ui/surface-props";
 import { cardHasContent } from "../surfaces/Card";
@@ -83,7 +85,14 @@ function Glide({ name, reduced, className, children }: { name: "stage" | "contro
 }
 
 export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed, reply, debug, live, reduced, paused, cards = [] }: MainScreenProps) {
-  const docked = cards.some(cardHasContent);
+  // The dock column stays from the first card until the last one has dematerialized (ui.dockLayout). The
+  // cards event runs during render, so the column is there on the very render that brings the first card.
+  const present = cards.some(cardHasContent);
+  const [held, setHeld] = useState<DockLayout>(() => dockLayoutInit(present));
+  const layout = dockLayoutStep(held, { type: "cards", present });
+  if (layout !== held) setHeld(layout);
+  const onExitComplete = useCallback(() => setHeld((l) => dockLayoutStep(l, { type: "exitComplete" })), []);
+  const docked = hasDockColumn(layout);
   return (
     <main
       data-screen={signedIn ? "signed-in" : "signed-out"}
@@ -119,7 +128,8 @@ export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed
           </Glide>
         </section>
         <div data-area="dock" className="[grid-area:dock]">
-          {docked ? <CardDock cards={cards} /> : null}
+          {/* Always mounted: it renders nothing without a card, and keeps the last one while it leaves. */}
+          <CardDock cards={cards} onExitComplete={onExitComplete} />
         </div>
         {/* Chips slot: chips show only when the server offers them. */}
         <div data-area="chips" className="[grid-area:chips]" />

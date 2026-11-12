@@ -4,7 +4,12 @@
 // `use cache`, `next/og`, ISR or /api/ call.
 import type { Metadata } from "next";
 import { AvatarSection } from "./_sections/AvatarSection";
+import { CardExtrasSection } from "./_sections/CardExtrasSection";
+import { ControlsSection } from "./_sections/ControlsSection";
+import { InstrumentExtrasSection } from "./_sections/InstrumentExtrasSection";
 import { MainScreenSection } from "./_sections/MainScreenSection";
+import { MaterialsSection } from "./_sections/MaterialsSection";
+import { MemoryExtrasSection } from "./_sections/MemoryExtrasSection";
 import { SurfaceSections } from "./_sections/SurfaceSections";
 import { ThreeSection } from "./_sections/ThreeSection";
 
@@ -18,7 +23,12 @@ export default function SpecimensPage() {
       <AvatarSection />
       <ThreeSection />
       <MainScreenSection />
+      <MaterialsSection />
       <SurfaceSections />
+      <CardExtrasSection />
+      <MemoryExtrasSection />
+      <InstrumentExtrasSection />
+      <ControlsSection />
     </main>
   );
 }

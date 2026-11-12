@@ -4,8 +4,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { COLOR } from "../../ui/motion";
 import { FuseDrawing } from "./FuseDrawing";
-import { FUSE_COPY, FuseRoom } from "./FuseRoom";
-import { NOT_FOUND_COPY, NotFoundRoom } from "./NotFoundRoom";
+import { LANDING } from "../../ui/copy-landing";
+import { FuseRoom } from "./FuseRoom";
+import { NotFoundRoom } from "./NotFoundRoom";
 import { SlabDrawing } from "./SlabDrawing";
 
 const { default: NotFoundPage, metadata: notFoundMetadata } = await import("../../app/not-found");
@@ -24,7 +25,7 @@ describe("404: the empty room (brief 015 J)", () => {
     expect(count(html, "<h1")).toBe(1);
     expect(html).toMatch(/<h1 class="[^"]*font-display[^"]*text-title/);
     expect(count(html, "<em")).toBe(1);
-    expect(html).toContain(`${NOT_FOUND_COPY.titleStart} <em class="italic">${NOT_FOUND_COPY.titleWord}</em>`);
+    expect(html).toContain(`${LANDING.notFound.titleStart} <em class="italic">${LANDING.notFound.titleWord}</em>`);
   });
 
   it("links home in brass and to the lab quietly, each a 44 px target with a focus ring", () => {
@@ -37,7 +38,7 @@ describe("404: the empty room (brief 015 J)", () => {
       expect(a).toContain("min-h-11");
       expect(a).toContain("focus-visible:outline-brass-hi");
     }
-    expect(html.indexOf(NOT_FOUND_COPY.home)).toBeLessThan(html.indexOf(NOT_FOUND_COPY.lab));
+    expect(html.indexOf(LANDING.notFound.home)).toBeLessThan(html.indexOf(LANDING.notFound.lab));
   });
 
   it("draws the slab and a dashed outline where Franki would float, as decoration, with a fig label", () => {
@@ -45,7 +46,7 @@ describe("404: the empty room (brief 015 J)", () => {
     expect(html).toContain('data-part="slab"');
     expect(html).toMatch(/data-part="absent" class="sys-float /);
     expect(html).toContain('data-fig="404"');
-    expect(html).toContain(NOT_FOUND_COPY.fig);
+    expect(html).toContain(LANDING.notFound.fig);
     expect(html).not.toMatch(/ember/);
   });
 
@@ -62,7 +63,7 @@ describe("404: the empty room (brief 015 J)", () => {
 
   it("the page file renders the room and names the tab", () => {
     expect(renderToStaticMarkup(<NotFoundPage />)).toBe(html);
-    expect(notFoundMetadata.title).toBe(NOT_FOUND_COPY.docTitle);
+    expect(notFoundMetadata.title).toBe(LANDING.notFound.docTitle);
   });
 });
 
@@ -72,11 +73,11 @@ describe("Error: the blown fuse (brief 015 J)", () => {
   it("has one h1 in display type", () => {
     expect(count(html, "<h1")).toBe(1);
     expect(html).toMatch(/<h1 class="[^"]*font-display[^"]*text-title/);
-    expect(html).toContain(`${FUSE_COPY.titleStart} <em class="italic">${FUSE_COPY.titleWord}</em>`);
+    expect(html).toContain(`${LANDING.error.titleStart} <em class="italic">${LANDING.error.titleWord}</em>`);
   });
 
   it("offers a brass button to try again and a quiet link home", () => {
-    expect(html).toMatch(new RegExp(`<button type="button" class="[^"]*mat-brass[^"]*">${FUSE_COPY.retry}</button>`));
+    expect(html).toMatch(new RegExp(`<button type="button" class="[^"]*mat-brass[^"]*">${LANDING.error.retry}</button>`));
     const [home] = anchors(html);
     expect(home).toContain('href="/"');
     expect(home).not.toContain("mat-brass");
@@ -100,7 +101,7 @@ describe("Error: the blown fuse (brief 015 J)", () => {
     const alert = html.match(/<div role="alert"[^>]*>([\s\S]*?)<\/div>/);
     expect(alert).not.toBeNull();
     expect(alert![1]).toContain("<h1");
-    expect(alert![1]).toContain(FUSE_COPY.body);
+    expect(alert![1]).toContain(LANDING.error.body);
   });
 
   it("draws the break in ember and nothing else in ember", () => {
@@ -125,7 +126,7 @@ describe("Error: the blown fuse (brief 015 J)", () => {
     expect(src.startsWith('"use client";')).toBe(true);
     expect(src).toMatch(/<FuseRoom onRetry=\{retry\}/);
     const page = renderToStaticMarkup(<ErrorPage error={new Error("internal detail 7f3a")} retry={noop} reset={noop} />);
-    expect(page).toContain(`<title>${FUSE_COPY.docTitle}</title>`);
+    expect(page).toContain(`<title>${LANDING.error.docTitle}</title>`);
     expect(page).toContain(html);
     expect(page).not.toContain("internal detail 7f3a");
   });

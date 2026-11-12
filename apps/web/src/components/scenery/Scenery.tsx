@@ -15,6 +15,7 @@
 // 640 px only the floor and the slab stay.
 import { motion, useMotionValue, useSpring, useTransform } from "motion/react";
 import { type ReactNode, type Ref, useEffect, useLayoutEffect, useRef } from "react";
+import { COPY } from "../../ui/copy";
 import { usePageVisible } from "../../ui/hooks/page-visible";
 import { useReducedMotion } from "../../ui/hooks/reduced-motion";
 import { SPRING } from "../../ui/motion";
@@ -40,7 +41,7 @@ import { FLOOR_SELECTOR, layoutBox, watchLayout, watchPointer } from "./watch";
 export type SceneryVariant = "lab" | "door";
 
 /** The fig label words. Decorative: the whole drawing is aria-hidden. */
-const FIG_WORDS = { mains: "the mains", specimens: "specimens", slab: "the slab", bench: "the bench" } as const;
+const FIG_WORDS = COPY.scenery;
 /**
  * The mains label's number: 1 in the lab; 0 at the door, whose pages number their own figures from 1
  * (the front door's hero, the 404 and 500 rooms).

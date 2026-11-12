@@ -83,7 +83,10 @@ export const COPY = {
     notSetUp: "Calls aren't set up here yet.",
   },
   cursor: { toggle: "Lab spider" },
-  company: { walkedIn: "Someone walked in", alone: "We're alone" },
+  company: { name: "Company mode", walkedIn: "Someone walked in", alone: "We're alone" },
   forgetLast: "Forget last thing",
+  forgetLastPending: "Forgetting",
+  /** The backdrop's fig label words, after "FIG. n ·". */
+  scenery: { mains: "the mains", specimens: "specimens", slab: "the slab", bench: "the bench" },
   areas: ["Time and work", "Food and health", "Money", "People", "Goals"] as const,
 } as const;

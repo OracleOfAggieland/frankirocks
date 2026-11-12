@@ -1,5 +1,5 @@
 /**
- * @machine ui.landing.switch
+ * @machine landing.switch
  * The knife switch at the foot of the front door (brief 015, package I). Pure: switchStep(state, event).
  * Phases: open (resting, or settling back), drag (the handle follows a pointer), throw (the blade swings
  * shut), spark (the blade is in the clips; one spark across the contacts), go (the page opens the lab).
@@ -8,7 +8,7 @@
  *         only in `spark`, and every way out of it gives the grant back. A press that moved is a drag: the
  *         click that follows its release never throws the switch.
  * Never:  read the budget, a clock or the DOM; throw. The shell runs the commands: frames, pointer capture,
- *         the budget, and the click window after a drag.
+ *         the budget, and the wait for the click that may follow a drag.
  */
 import { DUR } from "../motion";
 import { BLADE_SPRING, NUDGE_DEG, OPEN_DEG, type Point, dragAngle, grabOffset, isDrag, releaseTarget, stepBlade } from "./switch-blade";
@@ -62,7 +62,7 @@ export type SwitchEvent =
   | { readonly type: "release"; readonly id: number }
   /** pointercancel, or pointer capture lost without a release. */
   | { readonly type: "cancel"; readonly id: number }
-  /** The click window after a drag's release has passed. */
+  /** The wait for a click after a drag's release has passed. */
   | { readonly type: "clickSettled" }
   /** An animation frame at frame time `t`. */
   | { readonly type: "frame"; readonly t: number }

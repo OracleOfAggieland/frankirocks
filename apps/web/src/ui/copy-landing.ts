@@ -25,6 +25,8 @@ export const LANDING = {
     ],
     wake: "Wake Franki",
     skip: "Skip to the story",
+    /** The bar's section links, named apart from the rail's, which lists the same sections. */
+    nav: "On this page",
   },
   rail: {
     label: "Sections",
@@ -180,24 +182,30 @@ export const LANDING = {
     wordmark: "FRANKIROCKS",
     figure: "Franki, anatomy of the build",
     parts: [
-      { id: "skeleton", part: "Skeleton", feature: "Specs", body: "Requirements, design and tasks, written before the code." },
-      { id: "brain", part: "Brain", feature: "Steering", body: "The rules every change reads first." },
-      { id: "reflexes", part: "Reflexes", feature: "Hooks", body: "Guards that stop a bad write before it lands." },
-      { id: "immune", part: "Immune system", feature: "Property tests", body: "Generated cases that hunt for the one input that breaks a rule." },
+      { id: "skeleton", part: "Skeleton", feature: "Specs", body: "Requirements, design and tasks, written before the code.", pointsAt: "centre line" },
+      { id: "brain", part: "Brain", feature: "Steering", body: "The rules every change reads first.", pointsAt: "head" },
+      { id: "reflexes", part: "Reflexes", feature: "Hooks", body: "Guards that stop a bad write before it lands.", pointsAt: "neck bolts" },
+      { id: "immune", part: "Immune system", feature: "Property tests", body: "Generated cases that hunt for the one input that breaks a rule.", pointsAt: "outer edge" },
     ],
   },
+  /** The 404 page. The title is `titleStart` then `titleWord` in italic. */
   notFound: {
-    title: "This room is empty.",
-    body: "Nothing lives at this address.",
-    fig: "Nobody here",
+    docTitle: "Empty room · Franki",
+    titleStart: "This room is",
+    titleWord: "empty",
+    body: "Franki isn't here. The page you're after may have moved, or was never built.",
+    fig: "the slab, empty",
     home: "Back to the front door",
     lab: "Go to the lab",
   },
+  /** The error page, in the same shape. */
   error: {
-    title: "A fuse blew.",
-    body: "Something went wrong on our side. Nothing you said was lost.",
-    fig: "The fuse",
-    retry: "Reset the fuse",
+    docTitle: "A fuse blew · Franki",
+    titleStart: "A fuse",
+    titleWord: "blew",
+    body: "Something in the lab tripped. Put a new one in and try again.",
+    fig: "the main fuse, blown",
+    retry: "Try again",
     home: "Back to the front door",
   },
 } as const;

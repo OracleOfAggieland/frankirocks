@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { NOT_FOUND_COPY, NotFoundRoom } from "../components/system/NotFoundRoom";
+import { NotFoundRoom } from "../components/system/NotFoundRoom";
+import { LANDING } from "../ui/copy-landing";
 
 // The 404 page for any unmatched URL. The root layout adds the footer.
 export const metadata: Metadata = {
-  title: NOT_FOUND_COPY.docTitle,
+  title: LANDING.notFound.docTitle,
 };
 
 export default function NotFound() {

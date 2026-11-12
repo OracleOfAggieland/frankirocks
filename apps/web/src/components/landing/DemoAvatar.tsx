@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 import { lookFor } from "../../ui/avatar/look";
 import type { AvatarInput, AvatarLook } from "../../ui/avatar/types";
-import { browserScheduler, lookChanged } from "../../ui/hooks/frame-loop";
+import { ELECTRIC_STEP_MS, browserScheduler, lookChanged } from "../../ui/hooks/frame-loop";
 import { browserVisibility } from "../../ui/hooks/page-visible";
 import { type DemoVoice, type VoicePlan, createDemoVoice, envelopeAt } from "../../ui/landing/demo-voice";
 import { type DriverState, type SceneFranki, asleepInput, driverInput, driverStep, initialDriver } from "../../ui/landing/stage-script";
@@ -28,8 +28,6 @@ export interface DemoAvatarProps {
   onFrame?: (at: number, awake: boolean) => void;
 }
 
-/** The SVG ghost's electricity is given a new frame time at most this often, in ms (the lab's pace). */
-const ELECTRIC_STEP_MS = 60;
 
 interface View {
   look: AvatarLook;

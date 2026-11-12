@@ -53,6 +53,16 @@ Every piece of code that holds state and moves it between named states is listed
 | `ui.rendererPhase` | explicit | Which renderer shows the avatar, and the engine's loop | `apps/web/src/ui/avatar/renderer-phase.ts` | [ui-electricity](ui-electricity.md) |
 | `ui.frameLoop` | documented | When the three.js engine requests and cancels frames | `apps/web/src/components/avatar/three/loop.ts` | [ui-electricity](ui-electricity.md) |
 | `ui.acting` | explicit | The three.js engine's pose and one-shot edges | `apps/web/src/ui/avatar/acting.ts` | [ui-electricity](ui-electricity.md) |
+| `ui.dockLayout` | explicit | Whether the Main_Screen's grid has the Card_Dock's column, through the last card's exit | `apps/web/src/ui/dock-layout.ts` | [ui-surfaces](ui-surfaces.md) |
+| `ui.cardSource` | explicit | Which source's rows show under a Card | `apps/web/src/components/surfaces/Card.tsx` | [ui-surfaces](ui-surfaces.md) |
+| `ui.ruleForget` | explicit | Which hard rule's Forget is armed for its second tap | `apps/web/src/components/surfaces/WhatIKnowSheet.tsx` | [ui-surfaces](ui-surfaces.md) |
+| `ui.spider` | explicit | The lab spider's springs, rest and travel, one frame at a time | `apps/web/src/ui/cursor/spider.ts` | [ui-surfaces](ui-surfaces.md) |
+| `ui.gait` | explicit | Which of the spider's feet are planted and which are swinging | `apps/web/src/ui/cursor/gait.ts` | [ui-surfaces](ui-surfaces.md) |
+| `landing.stepClock` | explicit | The stage's beat and words said within one visit to a story step | `apps/web/src/ui/landing/stage-script.ts` | [landing](landing.md) |
+| `landing.stageDriver` | explicit | When the front door's Franki wakes, and when a scene's one-shot fires or is cut | `apps/web/src/ui/landing/stage-script.ts` | [landing](landing.md) |
+| `landing.toyKeys` | explicit | The state toy's pick after a key press | `apps/web/src/components/landing/StateToy.tsx` | [landing](landing.md) |
+| `landing.seen` | explicit | Whether a watched part of a section has entered view | `apps/web/src/ui/landing/seen.ts` | [landing](landing.md) |
+| `landing.switch` | explicit | The knife switch's phase, its spark grant, and when the lab opens | `apps/web/src/ui/landing/switch-machine.ts` | [landing](landing.md) |
 | `server.tick` | documented | Which maintenance runs for an Owner this ops minute | `packages/server/src/worker/tick.ts` | [server-tick](server-tick.md) |
 | `server.session` | documented | A Session's stored status, from open to closed | `packages/server/src/sessions.ts` | [server-tick](server-tick.md) |
 | `server.sdp` | documented | Which Realtime calls a Session has registered | `packages/server/src/routes/sdp.ts` | [server-tick](server-tick.md) |

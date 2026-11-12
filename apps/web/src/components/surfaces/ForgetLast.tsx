@@ -16,8 +16,6 @@ export interface ForgetLastProps {
   onForget(): void;
 }
 
-/** Said to screen readers while a forget is pending. */
-const PENDING = "Forgetting";
 
 const CAPSULE = `${TARGET} ${FOCUS} group franki-forget inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-chip border border-ink-dim px-4 text-sm text-ink-dim transition-colors duration-(--dur-quick) not-aria-disabled:hover:bg-night-2 not-aria-disabled:hover:text-ink not-aria-disabled:focus-visible:text-ink aria-disabled:cursor-default`;
 
@@ -79,7 +77,7 @@ export function ForgetLastButton({ pending, onForget }: { pending: boolean; onFo
         {COPY.forgetLast}
       </button>
       <span role="status" className="sr-only">
-        {pending ? PENDING : ""}
+        {pending ? COPY.forgetLastPending : ""}
       </span>
     </span>
   );

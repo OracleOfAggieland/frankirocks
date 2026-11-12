@@ -12,6 +12,12 @@ import type { Levels } from "../levels/level-meter";
 
 export const DRIVE_STEP = 1 / 32;
 
+/**
+ * Electricity regenerates every 60 to 90 ms, so the SVG ghost's electricity needs a new frame time at most this
+ * often, in ms: one React update per 60 ms is enough. Shared by the lab's screen controller and the front door.
+ */
+export const ELECTRIC_STEP_MS = 60;
+
 type EventBody = EventInput extends infer E ? (E extends { at: number } ? Omit<E, "at"> : never) : never;
 
 export interface FrameScheduler {
