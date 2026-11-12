@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROACTIVE_ANSWER } from "../../app/specimens/_fixtures/visit";
-import { BARRIER_WAIT_MS, INITIAL_VISIT, type VisitEvent, type VisitState, boltEnabled, inputAllowed, visitBadge, visitStep } from "./visit-machine";
+import { BARRIER_WAIT_MS, INITIAL_VISIT, type VisitEvent, type VisitState, badgeFor, boltEnabled, inputAllowed, visitBadge, visitStep } from "./visit-machine";
 
 const FRI = Date.UTC(2026, 10, 6, 8, 40);
 const THU = Date.UTC(2026, 10, 12, 18, 0);
@@ -166,5 +166,21 @@ describe("ui.visit", () => {
     expect(inputAllowed(out.state)).toBe(false);
     const again = visitStep(out.state, { kind: "retry", newVisitId: "v5" });
     expect(again.commands.at(-1)).toEqual({ kind: "reset", seq: again.state.seq, visitId: "v5" });
+  });
+
+  // Brief 038 finding 5.
+  it("the screen's clock: none until the server has said, the world clock on a clone, the real clock on a live account", () => {
+    expect(badgeFor(INITIAL_VISIT, THU, "UTC")).toBeNull();
+    const cloning = run([{ kind: "entered", stored: null, newVisitId: "v1" }]).s;
+    expect(badgeFor(cloning, THU, "UTC")).toBeNull();
+    expect(badgeFor(ready(), THU, "UTC")).toEqual({ simulated: true, instantMs: FRI, zone: "UTC" });
+    // Simulated even when the world clock happens to equal the real one.
+    expect(badgeFor(ready(), FRI, "UTC")).toEqual({ simulated: true, instantMs: FRI, zone: "UTC" });
+    const resetting = visitStep(visitStep(ready(), { kind: "startOverAsked" }).state, { kind: "startOverConfirmed", inCall: false, newVisitId: "v2" }).state;
+    expect(badgeFor(resetting, THU, "UTC")).toBeNull();
+    const failed = run([{ kind: "entered", stored: null, newVisitId: "v1" }, { kind: "resetFailed", seq: 1, why: "timeout" }]).s;
+    expect(badgeFor(failed, THU, "UTC")).toBeNull();
+    const live = run([{ kind: "entered", stored: null, newVisitId: "v1" }, { kind: "resetFailed", seq: 1, why: "live" }]).s;
+    expect(badgeFor(live, THU, "UTC")).toEqual({ simulated: false, instantMs: THU, zone: "UTC" });
   });
 });

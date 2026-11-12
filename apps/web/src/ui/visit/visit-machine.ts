@@ -237,6 +237,18 @@ export function inputAllowed(s: VisitState): boolean {
   return s.phase === "ready" || s.phase === "live";
 }
 
+/**
+ * Brief 038 finding 5: the Time_Badge's props, or null for no clock at all. A clock is shown only once the server has
+ * said which clock the account runs on: a `ready` clone shows its world clock, marked simulated; a `live` account shows
+ * the real clock, not simulated. While the clone is unknown, being made, reset or has failed, no clock is shown, so
+ * the real time is never passed off as the clone's, nor the old clone's time as the new one's.
+ */
+export function badgeFor(s: VisitState, realMs: number, zone: string): { simulated: boolean; instantMs: number; zone: string } | null {
+  if (s.phase === "live") return { simulated: false, instantMs: realMs, zone };
+  if (s.phase === "ready" && s.worldMs !== null) return { simulated: true, instantMs: s.worldMs, zone };
+  return null;
+}
+
 /** Whether the bolt can be pressed now. */
 export function boltEnabled(s: VisitState): boolean {
   return s.phase === "ready" && s.bolt === "idle" && !s.confirming && s.worldMs !== null;
