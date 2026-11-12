@@ -39,3 +39,65 @@ Another lane is wiring `packages/server/src/routes/tool.ts` and the ledger. Leav
 ## Done
 
 Friend Tests 2 and 11 green in the gate scripts with their waits removed, the four properties green with seeds and counterexamples recorded, the checks of brief 016 with `npm run build`, and a section "Outcome" at the end of this file: each change with its commit, each property with its seed, every ruling taken as a numbered question (H-174 on, at the end of the list in `docs/briefs/022-report.md`), and what is not verified.
+
+## Outcome
+
+Lane `fix6`, from `e3d964f`. `build/plan-stages` was merged again at `a23af3c` (tip `367a571` then, with `eef2b14`'s F24, F34 and F35 fixes). Each property runs 1,000 times. Seeds are fast-check's random seeds from the red run.
+
+### Changes
+
+| Change | Commit | Tests |
+|---|---|---|
+| 1. A period has an end: `resolvePeriod` in `core/dates.ts` (additions only) | `5c7679d` | property 2 |
+| 1. The write: an extracted preference whose time applies to `valid_to` gets `validTo` (five lines in `core/extract.ts`) | `4f7b17a` | Friend Test 2, "a diet with an end is stored", wait dropped |
+| 2. The second kinds table, by a separate reader that never opened the product's table | `a8e8234` | none |
+| 2 to 4. The pure half: ingredient kinds, `DIETS`, `core/food/prefs.ts`, `suggestFood` reading prefs after the allergy filter | `015a873` | properties 1, 3, 4; `prefs.test.ts`; `kinds-cover-oracle.test.ts` |
+| 2 to 6. The server: `server/food/prefs-read.ts`; suggest, the hero's yes and the diet answer in `routes/tool-food.ts` | `e22883b` | `server/food/diet-dislike.test.ts`; Friend Test 2 (both suggest steps) and Friend Test 11 green, waits dropped |
+| The hero card's title counts its dinners | `b5fee0f` | `diet-dislike.test.ts` |
+
+Friend Tests 2 and 11 are green, with every wait removed. The Friend Test summary moved from 7 green, 13 waiting and 17 waiting steps to 9 green, 11 waiting and 13 waiting steps. `G_FT02` is gone from `byWait`, and `other` went from 9 to 8. `W.G_FT02` is still defined in `gate-kit.ts`, which this lane may not edit, but nothing uses it.
+
+`routes/tool.ts` was not touched. Nothing needed it: the diet answer runs inside `answerTool`, and its write goes through the same `FoodWrite` in the admission.
+
+### Properties
+
+1. **No dinner breaks a live diet** (`core/food/no-diet-break.property.test.ts`). Red on `suggestFood` before it read preferences: seed 328080552, path "2:0:0:2:1:2:2:2:2:2". Counterexample: no diets and one S0 owner dislike of chicken breast; the chicken quesadillas were offered.
+2. **A period's end is its last instant** (`core/dates-period.property.test.ts`). Red against a resolver that read no period: seed 86905066, path "0:0:0:0:0:0". Counterexample: 1990-01-01 00:00 UTC, "for 1 day", no end.
+3. **Allergies are untouched** (`core/food/allergies-untouched.property.test.ts`). Never red. It was green on its first run, when the preferences were still ignored, and it stayed green after. By construction, diets and dislikes only filter what the allergy filter kept.
+4. **An ended diet is asked about and never assumed over** (`core/food/ended-diet-asks.property.test.ts`). Red before the question existed: seed 196236935, path "8:36:0:1:1:2:1:1:2:2:2:2". Counterexample: an active vegetarian diet on self that ended 2026-11-08, at world time 2026-11-13; no question.
+
+Brief 037's properties are unedited and green.
+
+### Rulings
+
+Rulings H-174 to H-185 are at the end of the list in `docs/briefs/022-report.md`:
+- H-174: `validTo` is end-exclusive.
+- H-175: how the period phrases read.
+- H-176: rennet and gelatin count as meat, and the product's kinds agree with the oracle by construction.
+- H-177: an unknown diet asks, and `pescatarian` is missing from the predicate's codes.
+- H-178: which question is asked, and that it overlaps with `expiryAsk`.
+- H-179: the closed answer list and its writes, with no ledger row and no `pendingRendered`.
+- H-180: what a dislike is.
+- H-181: whose diet applies, as built.
+- H-182: there's no card detail field, so the reasons go to the log as counts.
+- H-183: a failed read offers nothing.
+- H-184: the hero's yes reads diets and dislikes too.
+- H-185: this conflicts with `softEffectAt`'s comment.
+
+### Not verified
+
+- No emulator, no live call, no client.
+- No model offers `suggest` or `answer` yet (brief 030's second phase), so in the app nothing reaches these paths.
+- The diet question's answer has no presentation record, and nothing tests it end to end through a voice call.
+- A pescatarian diet can't be stored by extraction (H-177).
+- The seeded persona has no diet or dislike, so its demo dinners are unchanged. Beat 3 is as green as before.
+
+### Checks
+
+At `a23af3c`, after the merge:
+- `npx vitest run --maxWorkers=3`: exit 0. 467 files; 4145 passed, 35 expected fail.
+- `npm run lint`: exit 0.
+- `npm run typecheck`: exit 0.
+- `npm run build`: exit 0.
+
+`b5fee0f` changes only the hero card's title and adds one test. Its focused run passed: 40 passed, 7 expected fail. The full suite was run again at the tip; see below.
