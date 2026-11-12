@@ -94,6 +94,16 @@ function counted(r: ViewRow, ec: EC, s: Snapshot): boolean {
   return r.memory.status === "active" && eligible({ ref: refOf(r), row: r.memory }, { ...ec, stage: "read" }, s).allow;
 }
 
+/**
+ * A live guess, for the Lab's count only. A guess is never current: spec §4 stores what comes from M as `alleged`
+ * ("From T or M: alleged or guessed, with a conflict flag. Never current"), so a count of active rows alone can never
+ * count one (contract question X-167). It is still checked by `eligible`, so a forgotten or blocked guess leaves the count.
+ */
+const GUESS_STATUSES: readonly string[] = ["active", "alleged"];
+function guessCounted(r: ViewRow, ec: EC, s: Snapshot): boolean {
+  return GUESS_STATUSES.includes(r.memory.status) && eligible({ ref: refOf(r), row: r.memory }, { ...ec, stage: "read" }, s).allow;
+}
+
 /** The shown rows in the fixed reading order: predicate, key, ID. */
 function shownRows(rows: readonly ViewRow[], ctx: ViewContext): ViewRow[] {
   return rows
@@ -329,7 +339,7 @@ export function labView(input: LabInput): LabView {
   for (const r of input.memories) {
     if (r.memory.sourceClass !== "M") continue;
     guessIds.add(r.id);
-    if (r.memory.sens !== "S0" && counted(r, ec, s)) privateGuesses.add(r.id);
+    if (r.memory.sens !== "S0" && guessCounted(r, ec, s)) privateGuesses.add(r.id);
   }
   const delivered = new Set<string>();
   const held = new Set<string>();

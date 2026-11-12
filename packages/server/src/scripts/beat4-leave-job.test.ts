@@ -81,8 +81,6 @@ const BEAT4: Script = {
       label: "the Lab counts the 3 private guesses",
       do: "check",
       of: "the Lab: read {n} emails, guessed 3 private things, said none",
-      waits:
-        "a fit between briefs 019 and 020: the seed's guesses are `alleged` (proposed only), and labView counts a guess only when `counted`, which needs status `active` (core/memory-views.ts counted), so privateGuesses is 0",
       expect: [{ lab: { privateGuesses: 3 } }],
     },
     {
