@@ -149,3 +149,48 @@ describe("property guard, path spellings and the staged state", () => {
     expect(codes).toEqual(paths.map((path) => [path, 2]));
   });
 });
+
+describe("property guard, the suffix, the pathspec and the working folder", () => {
+  const temps: string[] = [];
+  afterEach(() => {
+    for (const root of temps.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
+
+  function runHookFrom(cwd: string, stdin: string, env: NodeJS.ProcessEnv = process.env) {
+    const r = spawnSync(process.execPath, [HOOK], { input: stdin, encoding: "utf8", cwd, env });
+    return { code: r.status, stderr: r.stderr };
+  }
+
+  it("counts the suffix in any letter case as a property file", () => {
+    expect(isPropertyFile("a/b.PROPERTY.TEST.TS")).toBe(true);
+    expect(isPropertyFile("a/b.Property.Test.Ts")).toBe(true);
+  });
+
+  it("blocks the hook for a tracked property file whose suffix is spelled in another letter case", () => {
+    const paths = ["packages/core/src/head.Property.Test.TS", "packages/core/src/HEAD.PROPERTY.TEST.TS"];
+    const codes = paths.map((path) => [path, runHookFrom(REPO_ROOT, event("str_replace", { path, oldStr: "a", newStr: "b" })).code]);
+    expect(codes).toEqual(paths.map((path) => [path, 2]));
+  });
+
+  it("matches a tracked name with capitals in any letter case", () => {
+    const root = mkdtempSync(join(tmpdir(), "property-guard-"));
+    temps.push(root);
+    const git = (...args: string[]) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    expect(git("init", "-q").status).toBe(0);
+    writeFileSync(join(root, "Draft.property.test.ts"), "x");
+    expect(git("add", "Draft.property.test.ts").status).toBe(0);
+    expect(gitTracks("Draft.property.test.ts", root)).toBe(true);
+    expect(gitTracks("draft.property.test.ts", root)).toBe(true);
+    expect(gitTracks("DRAFT.PROPERTY.TEST.TS", root)).toBe(true);
+  });
+
+  it("reads the name literally, so glob characters match no tracked file", () => {
+    expect(gitTracks("packages/core/src/hea?.property.test.ts")).toBe(false);
+    expect(gitTracks("packages/core/src/[h]ead.property.test.ts")).toBe(false);
+    expect(gitTracks("packages/core/src/*.property.test.ts")).toBe(false);
+  });
+
+  it("resolves a relative path from the repository root, not the folder the hook was started in", () => {
+    expect(runHookFrom(join(REPO_ROOT, "scripts"), event("str_replace", { path: TRACKED, oldStr: "a", newStr: "b" })).code).toBe(2);
+  });
+});
