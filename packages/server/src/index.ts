@@ -29,3 +29,6 @@ export * from "./forget/resolve-port";
 // Brief 019: the seeded persona, clone and reset.
 export { seedResetRoute } from "./routes/seed-reset";
 export { PERSONA_FIXTURE_ID } from "./seed/persona";
+
+// Brief 024: the Gate's ledger writers, for the turn and receipt routes.
+export { gateRowId, readWhySaid, writeGateDecision, writeSaid } from "./ledger/said";
