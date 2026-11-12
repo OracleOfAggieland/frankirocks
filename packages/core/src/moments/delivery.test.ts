@@ -107,3 +107,13 @@ describe("brief 036 finding 4: crisis and transition are separate", () => {
     expect(chooseDelivery(input([cand("w", "wish")], { transitionOrCrisis: true })).reasons[0]?.code).toBe("crisisHold");
   });
 });
+
+describe("brief 036 finding 5: a day the zone moved back reads as full", () => {
+  it("todayCounts for an earlier date than the stored day is at the caps; countDelivery counts it into the stored day", () => {
+    const counters = { ...sampleCoreDocs().counters, day: "2026-11-14", heavy: 0, counts: [{ kind: "speech" as const, count: 1 }] };
+    expect(todayCounts(counters, "2026-11-13")).toEqual({ proactive: 3, heavy: 1 });
+    const next = countDelivery(counters, "2026-11-13", false);
+    expect(next.day).toBe("2026-11-14");
+    expect(next.counts).toContainEqual({ kind: "speech", count: 2 });
+  });
+});

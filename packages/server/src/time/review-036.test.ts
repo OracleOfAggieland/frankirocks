@@ -1,11 +1,11 @@
 // Brief 036: the reviewer's sequences, one block per finding, on the server path.
-import { type Memory, type Moment, msFromTs } from "@franki/core";
+import { type CoreCounters, type Memory, type Moment, civilDateAt, msFromTs } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
-import { type TestRig, testRig } from "../testing/fakes";
+import { type TestRig, patchRecord, testRig } from "../testing/fakes";
 import { resetAs, stateOf } from "../testing/seed";
 import { chooseNow, proactiveOf } from "./proactive";
 import { admitMoment } from "./said";
@@ -84,5 +84,22 @@ describe("finding 1: a moved occasion speaks its new time and keeps its wish", (
     expect(await admit(rig, wishId, "resp_1", [p!.whisper.noteId])).toBe(false);
     expect((await momentsOf(rig, UID)).get(wishId)?.status).toBe("leased");
     expect((await stateOf(rig.store, UID)).worldClock).not.toBeNull();
+  });
+});
+
+describe("finding 5: the day's caps hold at admission", () => {
+  it("with speech 3 and heavy 1 already today, admitting a wish is refused and the count stays 3", async () => {
+    const { rig, ctx } = await clone();
+    await memoryTick(ctx);
+    const p = await wishOnWire(ctx, rig);
+    const counters = await rig.store.get<CoreCounters>(UID, paths.core(UID, "counters"));
+    const world = (await stateOf(rig.store, UID)).worldClock!;
+    const day = civilDateAt(msFromTs(world), ZONE);
+    await patchRecord<CoreCounters>(rig.store, UID, paths.core(UID, "counters"), { day, heavy: 1, counts: [...counters!.data.counts.filter((c) => c.kind !== "speech"), { kind: "speech", count: 3 }] });
+    const wishId = ofKind(await momentsOf(rig, UID), "wish")[0]![0];
+    expect(await admit(rig, wishId, "resp_1", [p!.whisper.noteId])).toBe(false);
+    const after = await rig.store.get<CoreCounters>(UID, paths.core(UID, "counters"));
+    expect(after?.data.counts).toContainEqual({ kind: "speech", count: 3 });
+    expect((await momentsOf(rig, UID)).get(wishId)?.status).toBe("leased");
   });
 });

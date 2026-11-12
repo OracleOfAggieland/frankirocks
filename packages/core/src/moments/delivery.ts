@@ -85,15 +85,22 @@ export const isMustSay = (_kind: MomentKind): boolean => false;
 /** Quiet hours have one definition, the Gate's: an unknown zone counts as quiet. */
 export { inQuietHours };
 
+/**
+ * The day's caps at admission (brief 036 finding 5): the reason a line may not be admitted with today's counts, or
+ * null. A mustSay passes; a verified override passes the caps it names.
+ */
+export function capLimit(c: Pick<DeliveryCandidate, "heavy" | "mustSay" | "override">, today: { proactive: number; heavy: number }): "dayCap" | "heavyCap" | null {
+  if (c.mustSay || (c.override?.caps ?? false)) return null;
+  if (today.proactive >= PROACTIVE_DAY_CAP) return "dayCap";
+  if (c.heavy && today.heavy >= HEAVY_DAY_CAP) return "heavyCap";
+  return null;
+}
+
 /** Why a candidate may not be spoken now, or null when it may. */
 function speechLimit(c: DeliveryCandidate, input: DeliveryInput): DeliveryReason | null {
   if (c.mustSay) return null;
   if (!(c.override?.quietHours ?? false) && inQuietHours(input.worldNow, input.zone)) return "quietHours";
-  if (!(c.override?.caps ?? false)) {
-    if (input.today.proactive >= PROACTIVE_DAY_CAP) return "dayCap";
-    if (c.heavy && input.today.heavy >= HEAVY_DAY_CAP) return "heavyCap";
-  }
-  return null;
+  return capLimit(c, input.today);
 }
 
 export function chooseDelivery(input: DeliveryInput): DeliveryChoice {
@@ -164,7 +171,10 @@ export function chooseDelivery(input: DeliveryInput): DeliveryChoice {
  * reset when the world day changes. The receipt seam calls it in the admission's transaction.
  */
 export function countDelivery(counters: CoreCounters, worldDay: string, heavy: boolean): CoreCounters {
-  const fresh = counters.day !== worldDay;
+  // A zone change can make "today" an earlier date than the stored one: count it into the stored day, so a day's
+  // count is never reset to one it already had (brief 036 finding 5).
+  const fresh = counters.day < worldDay;
+  worldDay = fresh ? worldDay : counters.day;
   const counts = fresh ? [] : counters.counts.filter((c) => c.kind !== "speech");
   const speech = fresh ? 0 : (counters.counts.find((c) => c.kind === "speech")?.count ?? 0);
   return {
@@ -175,8 +185,12 @@ export function countDelivery(counters: CoreCounters, worldDay: string, heavy: b
   };
 }
 
-/** Today's counts from `core/counters` for `chooseDelivery`. */
+/**
+ * Today's counts from `core/counters` for `chooseDelivery` and `admitMoment`. A world day earlier than the stored one
+ * (a zone change moved "today" back) reads as full: its count is not known (brief 036 finding 5).
+ */
 export function todayCounts(counters: CoreCounters, worldDay: string): { proactive: number; heavy: number } {
+  if (counters.day > worldDay) return { proactive: PROACTIVE_DAY_CAP, heavy: HEAVY_DAY_CAP };
   if (counters.day !== worldDay) return { proactive: 0, heavy: 0 };
   return { proactive: counters.counts.find((c) => c.kind === "speech")?.count ?? 0, heavy: counters.heavy };
 }

@@ -111,3 +111,4 @@ Heavy (`isHeavy`): a moment whose source has gravity ≥ 2, or kind `griefAsk`, 
 Each amends a ruling above, for the reading that fails closed. Each is the lead's ruling, for the owner to confirm.
 
 - **S-177 (amends §5 step 1, finding 4):** crisis and transition are separate inputs. Crisis holds every candidate that is not `mustSay` (`crisisHold`), so no wish or check-in plays after "He didn't make it". A transition holds insight, celebrate, ask, expiry ask and now `griefAsk` (`transitionHold`). The older single flag `transitionOrCrisis` still reads and holds as both.
+- **S-178 (amends §5 step 4 and gap 12, finding 5):** the caps are checked again inside `admitMoment`'s transaction, with today's counts recomputed there, so two tabs can't both admit past them. A world day earlier than the one `core/counters` holds (a zone change moved "today" back) reads as full, and a count for it goes into the stored day, so a day's count is never reset to one it already had.

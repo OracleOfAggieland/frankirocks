@@ -10,7 +10,7 @@
  *   `recordSaid`   on `kind:"transcript"`: sets `saidAt` only for a moment admitted on that response whose
  *                  transcript matches, and writes the ledger `delivery` row in the same transaction. No row, no claim.
  */
-import { type CoreCounters, type Hasher, type ID, type Ledger, type Memory, type Moment, type PermitKind, type SaidReceipt, civilDateAt, countDelivery, isHeavy, msFromTs, saidTargetOf, saidUpdate, tsFromMs } from "@franki/core";
+import { type CoreCounters, type Hasher, type ID, type Ledger, type Memory, type Moment, type PermitKind, type SaidReceipt, civilDateAt, capLimit, countDelivery, isHeavy, isMustSay, msFromTs, todayCounts, saidTargetOf, saidUpdate, tsFromMs } from "@franki/core";
 import { ownerClock, readCoreDocs } from "../core-docs";
 import { cFields } from "../records";
 import { paths } from "../store/paths";
@@ -45,8 +45,14 @@ export async function admitMoment(tx: Tx, uid: string, momentId: ID, admission: 
   const responseId = admission.responseId;
   const source = doc.data.memoryId === null ? null : await tx.get<Memory>(paths.memory(uid, doc.data.memoryId));
   const heavy = isHeavy(doc.data.kind, source?.data.gravity ?? 0);
+  // Brief 036 finding 5: the day's caps are checked here, in the admission's transaction, so two sessions can't
+  // both admit past them.
+  const worldDay = civilDateAt(pair.worldClock.now, pair.worldClock.zone);
+  const override = doc.data.deliveryOverride;
+  const candidate = { heavy, mustSay: isMustSay(doc.data.kind), override: override === null ? null : { quietHours: override.quietHours, caps: override.caps } };
+  if (capLimit(candidate, todayCounts(core.counters.data, worldDay)) !== null) return false;
   tx.update(doc.path, { ...doc.data, status: "admitted", admittedAt: tsFromMs(ops), responseId, leaseToken: null, leaseUntil: null, updatedAt: tsFromMs(ops) });
-  const counters: CoreCounters = countDelivery(core.counters.data, civilDateAt(pair.worldClock.now, pair.worldClock.zone), heavy);
+  const counters: CoreCounters = countDelivery(core.counters.data, worldDay, heavy);
   tx.update(paths.core(uid, "counters"), { ...counters, updatedAt: tsFromMs(ops) });
   return true;
 }
