@@ -47,6 +47,7 @@ import { paths } from "../store/paths";
 import type { Reader, StoredDoc } from "../store/port";
 import { getMoment, momentVerdict } from "./verdict";
 import { offerAnswer } from "./answered";
+import { recordHeldAtClose } from "./held-reminder";
 
 /** Memories one tick reads for derive; past it, derive writes nothing that tick (fails closed). */
 export const MEMORY_SCAN_MAX = 2_000;
@@ -235,6 +236,8 @@ async function moveMoment(ctx: RouteContext, id: ID, rollupLive: boolean, heroPe
       const after = comparison.takeout.afterCents ?? null;
       next = { ...next, payload: { ...next.payload, before, after, delta: before !== null && after !== null ? before - after : null } };
     }
+    // Brief 042 item 3: a reminder held under crisis that closes unsaid leaves a held row naming the reason.
+    if (next.status === "expired") await recordHeldAtClose(tx, uid, id, m, ops, deps.hasher);
     // Brief 030 P1-3: the comparison's result is stored on the loop (read before this transaction's writes).
     if (next.payload.kind === "celebrate" && comparison !== null) await storeLoopCheck(tx, uid, comparison, ops);
     tx.update(path, next);

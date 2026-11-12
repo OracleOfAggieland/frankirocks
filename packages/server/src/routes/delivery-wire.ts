@@ -24,6 +24,7 @@ import { raceLimit } from "../clock/timers";
 import { paths } from "../store/paths";
 import { type DeliveryVerdict, type SessionSignals, chooseNow, proactiveOf } from "../time/proactive";
 import { writeGateDecision } from "../ledger/said";
+import { heldPastDue, recordReminderHeld } from "../time/held-reminder";
 import { memoryTick, scanMoments } from "../time/tick";
 import { storeReader } from "../head-build";
 import type { RouteContext } from "./runtime";
@@ -132,6 +133,8 @@ async function writeVerdictRows(ctx: RouteContext, stamp: Omit<Stamp, "turnId">,
     for (const v of verdicts.slice(0, DELIVERY_ROWS_MAX)) {
       const row = { candidateId: v.momentId, refs: [{ type: "moment" as const, id: v.momentId, rev: v.rev }], noteIds: [], momentId: v.momentId, sessionId: stamp.sessionId as ID, turnId, audience: signals.audience ?? "unknown", permitKind: "proactive" as const };
       await writeGateDecision(tx, deps.hasher, at, v.result, row);
+      // Brief 042 item 3: a reminder held for a crisis past its due time is recorded, to be said late.
+      if (v.moment !== undefined && v.worldNow !== undefined && heldPastDue(v.moment, v.result, v.worldNow)) await recordReminderHeld(tx, uid, v.momentId, v.moment, deps.clock.read().opsClock.now, deps.hasher);
     }
   });
 }

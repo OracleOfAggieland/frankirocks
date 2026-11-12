@@ -45,6 +45,7 @@ import { scanMoments } from "./tick";
 import { getMoment, momentNoteId, momentVerdict } from "./verdict";
 import { offerAnswer } from "./answered";
 import { type GateSignals, gateCandidateOf, gateContextOf } from "./gate-candidate";
+import { heldReminderText } from "./held-reminder";
 import { isStoreError } from "../store/errors";
 
 /**
@@ -59,6 +60,9 @@ export interface DeliveryVerdict {
   /** The moment's revision when the Gate was asked. */
   rev: number;
   result: GateResult;
+  /** The moment as read, and the owner's world time then (brief 042 item 3 reads a held reminder from them). */
+  moment?: Moment;
+  worldNow?: number;
 }
 
 /**
@@ -91,7 +95,7 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
     if (candidate === null) continue;
     const g = gate(candidate, context);
     if (g.verdict === "say" && g.render !== "attributed") said.push(r);
-    else if (g.verdict !== "say") verdicts.push({ momentId: r.id as ID, rev: r.data.rev, result: g });
+    else if (g.verdict !== "say") verdicts.push({ momentId: r.id as ID, rev: r.data.rev, result: g, moment: r.data, worldNow: pair.worldClock.now });
   }
   const moments = new Map(said.map((r) => [r.id as ID, r.data]));
   const candidates: DeliveryCandidate[] = [];
@@ -122,6 +126,9 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
 async function lineOf(ctx: RouteContext, m: Moment): Promise<{ text: string; sens: Sens } | null> {
   const { uid, deps } = ctx;
   if (m.payload.kind === "cue") {
+    // Brief 042 item 3: a reminder held under crisis past its due time is said late, by its own template.
+    const late = await heldReminderText(ctx, m);
+    if (late !== null) return { text: late, sens: "S0" };
     const text = m.payload.template?.text ?? null;
     if (text === null) return null;
     const ref = m.payload.noteRef;
