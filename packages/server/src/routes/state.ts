@@ -14,6 +14,7 @@ import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import { scheduleTick } from "../worker/tick";
+import { askOpen } from "../onturn/ask";
 import { barrierError, scopeError, staleError } from "./errors";
 import { safeTurnsOf } from "./turn";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
@@ -72,7 +73,8 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
       const next = expireLease(s, ops);
       // R4.2: no ack while the audience is unknown, a parse gap exists, or an S2 user Turn is among the last four.
       const recent = await recentTurns(tx, uid, req.sessionId, next);
-      const ack = effectiveAudience(next, ops) === "unknown" || hasParseGap(next) || hasRecentS2(recent) ? null : stateAck(stamp, ops);
+      // Brief 012 CQ 126: none while an allergy question is asked, so the answer is held rather than passed as `O`.
+      const ack = effectiveAudience(next, ops) === "unknown" || hasParseGap(next) || hasRecentS2(recent) || askOpen(core.rules.data, req.sessionId) ? null : stateAck(stamp, ops);
       // The Deck carries the Session's current safe turns, as the next turn's would (review of wave A, item 2).
       const safe = await safeTurnsOf(tx, uid, recent, next.nextClientSeq, ctx);
       // Question 84: polled once a second, the Session is written only when something it shows would change.
