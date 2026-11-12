@@ -91,6 +91,11 @@ export class MemoryModel {
     void this.refresh();
   }
 
+  /** Brief 030 P1-7: a spoken line claimed gone with no forget receipt (the receipt route said so). */
+  askGone(): void {
+    this.set({ goneAsk: true });
+  }
+
   answerGone(answer: "yes" | "no"): void {
     this.set({ goneAsk: false });
     this.deps.goneControl?.(answer);

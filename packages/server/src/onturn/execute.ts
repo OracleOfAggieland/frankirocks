@@ -154,11 +154,12 @@ export function executeHardRule(run: HardRuleRun): HardRuleResult {
     if (labels.length < SUBJECT_LABELS_MAX) labels.push({ subjectId: subject, label: label.trim().slice(0, 80) });
   }
 
-  // What the route handled (section 5): every slot written or kept, and every code a denial named.
+  // What the route handled (section 5): every slot written, kept or resolved. A denial's codes are not keys (brief 032
+  // H1): one that reached no slot was filed by coverage, so its slot is here, and a key with no subject would cover
+  // any subject's affirmed item in extraction.
   const ids = new Set<ID>("ruleIds" in plan.outcome ? plan.outcome.ruleIds : []);
   const keys = new Map<string, { subjectId: string | null; code: string }>();
   for (const r of [...rules.allergies, ...rules0.allergies]) if (ids.has(r.id)) keys.set(`${r.anonymous ? "" : r.subjectId}|${r.code}`, { subjectId: r.anonymous ? null : r.subjectId, code: r.code });
-  for (const d of plan.ledger) for (const code of d.codes) if (![...keys.values()].some((k) => k.code === code)) keys.set(`|${code}`, { subjectId: null, code });
   const entry: OnTurnHandled = { route: "hardRule", outcome: plan.outcome.kind, keys: [], refs: [], ruleKeys: [...keys.values()].slice(0, RULE_KEYS_MAX) };
   const handled = [...(rules.handled ?? []).filter((h) => h.eid !== run.evidence.eid), { eid: run.evidence.eid, turnId: run.turnId, entries: [entry] }].slice(-HANDLED_RING_MAX);
 

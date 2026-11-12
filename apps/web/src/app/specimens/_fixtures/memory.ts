@@ -46,7 +46,7 @@ export const FIXTURE_SNAPSHOT: SnapshotView = {
   cursor: null,
 };
 
-const base: MemoryResponse = { items: [], snapshot: null, lab: null, strip: null, nextCursor: null, coverage: COMPLETE };
+const base: MemoryResponse = { items: [], snapshot: null, lab: null, strip: null, nextCursor: null, coverage: COMPLETE, hardRules: 0 };
 
 export const FIXTURE_MEMORY: { overview: MemoryResponse; lab: MemoryResponse; strip: MemoryResponse; receipt: MemoryResponse } = {
   overview: { ...base, snapshot: FIXTURE_SNAPSHOT },

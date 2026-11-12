@@ -130,8 +130,10 @@ describe("planHardRule", () => {
     const rules = { ...emptyRules(), allergies: [pending] };
     expect(plan(t, [allergy(t, "peanuts", "denied")], rules).outcome).toEqual({ kind: "pendingResolved", ruleIds: [pending.id], by: "denial" });
     const guest = plan(t, [allergy(t, "peanuts", "denied")], rules, { speakerCertain: false });
-    expect(guest.rules).toBe(rules);
-    expect(guest.outcome).toEqual({ kind: "denialRecorded", wrote: "ledgerOnly" });
+    // Brief 032 H1: the guest's denial reaches no anonymous slot, so it carries nothing and coverage files peanut for
+    // anyone. The owner's pending rule stays.
+    expect(guest.rules.allergies.map((r) => [r.subjectId, r.code, r.state])).toEqual([["self", "peanut", "pending"], [null, "peanut", "pending"]]);
+    expect(guest.outcome).toMatchObject({ kind: "pendingWritten", question: "whoHas" });
     expect(guest.ledger).toEqual([{ eid: TURN_EID, outcome: "denialRecorded", codes: ["peanut"] }]);
   });
 
@@ -144,11 +146,13 @@ describe("planHardRule", () => {
     expect(plan(t, [allergy(t, "any allergies", "denied")], { ...emptyRules(), allergies: [anon] }).rules.noneConfirmed).toEqual([]);
   });
 
-  it("a newly active rule resolves the anonymous filter with its code and the subject's unresolved rule", () => {
+  it("a newly active rule resolves its subject's unresolved rule; an anonymous rule nobody asked about stays", () => {
     const t = "I'm allergic to peanuts.";
     const rules = { ...emptyRules(), allergies: [fixtureRule("anonpeanut", null, "peanut", "pending"), fixtureRule("selfun", "self", "unresolved", "pending"), fixtureRule("other", null, "kiwi", "pending")] };
     const p = plan(t, [allergy(t, "peanuts")], rules);
+    // Brief 032 H3: the anonymous peanut rule wasn't asked, so the owner's own rule doesn't clear it.
     expect(p.rules.allergies.map((r) => [r.subjectId, r.code, r.state])).toEqual([
+      [null, "peanut", "pending"],
       [null, "kiwi", "pending"],
       ["self", "peanut", "active"],
     ]);
@@ -220,8 +224,11 @@ describe("cue sentences and notAllergyByCode", () => {
     for (const t of jokes) {
       expect(notAllergyByCode(ev(t)), t).toBe(true);
       const p = plan(t, []);
-      expect(p.outcome.kind, t).toBe("notAllergy");
-      expect(p.rules.allergies, t).toEqual([]);
+      // Brief 032 H2: coverage reads on past the cue sentence, so the later food or pet word is filed for anyone
+      // (it over-filters at worst); the code check above still reads the RX4 sentence alone.
+      expect(p.outcome.kind, t).toBe("pendingWritten");
+      expect(p.rules.allergies.length, t).toBeGreaterThan(0);
+      expect(p.rules.allergies.every((r) => r.anonymous && r.state === "pending"), t).toBe(true);
     }
   });
   it("passes Mondays and the intolerant boss; fails an alias, a generic object, an allergy pill near 'this', and EpiPen", () => {

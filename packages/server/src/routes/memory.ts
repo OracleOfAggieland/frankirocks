@@ -37,6 +37,7 @@ import { foregroundEC, readAllMemories, snapshotFor, storeReader } from "../head
 import { paths } from "../store/paths";
 import { barrierError, parseError, scopeError } from "./errors";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
+import { loopFalls } from "./strip-falls";
 
 /** The Lab reads at most this many Evidence and ledger rows each; past it, its coverage is partial. */
 export const LAB_READ_CAP = 2_000;
@@ -59,6 +60,7 @@ export function emptyMemoryResponse(view: MemoryRequest["view"]): MemoryResponse
     strip: view === "strip" ? { loopId: null, steps: [] } : null,
     nextCursor: null,
     coverage: COMPLETE,
+    hardRules: 0,
   };
 }
 
@@ -134,7 +136,8 @@ export async function getMemory(ctx: RouteContext, req: MemoryRequest): Promise<
     case "overview": {
       const s = snapshot(rows, view, req.cursor);
       if (s === null) throw scopeError();
-      return { ...empty, snapshot: s, nextCursor: s.cursor, coverage: s.coverage };
+      // Brief 030 P1-11: every allergy rule counts, active or pending, since the food filter treats both as rules.
+      return { ...empty, snapshot: s, nextCursor: s.cursor, coverage: s.coverage, hardRules: core.rules.data.allergies.length };
     }
     case "item":
       return { ...empty, items: itemView(rows, req.id!, view) };
@@ -173,7 +176,7 @@ export async function getMemory(ctx: RouteContext, req: MemoryRequest): Promise<
       return { ...empty, lab, coverage: lab.coverage };
     }
     case "strip":
-      return { ...empty, strip: stripView(rows, view) };
+      return { ...empty, strip: stripView(rows, view, await loopFalls(reader, uid)) };
     default:
       req.view satisfies never;
       return empty;
