@@ -227,7 +227,17 @@ function wellFormed(c: unknown, x: unknown): boolean {
   }
 }
 
+/**
+ * The Gate's answer, carrying the ID and sensitivity of the candidate it decided on (brief 033 finding 6), so a
+ * whisper can be tied to it. Malformed input carries nulls.
+ */
 export function gate(c: GateCandidate, x: GateContext): GateResult {
+  const r = decide(c, x);
+  const ok = !r.reasons.includes("invalidInput");
+  return { ...r, candidateId: ok ? c.id : null, sens: ok ? c.sens : null };
+}
+
+function decide(c: GateCandidate, x: GateContext): GateResult {
   if (!wellFormed(c, x)) {
     let food = false;
     try {

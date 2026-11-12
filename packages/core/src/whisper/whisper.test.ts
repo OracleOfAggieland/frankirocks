@@ -6,8 +6,8 @@ import { addedFacts } from "./added-facts";
 import { WHISPER_TTL_MS, buildWhisper, fixedWhisper } from "./build";
 
 const OPS = Date.parse("2026-11-12T17:00:00.000Z");
-const say = (o: Partial<GateResult> = {}): GateResult => ({ verdict: "say", form: "item", render: "free", carveOut: null, mustSay: null, fixedLine: null, reasons: ["ok"], ...o });
-const note = (tokens: string[], momentId: string | null = null) => ({ noteId: testId("n1"), momentId, sens: "S0" as const, rootKeys: [], dependsOn: [], tokens });
+const say = (o: Partial<GateResult> = {}): GateResult => ({ verdict: "say", form: "item", render: "free", carveOut: null, mustSay: null, fixedLine: null, reasons: ["ok"], candidateId: testId("c1"), sens: "S0", ...o });
+const note = (tokens: string[], momentId: string | null = null) => ({ noteId: testId("n1"), momentId, sens: "S0" as const, rootKeys: [], dependsOn: [], tokens, candidateId: testId("c1") });
 const at = { opsNow: OPS, trigger: "unprompted" as const };
 
 describe("whisper builder", () => {
@@ -57,7 +57,7 @@ describe("addedFacts", () => {
 
 describe("whisper slots", () => {
   it("never fills a slot inside a token", () => {
-    const g: GateResult = { verdict: "say", form: "item", render: "free", carveOut: null, mustSay: null, fixedLine: null, reasons: ["ok"] };
+    const g: GateResult = { verdict: "say", form: "item", render: "free", carveOut: null, mustSay: null, fixedLine: null, reasons: ["ok"], candidateId: testId("c1"), sens: "S0" };
     expect(buildWhisper(note(["{0}", "Pip"]), g, "item", at)?.text).toBe("{0}, Pip. One line, no recap.");
   });
 });

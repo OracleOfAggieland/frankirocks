@@ -108,4 +108,11 @@ export interface GateResult {
   /** A fixed line said instead of the candidate (hard rules fail closed). */
   fixedLine: string | null;
   reasons: GateReason[];
+  /**
+   * The candidate this result is for, and its sensitivity as given (brief 033 finding 6). `gate` always sets both
+   * (null on invalid input); `buildWhisper` refuses a result without them. Optional in the type only so results
+   * written before them still type-check.
+   */
+  candidateId?: ID | null;
+  sens?: Sens | null;
 }
