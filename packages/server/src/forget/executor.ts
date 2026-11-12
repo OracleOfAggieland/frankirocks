@@ -57,7 +57,7 @@ export const FORGET_LEASE_MS = 30_000;
 export const FORGET_RETRY_MS = 5_000;
 /** Effects read per forget; past this, install stops `blocked` with LIMIT rather than retract only some. */
 export const FORGET_EFFECTS_MAX = 1_000;
-/** The floor reads one page of turns from the request's Session. */
+/** Turns read per page from the request's Session. */
 const TURNS_PAGE = 100;
 const SESSION_STATUSES_WITH_CALLS = ["minting", "active", "quarantined", "closing"] as const;
 
@@ -171,17 +171,39 @@ interface SessionView {
   sessionId: ID;
   requestTurns: { id: ID; turn: Turn }[];
   others: { id: ID; turn: Turn }[];
+  /** False when the read stopped at TURNS_READ_MAX before the Session's newest turn (review 028 finding 6). */
+  complete: boolean;
 }
+
+/** The most turns the floor reads from the request's Session; past it the manifest is not complete. */
+export const TURNS_READ_MAX = 1_000;
 
 async function readSession(store: StorePort, uid: string, job: Job): Promise<SessionView> {
   const sessionId = job.sourceIds[0]!;
   const requestIds = new Set<string>(forgetOf(job).requestTurnIds);
-  const rows = await store.query<Turn>(uid, { collection: paths.turns(uid, sessionId), where: [], orderBy: { field: "seq", dir: "asc" }, limit: TURNS_PAGE });
+  // Page by page (Q14 runs ascending only), so the request is found in a long Session (review 028 finding 6).
+  const rows: StoredDoc<Turn>[] = [];
+  let complete = false;
+  while (rows.length < TURNS_READ_MAX) {
+    const last = rows[rows.length - 1];
+    const page = await store.query<Turn>(uid, {
+      collection: paths.turns(uid, sessionId),
+      where: last === undefined ? [] : [{ field: "seq", op: ">", value: last.data.seq }],
+      orderBy: { field: "seq", dir: "asc" },
+      limit: TURNS_PAGE,
+    });
+    rows.push(...page);
+    if (page.length < TURNS_PAGE) {
+      complete = true;
+      break;
+    }
+  }
   const user = rows.filter((r) => r.data.role === "user");
   return {
     sessionId,
     requestTurns: user.filter((r) => requestIds.has(r.id)).map((r) => ({ id: r.id, turn: r.data })),
     others: user.filter((r) => !requestIds.has(r.id) && r.data.state !== "dead").map((r) => ({ id: r.id, turn: r.data })),
+    complete,
   };
 }
 
@@ -232,7 +254,9 @@ async function runResolve(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease
   const memories = await allPages<Memory>(deps.store, uid, paths.collection(uid, "memories"), () => true, 201);
   const rules = (await deps.store.get<CoreRules>(uid, paths.core(uid, "rules")))?.data;
   if (rules === undefined) throw new Error("core/rules is missing");
-  const manifest = resolveInput({ request, requestText, turns, memories: memories.map((m) => ({ id: m.id, memory: m.data })), rules });
+  const scanned = resolveInput({ request, requestText, turns, memories: memories.map((m) => ({ id: m.id, memory: m.data })), rules });
+  // A Session read that stopped at its cap is not a complete manifest, so the answer holds and asks.
+  const manifest = { ...scanned, complete: scanned.complete && view.complete };
   const output = await deps.resolver.resolve(manifest.input);
   const evidence = await readEvidence(deps.store, uid, [...turns.flatMap((t) => (t.eid === null ? [] : [t.eid])), ...manifest.input.candidates.flatMap((c) => c.roots.map((r) => r.eid))]);
   const before = view.others.filter((t) => first !== undefined && msFromTs(t.turn.committedAt) <= msFromTs(first.turn.committedAt)).at(-1);
@@ -310,7 +334,8 @@ async function runInstall(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease
     rules,
     // No entity store on this branch: a non-self rule touched by a forget goes pending (ruling F-8).
     roster: [],
-    uncommittedAtFence: view.others.some((t) => t.turn.parseState === "pending"),
+    // An unread older turn may be uncommitted: a capped read counts as one (fails closed).
+    uncommittedAtFence: !view.complete || view.others.some((t) => t.turn.parseState === "pending"),
     hasher: deps.hasher,
   });
   if (plan.writes.filter((w) => w.order === 3).length > FORGET_PAGE_DOCS) return "limit";
