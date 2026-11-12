@@ -358,6 +358,11 @@ export interface VoiceState {
   stateFailures: { since: number; attempts: number } | null;
   stateRetryVisible: boolean;
   awaitingOpen: boolean;
+  /**
+   * The open in flight was sent before a `blocked` answer started the swap: its answer is closed and never adopted,
+   * and the swap's own open goes out after it, so only one open is ever in flight (brief 031, finding 1).
+   */
+  staleOpen: boolean;
   hangingUp: boolean;
   error: "open" | "close" | null;
   // voice-control (design "New state")
@@ -423,6 +428,7 @@ export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState
     stateFailures: null,
     stateRetryVisible: false,
     awaitingOpen: false,
+    staleOpen: false,
     hangingUp: false,
     error: null,
     judge: null,
@@ -843,7 +849,8 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       onOpen(s, event.response);
       break;
     case "openFailed":
-      if (state.awaitingOpen) openFailed(s);
+      if (state.staleOpen) dropStaleOpen(s, null);
+      else if (state.awaitingOpen) openFailed(s);
       break;
     case "sdpFailed":
     case "connectionLost":
@@ -942,8 +949,22 @@ function startOpen(s: Step, zone: string, retrying: boolean): void {
   s.arm("openWait", s.now + OPEN_LIMIT_MS);
 }
 
+/**
+ * The answer to an open sent before a `blocked` answer (brief 031, finding 1). The server may have handled it before
+ * the narrowing committed, with the old audience and no swap line, so it is never adopted: a Session it created is
+ * closed. In SWAPPING the swap's own open goes out now, naming the narrowed Session.
+ */
+function dropStaleOpen(s: Step, res: Infer<typeof OpenResponse> | null): void {
+  s.set({ staleOpen: false });
+  if (res !== null && res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: "user" } });
+  if (s.st.phase !== "SWAPPING" || !s.st.awaitingOpen) return;
+  s.push({ kind: "open", body: { initiator: "user", previousSessionId: s.st.narrowedFrom ?? s.st.lastSessionId, clientZone: s.st.zone, visitId: null } });
+  s.arm("openWait", s.now + OPEN_LIMIT_MS);
+}
+
 function onOpen(s: Step, res: Infer<typeof OpenResponse>): void {
   const st = s.st;
+  if (st.staleOpen) return dropStaleOpen(s, res);
   if (!st.awaitingOpen) {
     // The Owner hung up before the open answered: close the Session it created.
     if (res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: "user" } });
@@ -1037,6 +1058,7 @@ function openFailed(s: Step): void {
  *                                                                                                      else false
  *   outputMuted               true                      true (mute)                    -               -
  *   awaitingOpen              false (set by caller)     keep                           false           true
+ *   staleOpen                 keep                      keep                           -               -
  *   hangingUp                 hangUp: a Session was     keep                           -               -
  *                             held; openFailed: keep
  *   error                     hangUp: null;             keep                           -               null
@@ -1050,8 +1072,10 @@ function openFailed(s: Step): void {
  * false, and disarms ack, connect, retryUi and reconnect.
  * A fifth exit, startSwap (a `blocked` answer, or the end of a care reply after one), resets as `recovery` does,
  * except: phase SWAPPING; lastSessionId and narrowedFrom the narrowed Session; recovery null, retryVisible,
- * stateFailures and stateRetryVisible cleared; instructions null; speech []; deadlines {}, then swap and, unless
- * an open is already in flight, openWait; awaitingOpen true; error null; micMuted kept.
+ * stateFailures and stateRetryVisible cleared; instructions null; speech []; deadlines {}, then swap and openWait
+ * (the open in flight keeps its own deadline); awaitingOpen true; staleOpen true when an open was already in
+ * flight, else kept; error null; micMuted kept. staleOpen is cleared only by the next open answer (onOpen or
+ * openFailed, through dropStaleOpen), which is then closed and dropped whatever the phase.
  */
 function closedFields(st: VoiceState): Partial<VoiceState> {
   return {
@@ -1141,8 +1165,9 @@ function reconnect(s: Step): void {
  * nothing more is heard from it. Mute, cancel and clear what it has in flight, tear it down and open a fresh call
  * naming the narrowed Session, so the server carries the narrowed audience over and sends the swap line. No close
  * is posted for the narrowed Session: the server is hanging it up. A different Session this call held (a reconnect
- * opened before the answer came) is closed, since no narrowing reaches it. An open already in flight is kept as
- * the swap's own open. The avatar shows `thinking` and the call button stays "hang up" throughout.
+ * opened before the answer came) is closed, since no narrowing reaches it. An open already in flight is never the
+ * swap's own: its answer is closed, and the swap's open goes out after it (`staleOpen`, brief 031 finding 1). The
+ * avatar shows `thinking` and the call button stays "hang up" throughout.
  */
 function startSwap(s: Step, from: string): void {
   if (s.st.phase === "CLOSED") return;
@@ -1176,7 +1201,13 @@ function startSwap(s: Step, from: string): void {
     stateRetryVisible: false,
     error: null,
   });
-  if (!st.awaitingOpen) {
+  if (st.awaitingOpen) {
+    // An open sent before the `blocked` answer is never the swap's: the server may have handled it before the
+    // narrowing committed. Its answer is closed when it comes, and the swap's own open goes out then
+    // (dropStaleOpen); its own wait stays armed, so an open that never answers still ends the swap (brief 031).
+    s.set({ staleOpen: true });
+    s.arm("openWait", st.deadlines.openWait ?? s.now + OPEN_LIMIT_MS);
+  } else {
     s.set({ awaitingOpen: true });
     s.push({ kind: "open", body: { initiator: "user", previousSessionId: from, clientZone: s.st.zone, visitId: null } });
     s.arm("openWait", s.now + OPEN_LIMIT_MS);

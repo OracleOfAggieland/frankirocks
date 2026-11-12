@@ -145,7 +145,7 @@ describe("call swap transitions", () => {
     expect(cmds).toContainEqual(expect.objectContaining({ kind: "close", body: expect.objectContaining({ sessionId: fresh, reason: "error" }) }));
   });
 
-  it("CONNECTING (reconnect) + turnOk blocked for the lost Session -> SWAPPING (R14.6: the answer decides; the open in flight is the swap's)", () => {
+  it("CONNECTING (reconnect) + turnOk blocked for the lost Session -> SWAPPING (R14.6: the answer decides; the open in flight is never the swap's, brief 031)", () => {
     const { d, play } = rig();
     play({ k: "typed" }, 300);
     const narrowed = d.st.session!.sessionId;
@@ -154,10 +154,42 @@ describe("call swap transitions", () => {
     // The reconnect's open goes out naming the lost Session before the answer comes.
     play({ k: "fire", name: "reconnect" });
     expect(d.st.awaitingOpen).toBe(true);
+    const openWait = d.st.deadlines.openWait;
     const cmds = play({ k: "blocked", pick: 0, care: false }, 300);
-    expect(d.st).toMatchObject({ phase: "SWAPPING", recovery: null, narrowedFrom: narrowed, awaitingOpen: true });
+    expect(d.st).toMatchObject({ phase: "SWAPPING", recovery: null, narrowedFrom: narrowed, awaitingOpen: true, staleOpen: true });
+    // One open in flight at a time: the swap's own goes out when the reconnect's answers; that one keeps its wait.
     expect(cmds.some((c) => c.kind === "open")).toBe(false);
+    expect(d.st.deadlines.openWait).toBe(openWait);
     expect(avatarState(d.st)).toBe("thinking");
+    // The reconnect's open answers: its Session is closed, never connected, and the swap's open follows.
+    const stale = play({ k: "openOk" }, 300);
+    expect(stale.some((c) => c.kind === "connect")).toBe(false);
+    expect(stale.map((c) => c.kind)).toEqual(expect.arrayContaining(["close", "open"]));
+    expect(d.st.staleOpen).toBe(false);
+    play({ k: "openOk" }, 300);
+    play({ k: "channelOpen" }, 200);
+    play({ k: "stateOk", variant: "fresh" }, 100);
+    expect(d.st.phase).toBe("HELD");
+    expect(d.st.pending?.notes[0]?.text).toBe(COMPANY_LINE);
+  });
+
+  it("SWAPPING + openOk for the open sent before the blocked answer -> SWAPPING (closed, never adopted; the swap's own open follows)", () => {
+    const { d, play } = rig();
+    play({ k: "typed" }, 300);
+    const narrowed = d.st.session!.sessionId;
+    play({ k: "connectionLost" }, 200);
+    play({ k: "fire", name: "reconnect" });
+    play({ k: "blocked", pick: 0, care: false }, 300);
+    expect(d.st.phase).toBe("SWAPPING");
+    // The server handled the reconnect's open before it committed the narrowing: a new Session, no swap line.
+    const cmds = play({ k: "openEarly" }, 200);
+    const early = d.trace.steps.at(-1)!.event;
+    expect(early.type).toBe("openOk");
+    const earlySession = early.type === "openOk" ? early.response.sessionId : "";
+    expect(cmds.some((c) => c.kind === "connect"), "the early open's Session is never connected").toBe(false);
+    expect(cmds).toContainEqual(expect.objectContaining({ kind: "close", body: expect.objectContaining({ sessionId: earlySession }) }));
+    expect(cmds).toContainEqual(expect.objectContaining({ kind: "open", body: expect.objectContaining({ previousSessionId: narrowed }) }));
+    expect(d.st).toMatchObject({ phase: "SWAPPING", session: null, awaitingOpen: true });
     play({ k: "openOk" }, 300);
     play({ k: "channelOpen" }, 200);
     play({ k: "stateOk", variant: "fresh" }, 100);
