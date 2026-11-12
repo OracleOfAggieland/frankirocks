@@ -1,5 +1,5 @@
 // Brief 035: the review of the audience wave. One block per finding, each the reviewer's sequence as a route test.
-import { COMPANY_LINE, type CoreBundle, type CoreEpoch, type CoreRules, type Job, type SS, type Session, type Turn } from "@franki/core";
+import { COMPANY_LINE, OPEN_LIMIT_MS, SWAP_LIMIT_MS, type CoreBundle, type CoreEpoch, type CoreRules, type Job, type SS, type Session, type Turn } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { never, ok } from "../openai/fake";
@@ -15,6 +15,7 @@ import { UID, doorRig, postTurn } from "../testing/audience-doors";
 import { hangupJobId } from "../worker/hangup";
 import { extractJobId } from "../worker/extract-jobs";
 import { template } from "../testing/arb-rule-turns";
+import { SWAP_WAIT_MS } from "../audience-swap";
 
 /** The Stamp the browser would hold now: the stored core revisions. */
 async function stampNow(rig: TestRig, sessionId: string): Promise<SS> {
@@ -233,5 +234,34 @@ describe("finding 5: an inherited audience carries on with no close before the r
     expect(closed.status).toBe(200);
     const c = await openNaming(rig, bId, "open-c");
     expect((await sessionOf(rig, c.body.sessionId)).audience).toBe("private");
+  });
+});
+
+describe("finding 6: the swap wait covers the browser's swap, and an expired wait never yields private", () => {
+  it("the server's swap wait is at least the browser's swap limit plus one open", () => {
+    expect(SWAP_WAIT_MS).toBeGreaterThanOrEqual(SWAP_LIMIT_MS + OPEN_LIMIT_MS);
+  });
+
+  it("an open naming A 11 s after the hit, past the old 10 s wait, still starts narrow", async () => {
+    const { rig, s } = await doorRig(true);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9 })));
+    await postTurn(rig, voice(s.stamp, 1, "My boss just walked in."));
+    await runScheduled(rig);
+    rig.clock.advance(11_000);
+    const b = await openNaming(rig, s.sessionId, "open-b");
+    expect(headText(b.body)).not.toContain(PERSONAL_FACT);
+    expect((await sessionOf(rig, b.body.sessionId)).audience).not.toBe("private");
+  });
+
+  it("past even the longer wait, the open starts unknown: the S0 Head and no swap line", async () => {
+    const { rig, s } = await doorRig(true);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9 })));
+    await postTurn(rig, voice(s.stamp, 1, "My boss just walked in."));
+    await runScheduled(rig);
+    rig.clock.advance(SWAP_WAIT_MS + 1);
+    const b = await openNaming(rig, s.sessionId, "open-b");
+    expect(headText(b.body)).not.toContain(PERSONAL_FACT);
+    expect((await sessionOf(rig, b.body.sessionId)).audience).toBe("unknown");
+    expect(b.body.proactive).toBeNull();
   });
 });

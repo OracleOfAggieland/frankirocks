@@ -80,13 +80,14 @@ describe("/api/session/open: the carried audience (task 50)", () => {
     expect(res.body.proactive).toBeNull();
   });
 
-  it("past waitDeadline it starts private, with the full Head and no line", async () => {
+  // Brief 035 (finding 6): an expired wait yields unknown, never private.
+  it("past waitDeadline it starts unknown, with the S0 Head and no line", async () => {
     const { rig, s } = await rigWithCall();
     await narrow(rig, s);
     rig.clock.advance(SWAP_WAIT_MS + 1);
     const res = await open(rig, s.sessionId);
-    expect((await sessionOf(rig, res.body.sessionId)).audience).toBe("private");
-    expect(res.body.deck.head.text).toContain(PERSONAL_FACT);
+    expect((await sessionOf(rig, res.body.sessionId)).audience).toBe("unknown");
+    expect(res.body.deck.head.text).not.toContain(PERSONAL_FACT);
     expect(res.body.proactive).toBeNull();
   });
 

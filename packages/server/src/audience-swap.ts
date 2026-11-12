@@ -26,6 +26,8 @@ import {
   type RuleInput,
   type RuleOutcome,
   type RuleParse,
+  OPEN_LIMIT_MS,
+  SWAP_LIMIT_MS,
   type Session,
   crisisFires,
   msFromTs,
@@ -43,8 +45,11 @@ import { ensureHangupJob } from "./worker/hangup";
 import { type Tx, readSnapshot } from "./store/port";
 import type { RouteContext } from "./routes/runtime";
 
-/** Row 8: how long the narrowed audience waits for the fresh call's open (question 81). */
-export const SWAP_WAIT_MS = 10_000;
+/**
+ * Row 8: how long the narrowed audience waits for the fresh call's open (question 81). Brief 035 (finding 6): set from
+ * the browser's own limits, its swap limit plus one open, so the open of a swap the browser still runs is never late.
+ */
+export const SWAP_WAIT_MS = SWAP_LIMIT_MS + OPEN_LIMIT_MS;
 /** Row 6: the swap waits for the care reply, so the audience waits longer (R14.7; question 81). */
 export const CARE_SWAP_WAIT_MS = 60_000;
 /** An error close of a non-private Session: the reconnect's open inherits the audience (R14.6; question 81). */
@@ -196,12 +201,16 @@ export function audienceEffect(o: RuleOutcome, x: AudienceInput): AudienceEffect
  * audience when it is the Owner's (it was read under the Owner's uid) and not private; else `private`. An expired
  * parse lease counts as the failed repair it is (`unknown`).
  * Brief 035 (finding 5): a Session opened, or narrowed, with a non-private audience and no `waitDeadline` passes it
- * on whether or not a close came first; only the Owner's own close makes it private (`userCloseCarry`).
+ * on whether or not a close came first; only the Owner's own close makes it private (`userCloseCarry`). Finding 6:
+ * once a set wait has expired, a non-private Session passes on `unknown`, never `private`.
  */
 export function inheritedAudience(prev: Session | null, opsNow: number): { audience: Au; crisis: boolean } | null {
-  if (prev === null || (prev.waitDeadline !== null && msFromTs(prev.waitDeadline) < opsNow)) return null;
+  if (prev === null) return null;
   const audience = effectiveAudience(expireLease(prev, opsNow), opsNow);
-  return audience === "private" ? null : { audience, crisis: prev.modifiers.crisis !== null };
+  if (audience === "private") return null;
+  // Brief 035 (finding 6): an expired wait never yields private. It yields unknown, the S0 Head with no swap line.
+  const expired = prev.waitDeadline !== null && msFromTs(prev.waitDeadline) < opsNow;
+  return { audience: expired ? "unknown" : audience, crisis: prev.modifiers.crisis !== null };
 }
 
 /**
