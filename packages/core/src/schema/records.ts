@@ -948,7 +948,9 @@ export const Moment = refine(
      * lease and generation), and the tokens an `idTagged` match needs. The `said` match targets it. Null until
      * rendered; cleared by a re-plan or a new lease. Rows written before it read as null (`withMomentDefaults`).
      */
-    rendered: nullable(obj({ noteId: ID, text: str(1024), tokens: arr(str(64), 8), at: TS })),
+    // Brief 045 finding 12: a render records the Session and the pending ID it was sent with; a receipt counts only
+    // for what was sent to its Session. Rows rendered before have neither, and no receipt counts for them.
+    rendered: nullable(union(obj({ noteId: ID, text: str(1024), tokens: arr(str(64), 8), at: TS, sessionId: ID, pendingId: nullable(ID) }), obj({ noteId: ID, text: str(1024), tokens: arr(str(64), 8), at: TS }))),
   }),
   (m, path) => {
     const sources = [m.memoryId, m.rollupId, m.actionId].filter((s) => s !== null).length;

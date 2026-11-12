@@ -72,11 +72,13 @@ describe("POST /api/receipt: moments (brief 030 P1-6)", () => {
     expect((await all()).get(wishId)!.status).toBe("leased");
   });
 
-  it("a pendingRendered receipt records the render once", async () => {
+  // Brief 045 finding 12 changed this: a client's pendingRendered names an ID the client chose, so it is never a
+  // showing. The showing is recorded where the server plays the moment it rendered with that pending ID.
+  it("a pendingRendered receipt records no render", async () => {
     const { rig, receipt } = await setup();
     const pendingId = testId("pending-1");
     await receipt({ kind: "pendingRendered", pendingId });
-    expect(await rig.store.get(UID, paths.ledger(UID, renderedEntryId(rig.deps.hasher, pendingId as never)))).not.toBeNull();
+    expect(await rig.store.get(UID, paths.ledger(UID, renderedEntryId(rig.deps.hasher, pendingId as never)))).toBeNull();
   });
 
   it("a spoken line that claims something is gone, with no forget receipt, asks (brief 030 P1-7)", async () => {

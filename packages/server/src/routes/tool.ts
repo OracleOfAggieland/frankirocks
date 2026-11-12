@@ -191,7 +191,7 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       const heroWrite = answered?.write == null ? null : await answered.write(tx, core.rules.data);
       if (answered?.write != null && heroWrite === null) throw new Unrecorded<ToolRes>({ ...empty, status: "stale" });
       // Brief 042 item 2: a no to the hero offer is recorded, so the offer closes and is not offered again.
-      if (result.name === "answer" && result.state === "declined" && result.pendingId !== null) await recordHeroDeclined(tx, uid, result.pendingId, ops, deps.hasher);
+      if (result.name === "answer" && result.state === "declined" && answered?.declinedPendingId !== undefined) await recordHeroDeclined(tx, uid, answered.declinedPendingId, ops, deps.hasher);
       const head = core.bundle.data.head;
       const turn = check.turn;
       const safe = await earlierSafeTurns(tx, uid, req.stamp.sessionId, turn.seq, ctx);

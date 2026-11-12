@@ -125,15 +125,35 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
   return { choice, moments, verdicts };
 }
 
-/** The line a moment speaks, worded by code; null when it can't be worded now. Its sensitivity is the Gate's. */
-async function lineOf(ctx: RouteContext, m: Moment): Promise<string | null> {
+/**
+ * Brief 045 finding 7: the moment kinds whose line asks for an answer (the hero offer, an offer, a question). A
+ * typed screen neither shows nor admits them, and a Session with no call never admits one.
+ */
+export const ASKS_FOR_ANSWER: ReadonlySet<string> = new Set(["pattern", "offer", "ask"]);
+export const asksForAnswer = (m: Pick<Moment, "payload">): boolean => ASKS_FOR_ANSWER.has(m.payload.kind);
+
+/**
+ * The line a moment speaks, worded by code; null when it can't be worded now. Its sensitivity is the Gate's. Brief
+ * 045 finding 12: with the pending ID the line offers, if any, recorded with the render.
+ */
+async function lineOf(ctx: RouteContext, m: Moment): Promise<{ text: string; pendingId: string | null } | null> {
+  let pendingId: string | null = m.payload.kind === "offer" || m.payload.kind === "ask" ? m.payload.pendingId : null;
+  const text = await wordedLine(ctx, m, (id) => (pendingId = id));
+  return text === null ? null : { text, pendingId };
+}
+
+async function wordedLine(ctx: RouteContext, m: Moment, offered: (pendingId: string) => void): Promise<string | null> {
   if (m.payload.kind === "cue") {
     // Brief 042 item 3: a reminder held under crisis past its due time is said late, by its own template.
     const late = await heldReminderText(ctx, m);
     if (late !== null) return late;
     return m.payload.template?.text ?? null;
   }
-  if (m.payload.kind === "pattern") return (await heroOffer(ctx, 0))?.line ?? null;
+  if (m.payload.kind === "pattern") {
+    const offer = await heroOffer(ctx, 0);
+    if (offer !== null) offered(offer.pendingId);
+    return offer?.line ?? null;
+  }
   if (m.payload.kind === "celebrate") {
     const c = await compareLoop(ctx, m.payload.loopId, 0);
     return c?.lines == null ? null : c.lines.join(" ");
@@ -154,7 +174,7 @@ async function sensOf(ctx: RouteContext, m: Moment): Promise<Sens | null> {
  * Records the line a moment goes on the wire as (brief 036 finding 6), in a transaction that rereads the moment
  * (still leased under the same lease and generation) and its source. Returns false, writing nothing, otherwise.
  */
-async function render(ctx: RouteContext, momentId: ID, m: Moment, noteId: string, text: string): Promise<boolean> {
+async function render(ctx: RouteContext, momentId: ID, m: Moment, noteId: string, text: string, sent: { sessionId: ID; pendingId: ID | null }): Promise<boolean> {
   const { uid, deps } = ctx;
   try {
     return await deps.store.transaction(uid, async (tx) => {
@@ -166,7 +186,7 @@ async function render(ctx: RouteContext, momentId: ID, m: Moment, noteId: string
       if (doc.data.leaseUntil === null || Date.parse(doc.data.leaseUntil) <= ops) return false;
       // The line was just worded from the rollup's detector, so it passes now.
       if ((await momentVerdict(tx, uid, doc.data, core, deps.clock, { rollupLive: true })) !== "ok") return false;
-      tx.update(doc.path, { ...doc.data, rendered: { noteId, text, tokens: saidTokens(text), at: tsFromMs(ops) }, updatedAt: tsFromMs(ops) });
+      tx.update(doc.path, { ...doc.data, rendered: { noteId, text, tokens: saidTokens(text), at: tsFromMs(ops), sessionId: sent.sessionId, pendingId: sent.pendingId }, updatedAt: tsFromMs(ops) });
       return true;
     });
   } catch (error) {
@@ -185,12 +205,13 @@ export type ProactiveDeck = Pick<Deck, "head" | "turns">;
  */
 export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, stamp: Stamp, deck: ProactiveDeck | null = null): Promise<Proactive | null> {
   const { deps } = ctx;
-  const line = await lineOf(ctx, m);
+  const worded = await lineOf(ctx, m);
+  const line = worded?.text ?? null;
   const sens = line === null ? null : await sensOf(ctx, m);
   if (line === null || sens === null || sens === "S2") return null;
   const noteId = momentNoteId(deps.hasher, momentId, m) as ID;
   const text = line.slice(0, 1024);
-  if (!(await render(ctx, momentId, m, noteId, text))) return null;
+  if (!(await render(ctx, momentId, m, noteId, text, { sessionId: stamp.sessionId as ID, pendingId: (worded?.pendingId ?? null) as ID | null }))) return null;
   const ops = deps.clock.read().opsClock.now;
   const expiresAt = tsFromMs(ops + PERMIT_TTL_MS);
   const whisper: W = {
@@ -218,5 +239,5 @@ export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, st
     expiresAt,
   };
   const cards: Card[] = [];
-  return { turnId: deps.hasher.id(["proactiveTurn", stamp.sessionId, momentId, m.generation]) as ID, permit, whisper, cards };
+  return { turnId: deps.hasher.id(["proactiveTurn", stamp.sessionId, momentId, m.generation]) as ID, permit, whisper, cards, asks: asksForAnswer(m) };
 }

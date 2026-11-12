@@ -317,6 +317,8 @@ export interface FoodOutcome {
   result: Result;
   /** Null when there is nothing to check: nothing food was answered. */
   write: FoodWrite | null;
+  /** Brief 045 finding 12: the hero offer a no declined, for the route's row; the result itself carries no pending ID. */
+  declinedPendingId?: string;
 }
 
 /**
@@ -601,7 +603,8 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, callArgs: Answ
   const { uid, deps } = ctx;
   const byCode = callArgs.pendingId === null || callArgs.choiceId === null;
   let args: { pendingId: string | null; choiceId: string | null } = callArgs;
-  const answer = (state: "applied" | "declined" | "clarify" | "stale", receiptId: string | null = null, cards: Card[] = []): Result => ({ name: "answer", state, receiptId, pendingId: args.pendingId, cards });
+  // Brief 045 finding 12: the hero offer's pending ID is data for the server; no answer result carries it.
+  const answer = (state: "applied" | "declined" | "clarify" | "stale", receiptId: string | null = null, cards: Card[] = []): Result => ({ name: "answer", state, receiptId, pendingId: null, cards });
   const only = (state: "declined" | "clarify" | "stale"): FoodOutcome => ({ result: answer(state), write: null });
   // A diet question is answered by its pending ID; a call's null IDs never match one, so they fall to the hero offer
   // below and are `clarify` when no offer is bound (brief 040, H-186).
@@ -615,7 +618,7 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, callArgs: Answ
     args = chosen;
   }
   if (rows === null || offer === null || args.pendingId !== offer.pendingId) return only("stale");
-  if (args.choiceId === offer.noId) return only("declined");
+  if (args.choiceId === offer.noId) return { ...only("declined"), declinedPendingId: offer.pendingId };
   // Code decides the owner said yes: the choice must be "yes", the owner's own words a plain yes, and the yes the
   // owner's next turn after the offer was shown.
   if (args.choiceId !== offer.yesId || turn.role !== "user" || turn.sourceClass !== "U" || !turn.final || !isPlainYes(turn.text)) return only("clarify");

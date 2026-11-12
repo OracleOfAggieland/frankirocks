@@ -23,14 +23,14 @@ describe("the answer tool as a call sends it (brief 040, item 2)", () => {
     const res = await t.tool(CALL_ANSWER);
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("ready");
-    expect(res.body.result).toMatchObject({ name: "answer", state: "applied", pendingId: t.offer!.pendingId });
+    expect(res.body.result).toMatchObject({ name: "answer", state: "applied", pendingId: null });
     expect(await t.actions()).toHaveLength(1);
   });
 
   it("shown, then a plain no: declined, nothing written", async () => {
     const t = await answerCallSetup({ turns: ["No thanks"], present: 0 });
     const res = await t.tool(CALL_ANSWER);
-    expect(res.body.result).toMatchObject({ state: "declined", pendingId: t.offer!.pendingId });
+    expect(res.body.result).toMatchObject({ state: "declined", pendingId: null });
     expect(await t.actions()).toEqual([]);
   });
 
@@ -59,16 +59,17 @@ describe("the answer tool as a call sends it (brief 040, item 2)", () => {
   });
 
   it("one null and one ID is clarify, whatever the words, with the offer shown", async () => {
-    const t = await answerCallSetup({ turns: ["Yes"], present: 0 });
-    for (const args of [
-      { pendingId: t.offer!.pendingId, choiceId: null },
-      { pendingId: null, choiceId: t.offer!.yesId },
-    ]) {
-      const res = await t.tool({ name: "answer", args });
+    // Each pair on its own setup: since brief 045 finding 12 both results are the same (no pending ID), and two tool
+    // requests on one turn with the same output ask for the same Permit (contracts §6: its ID is the stamp, kind and
+    // payload hash), so the second would be refused as a repeat. That is a contract question, not this test's.
+    type Offer = NonNullable<Awaited<ReturnType<typeof answerCallSetup>>["offer"]>;
+    for (const pick of [(o: Offer) => ({ pendingId: o.pendingId, choiceId: null }), (o: Offer) => ({ pendingId: null, choiceId: o.yesId })]) {
+      const t = await answerCallSetup({ turns: ["Yes"], present: 0 });
+      const res = await t.tool({ name: "answer", args: pick(t.offer!) });
       expect(res.status).toBe(200);
       expect(state(res)).toBe("clarify");
+      expect(await t.actions()).toEqual([]);
     }
-    expect(await t.actions()).toEqual([]);
   });
 
   it("the path with IDs is unchanged: the offer's yes ID and a plain yes apply", async () => {
