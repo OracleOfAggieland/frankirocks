@@ -39,11 +39,11 @@ describe("release gates: the count per gate (spec §13)", () => {
     expect(FOOD.length).toBeGreaterThanOrEqual(40);
     expect(summary(FOOD)).toEqual({
       written: 40,
-      green: 38,
-      waiting: 2,
-      waitingSteps: 4,
+      green: 39,
+      waiting: 1,
+      waitingSteps: 3,
       silent: 0,
-      byWait: { PASTE: 1, ATTENDEE: 1 },
+      byWait: { PASTE: 1 },
     });
   });
 

@@ -12,8 +12,9 @@
  * The extraction answers as a careful extractor would (the allergy as a hard_rule item), so the backstop is tested
  * too. No script calls a model.
  */
-import type { Evidence } from "@franki/core";
+import type { Evidence, ID } from "@franki/core";
 import { type HeroOffer, heroOffer } from "../routes/tool-food";
+import { recordPendingRendered } from "../time/reminder";
 import { type SlotsAnswer, type Step, type World, extract, item, parse, reply, rewriteEvidence, spanOf } from "../testing/script-runner";
 import {
   type AllergySlot,
@@ -446,7 +447,6 @@ const MOMENTS: Moment[] = [
   },
   {
     id: "F24",
-    waits: { food: W.ATTENDEE },
     stated: "for a named person (\"my sister\"), typed",
     path: "dinner with attendees",
     state: "rules ready; the model passes no ID (none is visible to it)",
@@ -681,6 +681,20 @@ function heroScript(id: string, what: "hero dinners" | "list write"): GateScript
           return o === null ? null : { ...o, text: o.line };
         },
         expect: [{ mustSay: { template: "hero.offer", has: ["$186"], channel: "probe" } }],
+      },
+      {
+        // Brief 037, finding 4: a yes acts only on an offer recorded as shown just before it. Nothing sends the hero
+        // offer's pendingRendered receipt yet (brief 030, phase two), so the script records it as the receipt route would.
+        label: "setup: the offer is shown",
+        do: "setup",
+        what: "the pendingRendered receipt for the hero offer, recorded as routes/receipt-moments.ts records it; no client sends it for the hero yet",
+        run: async (w) => {
+          const o = offer(w);
+          if (o === null) return;
+          // The offer is shown after the allergy turn, not in the same instant: the binding reads an equal time as "a turn since".
+          w.rig.clock.advance(10);
+          await w.ctx.deps.store.transaction(w.ctx.uid, (tx) => recordPendingRendered(tx, w.ctx.uid, o.pendingId as ID, w.ctx.deps.clock.read().opsClock.now, w.ctx.deps.hasher));
+        },
       },
       { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
       { label: "the Head at the yes lists the rule", do: "check", of: "the owner says yes", expect: [headFilters("the owner says yes", [{ subjects: YOU, allergen: "milk" }])] },
