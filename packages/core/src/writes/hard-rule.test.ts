@@ -124,11 +124,12 @@ describe("planHardRule", () => {
     expect(p.note).toEqual(["ruleKept"]);
   });
 
-  it("a certain denial resolves the subject's pending rule; an uncertain one is a ledger decision only", () => {
+  it("a certain denial off an answering turn keeps the subject's pending rule and asks again (W-187); an uncertain one is a ledger decision only", () => {
     const t = "I'm not allergic to peanuts.";
     const pending = fixtureRule("pend", "self", "peanut", "pending");
     const rules = { ...emptyRules(), allergies: [pending] };
-    expect(plan(t, [allergy(t, "peanuts", "denied")], rules).outcome).toEqual({ kind: "pendingResolved", ruleIds: [pending.id], by: "denial" });
+    // Brief 025, W-187: only the asked rule this turn answers leaves for a denial.
+    expect(plan(t, [allergy(t, "peanuts", "denied")], rules).outcome).toEqual({ kind: "pendingKept", ruleIds: [pending.id] });
     const guest = plan(t, [allergy(t, "peanuts", "denied")], rules, { speakerCertain: false });
     // Brief 032 H1: the guest's denial reaches no anonymous slot, so it carries nothing and coverage files peanut for
     // anyone. The owner's pending rule stays.
