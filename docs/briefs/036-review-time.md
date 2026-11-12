@@ -94,7 +94,7 @@ Built by Claude on lane `fix5` (no Kiro run). Two merges of `build/plan-stages` 
 
 | Finding | First failing test | Commit | Ruling changed |
 |---|---|---|---|
-| 1 | `time/review-036.test.ts` "finding 1" (three cases) | `c6746d2` | none (S-176 era rulings kept; merge rewrites a leased row) |
+| 1 | `time/review-036.test.ts` "finding 1" (three cases) | `c6746d2` | none |
 | 2 | property 2, `changed-source-never-spoken.property.test.ts` | `1e10629` | none |
 | 4 | `core/moments/delivery.test.ts` crisis and grief cases; property 4 | `2b3d1cb` | S-177 |
 | 5 | `review-036.test.ts` "finding 5"; property 3 | `55c4e5b` | S-178 |
