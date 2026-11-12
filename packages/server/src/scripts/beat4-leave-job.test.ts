@@ -54,7 +54,7 @@ const BEAT4: Script = {
       label: "the reply is care first",
       do: "check",
       of: "type the line",
-      waits: "brief 024 (policy with `say`, persona tuning): no care template or handling exists for a hard disclosure, so the reply is whatever the model words",
+      waits: "persona tuning and the warmth floor (brief 024 'not built', spec §14 addition 2): no care template or handling exists for a hard disclosure, so the reply is whatever the model words",
       expect: [{ mustSay: { template: "care.first", channel: "note" } }],
     },
     {
@@ -68,7 +68,7 @@ const BEAT4: Script = {
       do: "type",
       text: "Yeah. I don't know yet.",
       answers: [reply("No rush. It's yours to decide."), parse()],
-      waits: "spec §14 addition 1 (the recruiter line) and brief 024 (whispers): nothing reads the unanswered Jordan thread into a turn",
+      waits: "spec §14 addition 1 (the recruiter line), and a route calling brief 024's whispers: nothing reads the unanswered Jordan thread into a turn",
       expect: [{ mustSay: { has: ["Jordan", "Thursday"], channel: "note" } }],
     },
     {

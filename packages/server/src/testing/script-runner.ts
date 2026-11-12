@@ -19,6 +19,7 @@ import {
   type Memory,
   type CoreRules,
   type CoreState,
+  WHISPER_TEMPLATES,
   canonicalJSON,
   msFromTs,
 } from "@franki/core";
@@ -177,6 +178,12 @@ export const spoken = (words: string, appliesTo: "occurrence" | "due" | "valid_f
  * Spoken templates, by ID. A template is matched on its fixed words, never on loose wording; `has` then pins the
  * figures and names. A template the build has no wording for yet is `null`: a script that asks for it fails, naming the wait.
  */
+/** A whisper template's fixed words as a pattern, its slots matching any text (core/whisper/templates.ts). */
+function whisperPattern(id: keyof typeof WHISPER_TEMPLATES): RegExp {
+  const parts = WHISPER_TEMPLATES[id].text.split(/\{(?:\d|\*)\}/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`^${parts.join(".+")}$`);
+}
+
 export const TEMPLATES = {
   /** patterns/words.ts heroOfferLine. */
   "hero.offer": /You've spent \$[\d,.]+ on takeout in this window, mostly on (nights|days) with meetings after 6\./,
@@ -190,8 +197,8 @@ export const TEMPLATES = {
   "occasion.moved": null,
   /** An occasion's wish on open (spec §15 beat 1). No moment wording on the server yet (brief 023, 024). */
   "occasion.wish": null,
-  /** The check-in after an occasion (spec §15 beat 2). No moment wording yet (brief 023, 024). */
-  "occasion.checkin": null,
+  /** The check-in after an occasion (spec §15 beat 2): a moment whisper from brief 024's `checkIn` template. */
+  "occasion.checkin": whisperPattern("checkIn"),
   /** "Gone." after a completed forget (spec §8 step 7). Reserved in brief 021. */
   "forget.gone": null,
   /** Care before help on a hard disclosure (spec §15 beat 4). Persona and policy wording: brief 024. */

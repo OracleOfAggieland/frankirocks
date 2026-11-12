@@ -8,7 +8,7 @@ import { type Script, type World, allEvidence, memoryText, scriptSuite } from ".
 const interview = { what: "the interview occasion", pick: (m: Memory) => m.kind === "event" && memoryText(m).includes("interview") };
 const gapYear = { what: "Tuesday's gap-year answer", pick: (m: Memory) => m.kind === "episode" && memoryText(m).includes("good answer about the gap year") };
 
-const WISH_WAITS = "brief 023 (derive the wish from the occasion) and 024 (the Gate words it); open answers proactive: null today";
+const WISH_WAITS = "brief 023 (derive the wish from the occasion, delivery) and a route calling brief 024's Gate and whispers (built, not called); open answers proactive: null today";
 
 async function interviewMoved(w: World): Promise<true | string> {
   const revs = (await allEvidence(w))

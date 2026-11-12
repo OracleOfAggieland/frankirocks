@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { PERSONA } from "../seed/persona";
-import { type Script, ScriptFailure, parse, reply, runScript, scriptSuite } from "../testing/script-runner";
+import { type Script, ScriptFailure, TEMPLATES, parse, reply, runScript, scriptSuite } from "../testing/script-runner";
 
 const SEED_MAIL = PERSONA.lines.filter((l) => l.kind === "mail").length;
 
@@ -27,6 +27,14 @@ const SMALL: Script = {
 };
 
 scriptSuite(SMALL);
+
+describe("templates", () => {
+  it("binds the check-in to brief 024's whisper template, slots matching any name", () => {
+    expect(TEMPLATES["occasion.checkin"]!.test("How's Biscuit doing?")).toBe(true);
+    expect(TEMPLATES["occasion.checkin"]!.test("How'd Biscuit do?")).toBe(false);
+    expect(TEMPLATES["hero.offer"].test("You've spent $186 on takeout in this window, mostly on nights with meetings after 6. Sources are on the card.")).toBe(true);
+  });
+});
 
 describe("the runner's refusals", () => {
   it("fails a step whose model call was not declared", async () => {

@@ -21,8 +21,8 @@ import { BISCUIT_LINE } from "./lines";
 
 const SIGN_WAITS =
   "a fit between briefs 019 and 022: the seed writes a purchase as a negative amountCents (seed/build.ts buildBank) and the detector counts only positive ones (core/patterns/spend.ts spendRows), so the seeded pattern is `insufficient` with 0 orders";
-const HERO_WAITS = "brief 023 (the offer's moment, due after the bolt, and delivery) and 024 (the Gate); nothing calls heroOffer today";
-const COMPARE_WAITS = "brief 023 (the comparison moment at checkAt, delivery) and 024; nothing calls compareLoop or markCelebrated today";
+const HERO_WAITS = "brief 023 (the offer's moment, due after the bolt, and delivery) and a route calling brief 024's Gate; nothing calls heroOffer today";
+const COMPARE_WAITS = "brief 023 (the comparison moment at checkAt, delivery) and a route calling brief 024's Gate; nothing calls compareLoop or markCelebrated today";
 const LINEAGE_WAITS =
   "a fit between brief 022 and the lineage check: the loop Memory's root Slices are the rows' typed Slices (routes/tool-food.ts loopMemory prefers bank.amount and calendar.time), and W-LINEAGE (core/lineage.ts) fails every Slice with a null range as sliceHashMismatch, so the yes's write is refused and the route answers 400 PARSE";
 const WINDOW_WAITS =

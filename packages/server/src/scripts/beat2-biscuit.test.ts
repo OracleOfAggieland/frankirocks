@@ -15,7 +15,7 @@ import { type Script, type Step, type World, allMemories, extract, item, memoryT
 const LINE = BISCUIT_LINE;
 const biscuit = { what: "the owner's words about Biscuit", pick: (m: Memory) => memoryText(m).includes("Biscuit") };
 
-const CHECKIN_WAITS = "brief 023 (derive the check-in, the tick, the jump and delivery) and 024 (the Gate words it); open answers proactive: null today";
+const CHECKIN_WAITS = "brief 023 (derive the check-in, the tick, the jump and delivery) and a route calling brief 024's Gate and `checkIn` whisper (built, not called); open answers proactive: null today";
 
 /** What a careful extractor files for the line: Biscuit's surgery as an event, the time words left for code. */
 const biscuitItems = (w: World) => [
@@ -82,7 +82,7 @@ const BEAT2: Script = {
     {
       label: "the next open does not ask again",
       do: "open",
-      waits: "brief 023 (`said` from the transcript, once per occurrence); the check-in template has no wording to match yet",
+      // Green today only because nothing is said at all; with the step before it, it pins "said once".
       expect: [{ mustSay: { template: "occasion.checkin", channel: "proactive", times: 0 } }],
     },
   ],
