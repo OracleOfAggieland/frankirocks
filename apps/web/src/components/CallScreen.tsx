@@ -10,7 +10,7 @@ import { COPY } from "../ui/copy";
 import { type ElectricityBudget, electricityBudget } from "../ui/electricity-budget";
 import { useReducedMotion } from "../ui/hooks/reduced-motion";
 import { SPRING } from "../ui/motion";
-import { RING_SPARK_IDLE, type RingSpark, type RingSparkEvent, ringSparkStep } from "../ui/ring-spark";
+import { RING_SPARK_IDLE, type RingSpark, type RingSparkEvent, ringSparkPropEvents, ringSparkStep } from "../ui/ring-spark";
 import { FOCUS, TARGET } from "./surfaces/classes";
 
 /** A brass-outlined quiet control: something you can touch, secondary to the call button. */
@@ -50,8 +50,11 @@ function MicGlyph({ muted }: { muted: boolean }) {
   );
 }
 
-/** The ring spark's shell: runs ringSparkStep and its grant commands against the budget, and tells React. */
-class RingSparkShell {
+/**
+ * The ring spark's shell: runs ringSparkStep and its grant commands against the budget, and tells React.
+ * DOM-free, with the budget injected, so it is exported for its node tests.
+ */
+export class RingSparkShell {
   private state: RingSpark = RING_SPARK_IDLE;
   private readonly listeners = new Set<() => void>();
   constructor(private readonly budget: ElectricityBudget) {}
@@ -86,11 +89,8 @@ function useRingSpark(reduced: boolean, start: boolean) {
   const [shell] = useState(() => new RingSparkShell(electricityBudget));
   const spark = useSyncExternalStore(shell.subscribe, shell.getSnapshot, shell.getSnapshot);
   useEffect(() => {
-    if (!start) shell.dispatch({ type: "formLeft" });
-  }, [shell, start]);
-  useEffect(() => {
-    if (reduced) shell.dispatch({ type: "reducedOn" });
-  }, [shell, reduced]);
+    for (const event of ringSparkPropEvents(start, reduced)) shell.dispatch(event);
+  }, [shell, start, reduced]);
   useEffect(() => () => shell.dispatch({ type: "unmount" }), [shell]);
   const fire = () => shell.dispatch({ type: "pressed", start, reduced });
   const ended = (token: number) => () => shell.dispatch({ type: "animationEnd", token });

@@ -65,3 +65,14 @@ export function ringSparkStep(state: RingSpark, event: RingSparkEvent): RingSpar
       return stay(state);
   }
 }
+
+/**
+ * The events a render's props send to the spark: `formLeft` while the button is out of its start form,
+ * `reducedOn` while Reduced_Motion is on. Both leave `idle` as it is, so sending them again is harmless.
+ */
+export function ringSparkPropEvents(start: boolean, reduced: boolean): readonly RingSparkEvent[] {
+  const events: RingSparkEvent[] = [];
+  if (!start) events.push({ type: "formLeft" });
+  if (reduced) events.push({ type: "reducedOn" });
+  return events;
+}
