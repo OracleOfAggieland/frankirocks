@@ -154,7 +154,7 @@ What a person on a call meets today because of each:
 - **S6, the rest.** A past event can still be called coming up; a correction may not reach the Head during a call; the store does not refuse a status move outside the table.
 - **S7, the judge spike.** Nothing on a call. The spike's summary numbers are as before.
 - **S8, the typed line.** The first typed line after a call can fail STALE, a draft is wiped on success, and wire codes show in the typed box.
-- **U1, Electricity grants.** An Electricity holder that was refused a grant never asks again until its effect runs again.
+- **U1, Electricity grants.** The SVG `Electricity` holder, once refused a grant, never asks again until its effect runs again. The ring spark asks on the next press, and the three.js ghost asks again on every look and renderer event.
 - **U2, avatar events.** The wake can replay on a quick redial.
 - **U3, level taps.** Nothing known on a call; the change would give each analyser its own tap state.
 - **W1, App wiring.** A sign-out from another tab can leave a call running; Call can be pressed during a typed open; hiding the page does not hang up.

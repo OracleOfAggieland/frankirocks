@@ -18,7 +18,7 @@ At most `MAX_ELECTRICITY` (two) Electricity effects run at once. The budget is a
 | The call button's ring spark (`ui.ringSpark`; its shell `RingSparkShell` in `apps/web/src/components/CallScreen.tsx`) | on pointer down in the start form, not reduced, while idle | when its own spark's animation ends or is cancelled, when the button leaves its start form, when Reduced_Motion turns on, and on unmount; a second grant while one is held goes straight back |
 | The three.js ghost (`syncGrant` in `apps/web/src/components/avatar/three-ghost-controller.ts`) | while the renderer phase is `fading-in`, `three` or `fading-out` and the look is electric, holding no grant | when that stops holding, and at `stop()` |
 
-Not modelled: telling a holder that was refused when a grant is released. A refused holder asks again only when its effect runs again.
+Not modelled: telling a holder that was refused when a grant is released. A refused holder asks again on its own schedule: the SVG `Electricity` only when its effect runs again, the ring spark on the next press, and the three.js ghost on every look (`applyLook`) and after every renderer event (`drain`).
 
 ### `ui.avatarEvents`
 
