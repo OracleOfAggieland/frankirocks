@@ -86,3 +86,33 @@ describe("TypedLine looks (brief 015)", () => {
     expect(html).toMatch(/data-typed-capsule="" class="[^"]*has-\[textarea:focus-visible\]:outline-brass-hi/);
   });
 });
+
+// Brief 018 task B10 (brief 012 G34): a paste event in the line is reported, so the line goes as pasted.
+describe("TypedLine paste", () => {
+  type El = { type?: unknown; props?: { children?: unknown; onPaste?: () => void } };
+  const find = (node: unknown, type: string): El | null => {
+    if (node === null || typeof node !== "object") return null;
+    if (Array.isArray(node)) {
+      for (const n of node) {
+        const f = find(n, type);
+        if (f !== null) return f;
+      }
+      return null;
+    }
+    const el = node as El;
+    if (el.type === type) return el;
+    return find(el.props?.children, type);
+  };
+
+  it("reports a paste event from the textarea", () => {
+    const onPaste = vi.fn();
+    const tree = TypedLineField({ ...field, onPaste, onCollapse: () => {} });
+    find(tree, "textarea")!.props!.onPaste!();
+    expect(onPaste).toHaveBeenCalledTimes(1);
+  });
+
+  it("a paste with no listener does nothing", () => {
+    const tree = TypedLineField({ ...field, onCollapse: () => {} });
+    expect(() => find(tree, "textarea")!.props!.onPaste!()).not.toThrow();
+  });
+});

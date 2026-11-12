@@ -12,6 +12,7 @@
 import {
   type CoreEpoch,
   type Cov,
+  type DocRef,
   type Evidence,
   type ID,
   type Ledger,
@@ -143,13 +144,21 @@ export async function getMemory(ctx: RouteContext, req: MemoryRequest): Promise<
         if (r.collection === "evidence") evidence.set(r.id, snap.rows[i] as Evidence);
       });
       // Roots that no dependsOn entry names are read here.
+      // They join the Snapshot, so `whyView` runs `eligible` on them like any other row (review 028 finding 5).
       const target = rows.find((r) => r.id === req.id);
+      const extraRefs: DocRef[] = [];
+      const extraRows: Evidence[] = [];
       for (const s of target?.memory.rootSlices ?? []) {
         if (evidence.has(s.eid) || !isIdShape(s.eid)) continue;
         const doc = await deps.store.get<Evidence>(uid, paths.evidence(uid, s.eid));
-        if (doc !== null) evidence.set(s.eid, doc.data);
+        if (doc === null) continue;
+        evidence.set(s.eid, doc.data);
+        extraRefs.push({ collection: "evidence", id: s.eid, parentId: null, rev: doc.data.rev });
+        extraRows.push(doc.data);
       }
-      return { ...empty, items: whyView(rows, evidence, req.id!, view) };
+      const refs = [...snap.refs, ...extraRefs];
+      const whySnap = { ...snap, refs: refs.slice(0, 4096), rows: [...snap.rows, ...extraRows].slice(0, 4096), complete: snap.complete && refs.length <= 4096 };
+      return { ...empty, items: whyView(rows, evidence, req.id!, { ...view, snapshot: whySnap }) };
     }
     case "lab": {
       const [evidence, ledger] = await Promise.all([readCapped<Evidence>(ctx, "evidence", LAB_READ_CAP), readCapped<Ledger>(ctx, "ledger", LAB_READ_CAP)]);
