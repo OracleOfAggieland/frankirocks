@@ -38,6 +38,7 @@ import { parseError, scopeError } from "./errors";
 import { mutation } from "./mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 import { retryStale } from "./state";
+import { askAfterSpoken } from "../onturn/ask";
 
 type ReceiptReq = Infer<typeof ReceiptRequest>;
 type ReceiptRes = Infer<typeof ReceiptResponse>;
@@ -169,6 +170,9 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
           };
           tx.create(paths.evidence(uid, eid), evidence);
           tx.create(turnPath, turn);
+          // The open allergy question (brief 012 design 6.4): asked only once Franki's words held it.
+          const ask = askAfterSpoken(core.rules.data, req.stamp.sessionId, turn.seq, text);
+          if (ask !== null) tx.update(paths.core(uid, "rules"), { ...core.rules.data, ask });
         }
         if (live) tx.update(doc.path, { ...s, lastTurnAt: now, expiresAt: tsFromMs(ops + SESSION_IDLE_MS), updatedAt: now });
         // A browser-issued fastO is recorded by the seam from its `admitted` receipt (R9.1).

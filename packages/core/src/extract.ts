@@ -51,6 +51,7 @@ import {
 import { civilDateAt, looksLikeTime, resolveSpoken, spokenOnLabel, timeRow } from "./dates";
 import { MEMORY_TEXT_CHARS, claimText } from "./memory-text";
 import { checkRange, tokenize, utf8 } from "./text";
+import { lookupAllergen } from "./writes/gazetteer";
 
 // ---------------------------------------------------------------------------------------------
 // Literal prompts (contracts §5). Schema prompt = PREFIX + job literal.
@@ -515,6 +516,11 @@ export interface PlanContext {
    */
   open?: ReadonlyMap<string, OpenRef>;
   /**
+   * The (subject, code) slots the on-turn hardRule route wrote or kept for this Evidence, and every code a denial
+   * named (brief 012 section 5, `handled.ruleKeys`). An allergy item on one of them is skipped `handled`.
+   */
+  handled?: readonly { subjectId: string | null; code: string }[];
+  /**
    * The packet's other inputs (memory-spec §4: the packet "records all actual inputs"): the Evidence of the earlier
    * turns it carried and the `open` Memories. Each is named in `contextIds` and `dependsOn` (`e:<eid>`,
    * `m:<id>@<rev>`), and earlier Evidence in `packetEids`. A Memory this Item replaces is left out of `dependsOn`: it
@@ -555,7 +561,8 @@ export type ItemChange = "none" | "correct" | "transition";
 export type ItemPlan =
   /** `restored` names the copied ids `restoreCopiedIds` put back, for the server log. */
   | { kind: "memory"; index: number; id: string; memory: Memory; single: boolean; change: ItemChange; targetIds: string[]; restored?: string[] }
-  | { kind: "skip"; index: number; reason: "act" | "target" | "spans" | "authority" }
+  /** `handled`: an allergy the on-turn route already handled for this Evidence (brief 012 section 5). */
+  | { kind: "skip"; index: number; reason: "act" | "target" | "spans" | "authority" | "handled" }
   | { kind: "hold"; index: number; reasons: ReasonCode[]; eids: string[] }
   /** `detail` names the failed check (a path and a message, never record content) for the server log. */
   | { kind: "reject"; index: number; reasons: ReasonCode[]; eids: string[]; detail: string };
@@ -843,6 +850,13 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
   if (item.target === "evidenceOnly") return { kind: "skip", index, reason: "target" };
   if (NO_MEMORY_ACTS.has(item.act)) return { kind: "skip", index, reason: "act" };
 
+  // An allergy the route already handled for this Evidence is skipped; any other goes to the backstop (G18).
+  if (item.predicate === "allergy" && ctx.handled !== undefined) {
+    const raw = String((item.args as { allergenCode?: unknown }).allergenCode ?? "");
+    const code = lookupAllergen(raw.replace(/_/g, " "))[0] ?? raw;
+    const subject = item.subject === "self" ? "self" : null;
+    if (ctx.handled.some((h) => h.code === code && (h.subjectId === subject || h.subjectId === null))) return { kind: "skip", index, reason: "handled" };
+  }
   // Holds: allergies and standing rules need the rules path, which is outside this slice (R23.3, R23.4).
   if (item.predicate === "allergy" || HOLD_ACTS.has(item.act) || (item.kind === "rule" && !item.predicate.startsWith("preference."))) {
     return { kind: "hold", index, reasons: ["unsupported"], eids: eidsOf(item).length > 0 ? eidsOf(item) : packetEids };

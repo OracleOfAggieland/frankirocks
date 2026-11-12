@@ -13,7 +13,6 @@ import {
   type Hasher,
   type ID,
   type Ledger,
-  type NotesAllowed,
   PERMIT_TTL_MS,
   type PayloadInput,
   type Permit,
@@ -23,12 +22,15 @@ import {
   type RuleOutcome,
   type Stamp,
   type Turn,
+  type TurnWrite,
   type W,
   ackNote,
+  admittedNotes,
   idParts,
   payloadHash,
   serverRule,
   tsFromMs,
+  writeRule,
 } from "@franki/core";
 import { cFields } from "../records";
 import { paths } from "../store/paths";
@@ -46,13 +48,15 @@ export interface RuleSeamInput extends PayloadInput {
   core: { epoch: number; policyRev: number };
   opsNow: number;
   rule: RuleInput;
+  /** What this turn's on-turn route committed (brief 012 design section 4); none when absent. */
+  write?: TurnWrite;
+  /** The route's one S0 pointer note, or null (design 2.7). */
+  routeNote?: W | null;
 }
 
 export type RuleSeamResult =
   | { kind: "permit"; permit: Permit; notes: W[]; outcome: Extract<RuleOutcome, { kind: "permit" }> }
   | { kind: "hold"; outcome: Extract<RuleOutcome, { kind: "hold" }> };
-
-const notesAllowed = (notes: readonly W[], allowed: NotesAllowed): W[] => (allowed === "all" ? [...notes] : allowed === "S0" ? notes.filter((n) => n.sens === "S0") : []);
 
 /**
  * Runs `serverRule`, builds the Permit when it grants one (with its Fixed_Line as an `ack` note), and writes exactly
@@ -60,7 +64,8 @@ const notesAllowed = (notes: readonly W[], allowed: NotesAllowed): W[] => (allow
  * entry, whose stored response carries the Permit kind and status (question 57).
  */
 export function admitRule(tx: Tx, input: RuleSeamInput, deps: { hasher: Hasher }): RuleSeamResult {
-  const outcome = serverRule(input.rule);
+  // The Server_Rule, then the on-turn write's cut (G1): `writeRule` changes only the cut and the permit kind.
+  const outcome = writeRule(input.rule, serverRule(input.rule), input.write ?? { kind: "none" });
   const now = tsFromMs(input.opsNow);
   const requestRef: Ref[] = input.requestEntryId === null ? [] : [{ type: "ledger", id: input.requestEntryId as ID, rev: 1 }];
   const decision = (state: "complete" | "blocked", id: string, accepted: Ref[], held: Ref[], reasons: ReasonCode[]) => {
@@ -79,7 +84,8 @@ export function admitRule(tx: Tx, input: RuleSeamInput, deps: { hasher: Hasher }
     return { kind: "hold", outcome };
   }
   const expiresAt = tsFromMs(input.opsNow + PERMIT_TTL_MS);
-  const notes = outcome.line !== null ? [ackNote(outcome.line, deps.hasher.id(["ack", input.stamp, outcome.line]) as ID, expiresAt)] : notesAllowed(input.notes, outcome.notes);
+  const ack = outcome.line !== null ? ackNote(outcome.line, deps.hasher.id(["ack", input.stamp, outcome.line]) as ID, expiresAt) : null;
+  const notes = admittedNotes(input.notes, outcome.notes, ack, input.routeNote ?? null);
   const payload: PayloadInput = { ...input, notes };
   const approvedPayloadHash = payloadHash(payload, deps.hasher);
   const permit: Permit = {

@@ -206,3 +206,64 @@ Earlier, after A10b, logs in `_sm/logs/f3/a11-*.log`:
 1. `node --env-file=apps/web/.env.development.local --env-file=apps/web/.env.local scripts/judge-spike/run.mjs harness --source owner --live --fast-slots` on your takes. The run refuses if `scripts/judge-spike/lines.json` has uncommitted changes. Read the FastSlotsV1 section of the summary: p50, p95, the largest time, the share over 900 ms, valid items per class, and the speaker-certainty line.
 2. `node --env-file=apps/web/.env.development.local --env-file=apps/web/.env.local scripts/extract-check/run.mjs --live`. It prints one line per frozen line and the pass count by class, and writes `scripts/extract-check/results/<time>-extract-check.json` (IDs, indexes and plan kinds, no words).
 3. If more than a small share of FastSlots calls are over 900 ms, or the speaker gate fails many clean lines, the deadline and the gate are your call before wave B goes live (design section 11, step 1).
+
+## Wave B: allergies and hard rules (brief 018, tasks 0 and B1 to B8)
+
+Built by Claude on lane `writes`. Kiro wrote none of this wave. Tasks B9 to B11 are not built; B9 is next.
+
+### The build
+
+| Task | Commit | What |
+|---|---|---|
+| 0 | `40e3cca`, `93dc129` | Report items 1 to 3 of wave A. On an answering turn, validation reads the item's span as well as its `item` (`writes/names-own.ts`). R's subject is lent only when the span names no one (`LEND_ONLY_WHEN_NAMES_NO_ONE`). A9 needs a span that fits R. New P4f, written red first. |
+| B1 | `3a328d2` | The red properties: P10 (`admission-write`), P3 pure (`head-rules`), and the route halves of P3, P4, P8 and P9. They are driven by `testing/arb-rule-turns.ts`. |
+| B2 | `5b0c43d` | Wave B's state is on `core/rules`: `subjectLabels`, `proposals`, the `handled` ring (16) and `ask`. Older documents read through `withRulesDefaults`. |
+| B3 | `6e56487`, `d0dea7c` | `writes/notes.ts` (route notes, typed lines), `writes/pending.ts` (6.4) and `writes/rules-section.ts` (2.8). The machine row `memory.allergyAsk`. |
+| B4 | `303985c` | `writeRule` and `admittedNotes` in `core/admission.ts`, called at `admission/seam.ts`. P10 is green. |
+| B5 | `c050ab4` | `compileHead` renders the rules section for the call's audience. The persona carries G29's text and its two added lines. P3 pure is green. |
+| B6 | `c7e87d4` | `server/onturn/`: `trigger`, `context`, `execute`, `proposals`, `route`, `typed`. `postTurn` runs FastSlots through `nextSlots` and the executor in its transaction. `open` applies proposals before it compiles. P3, P4, P8 and P9 route are green, with 15 cases in `routes/turn.rules.test.ts`. |
+| B7 | `8f09cbc` | A receipt moves `core/rules.ask`. The state route returns no ack while a question is asked (`routes/receipt.ask.test.ts`). |
+| B8 | `5f6927f` | Extraction skips allergies the route handled (skip reason `handled`). `writes/backstop.ts` turns the rest into a pending proposal. Every turn transaction applies open proposals. P1 worker and P15 are green, with 4 cases in `worker/extract.backstop.test.ts`. |
+
+### Red first
+
+| Property | Seed | Counterexample |
+|---|---|---|
+| P4f | `-289222150`, path `7:1:2:2` | "Yes, I'm allergic to durian." with item "allergic", answering an anonymous peanut rule, made an active peanut rule from R's proof |
+| P10 | `-379104524` | `writeRule` not built |
+| P3 pure | `-518073548` | `readRulesSection` not built |
+| P4 route | `352243733` | typed "I'm allergic to shellfish." left no hardRule `handled` entry |
+| P3 route | `161444132` | `readRulesSection` not built |
+| P9 | none (count check) | no claim was ever seen, because no route note existed |
+| P8 | none (count check) | no rule was ever checked |
+| P1 worker | `391910470`, path `0:0:0:0:0` | `backstopProposal` not built |
+| P15 | `-132578416`, path `0:0:0:0` | "I'm allergic to shellfish. Oh, and cashews too." with an empty FastSlots answer: cashew had no slot |
+| P4 route, during B6 | `-1542448610` | "It was the shellfish." opened by the parse alone, with an empty valid answer, left shellfish with no slot. This led to ruling W-165. |
+
+### Checks (Nov 12, at `5f6927f`)
+
+- `npx vitest run --maxWorkers=3`: 295 files, 3,243 passed and 20 expected fails. No skip and no expected fail was added or removed. No committed `*.property.test.ts` was edited; the 8 property files in the diff are new.
+- `voice/admitted-turn-posted.property.test.ts` failed once during the B5 core run, in 303 ms (not a timeout). It passed 6 of 6 times when run alone. It is not this lane's file, and it imports none of this lane's modules.
+- `npm run lint`: 0 errors, plus 1 warning in `apps/web/.../avatar/three/brass.ts` that this lane didn't cause.
+- `npm run typecheck`: 4 of 4 packages pass.
+- `npm run build`: not run, because `apps/web` is unchanged.
+
+### Not built
+
+- **B9:** repair and supersede for hardRule. A superseding post and a Parse_Repair still run no route. A turn first posted `missing` gets its rule only through the backstop.
+- **B10:** pasted text as T. The composer doesn't send `source: "pasted"` yet, so a pasted one-line allergy still counts as the owner's own words.
+- **B11:** the Debug_Panel's rules section. `wire.ts` is unchanged.
+- **Typed path (G17):** the first typed reply is abandoned only once the parse returns, not cancelled.
+- **Proposals:** a turn the route didn't open reads the context only when proposals are open at arrival.
+
+### Disputes
+
+- P4c's word list still differs from the code (CQ 161). It was left alone, as brief 018 says, and the question stays with the owner.
+
+### Live-check steps for the owner (paid; each needs your yes first)
+
+These are unchanged from wave A, and none has been run:
+
+1. Run the judge spike with `--live --fast-slots` on your takes. Read p50, p95, the largest time, the share over 900 ms, and the speaker-certainty line.
+2. Run `scripts/extract-check/run.mjs --live`.
+3. If many FastSlots calls are over 900 ms, or the speaker gate fails many clean lines, the deadline (`FAST_SLOTS_DEADLINE_MS`, 900) and the gate are your call before wave B goes live.

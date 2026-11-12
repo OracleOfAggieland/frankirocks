@@ -18,12 +18,20 @@ import { scopeOf } from "./keys";
 import { sameValue } from "./plan";
 import { plainMention } from "./not-allergy";
 import { hasFirstPerson, knownNameWords, mentionEid, mentionName, namesSomeone, resolveSubject, type SubjectInput, type SubjectResult } from "./subject";
+import { GENERIC_WORDS, REFERENCE_WORDS, itemNamesNothing } from "./names-own";
 import { spanClass, verifyTurnSpan } from "./spans";
 import type { AllergyVerdict, ArgPair, CorrectionVerdict, EntityKind, FastItem, FastSlotsOut, ItemVerdict, Need, QuestionKind, Route, Subject, TransitionKind, TransitionVerdict, ValidateContext } from "./types";
 
 /** `handled`'s bounds (design 5): a correction or change past them defers; nothing is truncated. */
 export const HANDLED_KEYS_MAX = 8;
 export const HANDLED_REFS_MAX = 16;
+
+/**
+ * Ruling for this build (brief 018 task 0 item 3, for the owner to confirm): answering rule 2 lends the asked rule's
+ * subject only when the answer's span names no one. "Not mine." about the brother's pending rule is then a denial for
+ * `self`, and the brother's rule stays.
+ */
+export const LEND_ONLY_WHEN_NAMES_NO_ONE = true;
 
 const RX4 = REGEX_TABLE.find((r) => r.id === "RX4")!.pattern;
 const NEGATION = new Set(["not", "no", "never", "none", "nothing", "nope", "outgrew", "outgrown"]);
@@ -33,27 +41,14 @@ export function hasNegation(text: string): boolean {
   return wordTokens(text).some((t) => NEGATION.has(t.word) || t.word.endsWith("n't"));
 }
 
-/**
- * Words that point back at the asked allergen or only answer the question (CQ 156). An `item` made of these alone
- * ("it", "that one", "the same", "yes", "no") names nothing of its own, so an answer may take the asked rule's code.
- * Any other word found in the span ("durian", "something") is another thing named, even when the gazetteer doesn't
- * know it.
- */
-export const REFERENCE_WORDS: ReadonlySet<string> = new Set(["it", "that", "this", "these", "those", "them", "one", "ones", "the", "same", "yes", "yeah", "yep", "yup", "no", "nope", "nah"]);
-
-/**
- * Generic pointer and quantifier words (CQ 161): "that stuff", "any of that", "those things", "either", "that kind
- * of thing", "nobody". Like reference words, they name no allergen of their own.
- */
-export const GENERIC_WORDS: ReadonlySet<string> = new Set(["stuff", "thing", "things", "any", "all", "of", "either", "both", "nobody", "anyone", "anybody", "kind", "sort"]);
+export { GENERIC_WORDS, REFERENCE_WORDS } from "./names-own";
 
 /** The allergy cue words themselves (RX4's allergy and intolerance words, not "celiac" or "epipen"): "allergic", "that allergy". */
 const CUE_WORD = /^(allerg(y|ies|ic)|intoleran(t|ce))$/;
 
 /**
- * True when the item names nothing of its own: it has no words, or every word is a reference, generic or cue word
- * and the gazetteer finds nothing in it (so "any allergies" and "nothing" still name the `none` entry; CQ 156,
- * amended by CQ 161).
+ * True when the item, read alone, names nothing of its own (CQ 156, amended by CQ 161). Kept for callers that have no
+ * span; validation reads the span too, through `itemNamesNothing` (brief 018 task 0).
  */
 export function namesNothing(item: string): boolean {
   const words = wordTokens(item);
@@ -120,13 +115,18 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
   // rule 4 then takes R's proof. An
   // item found in the span that the gazetteer doesn't know ("durian", "something") is another thing named: its codes
   // stay empty and it never answers R (CQ 156).
+  // Task 0 (brief 018): the span is read as well as the item. R is answered, or its code taken, only when every
+  // alias in the span is R's own (`spanFitsR`), and the item names nothing of its own in that span (`names-own.ts`).
   const aliasesInSpan = scanAliases(span.quote);
+  const askedCode = R !== null && R.code !== "unresolved" ? R.code : null;
+  const spanFitsR = R !== null && aliasesInSpan.every((a) => a.code === R.code);
   const itemInSpan = item.item.trim() !== "" && findWholeWords(span.quote, item.item) !== null;
-  const namesOwn = itemInSpan && !namesNothing(item.item);
+  const namesOwn = answering ? !itemNamesNothing(itemInSpan ? item.item : "", span.quote, askedCode) : itemInSpan && !namesNothing(item.item);
   let codes: string[];
   let proof: Span = span;
-  if (answering && R !== null && R.code !== "unresolved" && aliasesInSpan.length === 0 && !namesOwn) {
+  if (answering && R !== null && askedCode !== null && spanFitsR && !namesOwn) {
     if (polarity === "denied") codes = [R.code];
+    else if (aliasesInSpan.length > 0) codes = [R.code]; // rule 4: the answer's own span names the allergen
     else if (R.proof !== null) {
       codes = [R.code];
       proof = R.proof;
@@ -143,8 +143,15 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
   const reading = answering ? "answer" : "allergy";
   const mentionQuote = item.subject.mention === null ? null : (verifyTurnSpan(item.subject.mention, ctx.evidence)?.quote ?? null);
   let subject: SubjectResult;
-  if (answering && isEmptySubject(item.subject)) {
-    subject = R !== null && R.subjectId !== null ? { kind: "resolved", id: R.subjectId, label: null } : hasFirstPerson(span.quote, { kind: reading }) ? { kind: "resolved", id: "self", label: null } : { kind: "unresolved" };
+  // Answering rule 2, narrowed (brief 018 task 0, item 3): R's subject is lent only when the answer's span names no
+  // one (`LEND_ONLY_WHEN_NAMES_NO_ONE`). An item marked `isSelf` whose words hold no first person ("It's a real
+  // reaction.") is read as naming no one too (item 2). When the span names someone, the subject comes from the words.
+  const namesNoOneHere = !namesSomeone(span.quote, knownNameWords(ctx.known, ctx.entities));
+  const selfOnly = item.subject.isSelf && item.subject.entityId === null && item.subject.mention === null;
+  const lend = answering && R !== null && R.subjectId !== null && (!LEND_ONLY_WHEN_NAMES_NO_ONE || namesNoOneHere) && (isEmptySubject(item.subject) || (selfOnly && namesNoOneHere && !hasFirstPerson(span.quote, { kind: reading })));
+  if (lend) subject = { kind: "resolved", id: R!.subjectId!, label: null };
+  else if (answering && isEmptySubject(item.subject)) {
+    subject = hasFirstPerson(span.quote, { kind: reading }) ? { kind: "resolved", id: "self", label: null } : { kind: "unresolved" };
   } else if (mentionQuote !== null && !plainMention(mentionQuote)) subject = { kind: "unresolved" };
   else subject = subjectOf(item.subject, span.quote, ctx, "person", reading);
   const resolved = subject.kind === "resolved" ? subject : null;
@@ -159,8 +166,9 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
     // an item the gazetteer doesn't know is another allergen named ("Nobody's allergic to durian"; CQ 156). A denial
     // whose span names a person ("My brother doesn't.", "Not her.") says only that it isn't theirs, so it never
     // answers R (CQ 160).
-    const namesNoOne = !namesSomeone(span.quote, knownNameWords(ctx.known, ctx.entities));
-    if (answering && R !== null && R.anonymous && namesNoOne && ((codes.length === 0 && !namesOwn) || onlyNone || codes.includes(R.code))) return ok({ kind: "deny", answers: R.id, proof: span }); // A9
+    // Task 0: and only when every alias in the span is R's own ("No, nobody is allergic to shellfish." never clears
+    // an anonymous peanut rule).
+    if (answering && R !== null && R.anonymous && namesNoOneHere && spanFitsR && ((codes.length === 0 && !namesOwn) || onlyNone || codes.includes(R.code))) return ok({ kind: "deny", answers: R.id, proof: span }); // A9
     // A10 on an answering turn: a certain, direct denial answering Franki's own question keeps the asked rule as it
     // is, so the fallback never adds the all-food filter for a "no" (CQ 161).
     if (answering && R !== null) return ok({ kind: "pendingKept", ruleId: R.id, question: null }); // A10, answering

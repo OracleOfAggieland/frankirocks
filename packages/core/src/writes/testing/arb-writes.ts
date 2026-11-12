@@ -150,7 +150,7 @@ export const KNOWN: ValidateContext["known"] = {
 };
 
 export function emptyRules(): CoreRules {
-  return { ...commonFields(), rulesRev: 1, allergies: [], standing: [], rulePages: 0, gazetteerVersion: "none", noneConfirmed: [] };
+  return { ...commonFields(), rulesRev: 1, allergies: [], standing: [], rulePages: 0, gazetteerVersion: "none", noneConfirmed: [], subjectLabels: [], proposals: [], handled: [], ask: { sessionId: null, q: { kind: "none" } } };
 }
 
 // ---------------------------------------------------------------------------------------------

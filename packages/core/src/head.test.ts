@@ -43,7 +43,7 @@ describe("compileHead", () => {
     expect(head.sections.find((s) => s.id === "know")?.tokens).toBe(0);
     expect(head.selectedRefs).toEqual([]);
     expect(head.text).not.toContain("fact number");
-    expect(head.text).toContain("No hard rules recorded.");
+    expect(head.text).toContain("Hard rules: none recorded. Allergies unknown: ask before suggesting food.");
   });
 
   it("puts an eligible fact under the know heading and lists its ref", () => {

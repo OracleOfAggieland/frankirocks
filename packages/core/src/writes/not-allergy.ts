@@ -72,6 +72,9 @@ export function cueSentenceRanges(e: TurnEvidence, out: FastSlotsOut | null, ans
   if (rx.length > 0) return rx;
   if (out === null) return whole;
   const spans = out.items.flatMap((it) => (it.kind === "allergy" ? [verifyTurnSpan(it.span, e)].filter((s): s is Span => s !== null) : []));
+  // A parse candidate with no RX4 sentence and no verified allergy span has no narrower cue: the whole text is
+  // scanned, so a named allergen gets its own slot (brief 018 B6, a ruling; fails closed).
+  if (spans.length === 0) return whole;
   return sentencesOf(e.text).filter((s) => spans.some((sp) => sp.start < s.end && s.start < sp.end));
 }
 
