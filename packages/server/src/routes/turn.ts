@@ -53,7 +53,8 @@ import { barrierError, parseError, scopeError, staleError } from "./errors";
 import { missingSessionError } from "./open-visit";
 import { Unrecorded, mutation } from "./mutation";
 import { typedReplyNote } from "./typed-reply";
-import { type HardRuleResult, type HardRuleRun, applyOpenProposals, applyPastedAllergy, executeHardRule, executeOnTurn, refreshDirtyTurn } from "../onturn/execute";
+import { type HardRuleResult, type HardRuleRun, applyOpenProposals, applyPastedAllergy, executeHardRule, executeOnTurn, refreshDirtyTurn, ruleRowAt } from "../onturn/execute";
+import { writeRuleRows } from "../onturn/rule-rows";
 import { readOnTurnContext } from "../onturn/context";
 import { readSnapshot } from "../store/port";
 import { type TypedPlan, planTypedReply, readPreRoute, runHardRuleSlots, typedRouteNote } from "../onturn/route";
@@ -335,12 +336,15 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           }
           let proposed: { rules: CoreRules; rulesChanged: boolean; bundle: typeof core.bundle.data | null } | null = null;
           if (hr === null && proposalContext !== null) {
-            proposed = applyOpenProposals({ uid, rules: core.rules.data as CoreRules, epoch: core.epoch.data, bundle: core.bundle.data, context: proposalContext, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher });
-            if (proposed !== null) {
-              tx.update(paths.core(uid, "rules"), proposed.rules);
-              if (proposed.bundle !== null) tx.update(paths.core(uid, "bundle"), proposed.bundle);
+            const installed = applyOpenProposals({ uid, rules: core.rules.data as CoreRules, epoch: core.epoch.data, bundle: core.bundle.data, context: proposalContext, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher });
+            proposed = installed;
+            if (installed !== null) {
+              tx.update(paths.core(uid, "rules"), installed.rules);
+              // Brief 042 item 6: each proposal installed is a row citing its own Evidence.
+              writeRuleRows(tx, ruleRowAt({ uid, rules: core.rules.data as CoreRules, epoch: core.epoch.data, clock: pair, hasher: deps.hasher }, "proposals", installed.rules, { sessionId: req.sessionId, turnId: req.turnId }), installed.decisions);
+              if (installed.bundle !== null) tx.update(paths.core(uid, "bundle"), installed.bundle);
               // A higher Deck cuts what is playing (G1), so the reply is made from the Head that lists the rules.
-              if (proposed.rulesChanged) write = { kind: "committed", routes: ["hardRule"], note: null, deckRaised: true };
+              if (installed.rulesChanged) write = { kind: "committed", routes: ["hardRule"], note: null, deckRaised: true };
             }
           }
           if (hr === null && evidence !== null && cls.cls === "T") proposed = (await applyPastedAllergy(tx, { uid, rules: (proposed?.rules ?? core.rules.data) as CoreRules, epoch: core.epoch.data, bundle: proposed?.bundle ?? core.bundle.data, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher, evidence, sessionId: req.sessionId, seq: req.clientSeq })) ?? proposed;
@@ -604,6 +608,8 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
         });
         if (lateHr !== null) {
           tx.update(paths.core(uid, "rules"), lateHr.rules);
+          // Brief 042 item 6: the late route's decisions, in its own transaction.
+          writeRuleRows(tx, ruleRowAt({ uid, rules: core.rules.data as CoreRules, epoch, clock: pair, hasher: deps.hasher }, "late", lateHr.rules, { sessionId: req.sessionId, turnId: req.turnId }), lateHr.decisions);
           if (lateHr.bundle !== null) tx.update(paths.core(uid, "bundle"), lateHr.bundle);
         }
         const rulesOut = lateHr?.rules ?? core.rules.data;

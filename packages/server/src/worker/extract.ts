@@ -87,6 +87,7 @@ import { paths } from "../store/paths";
 import type { StorePort, Tx } from "../store/port";
 import { turnOrder } from "../turns";
 import { backstopItems, withBackstop } from "../onturn/backstop";
+import { proposalDecision, writeRuleRows } from "../onturn/rule-rows";
 import { turnEvidence } from "../onturn/context";
 import { type Lease, claimJob } from "./jobs";
 
@@ -392,7 +393,12 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
     if (rules !== null) {
       const held = new Set(plans.flatMap((p) => (p.kind === "hold" ? [p.index] : [])));
       const proposal = backstopProposal(turnEvidence(evidence, eid, deps.hasher), backstopItems(call.items.filter((_, i) => held.has(i))), handled, (evidence.turnId as ID | null) ?? null, deps.hasher);
-      if (proposal !== null) tx.update(rulesDoc!.path, withBackstop(rules, proposal));
+      if (proposal !== null) {
+        const next = withBackstop(rules, proposal);
+        tx.update(rulesDoc!.path, next);
+        // Brief 042 item 6 (W-166 row 7): the backstop's proposal is a row citing the turn's Evidence.
+        writeRuleRows(tx, { uid, source: "backstop", sessionId: null, turnId: (evidence.turnId as string | null) ?? null, rulesDocRev: rulesDoc!.data.rev, rulesRev: next.rulesRev, now, epoch: job.epoch, policyRev: job.policyRev, hasher: deps.hasher }, [proposalDecision(proposal)]);
+      }
     }
     const revs = new Map([[eid, evidence.rev]]);
     const core = { epoch: job.epoch, policyRev: job.policyRev };

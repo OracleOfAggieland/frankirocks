@@ -14,7 +14,7 @@
  * lends no subject and closes nothing; a repair's proposal can only add rules, so a late denial, or a pending rule
  * the plan would make active, changes nothing (the owner's next turn does), and it plans no question.
  */
-import { type CoreBundle, type CoreEpoch, type CoreRules, type CoreState, type Evidence, HANDLED_RING_MAX, PROPOSAL_INSTALL_MAX, type Session, type Turn, UNRESOLVED } from "@franki/core";
+import { type CoreBundle, type CoreEpoch, type CoreRules, type CoreState, type Evidence, HANDLED_RING_MAX, PROPOSAL_INSTALL_MAX, type Session, type Turn, UNRESOLVED, tsFromMs } from "@franki/core";
 import { effectiveAudience } from "../audience";
 import { ownerClock } from "../core-docs";
 import type { SlowParse } from "../intents/slow-parse";
@@ -24,6 +24,7 @@ import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import { turnEvidenceId } from "../turns";
 import { withBackstop } from "./backstop";
+import { proposalDecision, writeRuleRows } from "./rule-rows";
 import { type HardRuleRun, executeHardRule } from "./execute";
 import { type RouteRun, readPreRoute, runHardRuleSlots } from "./route";
 import { candidateOpens, regexOpens, speakerCertain } from "./trigger";
@@ -136,6 +137,11 @@ export async function runRepairRoute(ctx: Pick<RouteContext, "uid" | "deps">, ta
     });
     if (next === null) return "none";
     tx.update(rules.path, next);
+    // Brief 042 item 6 (W-166 row 7): the repair's proposal is a row citing the turn's Evidence.
+    const proposal = next.proposals.find((p) => p.origin === "repair" && p.eid === evidenceId);
+    if (proposal !== undefined) {
+      writeRuleRows(tx, { uid, source: "repair", sessionId: target.sessionId, turnId: target.turnId, rulesDocRev: rules.data.rev, rulesRev: next.rulesRev, now: tsFromMs(ops), epoch: epoch.data.epoch, policyRev: epoch.data.policyRev, hasher: deps.hasher }, [proposalDecision(proposal)]);
+    }
     return "proposed";
   }
 }

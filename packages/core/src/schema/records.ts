@@ -333,7 +333,7 @@ export type Turn = Infer<typeof Turn>;
 // ---------------------------------------------------------------------------------------------
 // ledger/{entryId}
 
-const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate"] as const;
+const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate", "rule"] as const;
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
 /**
@@ -392,6 +392,51 @@ const DECISION_ADMISSION_FIELDS = {
 };
 export const DecisionPayload = union(obj({ ...DECISION_SHAPE, ...DECISION_ADMISSION_FIELDS }), obj(DECISION_SHAPE));
 
+// Brief 042 item 6 (question W-166, brief 032's "Outcome"): one row per decision of the hard-rule route, as IDs,
+// gazetteer codes and span offsets, never the owner's words. Each row cites the Evidence the decision was made on
+// (a proposal's own Evidence when it is installed) and `rulesRev` after the write.
+export const RULE_DECISIONS = ["ruleWritten", "pendingWritten", "pendingResolved", "ruleKept", "noneConfirmed", "proposalWritten", "proposalInstalled", "denialRecorded", "notAllergy"] as const;
+/** Where a pending rule came from (brief 032 W-166 row 2), plus a pasted line's filter (brief 041 G-A2). */
+export const PENDING_ORIGINS = ["verdict", "coverage", "fallback", "bound", "pasted"] as const;
+/** Which writer made the decision. */
+export const RULE_ROW_SOURCES = ["turn", "late", "pasted", "proposals", "open", "backstop", "repair"] as const;
+/** At most this many rules, codes or subjects on one row; more go on further rows (`part`). */
+export const RULE_ROW_ITEMS_MAX = 32;
+export const RuleRowPayload = obj({
+  decision: oneOf(RULE_DECISIONS),
+  source: oneOf(RULE_ROW_SOURCES),
+  eid: ID,
+  sessionId: nullable(ID),
+  turnId: nullable(ID),
+  proposalId: nullable(ID),
+  /** `pendingResolved`: whether a rule answered it or a denial removed it. */
+  by: nullable(oneOf(["rule", "denial"])),
+  /** `ruleKept`: why it was kept; only `denied` needs a row. */
+  why: nullable(oneOf(["denied"])),
+  rules: arr(
+    obj({
+      ruleId: ID,
+      subjectId: nullable(EID),
+      code: str(64, { min: 1 }),
+      state: oneOf(["active", "pending"]),
+      anonymous: bool,
+      /** Offsets only: the quote is the owner's words. */
+      proof: nullable(obj({ eid: ID, start: nat(), end: nat() })),
+      origin: nullable(oneOf(PENDING_ORIGINS)),
+      /** `pendingResolved` by a rule: the rule that answered it. */
+      answeredBy: nullable(ID),
+    }),
+    RULE_ROW_ITEMS_MAX,
+  ),
+  codes: arr(str(64, { min: 1 }), RULE_ROW_ITEMS_MAX),
+  /** `noneConfirmed`: each subject added or removed; `cleared` when an anonymous pending rule emptied the list. */
+  subjects: arr(obj({ subjectId: EID, change: oneOf(["added", "removed"]) }), RULE_ROW_ITEMS_MAX),
+  cleared: bool,
+  rulesRev: nat(),
+  part: nat(),
+});
+export type RuleRowPayload = Infer<typeof RuleRowPayload>;
+
 export const LEDGER_PAYLOADS = {
   // Earlier calls have no indexed call ID. Their receipts remain readable and replayable.
   phoneCall: union(obj({ ...phoneCallFields, phoneCallId: ID }), obj(phoneCallFields)),
@@ -431,6 +476,7 @@ export const LEDGER_PAYLOADS = {
     withdrawnCount: nat(),
   }),
   gate: GatePayload,
+  rule: RuleRowPayload,
 } satisfies Record<LedgerKind, Schema<unknown>>;
 
 const LedgerBase = obj({
