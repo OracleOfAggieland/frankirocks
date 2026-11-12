@@ -141,7 +141,7 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       const core = await readCoreDocs(tx, uid);
       const ops = deps.clock.read().opsClock.now;
       if (core.epoch.data.barrier !== null) {
-        const blocked: OpenRes = { sessionId, generation: 0, deck: null, state: "blocked", ack: null, proactive: null };
+        const blocked: OpenRes = { sessionId, generation: 0, deck: null, state: "blocked", ack: null, proactive: null, audience: null };
         await completeRequest(tx, key, blocked, ops);
         return { response: blocked, prior: null, stamp: null, session: null, narrow: false };
       }
@@ -202,7 +202,7 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
         );
         if (admitted.kind === "permit" && admitted.notes.length === 1) proactive = { turnId, permit: admitted.permit, whisper: admitted.notes[0]!, cards: [] };
       }
-      const opened: OpenRes = { sessionId, generation: 1, deck: issueDeck(stamp, head, ops), state: "connecting", ack: stateAck(stamp, ops), proactive };
+      const opened: OpenRes = { sessionId, generation: 1, deck: issueDeck(stamp, head, ops), state: "connecting", ack: stateAck(stamp, ops), proactive, audience: created.audience };
       await completeRequest(tx, key, opened, ops);
       return { response: opened, prior: prior === null ? null : { id: priorId!, ...prior }, stamp, session: created, narrow: inherited !== null };
     });

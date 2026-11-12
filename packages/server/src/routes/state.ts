@@ -95,7 +95,7 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
           updatedAt: tsFromMs(ops),
         });
       }
-      return { stamp, state: "LISTENING", deck: narrowedHere(next) ? null : issueDeck(stamp, head, ops, safe), ack, barrierReceiptId: null, proactive: null } satisfies StateRes;
+      return { stamp, state: "LISTENING", deck: narrowedHere(next) ? null : issueDeck(stamp, head, ops, safe), ack, barrierReceiptId: null, proactive: null, audience: effectiveAudience(next, ops) } satisfies StateRes;
     }),
   );
   // Brief 030 part A: an idle whisper, gated inside `chooseNow`, only where the ack checks passed.

@@ -6,6 +6,7 @@ import { COPY } from "../ui/copy";
 import type { ApiClient, ApiResult } from "./api";
 import { CompanyTap } from "./company-tap";
 
+const ID2 = "n".repeat(43);
 const SS = { sessionId: "s".repeat(43), epoch: 1, policyRev: 2, bundleRev: 3, rulesRev: 4, generation: 1 };
 const answer = (status: string, policyRev = 3) => ({
   requestId: "r".repeat(43),
@@ -100,5 +101,60 @@ describe("CompanyTap (brief 044, item 3)", () => {
     await tap.tap("company");
     tap.clear();
     expect(tap.getSnapshot().company).toBe(false);
+  });
+});
+
+describe("CompanyTap: the audience on the server's state answers (brief 045 part S)", () => {
+  const at = (o: Partial<typeof SS> = {}) => ({ ...SS, ...o });
+
+  it("a company line in words, then the next state answer moves the toggle to company", () => {
+    const { tap } = build(() => ({ ok: true, status: 200, body: answer("ready") }));
+    tap.adopt(at(), "private");
+    expect(tap.getSnapshot().company).toBe(false);
+    // The words were a turn; the toggle moves only when a state answer says what the server holds.
+    tap.adopt(at(), "company");
+    expect(tap.getSnapshot().company).toBe(true);
+    tap.adopt(at(), "private");
+    expect(tap.getSnapshot().company).toBe(false);
+  });
+
+  it("an inherited company open shows company before any tap", () => {
+    const { tap, posts } = build(() => ({ ok: true, status: 200, body: answer("ready") }));
+    tap.adopt(at({ sessionId: ID2 }), "company");
+    expect(posts).toEqual([]);
+    expect(tap.getSnapshot()).toMatchObject({ company: true, sending: false, error: null });
+  });
+
+  it("a stale answer does not move it back: an older generation or policyRev, or a Session the screen has left", () => {
+    const { tap } = build(() => ({ ok: true, status: 200, body: answer("ready") }));
+    tap.adopt(at({ policyRev: 3 }), "company");
+    tap.adopt(at({ policyRev: 2 }), "private");
+    expect(tap.getSnapshot().company).toBe(true);
+    tap.adopt(at({ policyRev: 3, generation: 2 }), "company");
+    tap.adopt(at({ policyRev: 9, generation: 1 }), "private");
+    expect(tap.getSnapshot().company).toBe(true);
+    // A new Session's answer moves on from the old one; a late answer of the old one moves nothing.
+    tap.adopt(at({ sessionId: ID2, policyRev: 1 }), "private");
+    expect(tap.getSnapshot().company).toBe(false);
+    tap.adopt(at({ policyRev: 50, generation: 9 }), "company");
+    expect(tap.getSnapshot().company).toBe(false);
+  });
+
+  it("an answer older than a tap's answer does not undo the tap", async () => {
+    // The tap's answer carries policyRev 3 (see `answer`).
+    const { tap } = build(() => ({ ok: true, status: 200, body: answer("ready") }));
+    await tap.tap("company");
+    tap.adopt(at({ policyRev: 2 }), "private");
+    expect(tap.getSnapshot().company).toBe(true);
+  });
+
+  it("an answer with no audience moves nothing, and clear forgets the order too", () => {
+    const { tap } = build(() => ({ ok: true, status: 200, body: answer("ready") }));
+    tap.adopt(at({ policyRev: 5 }), "company");
+    tap.adopt(at({ policyRev: 6 }), null);
+    expect(tap.getSnapshot().company).toBe(true);
+    tap.clear();
+    tap.adopt(at({ policyRev: 1 }), "company");
+    expect(tap.getSnapshot().company).toBe(true);
   });
 });

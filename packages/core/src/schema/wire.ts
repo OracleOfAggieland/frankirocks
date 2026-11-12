@@ -359,6 +359,8 @@ export const OpenResponse = obj({
   state: oneOf(["connecting", "blocked"]),
   ack: nullable(StateAck),
   proactive: nullable(Proactive),
+  /** Brief 045 part S: the new Session's confirmed audience; null on a blocked open. */
+  audience: nullable(Au),
 });
 
 export const SdpRequest = obj({ requestId: ID, sessionId: ID, generation: nat(), offerSdp: str(65536) });
@@ -378,6 +380,8 @@ export const StateResponse = obj({
   ack: nullable(StateAck),
   barrierReceiptId: nullable(ID),
   proactive: nullable(Proactive),
+  /** Brief 045 part S: the Session's confirmed audience, as the Gate reads it. */
+  audience: nullable(Au),
 });
 
 export const CloseRequest = obj({

@@ -88,9 +88,9 @@ class Rig {
 function listening(r = new Rig()): Rig {
   r.ev({ type: "callPressed", zone: "America/Chicago" });
   const deck = deckAt(r.now + 200);
-  r.ev({ type: "openOk", response: { sessionId: SID, generation: 1, deck, state: "connecting", ack: ackAt(deck, r.now + 200), proactive: null } }, 200);
+  r.ev({ type: "openOk", response: { sessionId: SID, generation: 1, deck, state: "connecting", ack: ackAt(deck, r.now + 200), proactive: null, audience: null } }, 200);
   r.ev({ type: "channelOpen" }, 300);
-  r.ev({ type: "stateOk", response: { stamp: ss(deck), state: "LISTENING", deck: deckAt(r.now + 100), ack: ackAt(deck, r.now + 100), barrierReceiptId: null, proactive: null } }, 100);
+  r.ev({ type: "stateOk", response: { stamp: ss(deck), state: "LISTENING", deck: deckAt(r.now + 100), ack: ackAt(deck, r.now + 100), barrierReceiptId: null, proactive: null, audience: null } }, 100);
   expect(r.st.phase).toBe("LISTENING");
   return r;
 }
@@ -368,7 +368,7 @@ describe("voice state machine", () => {
   it("higher stamp cancels and clears, then sends the new Head", () => {
     const r = speaking();
     const higher = deckAt(r.now, { bundleRev: 2, head: { ...sampleHead(), text: "You are Franki, v2." } });
-    const cmds = r.ev({ type: "stateOk", response: { stamp: ss(higher), state: "SPEAKING", deck: higher, ack: ackAt(higher, r.now), barrierReceiptId: null, proactive: null } });
+    const cmds = r.ev({ type: "stateOk", response: { stamp: ss(higher), state: "SPEAKING", deck: higher, ack: ackAt(higher, r.now), barrierReceiptId: null, proactive: null, audience: null } });
     expect(cmds[0]).toEqual({ kind: "muteOutput" });
     expect(sends(cmds).slice(0, 2)).toEqual([{ type: "response.cancel", response_id: "resp_1" }, { type: "output_audio_buffer.clear" }]);
     expect(sends(cmds)[2]).toMatchObject({ type: "session.update", session: { instructions: "You are Franki, v2." } });
@@ -383,7 +383,7 @@ describe("voice state machine", () => {
   it("a lower or equal Deck changes nothing in flight", () => {
     const r = speaking();
     const same = deckAt(r.now);
-    const cmds = r.ev({ type: "stateOk", response: { stamp: ss(same), state: "SPEAKING", deck: same, ack: ackAt(same, r.now), barrierReceiptId: null, proactive: null } });
+    const cmds = r.ev({ type: "stateOk", response: { stamp: ss(same), state: "SPEAKING", deck: same, ack: ackAt(same, r.now), barrierReceiptId: null, proactive: null, audience: null } });
     expect(sends(cmds)).toEqual([]);
     expect(r.st.phase).toBe("SPEAKING");
   });
@@ -440,7 +440,7 @@ describe("voice state machine", () => {
     expect(r.st.phase).toBe("CONNECTING");
     // A slow open (4 s) must not eat into the 5 s setup limit.
     const deck = deckAt(r.now + 4000);
-    const cmds = r.ev({ type: "openOk", response: { sessionId: SID, generation: 1, deck, state: "connecting", ack: ackAt(deck, r.now + 4000), proactive: null } }, 4000);
+    const cmds = r.ev({ type: "openOk", response: { sessionId: SID, generation: 1, deck, state: "connecting", ack: ackAt(deck, r.now + 4000), proactive: null, audience: null } }, 4000);
     expect(cmds).toContainEqual({ kind: "armTimer", name: "connect", at: r.now + CONNECT_LIMIT_MS });
     r.timer("connect", 4999);
     expect(r.st.phase).toBe("CONNECTING");
@@ -463,7 +463,7 @@ describe("voice state machine", () => {
     const r = new Rig();
     r.ev({ type: "callPressed", zone: "UTC" });
     const deck = deckAt(r.now);
-    r.ev({ type: "openOk", response: { sessionId: SID, generation: 1, deck, state: "connecting", ack: ackAt(deck, r.now), proactive: null } });
+    r.ev({ type: "openOk", response: { sessionId: SID, generation: 1, deck, state: "connecting", ack: ackAt(deck, r.now), proactive: null, audience: null } });
     const cfg = r.ev({ type: "channelOpen" }, 500);
     const update = sends(cfg)[0]!;
     expect(update).toMatchObject({
@@ -495,7 +495,7 @@ describe("voice state machine", () => {
 
     // A refresh with a fresh Deck: the next Turn gets its reply.
     const fresh = deckAt(r.now);
-    r.ev({ type: "stateOk", response: { stamp: ss(fresh), state: "LISTENING", deck: fresh, ack: ackAt(fresh, r.now), barrierReceiptId: null, proactive: null } });
+    r.ev({ type: "stateOk", response: { stamp: ss(fresh), state: "LISTENING", deck: fresh, ack: ackAt(fresh, r.now), barrierReceiptId: null, proactive: null, audience: null } });
     speak(r, "item_2", "Pip again");
     r.ev({ type: "turnOk", turnId: turnBody(r).turnId, response: admitted(r, "slowOrdinary") });
     expect(sends(answerVerify(r)).map((e) => e.type)).toEqual(["response.create"]);
@@ -714,7 +714,7 @@ describe("judge and speculative reply at the commit (task 24)", () => {
   it("with noteWaiting the judge goes alone (R2.9)", () => {
     const r = listening();
     const d = { ...r.st.deck!, noteWaiting: true };
-    r.ev({ type: "stateOk", response: { stamp: ss(d), state: "LISTENING", deck: d, ack: ackAt(d, r.now), barrierReceiptId: null, proactive: null } });
+    r.ev({ type: "stateOk", response: { stamp: ss(d), state: "LISTENING", deck: d, ack: ackAt(d, r.now), barrierReceiptId: null, proactive: null, audience: null } });
     const { judge, spec } = commitTurn(r);
     expect(judge).toBeDefined();
     expect(spec).toBeUndefined();
@@ -815,7 +815,7 @@ describe("verdicts and fastO admission (task 25)", () => {
     answerHash(r);
     // The server refuses the ack (a parse gap, say).
     const d = r.st.deck!;
-    r.ev({ type: "stateOk", sentAt: r.now, response: { stamp: ss(d), state: "LISTENING", deck: d, ack: null, barrierReceiptId: null, proactive: null } }, 100);
+    r.ev({ type: "stateOk", sentAt: r.now, response: { stamp: ss(d), state: "LISTENING", deck: d, ack: null, barrierReceiptId: null, proactive: null, audience: null } }, 100);
     judgeDone(r, "resp_j", "O", 100);
     expect(r.last.some((c) => c.kind === "verifyPermit")).toBe(false);
     expect(r.st.phase).toBe("HELD");
@@ -938,7 +938,7 @@ describe("deadlines, missing posts, polling and speech start (task 27)", () => {
     r.ev({ type: "turnOk", turnId: turnBody(r).turnId, response: admitted(r, "slowOrdinary") }, 50);
     expect(r.st.ack).toBeNull();
     const d = r.st.deck!;
-    r.ev({ type: "stateOk", sentAt, response: { stamp: ss(d), state: "LISTENING", deck: d, ack: ackAt(d, r.now), barrierReceiptId: null, proactive: null } }, 10);
+    r.ev({ type: "stateOk", sentAt, response: { stamp: ss(d), state: "LISTENING", deck: d, ack: ackAt(d, r.now), barrierReceiptId: null, proactive: null, audience: null } }, 10);
     expect(r.st.ack).toBeNull();
     expect(r.st.ackDroppedStale).toBe(true);
   });
@@ -1029,7 +1029,7 @@ describe("wave A review fixes", () => {
     created(r, t.spec!, "resp_s2");
     answerHash(r);
     const d = r.st.deck!;
-    r.ev({ type: "stateOk", sentAt: r.now, response: { stamp: ss(d), state: "LISTENING", deck: d, ack: ackAt(d, r.now), barrierReceiptId: null, proactive: null } }, 10);
+    r.ev({ type: "stateOk", sentAt: r.now, response: { stamp: ss(d), state: "LISTENING", deck: d, ack: ackAt(d, r.now), barrierReceiptId: null, proactive: null, audience: null } }, 10);
     judgeDone(r, "resp_j2", "O", 100);
     expect(r.st.pending?.permit.kind).not.toBe("fastO");
     expect(r.st.latency.current!.refused).toBe("outstanding");
@@ -1048,9 +1048,9 @@ describe("wave A review fixes, item 2: the poll's Deck carries the safe turns", 
     const turns = [safe("t1", "user", "My dog is called Pip"), safe("a1", "assistant", "Pip is a lovely name. How old is Pip?")];
     // A poll sent before the answer carries the old Deck: it doesn't replace the newer one.
     const d0 = r.st.deck!;
-    r.ev({ type: "stateOk", sentAt: sentBefore, response: { stamp: ss(d0), state: "LISTENING", deck: d0, ack: null, barrierReceiptId: null, proactive: null } }, 10);
+    r.ev({ type: "stateOk", sentAt: sentBefore, response: { stamp: ss(d0), state: "LISTENING", deck: d0, ack: null, barrierReceiptId: null, proactive: null, audience: null } }, 10);
     const d = withTurns(r.st.deck!, turns);
-    r.ev({ type: "stateOk", sentAt: r.now, response: { stamp: ss(d), state: "LISTENING", deck: d, ack: ackAt(d, r.now), barrierReceiptId: null, proactive: null } }, 10);
+    r.ev({ type: "stateOk", sentAt: r.now, response: { stamp: ss(d), state: "LISTENING", deck: d, ack: ackAt(d, r.now), barrierReceiptId: null, proactive: null, audience: null } }, 10);
     // The reply ends and the owner answers.
     r.st = { ...r.st, phase: "LISTENING", turn: null, active: null, pending: null };
     const t = commitTurn(r, "item_2");
@@ -1069,7 +1069,7 @@ describe("wave A review fixes, item 2: the poll's Deck carries the safe turns", 
     r.ev({ type: "turnOk", turnId: turnBody(r).turnId, response: { ...answer, deck: withTurns(answer.deck!, turns) } }, 50);
     expect(r.st.deck!.turns).toHaveLength(1);
     const old = withTurns(r.st.deck!, []);
-    r.ev({ type: "stateOk", sentAt: sentBefore, response: { stamp: ss(old), state: "LISTENING", deck: old, ack: null, barrierReceiptId: null, proactive: null } }, 10);
+    r.ev({ type: "stateOk", sentAt: sentBefore, response: { stamp: ss(old), state: "LISTENING", deck: old, ack: null, barrierReceiptId: null, proactive: null, audience: null } }, 10);
     expect(r.st.deck!.turns).toHaveLength(1);
   });
 });
