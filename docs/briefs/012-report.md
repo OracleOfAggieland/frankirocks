@@ -276,3 +276,50 @@ These are unchanged from wave A, and none has been run:
 1. Run the judge spike with `--live --fast-slots` on your takes. Read p50, p95, the largest time, the share over 900 ms, and the speaker-certainty line.
 2. Run `scripts/extract-check/run.mjs --live`.
 3. If many FastSlots calls are over 900 ms, or the speaker gate fails many clean lines, the deadline (`FAST_SLOTS_DEADLINE_MS`, 900) and the gate are your call before wave B goes live.
+
+## Wave C: corrections and renames (brief 025, W-187 and tasks C1 to C6)
+
+Built by Claude on lane `writes`. Kiro wrote none of this wave. No live model call was made.
+
+### The build
+
+| Task | Commit | What |
+|---|---|---|
+| W-187 | `3e06aeb` | Model polarity alone never removes an allergy rule. A denial removes a pending rule only on the answering turn, with a denial form in the quote and no allergy affirmed for that code in the turn (`writes/denial-words.ts`). Off an answering turn the pending rule is kept and asked about again (`isAllergy`). New property `polarity-never-removes`. |
+| C1 | `81bc7d2` | The red properties: P5 and P6 worker halves, P7, P8, P9 and P11, driven by `testing/arb-corrections.ts`. |
+| C2 | `330e386` | `correctionTargets` and `packetTargets` (extraction's `open` for the same snapshot, minus protected rows), entity labels by G7/G33 (`writes/entities.ts`), and `resolveMention` through `mentionName`. 8 cases in `onturn/context.test.ts`. |
+| C3 | `c81234e` | The correct route in the turn's transaction (`onturn/memory-route.ts`, `executeOnTurn`). RX6 and the parse's correct and transition candidates open it; targets are re-read in the transaction; a moved target, an unseen same-key row, two targets or no usable answer defer. The reply's Head is compiled from the written rows. P8 and P9 green; 7 cases in `routes/turn.corrections.test.ts`. |
+| C4 | `a7927f6` | The rename index (`writes/renames.ts`) in the Head, recall and extraction's `open`; `resolveMention` maps the new name to the entity and the old name, said after the rename, to a salted new entity. P11 green; 8 cases in `worker/extract.renames.test.ts`. |
+| C5 | `86862d8` | Extraction honours `handled.keys` and `handled.refs`, takes `assertedAt` from the root Evidence, skips `negated` restatements, and never closes a later-asserted row (it writes `history` instead). P7, P5 worker and P6 worker green; 3 cases in `worker/extract.handled.test.ts`. |
+| C6 | this commit | The checks below and this section. |
+
+### Red first
+
+| Property | Seed | Counterexample |
+|---|---|---|
+| W-187 `polarity-never-removes` | `1769163058`, path `435:0:1` | pending self peanut, nothing asked; "I can't eat peanuts, I'm allergic." with a denied item removed it |
+| P7 | `-890287752`, path `71:1:1:1:2` | a value correction the route applied nowhere; extraction corrected the name row |
+| P5 worker | `526688380`, path `0:0:1:1` | Alec corrected to Alexa; Alec came back active from Evidence asserted 12:01 |
+| P6 worker | `1729967520`, path `1:0:1` | Alec then Alexa, the earlier job committed last; the current row moved to history |
+| P8 | `1144980804`, path `0:0:1` | "No, her name is Maya, not Mara." The route wrote nothing |
+| P9 | `1514352300`, path `1:0:1:1:1:1:1` | the Mara turn committed a correction with no note |
+| P11 | `942852772`, path `0:0:1:1:1:1:1` | "Maya is the owner's sister." still said Maya after the rename to May |
+
+### Rulings made here (named constants, fail closed)
+
+- `ROUTE_ROWS_ROOT_AT_TURN_SLICE`: route rows are rooted at the covering turn slice, not the span slice. P8's root-key clause is stricter than the design's text and holds with this.
+- The route acts only on targets that were in the FastSlots packet; correction targets go in the packet only when the correct route is known open when the call starts (RX6, or the parse was awaited).
+- A turn that opened only the correct or transition route plans no allergy rule and leaves no hardRule `handled` entry (G38).
+- Two speakable current names for one entity name nothing: its old-name lines are left out.
+- A `wrong` row with no `validTo` negates every later restatement of its value.
+- An item meeting a later-asserted row is written `history` even when it is a correction (a correction can't refute something said after it).
+- The worker now reads the Memories on every job, since the rename index decides whose a name is.
+
+### Changed assertions
+
+- `writes/hard-rule.test.ts`, `writes/hard-rule.review.test.ts`, `routes/turn.rules.test.ts` (W-187): a certain denial off an answering turn now keeps the pending rule and asks again, instead of removing it.
+- `worker/extract.fixture-clock.test.ts` (C5): `assertedAt` and `validFrom` are the root Evidence's; the owner's world clock is checked through `nextReviewAt`.
+
+### Checks
+
+`npx vitest run --maxWorkers=3`: 440 files, 3,889 passed, 34 expected fail. `npm run lint` (one existing web warning), `npm run typecheck` and `npm run build` exit 0. `apps/web` was not touched.
