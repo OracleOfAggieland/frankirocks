@@ -6,7 +6,7 @@
 // large. With equipment showing, Franki settles left and smaller on spring.settle: the strip across the top, the
 // source tags beside Franki, the cards on the right, the jar bottom left, the Lab bottom right. In a narrow box
 // Franki moves up and the card or sheet rises over the lower half. A panel taller than its room is scaled down
-// to fit it. Nothing here clips Franki, whose canvas spills past its box on every side.
+// to fit it, the sheet further than the rest. Nothing here clips Franki, whose canvas spills past its box on every side.
 //
 // What works: Yes on the approval card, and the state toy. Everything else on the stage is inert. The stage is
 // a section labelled for the demonstration, with no live region. On the server, and with scripting off, it shows
@@ -36,6 +36,8 @@ export const NARROW_PX = 440;
 export const ROWS_MIN_HEIGHT_PX = 640;
 /** The smallest a panel is scaled to fit its room. */
 export const FIT_MIN = 0.72;
+/** The smallest the "What I know" sheet is scaled from NARROW_PX: lower than the rest, so it shows whole, header included. */
+export const SHEET_FIT_MIN = 0.6;
 
 const noop = () => {};
 const subscribeNothing = () => noop;
@@ -84,7 +86,7 @@ function Fit({ min = FIT_MIN, className = "", children }: { min?: number; classN
     return () => observer.disconnect();
   }, [min]);
   return (
-    <div ref={outer} data-fit="" className={`demo-fit ${className}`.trim()}>
+    <div ref={outer} data-fit="" data-fit-min={min} className={`demo-fit ${className}`.trim()}>
       <div ref={inner} data-fit-scale={scale} className="demo-fit-inner" style={{ "--fit": scale } as CSSProperties}>
         {children}
       </div>
@@ -308,7 +310,8 @@ export function StageView(p: StageViewProps) {
       </div>
 
       <div inert data-demo-slot="sheet" className="demo-slot-panel demo-slot-sheet absolute">
-        <Fit className="demo-window">
+        {/* Narrow, the sheet keeps the usual floor and fades at the top instead: smaller would not read on a phone. */}
+        <Fit min={p.narrow ? FIT_MIN : SHEET_FIT_MIN} className="demo-window">
           <AnimatePresence>
             {scene.sheet ? (
               <motion.div key="sheet" {...rise(reduced)}>

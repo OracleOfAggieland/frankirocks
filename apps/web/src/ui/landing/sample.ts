@@ -92,12 +92,14 @@ export const STRIP_RESULT = "$115 less";
 /** The item the visitor watches Franki forget. */
 export const FORGOTTEN_ID = "brother";
 
-/** What Franki knows on the sample month. */
+/**
+ * What Franki knows on the sample month: one of each kind the jar draws (a rule, something told, a guess, and the
+ * private item the forget step removes), few enough that the whole sheet fits beside Franki on the stage.
+ */
 export const KNOWN_ITEMS: readonly KnownItem[] = [
   { id: "shellfish", area: "Food and health", text: "You: no shellfish", from: "you", guessed: false, hardRule: true },
   { id: "late-meetings", area: "Time and work", text: "Late meetings on Thursdays", from: "Calendar", guessed: false, hardRule: false },
   { id: "spicy", area: "Food and health", text: "You like spicy food", from: "your food orders", guessed: true, hardRule: false },
-  { id: "takeout", area: "Money", text: "Takeout runs high on late-meeting nights", from: "Bank and Calendar", guessed: false, hardRule: false },
   { id: FORGOTTEN_ID, area: "People", text: "Your brother is having a hard time", from: "a conversation", guessed: false, hardRule: false },
 ];
 

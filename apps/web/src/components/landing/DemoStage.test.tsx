@@ -3,10 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AVATAR_LABELS } from "../../ui/copy";
 import { LANDING } from "../../ui/copy-landing";
-import { FORGOTTEN_ID, KNOWN_ITEMS } from "../../ui/landing/sample";
+import { FORGOTTEN_ID, KNOWN_ITEMS, KNOWN_MOTES } from "../../ui/landing/sample";
 import { type StageScene, allScenes, stageFor } from "../../ui/landing/stage-script";
 import { type StepId, TOY_STATES } from "../../ui/landing/steps";
-import { DemoStage, FIT_MIN, NARROW_PX, ROWS_MIN_HEIGHT_PX, StageView, boxFacts, fitScale } from "./DemoStage";
+import { DemoStage, FIT_MIN, NARROW_PX, ROWS_MIN_HEIGHT_PX, SHEET_FIT_MIN, StageView, boxFacts, fitScale } from "./DemoStage";
 
 const noop = () => {};
 
@@ -111,6 +111,24 @@ describe("the stage, scene by scene", () => {
     for (const i of KNOWN_ITEMS.filter((k) => k.id !== FORGOTTEN_ID)) expect(forget).toContain(i.text);
   });
 
+  it("knows four things, one of each kind the jar draws, and the jar holds a mote for each", () => {
+    expect(KNOWN_ITEMS).toHaveLength(4);
+    expect(KNOWN_ITEMS.some((i) => i.id === FORGOTTEN_ID)).toBe(true);
+    expect(KNOWN_MOTES.map((m) => m.kind).sort()).toEqual(["guessed", "private", "rule", "told"]);
+    expect(KNOWN_MOTES.map((m) => m.id)).toEqual(KNOWN_ITEMS.map((i) => i.id));
+  });
+
+  it("lets the sheet scale lower than the other panels from 440 px, and keeps the usual floor narrow", () => {
+    const slot = (html: string, name: string) => html.match(new RegExp(`data-demo-slot="${name}"[^>]*>\s*<div[^>]*data-fit-min="([^"]*)"`))?.[1];
+    const know = stageFor("know", "listening");
+    expect(SHEET_FIT_MIN).toBeLessThan(FIT_MIN);
+    expect(slot(view(know), "sheet")).toBe(String(SHEET_FIT_MIN));
+    expect(slot(view(know, { narrow: true }), "sheet")).toBe(String(FIT_MIN));
+    expect(slot(view(know), "lab")).toBe(String(FIT_MIN));
+    expect(slot(view(stageFor("approve", "listening")), "dock")).toBe("1");
+    expect(slot(view(stageFor("suggested", "listening", 1)), "dock")).toBe(String(FIT_MIN));
+  });
+
   it("draws the tags beside Franki, joined by the stitched wire at connected", () => {
     expect(view(stageFor("noticed", "listening"))).toContain('data-demo-tag="bank"');
     expect(view(stageFor("noticed", "listening"))).not.toContain("data-demo-wire");
@@ -153,6 +171,10 @@ describe("fitScale and boxFacts", () => {
     expect(fitScale(400, 300)).toBe(1);
     expect(fitScale(300, 400)).toBe(0.75);
     expect(fitScale(100, 400)).toBe(FIT_MIN);
+    expect(fitScale(100, 400, SHEET_FIT_MIN)).toBe(SHEET_FIT_MIN);
+    // The measured know step at 1440 x 900, before the sheet's items went to one row: 1,334 px into 768.
+    expect(fitScale(768, 1334, SHEET_FIT_MIN)).toBe(SHEET_FIT_MIN);
+    expect(fitScale(768, 1100, SHEET_FIT_MIN)).toBe(0.69);
     expect(fitScale(0, 400)).toBe(1);
     expect(fitScale(400, 0)).toBe(1);
   });
