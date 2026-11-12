@@ -129,7 +129,8 @@ export async function runDoor(d: Door, seed?: (rig: TestRig) => Promise<void>): 
     case "replaced": {
       // An open naming A lands before the company turn on A does.
       const b = await callRoute(rig, openRoute, { requestId: testId("open-b"), initiator: "user", previousSessionId: s.sessionId, clientZone: "UTC", visitId: null });
-      answers.push({ route: "open", sessionId: b.body.sessionId, status: b.status, body: b.body });
+      // Its answer came before the hit committed, so it is not one of the answers checked afterwards.
+      if (b.status !== 200) throw new Error(`the replacing open answered ${b.status}`);
       rig.openai.script("decisions.create", ok(decisionAnswer(hit)));
       const res = await postTurn(rig, voice(stamp, 1, "1"));
       answers.push({ route: "turn", sessionId: s.sessionId, status: res.status, body: res.body });
