@@ -46,3 +46,6 @@ export * from "./gate/index";
 
 // Brief 024: third-party labels.
 export * from "./safe-name";
+
+// Brief 024: whispers.
+export * from "./whisper/index";
