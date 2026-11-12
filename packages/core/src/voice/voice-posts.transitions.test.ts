@@ -132,7 +132,7 @@ describe("post transitions", () => {
     expect(creates(cmds)).toHaveLength(1);
   });
 
-  it.fails("SPEAKING + turnOk hold with a retry hint -> SPEAKING (an admitted Turn's post is resent after the hint)", () => {
+  it("SPEAKING + turnOk hold with a retry hint -> SPEAKING (an admitted Turn's post is resent after the hint)", () => {
     const d = live();
     const turnId = fastOSpeaking(d);
     const sent = turnPosts(play(d, { k: "transcript", pick: 0, fail: false, empty: false }, 300));

@@ -154,8 +154,9 @@ export type VoicePhase =
  *                 answer wait or hash check already armed, whichever is later.
  *                 Fires in HELD, JUDGING or SPECULATING with no active reply: RECOVERY with nothing to play, then
  *                 `lineDone`.
- *   turnRetry     Whichever phase the posted Turn waits in (onTurn): a `hold` answer with `retryAfterMs`. Fires with
- *                 no Permit pending or active: the same post is sent again.
+ *   turnRetry     Whichever phase the posted Turn waits in (onTurn): a `hold` answer with `retryAfterMs`, also for a
+ *                 Turn whose reply is admitted. Fires with no Permit pending or active, or while that Turn's own
+ *                 admitted reply plays: the same post is sent again.
  *   refresh       Any phase with a Session (onState): the next state request REFRESH_MS after an answer. Fires in a
  *                 live phase or RECOVERY.
  *   stateRetry    Any phase with a Session after CONFIGURING (onStateFailed): a failed state request is retried after
@@ -1338,7 +1339,11 @@ function onTurn(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void 
   if (s.st.admittedTurnId === turnId) {
     // A reply of this Turn is already admitted. Only a route that changes what is said cuts it (R11.6; question 92).
     const cut = res.permit !== null && res.error === null && (res.status === "ready" || res.status === "clarify");
-    if (!cut) return;
+    if (!cut) {
+      // Nothing was recorded yet: the post is sent again after the hint while the reply plays on (V2 step 6).
+      if (res.status === "hold" && res.permit === null && res.retryAfterMs > 0) s.arm("turnRetry", s.now + res.retryAfterMs);
+      return;
+    }
     cancelAll(s, false);
     s.set({ admittedTurnId: null, phase: "HELD" });
   }
@@ -2085,9 +2090,12 @@ function onTimer(s: Step, name: TimerName): void {
       // R7.6: no transcript by t0 + 5 s for a Turn whose admitted reply already ended.
       if (st.heldBack !== null) postHeldBack(s, "missing");
       return;
-    case "turnRetry":
-      if (st.turn?.posted != null && st.pending === null && st.active === null) pushTurn(s, st.turn.posted);
+    case "turnRetry": {
+      // The same post again, with no Permit pending or active, or while this Turn's own admitted reply plays (V2 step 6).
+      const ownReply = st.turn !== null && st.admittedTurnId === st.turn.turnId && st.pending === null;
+      if (st.turn?.posted != null && ((st.pending === null && st.active === null) || ownReply)) pushTurn(s, st.turn.posted);
       return;
+    }
     case "permit":
       // A Permit that came inside the answer wait is still being checked: the check keeps its own limit (V2 step 5).
       if (st.pending !== null && st.pending.checkUntil !== undefined && st.pending.checkUntil > s.now) return s.arm("permit", st.pending.checkUntil);
