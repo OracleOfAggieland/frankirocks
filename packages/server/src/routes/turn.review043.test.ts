@@ -2,7 +2,7 @@
 import { mentionEid } from "@franki/core";
 import { describe, expect, it } from "vitest";
 import { seedPrior } from "../testing/arb-corrections";
-import { at, byId, byMention, correction, rowsAbout, seed, setup, post, transition } from "../testing/review-043";
+import { SELF, at, byId, byMention, correction, rowsAbout, seed, setup, post, transition } from "../testing/review-043";
 
 describe("finding 1: the owner's words choose who died, never the model's subject", () => {
   const T = "My friend's mom passed away last night.";
@@ -79,5 +79,15 @@ describe("finding 2: a typed turn with no call always gets exactly one line from
     expect(r.changed).toEqual([]);
     expect(r.entries.map((e) => [e.route, e.outcome])).toEqual([["correct", "deferred"]]);
     expect(r.notes).toEqual(["All right."]);
+  });
+});
+
+describe("finding 6: isSelf plus any \"I\" never records the owner ill", () => {
+  it("\"I just found out my brother was diagnosed with cancer.\" with transition illness, subject isSelf", async () => {
+    const a = await setup();
+    const t = "I just found out my brother was diagnosed with cancer.";
+    const r = await post(a, t, [transition(t, { transition: "illness", subject: SELF })]);
+    expect(rowsAbout(r.after, "self").filter(([p]) => p === "person.life" || p === "care")).toEqual([]);
+    expect(r.changed).toEqual([]);
   });
 });
