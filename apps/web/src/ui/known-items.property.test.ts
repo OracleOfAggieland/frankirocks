@@ -12,7 +12,9 @@ const card = fc.record({ id: ids, title: text, lines: fc.array(text, { maxLength
 const page = fc.array(card, { maxLength: 5 }).map(
   (cards): SnapshotView => ({ cards, overview: { topics: [], guesses: 0, heldPrivate: 0, recentTold: [] }, coverage: { state: "complete", from: null, to: null, missingRanges: [], generation: 0 }, truncated: false, cursor: null }) as SnapshotView,
 );
-const item = fc.record({ id: ids, kind: fc.constantFrom("memory" as const, "evidence" as const), label: text, body: text }).map((i): InspectItem => ({ ...i, status: "active", refs: [] }));
+// A label never holds the separator the sheet joins labels with: the check below splits on it (seed 546194484 drew the label ", ").
+const label = text.filter((t) => !t.includes(", "));
+const item = fc.record({ id: ids, kind: fc.constantFrom("memory" as const, "evidence" as const), label, body: text }).map((i): InspectItem => ({ ...i, status: "active", refs: [] }));
 const whys = fc.array(fc.tuple(ids, fc.option(fc.array(item, { maxLength: 4 }), { nil: null })), { maxLength: 6 }).map((e) => new Map(e));
 
 describe("Property: the sheet shows only what the route returned", () => {
