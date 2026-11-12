@@ -281,6 +281,8 @@ export function whyView(rows: readonly ViewRow[], evidence: ReadonlyMap<string, 
     if (!underCeiling(s.sens, ctx.ec.audience) || s.start === null || s.end === null || s.fieldPath !== "text") continue;
     const ev = evidence.get(s.eid);
     if (ev === undefined || ev.status !== "retained" || ev.uid !== ctx.ec.uid || ev.epoch < ctx.ec.epoch || ev.dirty) continue;
+    // Review 028 finding 5: the root itself passes the one `eligible` function (blocks, overlays, barrier).
+    if (!eligible({ ref: docRef("evidence", s.eid, ev.rev), row: ev }, ctx.ec, ctx.snapshot).allow) continue;
     const text = ev.text?.kind === "inline" ? ev.text.text : null;
     if (text === null || s.end > text.length) continue;
     const quote = text.slice(s.start, s.end);
