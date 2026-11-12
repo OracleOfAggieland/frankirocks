@@ -33,6 +33,8 @@ export const W = {
     "finding A1 of brief 034 (a ruling): suggest(food) applies a named person's rule only when the model passes that person's entity ID in attendeeIds, and no Head, note or tool result ever shows an entity ID, so a named attendee's rule can never reach the filter",
   PASTE:
     "finding A2 of brief 034 (a ruling): an allergy the owner pastes is T, so it writes no rule and opens no route by design (G34), and nothing else filters it or asks; the Head only tells the model to ask the owner to say it",
+  DECK_AFTER_NARROW:
+    "finding A3 of brief 034: on a company or quiet line with a live call (brief 026 row 8), the blocked answer carries a Deck stamped at the raised policyRev whose Head is still the private one, S1 lines included (routes/turn.ts issues the Deck from the old bundle); the voice machine adopts it before the swap",
   LINEAGE:
     "finding 4 of brief 029: the hero yes's loop Memory cites typed Slices with null ranges, W-LINEAGE refuses them, and the yes answers 400 PARSE, so the three dinners and the list are never written",
   GATE_WIRE: "brief 030: no route calls the Gate or delivers a proactive line yet",

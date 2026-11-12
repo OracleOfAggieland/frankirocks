@@ -236,7 +236,8 @@ export type Action =
   | { do: "open" }
   | { do: "close" }
   | { do: "type"; text: string }
-  | { do: "say"; text: string }
+  /** `judge` (brief 034, optional): the fast judge's verdict on the turn; without it, "timeout" as before. */
+  | { do: "say"; text: string; judge?: "O" | "H" | "U" | "timeout" | "error" }
   | { do: "chip"; text: string }
   | { do: "tap"; control: string }
   /** Brief 034: text a paste event supplied (source "pasted", class T; brief 018 B10). */
@@ -517,7 +518,7 @@ async function turn(step: Step & { do: "type" | "chip" | "say" | "tap" | "paste"
   };
   let body: Record<string, unknown> = base;
   // A chip's text counts as the owner's words and goes down the typed path (spec §15; brief 020 task 5).
-  if (step.do === "say") body = { ...base, source: "asr", judge: "timeout", items: [{ itemId: `item_${seq}_${w.counter}`, commitSeq: seq, final: true, audioEndOpsAt: "2026-11-03T12:00:00.000Z", audioDurationMs: 800 }] };
+  if (step.do === "say") body = { ...base, source: "asr", judge: step.judge ?? "timeout", items: [{ itemId: `item_${seq}_${w.counter}`, commitSeq: seq, final: true, audioEndOpsAt: "2026-11-03T12:00:00.000Z", audioDurationMs: 800 }] };
   if (step.do === "tap") body = { ...base, source: "trustedTap", judge: "typed", transcriptState: "final", transcript: step.control, uiControl: step.control };
   // Brief 034 (addition): a pasted line, as the typed box posts it after a paste event.
   if (step.do === "paste") body = { ...base, source: "pasted" };
