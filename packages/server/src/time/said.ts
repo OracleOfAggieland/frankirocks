@@ -49,7 +49,7 @@ export async function admitMoment(tx: Tx, uid: string, momentId: ID, admission: 
   // both admit past them.
   const worldDay = civilDateAt(pair.worldClock.now, pair.worldClock.zone);
   const override = doc.data.deliveryOverride;
-  const candidate = { heavy, mustSay: isMustSay(doc.data.kind), override: override === null ? null : { quietHours: override.quietHours, caps: override.caps } };
+  const candidate = { heavy, mustSay: isMustSay(doc.data.kind, msFromTs(doc.data.dueAt), pair.worldClock.now), override: override === null ? null : { quietHours: override.quietHours, caps: override.caps } };
   if (capLimit(candidate, todayCounts(core.counters.data, worldDay)) !== null) return false;
   tx.update(doc.path, { ...doc.data, status: "admitted", admittedAt: tsFromMs(ops), responseId, leaseToken: null, leaseUntil: null, updatedAt: tsFromMs(ops) });
   const counters: CoreCounters = countDelivery(core.counters.data, worldDay, heavy);

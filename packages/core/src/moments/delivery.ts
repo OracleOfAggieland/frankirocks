@@ -7,6 +7,7 @@ import { inQuietHours } from "../gate/quiet-hours";
 import type { CoreCounters, MomentKind } from "../schema/records";
 import {
   CHECKIN_GAP_TURNS,
+  MUST_SAY_WITHIN_MS,
   DELIVERY_CARD_MAX,
   HEAVY_DAY_CAP,
   HEAVY_GRAVITY,
@@ -79,8 +80,13 @@ const HEAVY_KINDS: readonly MomentKind[] = ["griefAsk", "transition", "door"];
 
 /** Heavy (design note 023 ยง5): the source's gravity is 2 or more, or the kind is heavy by nature. */
 export const isHeavy = (kind: MomentKind, gravity: number): boolean => gravity >= HEAVY_GRAVITY || HEAVY_KINDS.includes(kind);
-/** No floor kind is mustSay; the flag is an input for later kinds (hard-rule conflicts, commitments due in 24 h). */
-export const isMustSay = (_kind: MomentKind): boolean => false;
+/**
+ * mustSay (spec ง6 Floors; contracts line 332 "commitment due<=24h"). Brief 036 finding 8: a confirmed reminder
+ * (`commitmentDue`, written only by the confirmed `makeReminder` executor) due within 24 hours of the world time is
+ * mustSay. Nothing else in the floor is. A non-finite time is never mustSay.
+ */
+export const isMustSay = (kind: MomentKind, dueAt: number, worldNow: number): boolean =>
+  kind === "commitmentDue" && Number.isFinite(dueAt) && Number.isFinite(worldNow) && dueAt - worldNow <= MUST_SAY_WITHIN_MS;
 
 /** Quiet hours have one definition, the Gate's: an unknown zone counts as quiet. */
 export { inQuietHours };

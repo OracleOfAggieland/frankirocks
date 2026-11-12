@@ -1,6 +1,6 @@
 // Brief 036: the reviewer's sequences, one block per finding, on the server path.
-import { type CoreCounters, type Memory, type Moment, civilDateAt, msFromTs } from "@franki/core";
-import { testId } from "@franki/core/testing";
+import { type CoreCounters, type Memory, type Moment, civilDateAt, msFromTs, tsFromMs } from "@franki/core";
+import { sampleTurn, testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
@@ -9,7 +9,8 @@ import { type TestRig, patchRecord, testRig } from "../testing/fakes";
 import { resetAs, stateOf } from "../testing/seed";
 import { chooseNow, proactiveOf } from "./proactive";
 import { admitMoment, deliveryEntryId, recordSaid } from "./said";
-import { momentsOf, moveOccasion, ofKind } from "./testing";
+import { confirmReminder, offerReminder, recordPendingRendered } from "./reminder";
+import { momentsOf, moveOccasion, ofKind, setWorld } from "./testing";
 import { memoryTick } from "./tick";
 
 const UID = "owner-1";
@@ -119,5 +120,30 @@ describe("finding 6: the hero insight can be marked said", () => {
     const match = await tx(rig, (t) => recordSaid(t, UID, insightId as never, receipt, "proactive", rig.clock, rig.deps.hasher));
     expect(match).not.toBeNull();
     expect(await rig.store.get(UID, paths.ledger(UID, deliveryEntryId(rig.deps.hasher, insightId, "resp_hero")))).not.toBeNull();
+  });
+});
+
+describe("finding 8: a confirmed reminder due within 24 hours is mustSay", () => {
+  it("\"Remind me at 22:00\" plays at 22:00, in quiet hours and past the day's cap", async () => {
+    const { rig, ctx } = await clone();
+    const world = msFromTs((await stateOf(rig.store, UID)).worldClock!);
+    await memoryTick(ctx);
+    const sourceId = await interviewId(rig);
+    const offer = offerReminder(rig.deps.hasher, { sourceId, note: "Call the vet", spoken: "tonight at 10 PM", worldNow: world, zone: ZONE })!;
+    expect(offer).not.toBeNull();
+    await tx(rig, (t) => recordPendingRendered(t, UID, offer.pendingId, rig.clock.read().opsClock.now, rig.deps.hasher));
+    rig.clock.advance(MINUTE);
+    const yes = sampleTurn({ text: "Yes.", sourceClass: "U", final: true, role: "user", committedAt: tsFromMs(rig.clock.read().opsClock.now) });
+    const applied = await confirmReminder(ctx, offer, offer.yesId, yes);
+    expect(applied.state).toBe("applied");
+    if (applied.state !== "applied") return;
+    await setWorld(rig, UID, msFromTs(offer.time.start));
+    const counters = await rig.store.get<CoreCounters>(UID, paths.core(UID, "counters"));
+    await patchRecord<CoreCounters>(rig.store, UID, paths.core(UID, "counters"), { day: civilDateAt(msFromTs(offer.time.start), ZONE), heavy: 1, counts: [...counters!.data.counts.filter((c) => c.kind !== "speech"), { kind: "speech", count: 3 }] });
+    await memoryTick(ctx);
+    const { choice, moments } = await chooseNow(ctx, { kind: "opening" }, QUIET);
+    expect(choice.spoken?.momentId).toBe(applied.momentId);
+    const p = (await proactiveOf(ctx, applied.momentId, moments.get(applied.momentId)!, STAMP))!;
+    expect(await admit(rig, applied.momentId, "resp_rem", [p.whisper.noteId])).toBe(true);
   });
 });

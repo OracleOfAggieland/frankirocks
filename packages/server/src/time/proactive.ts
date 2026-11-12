@@ -70,7 +70,7 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
       kind: r.data.kind,
       dueAt: Date.parse(r.data.dueAt),
       heavy: isHeavy(r.data.kind, source?.data.gravity ?? 0),
-      mustSay: isMustSay(r.data.kind),
+      mustSay: isMustSay(r.data.kind, Date.parse(r.data.dueAt), pair.worldClock.now),
       override: override === null ? null : { quietHours: override.quietHours, caps: override.caps },
     });
   }
