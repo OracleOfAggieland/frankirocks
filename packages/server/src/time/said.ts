@@ -109,3 +109,36 @@ export async function recordSaid(
   tx.update(doc.path, { ...doc.data, status: "delivered", saidAt: tsFromMs(said.saidAt), saidMatch: said.saidMatch, updatedAt: now });
   return said.saidMatch;
 }
+
+/**
+ * The receipt seam for playback (brief 036 finding 14), inside the receipt's transaction, for each moment a
+ * `playbackStarted` or `cancelled` receipt names. A moment admitted on that response and not yet said:
+ *
+ *   playbackStarted  records `playbackAt` (ops time), once;
+ *   cancelled        ends it: `cancelled`, reason `closed`. Its line was cut before it was said, so nothing later
+ *                    on that response can say it, and it is not offered again. A cancel naming a moment still
+ *                    leased (it came before the admission) ends the lease instead.
+ *
+ * Returns true when it wrote. Anything else writes nothing.
+ */
+export async function recordPlayback(tx: Tx, uid: string, momentId: ID, receipt: Pick<SaidReceipt, "kind" | "responseId">, clock: ClockPort): Promise<boolean> {
+  if (receipt.kind !== "playbackStarted" && receipt.kind !== "cancelled") return false;
+  const doc = await getMoment(tx, paths.moment(uid, momentId));
+  if (doc === null) return false;
+  const m = doc.data;
+  const now = tsFromMs(clock.read().opsClock.now);
+  // A cancel that arrives before the admission: the lease ends, so the note put out under it never admits; the
+  // tick may open the moment again under a new lease (fails closed: a cut line is never said).
+  if (receipt.kind === "cancelled" && m.status === "leased") {
+    tx.update(doc.path, { ...m, status: "pending", leaseToken: null, leaseUntil: null, rendered: null, attempts: m.attempts + 1, updatedAt: now });
+    return true;
+  }
+  if (m.status !== "admitted" || m.responseId !== receipt.responseId || m.saidAt !== null) return false;
+  if (receipt.kind === "playbackStarted") {
+    if (m.playbackAt !== null) return false;
+    tx.update(doc.path, { ...m, playbackAt: now, updatedAt: now });
+    return true;
+  }
+  tx.update(doc.path, { ...m, status: "cancelled", cancelReason: "closed", updatedAt: now });
+  return true;
+}

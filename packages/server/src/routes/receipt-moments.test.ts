@@ -42,6 +42,8 @@ describe("POST /api/receipt: moments (brief 030 P1-6)", () => {
     expect(adm.body).toEqual({ accepted: true, controlCheck: "none" });
     expect((await all()).get(wishId)).toMatchObject({ status: "admitted", responseId: "resp_1" });
 
+    // Brief 036 finding 14: said needs the line's playback to have started.
+    await receipt({ kind: "playbackStarted", momentIds: [wishId] });
     // Another response's words never say this one's moment.
     await receipt({ responseId: "resp_2", momentIds: [wishId], text: WISH });
     expect((await all()).get(wishId)!.saidAt).toBeNull();

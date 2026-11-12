@@ -59,11 +59,15 @@ export function matchSaid(r: SaidReceipt, t: SaidTarget): SaidMatch {
 
 /**
  * `saidAt` and the match for a transcript receipt, or null. Only a moment admitted on this very response (status
- * `admitted`, or `delivered` by an earlier message of it) can be said, and only by a transcript that matches.
+ * `admitted`, or `delivered` by an earlier message of it), whose playback started, can be said, and only by a
+ * transcript that matches.
  */
 export function saidUpdate(m: Moment, r: SaidReceipt, t: SaidTarget, opsNow: number): { saidAt: number; saidMatch: Exclude<SaidMatch, "none"> } | null {
   if (m.status !== "admitted" && m.status !== "delivered") return null;
   if (m.admittedAt === null || m.responseId === null || m.responseId !== r.responseId) return null;
+  // Brief 036 finding 14: the line must have started playing. A cancel before it ends the moment (`cancelled`),
+  // so the status check above already refuses a line that was cut.
+  if (m.playbackAt === null) return null;
   if (m.saidAt !== null) return null;
   const match = matchSaid(r, t);
   return match === "none" ? null : { saidAt: opsNow, saidMatch: match };

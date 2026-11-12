@@ -9,7 +9,7 @@ import { callRoute, patchRecord, type TestRig, testRig } from "../testing/fakes"
 import { resetAs, stateOf } from "../testing/seed";
 import { chooseNow, proactiveOf } from "./proactive";
 import { confirmReminder, offerReminder, recordPendingRendered } from "./reminder";
-import { admitMoment, deliveryEntryId, recordSaid } from "./said";
+import { admitMoment, deliveryEntryId, recordPlayback, recordSaid } from "./said";
 import { memoryTick, scanMoments } from "./tick";
 import { momentNoteId } from "./verdict";
 
@@ -126,6 +126,8 @@ describe("delivery, said and the reminder", () => {
     const receipt = (text: string) => ({ kind: "transcript" as const, responseId: "resp_1", momentIds: [wishId], noteIds: [], text });
     expect(await tx((t) => recordSaid(t, UID, wishId, receipt("Hi there."), "proactive", rig.clock, rig.deps.hasher))).toBeNull();
     expect(await rig.store.get(UID, paths.ledger(UID, deliveryEntryId(rig.deps.hasher, wishId, "resp_1")))).toBeNull();
+    // Brief 036 finding 14: said needs the line's playback to have started.
+    await tx((t) => recordPlayback(t, UID, wishId, { kind: "playbackStarted", responseId: "resp_1" }, rig.clock));
     expect(await tx((t) => recordSaid(t, UID, wishId, receipt("Good luck at 2 PM: Tessellate Labs final interview!"), "proactive", rig.clock, rig.deps.hasher))).toBe("exactTemplate");
     const m = (await moments(rig)).get(wishId)!;
     expect(m).toMatchObject({ status: "delivered", saidMatch: "exactTemplate" });

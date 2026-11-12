@@ -8,7 +8,7 @@ import type { Tx } from "../store/port";
 import { type TestRig, patchRecord, testRig } from "../testing/fakes";
 import { resetAs, stateOf } from "../testing/seed";
 import { chooseNow, proactiveOf } from "./proactive";
-import { admitMoment, admitMoments, deliveryEntryId, recordSaid } from "./said";
+import { admitMoment, admitMoments, deliveryEntryId, recordPlayback, recordSaid } from "./said";
 import { momentNoteId } from "./verdict";
 import { confirmReminder, offerReminder, recordPendingRendered } from "./reminder";
 import { momentsOf, moveOccasion, ofKind, setWorld } from "./testing";
@@ -39,8 +39,10 @@ const interviewId = async (rig: TestRig) => {
   const wish = ofKind(await momentsOf(rig, UID), "wish")[0]![1];
   return wish.payload.kind === "cue" ? wish.payload.noteRef.id : "";
 };
-/** A playback start for the moment's response, once that seam exists (finding 14); a no-op before. */
-async function playback(_rig: TestRig, _momentId: string, _responseId: string): Promise<void> {}
+/** A playback start for the moment's response (finding 14: said needs it). */
+async function playback(rig: TestRig, momentId: string, responseId: string): Promise<void> {
+  await tx(rig, (t) => recordPlayback(t, UID, momentId as never, { kind: "playbackStarted", responseId }, rig.clock));
+}
 const admit = (rig: TestRig, momentId: string, responseId: string, noteIds: string[]) =>
   tx(rig, (t) => admitMoment(t, UID, momentId as never, { responseId, noteIds }, rig.deps));
 
