@@ -5,11 +5,12 @@
 // The mute toggle shows only while listening, thinking or speaking. Errors and Retry stay inline.
 import { type VoiceState, callButton, muteVisible } from "@franki/core";
 import { motion } from "motion/react";
-import { useRef, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { COPY } from "../ui/copy";
-import { electricityBudget } from "../ui/electricity-budget";
+import { type ElectricityBudget, electricityBudget } from "../ui/electricity-budget";
 import { useReducedMotion } from "../ui/hooks/reduced-motion";
 import { SPRING } from "../ui/motion";
+import { RING_SPARK_IDLE, type RingSpark, type RingSparkEvent, ringSparkPropEvents, ringSparkStep } from "../ui/ring-spark";
 import { FOCUS, TARGET } from "./surfaces/classes";
 
 /** A brass-outlined quiet control: something you can touch, secondary to the call button. */
@@ -49,30 +50,65 @@ function MicGlyph({ muted }: { muted: boolean }) {
   );
 }
 
+/**
+ * The ring spark's shell: runs ringSparkStep and its grant commands against the budget, and tells React.
+ * DOM-free, with the budget injected, so it is exported for its node tests.
+ */
+export class RingSparkShell {
+  private state: RingSpark = RING_SPARK_IDLE;
+  private readonly listeners = new Set<() => void>();
+  constructor(private readonly budget: ElectricityBudget) {}
+
+  readonly subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  readonly getSnapshot = () => this.state;
+
+  readonly dispatch = (event: RingSparkEvent) => {
+    const before = this.state;
+    this.run(event);
+    if (this.state !== before) for (const l of this.listeners) l();
+  };
+
+  private run(event: RingSparkEvent): void {
+    const r = ringSparkStep(this.state, event);
+    this.state = r.state;
+    for (const c of r.commands) {
+      if (c.kind === "request") this.run({ type: "granted", token: this.budget.request() });
+      else this.budget.release(c.token);
+    }
+  }
+}
+
 /** A spark that runs once around the call button's ring; only with Reduced_Motion off and a grant. */
-function useRingSpark(reduced: boolean) {
-  const [spark, setSpark] = useState(0);
-  const token = useRef<number | null>(null);
-  const fire = () => {
-    if (reduced || token.current !== null) return;
-    const t = electricityBudget.request();
-    if (t === null) return;
-    token.current = t;
-    setSpark((n) => n + 1);
+function useRingSpark(reduced: boolean, start: boolean) {
+  const [shell] = useState(() => new RingSparkShell(electricityBudget));
+  const spark = useSyncExternalStore(shell.subscribe, shell.getSnapshot, shell.getSnapshot);
+  useEffect(() => {
+    for (const event of ringSparkPropEvents(start, reduced)) shell.dispatch(event);
+  }, [shell, start, reduced]);
+  useEffect(() => () => shell.dispatch({ type: "unmount" }), [shell]);
+  const fire = () => shell.dispatch({ type: "pressed", start, reduced });
+  const ended = (token: number) => () => shell.dispatch({ type: "animationEnd", token });
+  // React has no onAnimationCancel prop, so the span's ref listens for the DOM event itself.
+  const listen = (token: number) => (el: HTMLSpanElement | null) => {
+    if (el === null) return;
+    const cancelled = () => shell.dispatch({ type: "animationCancel", token });
+    el.addEventListener("animationcancel", cancelled);
+    return () => el.removeEventListener("animationcancel", cancelled);
   };
-  const done = () => {
-    if (token.current !== null) electricityBudget.release(token.current);
-    token.current = null;
-    setSpark(0);
-  };
-  return { spark, fire, done };
+  return { spark, fire, ended, listen };
 }
 
 export function CallScreen({ voice, enabled, configMissing = null, onCall, onHangUp, onToggleMute, onRetry }: CallScreenProps) {
   const reduced = useReducedMotion();
-  const ring = useRingSpark(reduced);
   const button = callButton(voice);
   const start = button.form === "start";
+  const ring = useRingSpark(reduced, start);
   const disabled = !enabled || (start && configMissing !== null) || button.disabled;
   const showRetry = (voice.phase === "RECOVERY" && voice.retryVisible) || voice.stateRetryVisible;
   const showMute = muteVisible(voice);
@@ -99,8 +135,15 @@ export function CallScreen({ voice, enabled, configMissing = null, onCall, onHan
             <>
               <span aria-hidden="true" className="absolute inset-2 rounded-full bg-ecto shadow-ecto-glow" />
               <PowerGlyph />
-              {ring.spark > 0 ? (
-                <span key={ring.spark} aria-hidden="true" data-ring-spark="" className="franki-ring-spark pointer-events-none absolute -inset-1" onAnimationEnd={ring.done}>
+              {ring.spark.mode === "sparking" ? (
+                <span
+                  key={ring.spark.token}
+                  aria-hidden="true"
+                  data-ring-spark=""
+                  className="franki-ring-spark pointer-events-none absolute -inset-1"
+                  onAnimationEnd={ring.ended(ring.spark.token)}
+                  ref={ring.listen(ring.spark.token)}
+                >
                   <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-spark shadow-brass-glow" />
                 </span>
               ) : null}

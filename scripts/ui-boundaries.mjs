@@ -30,6 +30,7 @@ export const PURE_MODULES = [
   "announce.ts",
   "electricity.ts",
   "electricity-budget.ts",
+  "ring-spark.ts",
   "turn-copies.ts",
   "contrast.ts",
   "format-time.ts",
