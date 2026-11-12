@@ -223,6 +223,25 @@ export function readout(rows: readonly ViewRow[], ctx: ViewContext): { lines: Re
   return { lines, truncated: all.length > lines.length };
 }
 
+/**
+ * A snapshot with only the cards and told lines at or under `ceiling`; each card taken out is counted as private.
+ * Topic counts cover the rows taken out too, so they are dropped. The tool route runs this when the turn's
+ * admission allows S0 notes only.
+ */
+export function limitSnapshot(view: SnapshotView, ceiling: Sens): SnapshotView {
+  const cards = view.cards.filter((c) => RANK[c.sens] <= RANK[ceiling]);
+  return {
+    ...view,
+    cards,
+    overview: {
+      ...view.overview,
+      topics: cards.length === view.cards.length ? view.overview.topics : [],
+      heldPrivate: view.overview.heldPrivate + (view.cards.length - cards.length),
+      recentTold: view.overview.recentTold.filter((w) => RANK[w.sens] <= RANK[ceiling]),
+    },
+  };
+}
+
 function itemOf(r: ViewRow): InspectItem {
   const line = recallLineText(r.memory);
   return { id: r.id, kind: "memory", label: line.slice(0, LABEL_CHARS), body: line, status: "active", refs: [memoryRef(r)] };
