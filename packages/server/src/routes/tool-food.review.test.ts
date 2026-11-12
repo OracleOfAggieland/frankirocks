@@ -99,6 +99,24 @@ async function setup(opts: { turns: string[]; rules?: Rule[]; proposals?: Rule[]
 
 const yes = (o: { pendingId: string; yesId: string } | null) => ({ name: "answer", args: { pendingId: o?.pendingId ?? "none", choiceId: o?.yesId ?? "none" } });
 
+describe("finding 2: the food paths filter by every stored rule of every subject", () => {
+  it("is one named constant, set", () => expect(FILTER_EVERY_SUBJECT).toBe(true));
+
+  it("a partner's egg rule keeps eggs off the hero's list", async () => {
+    const t = await setup({ turns: ["Yes, let's do it"], rules: [rule("egg", testId("partner"))] });
+    const res = await t.tool(yes(t.offer));
+    expect(res.body.result.state).toBe("applied");
+    const [a] = await t.actions();
+    expect(t.listOf(a!)).not.toContain("eggs");
+  });
+
+  it("suggest with no attendees still filters a sister's egg rule", async () => {
+    const t = await setup({ turns: ["What should I make for dinner"], rules: [rule("egg", testId("sister"))] });
+    const res = await t.tool({ name: "suggest", args: SUGGEST });
+    for (const l of res.body.result.cards[0].lines as string[]) expect(l).not.toMatch(/eggs/);
+  });
+});
+
 describe("finding 11: the food paths read rule proposals", () => {
   it("a backstop proposal's egg rule filters suggest", async () => {
     const t = await setup({ turns: ["What should I make for dinner"], proposals: [rule("egg", "self", "pending")] });

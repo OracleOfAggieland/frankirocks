@@ -74,6 +74,12 @@ export const HERO_CURRENCY = "USD";
 export const EVIDENCE_SCAN_MAX = 2_000;
 /** At most this many rows of each kind go to the detector (contracts: Purchase[<=128], CalendarEvent[<=128]). */
 export const MONEY_ROWS_MAX = 128;
+/**
+ * Brief 037, finding 2. Nobody on the server knows who is at the table, so the food paths filter by every stored
+ * rule of every subject, always: over-filtering is the safe error. The model's `attendeeIds` may add to the set and
+ * never narrow it. One line to change when code resolves attendees.
+ */
+export const FILTER_EVERY_SUBJECT = true;
 
 const UNKNOWN_COV: Cov = { state: "unknown", from: null, to: null, missingRanges: [], generation: 0 };
 const COMPLETE_COV: Cov = { state: "complete", from: null, to: null, missingRanges: [], generation: 0 };
@@ -233,6 +239,16 @@ async function readRules(ctx: RouteContext): Promise<FoodRule[] | null> {
   }
 }
 
+/** Everyone the food filter treats as eating (FILTER_EVERY_SUBJECT): the model's attendees plus every rule's subject. */
+export function eatersOf(rules: readonly FoodRule[], modelIds: readonly string[]): string[] {
+  const out = new Set(modelIds);
+  if (FILTER_EVERY_SUBJECT) for (const r of rules) if (r.subjectId !== null) out.add(r.subjectId);
+  return [...out].sort();
+}
+
+/** Three quick dinners for these rules, filtered for every subject they name. */
+const dinnersFor = (rules: readonly FoodRule[] | null, modelIds: readonly string[] = []) => suggestFood({ rules, attendeeIds: rules === null ? modelIds : eatersOf(rules, modelIds) });
+
 const candidateId = (ctx: RouteContext, c: FoodCandidate) => ctx.deps.hasher.id(["candidate", c.kind, CATALOG_VERSION, c.id, c.version]);
 
 function foodCard(ctx: RouteContext, picked: readonly FoodCandidate[], title: string): Card {
@@ -251,7 +267,7 @@ export async function suggestTool(ctx: RouteContext, _stamp: Stamp, args: Sugges
     return { name: "suggest", candidateIds: [], selectedId: null, reason: "", pendingId: null, question: null, coverage: UNKNOWN_COV, cards: [] };
   }
   const rules = await readRules(ctx);
-  const out = suggestFood({ rules, attendeeIds: args.attendeeIds });
+  const out = dinnersFor(rules, args.attendeeIds);
   ctx.deps.log("tool.suggest", { kept: out.filter.kept.length, removed: out.filter.removed.length, picked: out.candidates.length });
   return {
     name: "suggest",
@@ -350,7 +366,7 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerAr
   // Code decides the owner said yes: the choice must be "yes" and the owner's own words a plain yes.
   if (args.choiceId !== offer.yesId || turn.role !== "user" || turn.sourceClass !== "U" || !turn.final || !isPlainYes(turn.text)) return answer("clarify");
 
-  const dinners = suggestFood({ rules: await readRules(ctx), attendeeIds: [] });
+  const dinners = dinnersFor(await readRules(ctx));
   if (dinners.candidates.length === 0) return answer("clarify");
   const actionId = deps.hasher.id(["heroAction", offer.pendingId]);
   const loopId = deps.hasher.id(["heroLoop", offer.pendingId]);
