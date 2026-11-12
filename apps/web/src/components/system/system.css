@@ -1,1 +1,75 @@
-/* The 404 and error pages: keyframes and loops. */
+/* The 404 and error pages: keyframes and loops. Only transform and opacity animate. */
+
+/* Materialize: each part of the column rises 12 px and fades in, in order (--i set inline), on the ecto ease.
+   Under reduced motion, or a forced reduced specimen, it is a plain fade in the same order. */
+@keyframes sys-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes sys-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.sys-rise {
+  animation: sys-fade var(--dur-base) linear 1 both;
+  animation-delay: calc(var(--stagger) * 2 * var(--i, 0));
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sys-rise {
+    animation: sys-rise var(--dur-ritual) var(--ease-ecto) 1 both;
+    animation-delay: calc(var(--stagger) * 2 * var(--i, 0));
+  }
+}
+[data-reduced="true"] .sys-rise {
+  animation: sys-fade var(--dur-base) linear 1 both;
+  animation-delay: calc(var(--stagger) * 2 * var(--i, 0));
+}
+
+/* The empty outline on the slab keeps Franki's idle float, ±6 px on the 4 s sine, and its floor shadow
+   narrows and fades as it rises. At rest (reduced motion) the outline sits at the middle of its range. */
+.sys-float,
+.sys-floor {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.sys-float { opacity: 0.72; }
+@keyframes sys-float {
+  0%, 100% { transform: translateY(6px); opacity: 0.6; }
+  50% { transform: translateY(-6px); opacity: 0.85; }
+}
+@keyframes sys-floor {
+  0%, 100% { transform: scaleX(1); opacity: 0.4; }
+  50% { transform: scaleX(0.82); opacity: 0.24; }
+}
+
+/* The fuse's break shows once the drawing has settled; then the scorch cools slowly. */
+@keyframes sys-ember {
+  0%, 100% { opacity: 0.16; }
+  50% { opacity: 0.08; }
+}
+.sys-break {
+  animation: sys-fade var(--dur-base) linear 1 both;
+  animation-delay: var(--dur-base);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sys-float { animation: sys-float var(--dur-float) ease-in-out infinite; }
+  .sys-floor { animation: sys-floor var(--dur-float) ease-in-out infinite; }
+  .sys-ember { animation: sys-ember var(--dur-drift) ease-in-out infinite; }
+  .sys-break {
+    animation: sys-fade var(--dur-ritual) var(--ease-ecto) 1 both;
+    animation-delay: calc(var(--dur-ritual) * 0.5);
+  }
+}
+
+/* A forced reduced specimen: no loops. */
+[data-reduced="true"] .sys-float,
+[data-reduced="true"] .sys-floor,
+[data-reduced="true"] .sys-ember {
+  animation: none !important;
+}
+
+/* A hidden tab: loops hold still. */
+[data-paused="true"] .sys-anim {
+  animation-play-state: paused !important;
+}
