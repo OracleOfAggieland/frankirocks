@@ -64,6 +64,7 @@ import {
 } from "@franki/core";
 import { type Timers, liveTimers, withDeadline } from "../clock/timers";
 import type { Env } from "../config/env";
+import { ownerClock } from "../core-docs";
 import { requireModel } from "../config/models";
 import { readAllMemories, storeReader } from "../head-build";
 import type { OpenAIPort } from "../openai/fake";
@@ -286,7 +287,8 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
     if (!call.ok) call = await callOnce(body, deps);
   }
 
-  const pair = deps.clock.read();
+  // World time comes from the Owner's clock: in a seeded clone it is core/state.worldClock (brief 019 task 6).
+  const pair = stateDoc === null ? deps.clock.read() : ownerClock(stateDoc.data, deps.clock);
   const ops = pair.opsClock.now;
   const now = tsFromMs(ops);
   return deps.store.transaction(uid, async (tx): Promise<ExtractOutcome> => {

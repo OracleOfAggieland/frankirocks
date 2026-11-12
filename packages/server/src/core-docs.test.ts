@@ -44,10 +44,29 @@ describe("core documents", () => {
     expect(epoch?.data.rev).toBe(1);
   });
 
-  it("rejects fixture clock mode with unsupported (R6.7)", () => {
+  it("live mode: world and ops are the same reading, in core/state's zone", () => {
     const rig = testRig();
     const state = initialCoreDocs(UID, rig.clock.read(), null).state;
-    expect(() => ownerClock({ ...state, clockMode: "fixture", worldClock: "2026-11-03T12:00:00.000Z" }, rig.clock)).toThrow(UnsupportedClockModeError);
-    expect(ownerClock({ ...state, currentZone: "Asia/Tokyo" }, rig.clock).worldClock.zone).toBe("Asia/Tokyo");
+    const pair = ownerClock({ ...state, currentZone: "Asia/Tokyo" }, rig.clock);
+    expect(pair.worldClock).toEqual({ now: rig.clock.read().opsClock.now, zone: "Asia/Tokyo" });
+    expect(pair.opsClock.now).toBe(rig.clock.read().opsClock.now);
+  });
+
+  // Brief 019 task 6 replaces the earlier slice's "fixture mode is unsupported" (R6.7): a seeded clone runs on it.
+  it("fixture mode: world is core/state.worldClock and stands still while ops stays live", () => {
+    const rig = testRig();
+    const state = { ...initialCoreDocs(UID, rig.clock.read(), null).state, clockMode: "fixture" as const, worldClock: "2026-10-30T13:40:00.000Z", currentZone: "America/Chicago" };
+    const first = ownerClock(state, rig.clock);
+    expect(first.worldClock).toEqual({ now: Date.UTC(2026, 9, 30, 13, 40), zone: "America/Chicago" });
+    rig.clock.advance(60_000);
+    const later = ownerClock(state, rig.clock);
+    expect(later.worldClock.now).toBe(first.worldClock.now);
+    expect(later.opsClock.now).toBe(first.opsClock.now + 60_000);
+  });
+
+  it("fixture mode without a world clock fails closed", () => {
+    const rig = testRig();
+    const state = initialCoreDocs(UID, rig.clock.read(), null).state;
+    expect(() => ownerClock({ ...state, clockMode: "fixture", worldClock: null }, rig.clock)).toThrow(UnsupportedClockModeError);
   });
 });
