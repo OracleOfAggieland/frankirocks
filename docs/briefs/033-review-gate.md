@@ -103,3 +103,90 @@ Where a fix changes a ruling of brief 024, add a numbered contract question at t
 ## Done
 
 The fixes with their red-first tests, the seven properties green, the checks of brief 016, and a section "Outcome" at the end of this file: per finding, the test, the commit, and the ruling it changed; per property, the seed and the counterexample it found before the fix.
+
+## Outcome
+
+Built by Claude Code on `lane/fix3`. No commit ends `Built-with: Kiro`. Unit cases on the reviewer's inputs are in `packages/core/src/gate/review-033.test.ts`, `packages/core/src/whisper/review-033.test.ts`, `packages/server/src/ledger/said.review-033.test.ts` and `packages/server/src/audience.review-033.test.ts`. The amended contract questions are G-166 to G-176 at the end of `docs/briefs/024-design.md`.
+
+### Findings
+
+| # | State | Commit | Failing test first | Ruling of brief 024 changed |
+|---|---|---|---|---|
+| 1 | Fixed | `abcbbbc` | "finding 1" cases; property 1 | Raised (G-167) |
+| 2 | Fixed | `60b26f5` | "finding 2" cases; property 2 | §8 templates (G-173) |
+| 3 | Fixed | `aaddfd1` | "finding 3" cases; property 4 | Asked (G-166) |
+| 4, 5 | Fixed together (one check) | `99e1498` | "findings 4 and 5" cases; property 3 | None (invalid input was already silent) |
+| 6 | Fixed: core `1eead5d`, Deck `7920794` | | "finding 6" cases; property 6 (two files) | `withWhispers` seam (G-174) |
+| 7 | Fixed | `0294fcd` | "finding 7" cases | §5 unknown, ruling 14 (G-172) |
+| 8 | Fixed | `9043c2a` | "finding 8" cases; property 2 | §8; settles G-165's texture part (G-173) |
+| 9 | Fixed | `84848a0` | "finding 9" cases | §8 `addedFacts` (G-175) |
+| 10 | Templates checked, `733222a`. The `safeName` half is **held** on `lane/fix3-held` (`7e748f3`) | | "finding 10" cases; the marks case in `safe-name.test.ts` | None yet |
+| 11 | Fixed | `bb7709b` | `said.review-033.test.ts` | §9 (G-176) |
+| 12 | Left for brief 030, as this brief says | | | |
+| 13 | Fixed | `c57712d` | `audience.review-033.test.ts` | None |
+| 14 | Fixed | `1af63fd` | "finding 14" case | §2 table (G-168) |
+| 15 | Fixed, behind `S2_SCREEN_ASK_BUILT` (false) | `bb86a18` | "finding 15" case; property 7 | §4 and G-163 (G-169) |
+| 16 (the lead's) | Fixed by editing a committed property's generator, by the lead's ruling | `d04a15e` | seed -2014806926 reproduced first | None |
+| 17 (found here) | Fixed | `b7cb31a` | "finding 17" case | §2 paths on a recall (G-170) |
+| 18 (found here) | Fixed | `b201c6e` | "finding 18" case | Ruling 8, and ruling 13 for labels (G-171) |
+| 19 (the lead's item "17") | Fixed | `274b8d5` | "finding 19" case | None |
+| Extra | Whisper tokens are no longer trimmed | `efd2909` | committed adds-nothing property, seed -961430087 | None |
+
+Found here, beyond the review:
+- **17.** The committed property "modifiers only subtract" failed at random (seed 2120965385, at a raised run count; once also within 1,000). In +200, private and rushed, a door said first on an asked S2 recall and rushed held it. In company the door was off and the asked answer was carded, so narrowing opened hold to card. An asked recall is now always answered as asked.
+- **18.** The committed ceiling property failed at random (seed 555205424). `opensLabel` dropped a label's function words, so the label "is biopsy" opened on "biopsy" alone. Every label word must now be said.
+- **Token trimming.** The committed "whisper adds nothing" property failed at random (seed -961430087: the token "! " was carried as "!"). A token with space around it now builds no whisper.
+
+**Committed property edited by the lead's ruling (16).** `packages/core/src/gate/ledger.no-row-no-claim.property.test.ts`: its generator could give two ledger rows one ID, and its oracle took the first while the reader took the newer. Reproduced with seed -2014806926, path `417:5:4:4:5:4:6:6:6:6:8` (expected `["mustSay"]`, got `["asked","mustSay"]`). Only the generator changed, to `fc.uniqueArray` by row ID; no assertion and no run count. The same seed passes. The reader was not at fault.
+
+**Held (10, `safeName`).** Letting a combining mark follow a letter ("प्रिया" stays a name) makes the committed `safe-name.property.test.ts` fail: seed -1691077337, counterexample "José" followed by U+0301. Its oracle regex `/^[\p{L}'.-]+(?: [\p{L}'.-]+){0,3}$/u` allows no `\p{M}` at all, so it pins the old, stricter rule rather than the closure claim. The fix and its unit test are one commit on `lane/fix3-held`, on top of `733222a`. The property is not edited and not skipped.
+
+### Properties (1,000 runs each)
+
+| # | File | Red first: seed | Shrunk counterexample |
+|---|---|---|---|
+| 1 | `gate/gate.opened-topic-mail.property.test.ts` | 1068602698 | A T S0 item with no sender, its topic opened earlier, unprompted, private: said attributed with the topic opened, a card without it |
+| 2 | `whisper/whisper.typed-parts.property.test.ts` | 942390747 | An attributed item with tokens `["!", "Dana", "!"]` built "!'s Dana mentions !". After finding 2 alone it was still red at -546618655: a template-render item built from the free `item` template |
+| 3 | `gate/gate.malformed.property.test.ts` | -1264049133 | A told S0 memory whose `id` is the number 1: silent `ineligible`, not `invalidInput` |
+| 4 | `gate/gate.model-cannot-ask.property.test.ts` | -964781365 | A told S0 item, the owner saying "mom" on a recall: silent with no query terms, said with the query "long day mom" |
+| 5 | `gate/gate.narrowing.property.test.ts` | -1223941503, against a mutant | Green on the Gate as built (also at 100,000 runs), so it was run against a mutant that frees the template render in an unknown audience: an opener's told S1 item, template in private, free in unknown. The committed subtract-only property passes that mutant. The render order is `GATE_RENDER_FREEDOM` in `gate/reasons.ts` |
+| 6 | `whisper/whisper.belongs.property.test.ts`; `packages/server/src/deck.whispers.property.test.ts` | -182671591; 2145245378 | A told S0 item and a note for it claiming S2 ("Mom biopsy came back positive"): built. A Deck already holding an S0 whisper, audience unknown: kept |
+| 7 | `gate/gate.s2-both-builds.property.test.ts` | 2025395505 | A told S2 item, the owner asking "mom" on an opened topic in the floor build: said with `openedTopicRecall` |
+
+Property 7's S2 phrases each fail every typed slot. A letters-only S2 phrase ("biopsy result") would still pass a name slot; see G-173.
+
+### Existing assertions and test inputs changed
+
+- `whisper/whisper.test.ts`, "renders third-party mail by sender and type": both assertions expected the old text with the mail's claim in it. They now pass sender and type and expect the new text (finding 2).
+- `gate/gate.test.ts`, "keeps S2 off the wire...": the opened-topic owner recall expected `say`, and now expects `card` (finding 15).
+- `gate/gate.test.ts`, "renders S1 through a template while the audience is unknown": pinned the idle template. It now names `moment: "opener"`, and the idle hold is tested in `review-033.test.ts` (finding 7).
+- Inputs, not assertions: `gate.test.ts`'s helpers fill `aliases` from `queryTerms` (finding 3; those cases' query terms stood for the candidate's own terms) and name `moment: "idle"` (finding 7). `whisper.test.ts`'s helpers name the candidate and its sensitivity (finding 6). `ledger/said.test.ts`'s Deck case passes templates and the private audience (finding 6).
+- This lane's own finding 15 case: its +200 line expected the door, and expects the card after finding 17.
+- The shared generator `gate/testing/arb.ts` gains `aliases` and `moment`. The aliases are drawn from the query terms, because the committed ceiling property's oracle reads "asked" from the query terms. With free aliases it fails (seed -2008636482: a T S0 item whose alias the owner says on a recall is said attributed, as the spec allows, and the oracle caps it at a card). Tied this way, the oracle stays a sound upper bound. Property 4 sets the two apart itself.
+- The committed "whisper adds nothing" property generates results and notes without a candidate, so after finding 6 it builds no whisper and passes vacuously. Properties 2 and 6 cover building.
+
+### The Gate's shape for the wiring lane
+
+- `GateCandidate` adds `aliases: readonly string[]`: the candidate's entity names and aliases, from U, C or O spans. `queryTerms` stays, for retrieval only.
+- `GateContext` adds `moment: "opener" | "idle" | null`, non-null on `unprompted`.
+- Every field is validated: enums exact, flags booleans, counts finite and non-negative, `gravity` 0 to 3, timestamps parseable, arrays of strings, nested objects field by field. Anything else is `silent ["invalidInput"]`.
+- `GateResult` adds `candidateId: ID | null` and `sens: Sens | null`. They are optional in the type only for old literals; `gate` always sets them.
+- `WhisperNote` adds `candidateId`. `buildWhisper` refuses a note whose candidate or `sens` differs from the result's. Use `buildGatedWhisper` to keep the template, then `withWhispers(deck, gated, opsNow, audience)`.
+- New names: the `typed` template, `MAIL_KINDS`, `TEMPLATE_RESULTS`, `TIME_SLOT`, `S2_SCREEN_ASK_BUILT`, `GATE_RENDER_FREEDOM`, `FACT_WORDS`, `audienceMayHear`.
+- `writeGateDecision` and `writeSaid` throw on a row with neither `turnId` nor `momentId`, or one that fails validation.
+
+### Rulings needed
+
+1. Nothing builds `aliases` yet; where they come from (the entity's U, C or O names) is the caller's job.
+2. A name slot takes any `safeName`-clean words. Binding it to the candidate's entity (contracts `{e:<id>}`) is not built (G-173).
+3. `TEMPLATE_RESULTS` and `MAIL_KINDS` are first guesses, one constant each.
+4. The caller sets `moment`; the Gate can't check that an "opener" really was Franki-started.
+5. The +200 door no longer answers an asked S2 recall (finding 17). It is a card until the screen ask exists.
+
+### Hot files touched
+
+`packages/core/src/gate/**` and `packages/core/src/whisper/**`; `packages/core/src/safe-name.ts` and its unit test on the held branch only; `packages/server/src/deck.ts` (one import block, and `withWhispers` inside the brief 024 block); `packages/server/src/audience.ts` (inside `gateAudience` only); `packages/server/src/ledger/said.ts`. Not touched: `samples.ts`, the barrels (the gate and whisper barrels already export everything), `wire.ts`, `records.ts`.
+
+### Not verified
+
+No route calls any of this. Not tested: the Gate on real candidates, whisper wording on a live voice, `addedFacts` on real transcripts, the Firestore emulator.

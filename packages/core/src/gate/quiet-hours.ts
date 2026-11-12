@@ -5,8 +5,10 @@ export const QUIET_END_MINUTE = 8 * 60;
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
-/** Minutes after local midnight of `ms` in `zone`, or null for a zone Intl does not know. */
+/** Minutes after local midnight of `ms` in `zone`, or null for a zone Intl does not know or a non-finite `ms`. */
 export function localMinute(ms: number, zone: string): number | null {
+  // An unreadable instant has no local minute (brief 033): `formatToParts` would throw on it.
+  if (typeof ms !== "number" || !Number.isFinite(ms)) return null;
   let f = formatters.get(zone);
   if (f === undefined) {
     try {
@@ -23,7 +25,7 @@ export function localMinute(ms: number, zone: string): number | null {
   return (hour % 24) * 60 + minute;
 }
 
-/** True inside quiet hours. An unknown zone counts as quiet (fails quiet). */
+/** True inside quiet hours. An unknown zone or a non-finite instant counts as quiet (fails quiet). */
 export function inQuietHours(ms: number, zone: string): boolean {
   const m = localMinute(ms, zone);
   if (m === null) return true;

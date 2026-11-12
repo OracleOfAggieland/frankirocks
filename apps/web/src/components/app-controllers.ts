@@ -14,6 +14,7 @@ import { TypedTurns } from "../client/typed-turns";
 import { type AudioLike, type PeerLike, type StreamLike, VoiceClient } from "../client/voice-client";
 import type { TurnCopies } from "../ui/surface-props";
 import { clearTurnCopies } from "../ui/turn-copies";
+import type { StoredVisit } from "../ui/visit/visit-machine";
 
 export interface ControllerDeps {
   api: ApiClient;
@@ -63,10 +64,22 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
           getMicrophone: deps.getMicrophone,
           onStreams: deps.onStreams,
           ...(deps.inputLevel === undefined ? {} : { inputLevel: deps.inputLevel }),
+          // Brief 030 P1-7: a spoken false "gone" shows the same ask as a typed one.
+          onControlCheck: () => memory.askGone(),
         });
   const phone = new PhoneWatch({ api, now: () => clock.mono() });
   const memory = new MemoryModel({ api });
-  const typed = new TypedTurns({ api, clock, onTurn: (turn) => phone.onTypedTurn(turn), onReply: (reply) => memory.onReply(reply) });
+  const typed = new TypedTurns({
+    api,
+    clock,
+    onTurn: (turn) => phone.onTypedTurn(turn),
+    onReply: (reply) => memory.onReply(reply),
+    // Brief 030 P1-8: only a visit whose reset has answered is named.
+    visitId: (): string | null => {
+      const v: StoredVisit | null = visit.getSnapshot().visit;
+      return v !== null && v.fixtureNamespace !== null ? v.visitId : null;
+    },
+  });
   const sheet = new SheetModel({ api });
   const proactive = new ProactiveShelf();
   const visit = new VisitModel({

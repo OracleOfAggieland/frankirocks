@@ -12,7 +12,7 @@ import { msFromTs } from "../schema/primitives";
 import { CEILING, PLUS200_PATHS, type CeilingPath, classGroup } from "./ceiling";
 import { askedByOwner, doorOpens, topicOpen } from "./doors";
 import { inQuietHours } from "./quiet-hours";
-import { GATE_VERDICTS, type GateReason, type GateVerdict, type MustSayKind } from "./reasons";
+import { GATE_VERDICTS, MUST_SAY_KINDS, type GateReason, type GateVerdict, type MustSayKind } from "./reasons";
 import type { GateCandidate, GateContext, GateResult } from "./types";
 
 export const HARD_RULE_FAIL_LINE = "Allergy data unavailable, recommend no food.";
@@ -29,6 +29,12 @@ export const OFFER_PREMISES = 2;
 export const CHECK_IN_WINDOW_MS = 7 * 86_400_000;
 /** Spec §6 floors: "a commitment due within 24 hours"; contracts §2 T logistics "<=24h". */
 export const MUST_SAY_WINDOW_MS = 86_400_000;
+/**
+ * Spec §6 line 218: until the on-screen "Here, or on screen?" ask is built, S2 stays off the wire, so an asked S2
+ * recall on an opened topic goes to a card (brief 033 finding 15, contract question G-163). Set true when the ask
+ * exists, and the recall is said again.
+ */
+export const S2_SCREEN_ASK_BUILT = false;
 /** Spec §5: no insight, celebrate or ask "within two turns of a check-in answer". */
 export const CHECK_IN_QUIET_TURNS = 2;
 
@@ -125,28 +131,120 @@ function authorized(c: GateCandidate, x: GateContext, now: number): boolean {
   );
 }
 
-function wellFormed(c: unknown, x: unknown): boolean {
-  if (!isPlainObject(c) || !isPlainObject(x)) return false;
-  const k = c as unknown as GateCandidate;
-  const y = x as unknown as GateContext;
+// Brief 033 findings 4 and 5: every field the Gate reads is checked, so an unknown, missing or malformed value is
+// `invalidInput`, never a default that fails open and never a throw.
+const CLASSES = ["U", "C", "O", "T", "M"] as const;
+const AUDIENCES = ["private", "company", "unknown"] as const;
+const isIn = (set: readonly unknown[], v: unknown) => set.includes(v);
+const isBool = (v: unknown) => v === true || v === false;
+const isStr = (v: unknown) => typeof v === "string";
+const isCount = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0;
+const isStrs = (v: unknown) => Array.isArray(v) && v.every(isStr);
+const isTs = (v: unknown) => ts(v) !== null;
+const isObj = (v: unknown): v is Record<string, unknown> => isPlainObject(v);
+
+function topicOk(t: unknown): boolean {
+  if (t === null) return true;
+  return isObj(t) && isStr(t.topicId) && isStr(t.label) && isIn(CLASSES, t.labelClass) && isStrs(t.terms) && (t.quiet === null || isIn(["unsolicited", "all_output"], t.quiet));
+}
+
+function candidateOk(k: unknown): boolean {
+  if (!isObj(k)) return false;
+  const e = k.eligibility;
+  const s = k.sender;
   return (
-    ["U", "C", "O", "T", "M"].includes(k.sourceClass) &&
-    ["S0", "S1", "S2"].includes(k.sens) &&
-    isPlainObject(k.eligibility) &&
-    Array.isArray(k.queryTerms) &&
-    ["private", "company", "unknown"].includes(y.audience) &&
-    ["unprompted", "recall", "jarTap"].includes(y.trigger) &&
-    isPlainObject(y.modifiers) &&
-    isPlainObject(y.counts) &&
-    Array.isArray(y.openedTopics) &&
-    Array.isArray(y.recentTurns) &&
-    ts(y.worldNow) !== null
+    isStr(k.id) &&
+    isIn(["memory", "moment"], k.kind) &&
+    isStr(k.subjectId) &&
+    isIn(CLASSES, k.sourceClass) &&
+    isIn(["S0", "S1", "S2"], k.sens) &&
+    isBool(k.allergy) &&
+    isObj(e) &&
+    isBool(e.allow) &&
+    (k.toldAt === null || isTs(k.toldAt)) &&
+    topicOk(k.topic) &&
+    isStrs(k.queryTerms) &&
+    isStrs(k.aliases) &&
+    isIn(["item", "wish", "ask", "insight", "celebrate", "suggest", "logistics"], k.purpose) &&
+    isIn([0, 1, 2, 3], k.gravity) &&
+    isBool(k.food) &&
+    (k.mustSay === null || isIn(MUST_SAY_KINDS, k.mustSay)) &&
+    (k.dueAt === null || isTs(k.dueAt)) &&
+    (s === null || (isObj(s) && isBool(s.mailedByOwner))) &&
+    isCount(k.attestedPremises) &&
+    isBool(k.offerUsed) &&
+    isBool(k.ownRooted) &&
+    isBool(k.checkInUsed) &&
+    isIn(["say", "use"], k.act)
   );
 }
 
+function contextOk(y: unknown): boolean {
+  if (!isObj(y)) return false;
+  const m = y.modifiers;
+  const t = y.ownerTurn;
+  const n = y.counts;
+  const a = y.authorization;
+  return (
+    isTs(y.worldNow) &&
+    isStr(y.zone) &&
+    isIn(["floor", "plus200"], y.build) &&
+    isIn(AUDIENCES, y.audience) &&
+    isObj(m) &&
+    isBool(m.rushed) &&
+    isBool(m.crisis) &&
+    isIn(["unprompted", "recall", "jarTap"], y.trigger) &&
+    (y.moment === null || isIn(["opener", "idle"], y.moment)) &&
+    (y.trigger !== "unprompted" || y.moment !== null) &&
+    (t === null || (isObj(t) && isStr(t.text) && isIn(CLASSES, t.sourceClass) && isBool(t.certain))) &&
+    isStrs(y.openedTopics) &&
+    Array.isArray(y.recentTurns) &&
+    y.recentTurns.every((r: unknown) => isObj(r) && isIn(["user", "assistant"], r.role) && isBool(r.checkInAnswer) && isBool(r.transitionOrCrisis)) &&
+    isObj(n) &&
+    isCount(n.proactive) &&
+    isCount(n.heavy) &&
+    isCount(n.senderAsks) &&
+    isCount(n.notesThisReply) &&
+    isIn(["ready", "missing", "unreadable"], y.rules) &&
+    (a === null ||
+      (isObj(a) &&
+        isStr(a.subjectId) &&
+        (a.topicId === null || isStr(a.topicId)) &&
+        (a.momentId === null || isStr(a.momentId)) &&
+        isIn(AUDIENCES, a.audience) &&
+        isTs(a.expiresAt) &&
+        isBool(a.used) &&
+        isIn(CLASSES, a.sourceClass)))
+  );
+}
+
+function wellFormed(c: unknown, x: unknown): boolean {
+  try {
+    return candidateOk(c) && contextOk(x);
+  } catch {
+    // An accessor that throws is malformed input too.
+    return false;
+  }
+}
+
+/**
+ * The Gate's answer, carrying the ID and sensitivity of the candidate it decided on (brief 033 finding 6), so a
+ * whisper can be tied to it. Malformed input carries nulls.
+ */
 export function gate(c: GateCandidate, x: GateContext): GateResult {
+  const r = decide(c, x);
+  const ok = !r.reasons.includes("invalidInput");
+  return { ...r, candidateId: ok ? c.id : null, sens: ok ? c.sens : null };
+}
+
+function decide(c: GateCandidate, x: GateContext): GateResult {
   if (!wellFormed(c, x)) {
-    const food = isPlainObject(c) && (c as { food?: unknown }).food !== false;
+    let food = false;
+    try {
+      food = isPlainObject(c) && (c as { food?: unknown }).food !== false;
+    } catch {
+      // An unreadable candidate gets no line; it is silent either way.
+    }
     return result("silent", ["invalidInput"], { fixedLine: food ? HARD_RULE_FAIL_LINE : null });
   }
   const now = ts(x.worldNow)!;
@@ -168,8 +266,9 @@ export function gate(c: GateCandidate, x: GateContext): GateResult {
   const sens = c.allergy && c.sens === "S2" ? "S1" : c.sens;
   const opened = topicOpen(c, x);
   // A guess is raised only by this turn's own words (contracts §2 M "R": a user query term or alias), never by a
-  // topic opened earlier in the Session.
-  const raised = asked || (c.sourceClass === "M" ? c.topic !== null && doorOpens(c.topic, x) : opened);
+  // topic opened earlier in the Session. Mail is raised only by an asked recall (brief 033 finding 1): the T cells
+  // have no "until raised" clause, so an opened topic lifts nothing unprompted.
+  const raised = asked || (c.sourceClass === "T" ? false : c.sourceClass === "M" ? c.topic !== null && doorOpens(c.topic, x) : opened);
   const cell = CEILING[sens][classGroup(c.sourceClass)];
 
   // The cell's answer.
@@ -187,7 +286,9 @@ export function gate(c: GateCandidate, x: GateContext): GateResult {
         break;
       }
     }
-    if (r.verdict !== "say" && raised) {
+    // A sender-cap card is never overridden (brief 033 finding 1). An asked recall is answered as asked, never by an
+    // unprompted path such as a door, so narrowing the room can't swap a held door for a carded answer (finding 17).
+    if ((r.verdict !== "say" || asked) && raised && !r.reasons.includes("senderCap")) {
       // Reply-only: full help once the owner opens the topic. S2 crosses only as an opened-topic owner recall.
       const carve = sens === "S2" && x.trigger === "recall" && asked && opened ? "openedTopicRecall" : null;
       r = result("say", ["ok", asked ? "asked" : "topicOpen", ...(carve !== null ? (["carveOut"] as const) : [])], {
@@ -195,6 +296,7 @@ export function gate(c: GateCandidate, x: GateContext): GateResult {
         render: cell.reply,
         carveOut: carve,
       });
+      if (carve === "openedTopicRecall" && !S2_SCREEN_ASK_BUILT) r = lower(r, "card", "sensitivity");
     }
   }
   if (mustSay !== null) r = { ...r, mustSay, reasons: [...r.reasons, "mustSay"] };
@@ -213,6 +315,12 @@ export function gate(c: GateCandidate, x: GateContext): GateResult {
   } else if (x.audience === "unknown") {
     if (sens === "S2") r = lower(r, "hold", "audience");
     else if (sens === "S1" && r.verdict === "say" && r.render === "free") r = { ...r, render: "template" };
+  }
+  // Spec §3, the `proactive` row (brief 033 finding 7): "Idle S1+ also needs private audience"; a Franki-started
+  // opener gets S1 only by code template.
+  if (x.trigger === "unprompted" && sens !== "S0") {
+    if (x.moment === "idle" && x.audience !== "private") r = lower(r, "hold", "audience");
+    else if (x.moment === "opener" && sens === "S1" && r.verdict === "say" && r.render === "free") r = { ...r, render: "template" };
   }
   if (x.modifiers.rushed === true) {
     if (x.counts.notesThisReply >= 1 || r.form === "door" || c.purpose === "insight") r = lower(r, "hold", "rushed");

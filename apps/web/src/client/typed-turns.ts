@@ -77,6 +77,8 @@ export interface TypedDeps {
   onTurn?: (turn: { sessionId: string; turnId: string }) => void;
   /** Told each answered line's words, Franki's reply lines and the turn's forget receipt (brief 020). Never changes what is sent. */
   onReply?: (reply: { transcript: string; lines: string[]; receiptId: string | null }) => void;
+  /** Brief 030 P1-8: the visit whose clone answered, named on each open so the server can check it. Null for none. */
+  visitId?: () => string | null;
 }
 
 /** Pure: whether the text may be sent (R18.1, R18.8). */
@@ -222,7 +224,7 @@ export class TypedTurns {
     const { clock, api } = this.deps;
     const sentAt = clock.mono();
     const r = await api.call<unknown>("/api/session/open", {
-      body: { requestId: this.newId(), initiator: "user", previousSessionId: null, clientZone: clock.read().worldClock.zone, visitId: null },
+      body: { requestId: this.newId(), initiator: "user", previousSessionId: null, clientZone: clock.read().worldClock.zone, visitId: this.deps.visitId?.() ?? null },
       timeoutMs: OPEN_TIMEOUT_MS,
     });
     if (!r.ok) return failureMessage(r, "session open");

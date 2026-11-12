@@ -39,6 +39,8 @@ import {
 import { ownerClock, readCoreDocs } from "../core-docs";
 import { storeReader } from "../head-build";
 import { heroOffer, compareLoop } from "../routes/tool-food";
+// Brief 030 P1-3: the loop's check at checkAt, stored.
+import { storeLoopCheck } from "./loop-check";
 import type { RouteContext } from "../routes/runtime";
 import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
@@ -224,6 +226,8 @@ async function moveMoment(ctx: RouteContext, id: ID, rollupLive: boolean): Promi
       const after = comparison.takeout.afterCents ?? null;
       next = { ...next, payload: { ...next.payload, before, after, delta: before !== null && after !== null ? before - after : null } };
     }
+    // Brief 030 P1-3: the comparison's result is stored on the loop (read before this transaction's writes).
+    if (next.payload.kind === "celebrate" && comparison !== null) await storeLoopCheck(tx, uid, comparison, ops);
     tx.update(path, next);
     return ts;
   });

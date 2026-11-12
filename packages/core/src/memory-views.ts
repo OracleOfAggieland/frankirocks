@@ -15,6 +15,7 @@
  */
 import { type DocRef, type EC, type Snapshot, docRef, eligible } from "./eligible";
 import { recallLineText } from "./recall";
+import { lessOnTakeoutLine } from "./patterns/words";
 import type { Au, Cov, ID, Ref, Sens } from "./schema/primitives";
 import type { Evidence, Ledger, Memory } from "./schema/records";
 import type { Card, InspectItem, LabView, SnapshotView, StripView, W } from "./schema/wire";
@@ -91,6 +92,16 @@ export function shown(r: ViewRow, ctx: ViewContext): boolean {
 /** A live row, for counts only: eligible to read and active. Never shown by this test alone. */
 function counted(r: ViewRow, ec: EC, s: Snapshot): boolean {
   return r.memory.status === "active" && eligible({ ref: refOf(r), row: r.memory }, { ...ec, stage: "read" }, s).allow;
+}
+
+/**
+ * A live guess, for the Lab's count only. A guess is never current: spec §4 stores what comes from M as `alleged`
+ * ("From T or M: alleged or guessed, with a conflict flag. Never current"), so a count of active rows alone can never
+ * count one (contract question X-167). It is still checked by `eligible`, so a forgotten or blocked guess leaves the count.
+ */
+const GUESS_STATUSES: readonly string[] = ["active", "alleged"];
+function guessCounted(r: ViewRow, ec: EC, s: Snapshot): boolean {
+  return GUESS_STATUSES.includes(r.memory.status) && eligible({ ref: refOf(r), row: r.memory }, { ...ec, stage: "read" }, s).allow;
 }
 
 /** The shown rows in the fixed reading order: predicate, key, ID. */
@@ -328,7 +339,7 @@ export function labView(input: LabInput): LabView {
   for (const r of input.memories) {
     if (r.memory.sourceClass !== "M") continue;
     guessIds.add(r.id);
-    if (r.memory.sens !== "S0" && counted(r, ec, s)) privateGuesses.add(r.id);
+    if (r.memory.sens !== "S0" && guessCounted(r, ec, s)) privateGuesses.add(r.id);
   }
   const delivered = new Set<string>();
   const held = new Set<string>();
@@ -365,7 +376,12 @@ export function labView(input: LabInput): LabView {
  * the owner said yes, so noticed, connected, suggested and accepted are complete; the comparison is complete once
  * the loop is `eligible` or `celebrated`. Labels are the step kinds; the browser words them. No loop: no steps.
  */
-export function stripView(rows: readonly ViewRow[], ctx: ViewContext): StripView {
+/**
+ * `falls` (brief 030 P1-4): a loop's fall in cents, from its leased or delivered `celebrate` moment, which the tick
+ * wrote at `checkAt`. The comparison step's label is then the hero lane's "$115 less on takeout." line, once the
+ * loop is compared; otherwise it stays the step kind.
+ */
+export function stripView(rows: readonly ViewRow[], ctx: ViewContext, falls: ReadonlyMap<string, number> = new Map()): StripView {
   const r = rows
     .filter((x) => x.memory.loop !== null && counted(x, ctx.ec, ctx.snapshot) && underCeiling(x.memory.sens, ctx.ec.audience))
     .sort((a, b) => cmp(b.memory.assertedAt, a.memory.assertedAt) || cmp(a.id, b.id))[0];
@@ -380,7 +396,7 @@ export function stripView(rows: readonly ViewRow[], ctx: ViewContext): StripView
       done("connected"),
       done("suggested"),
       done("accepted", loop.acceptedActionId as ID),
-      { kind: "comparison", state: compared ? "complete" : "pending", label: "comparison", ledgerId: null },
+      { kind: "comparison", state: compared ? "complete" : "pending", label: (compared ? lessOnTakeoutLine(falls.get(r.id) ?? 0) : null) ?? "comparison", ledgerId: null },
     ],
   };
 }

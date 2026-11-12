@@ -12,7 +12,7 @@
  * `proactive` and `deck` are null here: putting a chosen moment on the wire is the state route's seam
  * (`time/proactive.ts`), and the browser reads it on its next state call.
  */
-import { type CoreDocs, type ID, type Infer, type Job, SeedAdvanceRequest, type SeedAdvanceResponse, msFromTs, tsFromMs } from "@franki/core";
+import { type CoreDocs, type ID, type Infer, type Job, AdvanceRequest, type SeedAdvanceResponse, msFromTs, tsFromMs } from "@franki/core";
 import { ensureCoreDocs, readCoreDocs } from "../core-docs";
 import { completeRequest } from "../ledger/request";
 import { cFields } from "../records";
@@ -23,7 +23,7 @@ import { RouteError, parseError, staleError } from "./errors";
 import { mutation } from "./mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 
-export type AdvanceReq = Infer<typeof SeedAdvanceRequest>;
+export type AdvanceReq = Infer<typeof AdvanceRequest>;
 export type AdvanceRes = Infer<typeof SeedAdvanceResponse>;
 
 /** The retry hint a jump answers while a forget or reset holds the tenant (design note 023 gap 8). */
@@ -99,6 +99,6 @@ export async function seedAdvance(ctx: RouteContext, req: AdvanceReq): Promise<A
 
 export const seedAdvanceRoute: RouteSpec<AdvanceReq> = {
   name: "advance",
-  parse: ({ body }) => parseWith(SeedAdvanceRequest, body),
+  parse: ({ body }) => parseWith(AdvanceRequest, body),
   run: (ctx, req) => seedAdvance(ctx, req),
 };

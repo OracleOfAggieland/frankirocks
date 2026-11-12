@@ -24,6 +24,8 @@ function cand(o: Partial<GateCandidate> = {}): GateCandidate {
     toldAt: null,
     topic: null,
     queryTerms: [],
+    // Brief 033 finding 3: these cases' query terms stood for the candidate's own aliases, so they are kept as such.
+    aliases: o.queryTerms ?? [],
     purpose: "item",
     gravity: 0,
     food: false,
@@ -47,6 +49,8 @@ function ctx(o: Partial<GateContext> = {}): GateContext {
     audience: "private",
     modifiers: { rushed: false, crisis: false },
     trigger: "unprompted",
+    // Brief 033 finding 7: an unprompted context names its moment.
+    moment: "idle",
     ownerTurn: null,
     openedTopics: [],
     recentTurns: [],
@@ -110,7 +114,8 @@ describe("gate: the spec's examples", () => {
     const c = cand({ sens: "S2", topic: dadTopic, queryTerms: ["dad"], toldAt: NOW });
     expect(gate(c, ctx())).toMatchObject({ verdict: "hold", reasons: ["ceiling"] });
     expect(gate(c, ctx({ trigger: "recall", ownerTurn: said("how is dad") })).verdict).toBe("hold");
-    expect(gate(c, ctx({ trigger: "recall", ownerTurn: said("how is dad doing in houston") }))).toMatchObject({ verdict: "say", carveOut: "openedTopicRecall" });
+    // Brief 033 finding 15: until the screen ask exists, the opened-topic owner recall goes to a card.
+    expect(gate(c, ctx({ trigger: "recall", ownerTurn: said("how is dad doing in houston") }))).toMatchObject({ verdict: "card", carveOut: "openedTopicRecall" });
     expect(gate(c, ctx({ trigger: "jarTap" }))).toMatchObject({ verdict: "card", carveOut: "jarTap" });
     // Allergies are exempt from S2 gates.
     expect(gate(cand({ sens: "S2", allergy: true }), ctx()).verdict).toBe("say");
@@ -177,7 +182,8 @@ describe("gate: the spec's examples", () => {
   });
 
   it("renders S1 through a template while the audience is unknown", () => {
-    expect(gate(cand({ sens: "S1" }), ctx({ audience: "unknown" }))).toMatchObject({ verdict: "say", render: "template" });
+    // Brief 033 finding 7: only a Franki-started opener gets S1 by template; an idle S1 line is held (review-033.test.ts).
+    expect(gate(cand({ sens: "S1" }), ctx({ audience: "unknown", moment: "opener" }))).toMatchObject({ verdict: "say", render: "template" });
   });
 
   it("never says a reason that is only used", () => {
