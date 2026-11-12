@@ -33,13 +33,13 @@
   --fl: calc(50cqw - var(--fw) / 2);
   --ft: calc(var(--band) - 8px);
 }
-.demo-layer[data-layout="equip"][data-panel="none"][data-strip="true"] {
-  --fl: calc(100cqw - var(--fw) * 1.24 - 4px);
-  --ft: var(--band);
-}
 /* Narrow, with the Lab: Franki moves into the jar's column, left of the Lab and above the jar (136 px tall,
    8 px in), smaller so the two clear each other. */
 @container demo-stage (width < 440px) {
+  .demo-layer[data-layout="equip"][data-panel="none"][data-strip="true"] {
+    --fl: calc(100cqw - var(--fw) * 1.24 - 4px);
+    --ft: var(--band);
+  }
   .demo-layer[data-layout="equip"][data-lab="true"] {
     --fw: min(clamp(64px, 28cqw, 120px), max(64px, calc((100cqh - var(--band) - 152px) / 1.1)));
     --fl: 12px;
@@ -63,6 +63,11 @@
     --panel-w: min(343px, 56cqw);
     --panel-top: var(--band);
     --ft: calc(var(--top) + (100cqh - var(--top) - var(--bottom) - var(--fw) * 1.1) / 2);
+  }
+  /* Nothing docked: Franki is larger and nearer the middle, with room on the right for the source tags. */
+  .demo-layer[data-layout="equip"][data-panel="none"] {
+    --fw: min(clamp(180px, 40cqw, 340px), 46cqh);
+    --fl: max(calc(var(--fw) * 0.24 + 8px), calc(50cqw - var(--fw) * 0.8));
   }
   /* The strip as a column down the left, above Franki. */
   .demo-layer[data-layout="equip"][data-strip="true"] {
