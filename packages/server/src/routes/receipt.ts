@@ -177,7 +177,7 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
         }
         if (live) tx.update(doc.path, { ...s, lastTurnAt: now, expiresAt: tsFromMs(ops + SESSION_IDLE_MS), updatedAt: now });
         // Brief 030 P1-6: the moments this receipt names (admitted, said, rendered).
-        await receiptMoments(tx, uid, req, ops, deps);
+        await receiptMoments(tx, ctx, req, ops);
         // A browser-issued fastO is recorded by the seam from its `admitted` receipt (R9.1).
         if (req.kind === "admitted" && req.permitKind === "fastO") {
           const coreVals = { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev };

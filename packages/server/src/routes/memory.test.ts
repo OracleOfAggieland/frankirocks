@@ -94,7 +94,10 @@ describe("GET /api/memory", () => {
     const lab = (await get(rig, { view: "lab" })).body.lab;
     expect(lab.privateGuesses).toBe(1);
     expect(lab.readEmails).toBe(0);
-    expect(lab.limits).toContain("uncounted:steered");
+    // Brief 030 part A: steered and declined are counted from the Gate's rows (none here); the rest stay named.
+    expect(lab).toMatchObject({ steered: 0, declined: 0 });
+    expect(lab.limits).not.toContain("uncounted:steered");
+    expect(lab.limits).toContain("uncounted:falseHolds");
   });
 
   it("receipt reads the newest forget receipt, counts only", async () => {

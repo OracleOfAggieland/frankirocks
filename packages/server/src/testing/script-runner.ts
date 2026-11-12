@@ -19,6 +19,7 @@ import {
   type Memory,
   type CoreRules,
   type CoreState,
+  IDLE_SILENCE_MS,
   WHISPER_TEMPLATES,
   canonicalJSON,
   msFromTs,
@@ -32,6 +33,8 @@ import { completed } from "../openai/responses";
 import { closeRoute } from "../routes/close";
 import { memoryRoute } from "../routes/memory";
 import { openRoute } from "../routes/open";
+import { receiptRoute } from "../routes/receipt";
+import { stateRoute } from "../routes/state";
 import type { RouteContext } from "../routes/runtime";
 import { seedResetRoute } from "../routes/seed-reset";
 import { seedAdvanceRoute } from "../routes/seed-advance";
@@ -196,8 +199,8 @@ export const TEMPLATES = {
   "lab.line": null,
   /** The card under an occasion that moved ("moved from yesterday", spec §15 beat 1). No card source yet. */
   "occasion.moved": null,
-  /** An occasion's wish on open (spec §15 beat 1). No moment wording on the server yet (brief 023, 024). */
-  "occasion.wish": null,
+  /** An occasion's wish on open (spec §15 beat 1): moments/words.ts wishLine, "Good luck at 2 PM: ...". */
+  "occasion.wish": /Good luck at \d{1,2}(:\d\d)? (AM|PM): /,
   /** The check-in after an occasion (spec §15 beat 2): a moment whisper from brief 024's `checkIn` template. */
   "occasion.checkin": whisperPattern("checkIn"),
   /** "Gone." after a completed forget (spec §8 step 7). Reserved in brief 021. */
@@ -252,6 +255,13 @@ export type Action =
   | { do: "read"; view: "overview" | "lab" | "strip" | "receipt" | "item" | "why"; id?: (w: World) => string }
   /** No action: assertions on what an earlier step said (so one route call can carry green and waiting checks). */
   | { do: "check"; of: string }
+  /**
+   * The voice client plays the Proactive an earlier step returned, as it does on a live call: the `admitted`
+   * receipt under its Permit, `playbackStarted`, then the transcript of the words heard (the whisper's line).
+   */
+  | { do: "play"; of: string }
+  /** The owner stays quiet on a live call for `IDLE_SILENCE_MS`, and the browser polls the state route once. */
+  | { do: "idle" }
   /** A built function that no route calls yet. Each probe is a finding: the seam is built and unwired. */
   | { do: "probe"; name: string; run: (w: World) => Promise<unknown> }
   /** Setup that stands in for a missing writer. Each is named in the report. */
@@ -491,10 +501,33 @@ async function act(step: Step, w: World): Promise<Res> {
       return null;
     case "check":
       return w.answers.get(step.of) ?? null;
+    case "play":
+      return play(w, step.of);
+    case "idle": {
+      if (w.stamp === null) throw new Error("idle: no session");
+      rig.clock.advance(IDLE_SILENCE_MS);
+      const { sessionId, generation, ...seen } = w.stamp;
+      const res = await callRoute(rig, stateRoute, { sessionId, generation, seen: { epoch: seen.epoch, policyRev: seen.policyRev, bundleRev: seen.bundleRev, rulesRev: seen.rulesRev }, ackStamp: null, speechStartedOpsAt: null });
+      if (res.status === 200 && res.body.proactive !== null) push(w, step.label, "proactive", res.body.proactive, proactiveText(res.body.proactive));
+      return res;
+    }
     default:
       step satisfies never;
       return null;
   }
+}
+
+/** The receipts a voice client sends for a played Proactive; the answer is the transcript receipt's. */
+async function play(w: World, of: string): Promise<Res> {
+  const p = w.answers.get(of)?.body?.proactive ?? null;
+  if (p === null || w.stamp === null) throw new Error(`play: step "${of}" returned no proactive`);
+  const responseId = `resp_${w.counter + 1}`;
+  const base = { stamp: p.permit.stamp, responseId, momentIds: p.permit.momentIds, noteIds: p.permit.noteIds, pendingId: null, permitKind: null, text: null };
+  const send = (o: Record<string, unknown>) => callRoute(w.rig, receiptRoute, { ...base, requestId: nextId(w, "receipt"), ...o });
+  const admitted = await send({ kind: "admitted", permitKind: "proactive" });
+  if (admitted.status !== 200) return admitted;
+  await send({ kind: "playbackStarted" });
+  return send({ kind: "transcript", text: p.whisper.text });
 }
 
 async function turn(step: Step & { do: "type" | "chip" | "say" | "tap" | "paste" }, w: World): Promise<Res> {

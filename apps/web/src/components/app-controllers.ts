@@ -1,6 +1,7 @@
 // The signed-in controllers (FSC R9.4, R29; lab-ui-foundation R11.3, R17.5, R21). Created only while
 // signed in, so nothing calls an /api/ route while signed out. The DebugPanelModel exists only when the
 // debug flag is on, so no GET /api/debug/memory is sent otherwise.
+import type { Proactive } from "@franki/core";
 import type { ApiClient } from "../client/api";
 import type { BrowserClock } from "../client/clock";
 import { DebugPanelModel } from "../client/debug-panel";
@@ -8,6 +9,7 @@ import { MemoryModel } from "../client/memory-model";
 import { PhoneWatch } from "../client/phone-watch";
 import { randomId } from "../client/ids";
 import { ProactiveShelf } from "../client/proactive-shelf";
+import { confirmShown } from "../client/proactive-shown";
 import { SheetModel } from "../client/sheet-model";
 import { type StorageLike, VisitModel } from "../client/visit-model";
 import { TypedTurns } from "../client/typed-turns";
@@ -78,6 +80,11 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     visitId: (): string | null => {
       const v: StoredVisit | null = visit.getSnapshot().visit;
       return v !== null && v.fixtureNamespace !== null ? v.visitId : null;
+    },
+    // Brief 030 part A: the open's line is shown, and the server is told it was.
+    onProactive: (p: Proactive): void => {
+      proactive.show(p, typed.getSnapshot().entries.length);
+      void confirmShown(api, p, () => randomId());
     },
   });
   const sheet = new SheetModel({ api });

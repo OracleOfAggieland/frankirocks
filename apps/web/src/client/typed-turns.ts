@@ -14,6 +14,7 @@
  */
 import {
   OpenResponse,
+  type Proactive,
   type SS,
   TurnResponse,
   type TurnRequest,
@@ -79,6 +80,8 @@ export interface TypedDeps {
   onReply?: (reply: { transcript: string; lines: string[]; receiptId: string | null }) => void;
   /** Brief 030 P1-8: the visit whose clone answered, named on each open so the server can check it. Null for none. */
   visitId?: () => string | null;
+  /** Brief 030 part A: the line an open returned, to show on the screen. Never changes what is sent. */
+  onProactive?: (p: Proactive) => void;
 }
 
 /** Pure: whether the text may be sent (R18.1, R18.8). */
@@ -236,6 +239,7 @@ export class TypedTurns {
     this.stamp = open.ack.stamp;
     this.pending = null;
     this.set({ sessionId: open.sessionId, lastClientSeq: 0 });
+    if (open.proactive !== null) this.deps.onProactive?.(open.proactive);
     return open.ack.stamp;
   }
 

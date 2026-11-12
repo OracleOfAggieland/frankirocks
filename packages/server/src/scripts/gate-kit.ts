@@ -42,7 +42,6 @@ export const W = {
   G_FT16:
     "a ruling or a later brief (G-FT16): a new mention's entity ID is a hash of its type and name (core/extract.ts resolveMention), so two new people with one name become one entity, and the second's single-valued relation closes the first's as history",
   GATE_WIRE: "brief 030: no proactive line reaches an open, a turn or a whisper yet (nothing arrives on the proactive channel)",
-  NARROW_TOOL: "brief 026 'Not built' and brief 030: /api/tool still runs the Server_Rule in wave A with narrowedHere false",
   FORGET: "brief 021's reserved closure and resume, and the brief that wires forget into /api/turn: no route calls fenceForget or advanceForget",
   MAIL_READ: "no path reads mail into a turn, a Head or a whisper yet (ClaimsV1 consumers, the inbox read, whispers: briefs 024 and 030)",
 } as const;

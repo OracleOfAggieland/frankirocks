@@ -17,6 +17,7 @@ import { scheduleTick } from "../worker/tick";
 import { askOpen } from "../onturn/ask";
 import { barrierError, scopeError, staleError } from "./errors";
 import { safeTurnsOf } from "./turn";
+import { idleProactive } from "./delivery-wire";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 035: no ack and no Deck on a Session narrowed here (finding 9).
 import { narrowedHere } from "../audience-swap";
@@ -59,7 +60,7 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
   const { uid, deps } = ctx;
   await ensureCoreDocs(uid, deps);
   scheduleTick(ctx);
-  return retryStale(() =>
+  const res = await retryStale(() =>
     deps.store.transaction(uid, async (tx) => {
       const doc = await tx.get<Session>(paths.session(uid, req.sessionId));
       if (doc === null) throw scopeError();
@@ -97,6 +98,8 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
       return { stamp, state: "LISTENING", deck: narrowedHere(next) ? null : issueDeck(stamp, head, ops, safe), ack, barrierReceiptId: null, proactive: null } satisfies StateRes;
     }),
   );
+  // Brief 030 part A: an idle whisper, gated inside `chooseNow`, only where the ack checks passed.
+  return res.ack === null ? res : { ...res, proactive: await idleProactive(ctx, res.stamp) };
 }
 
 export const stateRoute: RouteSpec<StateReq> = {

@@ -12,9 +12,8 @@
  * The extraction answers as a careful extractor would (the allergy as a hard_rule item), so the backstop is tested
  * too. No script calls a model.
  */
-import type { Evidence, ID } from "@franki/core";
+import type { Evidence } from "@franki/core";
 import { type HeroOffer, heroOffer } from "../routes/tool-food";
-import { recordPendingRendered } from "../time/reminder";
 import { type SlotsAnswer, type Step, type World, extract, item, parse, reply, rewriteEvidence, spanOf } from "../testing/script-runner";
 import {
   type AllergySlot,
@@ -670,6 +669,7 @@ function heroScript(id: string, what: "hero dinners" | "list write"): GateScript
       { label: "load the seed for a visit", do: "seed", visit: `food-${id}` },
       asDetectorReads,
       { label: "open a session", do: "open" },
+      { label: "the wish plays", do: "play", of: "open a session" },
       ...typed(milk, fs("milk for the owner", milk, [self("I can't have dairy", "dairy")]), [{ quote: "I can't have dairy", code: "milk" }]),
       { label: "the stated allergens are filtered in core/rules", do: "check", of: "open a session", expect: [rulesHold([{ codes: CODES.milk, who: "self" }])] },
       {
@@ -682,20 +682,9 @@ function heroScript(id: string, what: "hero dinners" | "list write"): GateScript
         },
         expect: [{ mustSay: { template: "hero.offer", has: ["$186"], channel: "probe" } }],
       },
-      {
-        // Brief 037, finding 4: a yes acts only on an offer recorded as shown just before it. Nothing sends the hero
-        // offer's pendingRendered receipt yet (brief 030, phase two), so the script records it as the receipt route would.
-        label: "setup: the offer is shown",
-        do: "setup",
-        what: "the pendingRendered receipt for the hero offer, recorded as routes/receipt-moments.ts records it; no client sends it for the hero yet",
-        run: async (w) => {
-          const o = offer(w);
-          if (o === null) return;
-          // The offer is shown after the allergy turn, not in the same instant: the binding reads an equal time as "a turn since".
-          w.rig.clock.advance(10);
-          await w.ctx.deps.store.transaction(w.ctx.uid, (tx) => recordPendingRendered(tx, w.ctx.uid, o.pendingId as ID, w.ctx.deps.clock.read().opsClock.now, w.ctx.deps.hasher));
-        },
-      },
+      // The offer comes as an idle whisper, and the yes follows it (brief 037, H-168).
+      { label: "a quiet moment on the call", do: "idle" },
+      { label: "the offer plays as an idle whisper", do: "play", of: "a quiet moment on the call" },
       { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
       { label: "the Head at the yes lists the rule", do: "check", of: "the owner says yes", expect: [headFilters("the owner says yes", [{ subjects: YOU, allergen: "milk" }])] },
       {

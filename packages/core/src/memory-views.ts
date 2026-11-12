@@ -320,12 +320,17 @@ export interface LabInput {
   evidence: readonly { id: string; evidence: Evidence }[];
   /** Ledger entries read for the Lab; non-decisions are ignored, and an ID read twice counts once. */
   decisions: readonly { id: string; entry: Ledger }[];
+  /**
+   * The Gate's rows read for the Lab (brief 030 part A): each held, steered, declined or blocked row counts once by
+   * ID under its own number. `said` rows count toward none of these. Missing reads as none.
+   */
+  gates?: readonly { id: string; entry: Ledger }[];
   /** False when a read stopped at its cap. */
   complete: boolean;
 }
 
 /** LabView numbers with no source in this build: 0 on the wire, named in `limits`, shown as not counted. */
-export const LAB_UNCOUNTED = ["steered", "declined", "falseHolds", "overForget", "foodWithoutSuggest"] as const satisfies readonly (keyof LabView)[];
+export const LAB_UNCOUNTED = ["falseHolds", "overForget", "foodWithoutSuggest"] as const satisfies readonly (keyof LabView)[];
 /** The floor reads every line in one read (spec §11: "and the Lab says so"). */
 export const LAB_FLOOR_RECALL = "floorRecall";
 
@@ -354,14 +359,24 @@ export function labView(input: LabInput): LabView {
     if (entry.state === "blocked") held.add(id);
     if (entry.payload.reasonCodes.includes("blocked")) blocked.add(id);
   }
+  const steered = new Set<string>();
+  const declined = new Set<string>();
+  for (const { id, entry } of input.gates ?? []) {
+    if (entry.kind !== "gate" || entry.uid !== ec.uid) continue;
+    const o = entry.payload.outcome;
+    if (o === "held") held.add(`gate:${id}`);
+    else if (o === "steered") steered.add(id);
+    else if (o === "declined") declined.add(id);
+    else if (o === "blocked") blocked.add(`gate:${id}`);
+  }
   return {
     readEmails: emails.size,
     privateGuesses: privateGuesses.size,
     guessLinesSpoken: guessSpoken.size,
     delivered: delivered.size,
     held: held.size,
-    steered: 0,
-    declined: 0,
+    steered: steered.size,
+    declined: declined.size,
     blocked: blocked.size,
     falseHolds: 0,
     overForget: 0,
