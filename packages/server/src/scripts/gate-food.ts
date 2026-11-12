@@ -38,7 +38,7 @@ import {
   rulesHold,
   rx4,
   subjectOf,
-  suggestStep,
+  suggestCall,
 } from "./gate-kit";
 
 // ---------------------------------------------------------------------------------------------
@@ -138,7 +138,7 @@ function momentScript(m: Moment): GateScript {
     ...(m.sameTurn === true ? [] : [{ label: dinnerLabel, do: "say" as const, text: m.path === "recipe pick" ? "Pick me a recipe for tonight." : FOOD_Q, answers: [parse()] }]),
     { label: "the Head at the food moment lists every rule", do: "check", of: dinnerLabel, ...w("head"), expect: [headFilters(dinnerLabel, m.head), ...(m.linesAtLeast === undefined ? [] : [headOneSubjectPerLine(dinnerLabel, m.linesAtLeast)])] },
     ...(m.attendees === undefined ? [] : [attendeesFor(toolLabel, m.attendees)]),
-    { ...suggestStep(toolLabel, [foodSafe(toolLabel, m.forbid, m.expect ?? "offered")], m.path === "recipe pick" ? "a recipe for tonight" : "quick dinner tonight"), ...w("food") },
+    { ...suggestCall(toolLabel, [foodSafe(toolLabel, m.forbid, m.expect ?? "offered")], m.path === "recipe pick" ? "a recipe for tonight" : "quick dinner tonight"), ...w("food") },
   ];
   return {
     gate: "food",

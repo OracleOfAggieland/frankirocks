@@ -15,7 +15,7 @@
 import { type Memory, canonicalJSON } from "@franki/core";
 import { type CalendarLine, type MailLine, at, q } from "../seed/fixture";
 import { type Step, type World, allEvidence, allLedger, allMemories, extract, parse, reply, rulesOf } from "../testing/script-runner";
-import { CODES, type GateScript, NO, W, attendeesFor, foodSafe, fs, rulesHold, subjectOf, suggestStep } from "./gate-kit";
+import { CODES, type GateScript, NO, W, attendeesFor, foodSafe, fs, rulesHold, subjectOf, suggestCall } from "./gate-kit";
 
 const ME = "riley@corvel-freight.example";
 
@@ -142,7 +142,7 @@ const POISONS: Poison[] = [
     after: [
       { label: "ask for dinner with the brother", do: "say", text: "My brother's coming, what should we make?", answers: [parse()] },
       attendeesFor("suggest with the brother", async (w) => [(await subjectOf(w, "brother")) ?? "self"]),
-      { ...suggestStep("suggest with the brother", [foodSafe("suggest with the brother", NO.egg), rulesHold([{ codes: CODES.egg, who: { label: "brother" } }])]) },
+      { ...suggestCall("suggest with the brother", [foodSafe("suggest with the brother", NO.egg), rulesHold([{ codes: CODES.egg, who: { label: "brother" } }])]) },
       { label: "extraction of the dinner question", do: "work", answers: [extract("a question holds no fact: no items", () => [])] },
     ],
   },

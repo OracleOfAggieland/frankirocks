@@ -283,7 +283,7 @@ export function headOneSubjectPerLine(label: string, minLines: number): Expectat
 // Steps.
 
 /** A suggest(food) call, with the attendees the model passes. */
-export function suggestStep(label: string, expect: Expectation[], query = "quick dinner tonight"): Step {
+export function suggestCall(label: string, expect: Expectation[], query = "quick dinner tonight"): Step {
   return {
     label,
     do: "tool",

@@ -12,7 +12,7 @@ import { ok } from "../openai/fake";
 import { completed } from "../openai/responses";
 import { type MailLine, at, q } from "../seed/fixture";
 import { type Step, type World, allMemories, extract, item, memoryText, parse, reply, rulesOf, spanOf } from "../testing/script-runner";
-import { type GateScript, W, foodSafe, fsEmpty, suggestStep } from "./gate-kit";
+import { type GateScript, W, foodSafe, fsEmpty, suggestCall } from "./gate-kit";
 
 // ---------------------------------------------------------------------------------------------
 // Helpers.
@@ -88,13 +88,13 @@ const FT02 = friend("FT02", 2, "Vegetarian this month", [
   },
   { label: "ask about dinner this month", do: "say", text: "What should I make for dinner?", answers: [parse()] },
   {
-    ...suggestStep("suggest this month", [foodSafe("suggest this month", MEAT)]),
+    ...suggestCall("suggest this month", [foodSafe("suggest this month", MEAT)]),
     waits: "suggest(food) reads no diet: routes/tool-food.ts suggestTool passes only core/rules allergies to suggestFood, so a vegetarian is offered chicken",
   },
   { label: "the month ends", do: "advance", to: at(33, "18:00"), called: "December 2, after the month" },
   { label: "ask about dinner after the month", do: "say", text: "What's for dinner tonight?", answers: [parse()] },
   {
-    ...suggestStep("suggest after the month", [{ mustSay: { has: ["vegetarian"], channel: "tool" } }]),
+    ...suggestCall("suggest after the month", [{ mustSay: { has: ["vegetarian"], channel: "tool" } }]),
     waits: "suggest(food)'s open domain moments first (spec §10, 'Still vegetarian, or was November it?'): suggestTool's question is only the rules-unavailable line",
   },
 ]);
@@ -246,7 +246,7 @@ const FT08 = friend("FT08", 8, "Breakup, restaurants", [
     factItem(w, "We used to go to Lupa every Friday", "the owner and Sam used to go to Lupa every Friday", "food", "S1"),
   ]),
   { label: "ask for dinner out", do: "say", text: "Where should I eat tonight?", answers: [parse()] },
-  suggestStep("suggest dinner", [{ neverSay: ["Lupa"], channels: ["tool", "card", "note"] }], "somewhere to eat tonight"),
+  suggestCall("suggest dinner", [{ neverSay: ["Lupa"], channels: ["tool", "card", "note"] }], "somewhere to eat tonight"),
 ], { silentGreen: "suggest(food) offers recipes only (places are always removed for unknown allergen status, brief 022 'Not built: venues'), so Lupa can't be offered; the relation-to-history effect is not tested" });
 
 const FT09 = friend("FT09", 9, "\"That place\"", [
@@ -280,14 +280,14 @@ const FT11 = friend("FT11", 11, "Dinner with twenty relevant memories", [
     item({ act: "soft_pref", kind: "preference", predicate: "preference.food", value: { kind: "enum", code: "dislike" }, args: { dimension: "ingredient", targetRef: null }, spans: [spanOf(w, "I hate mushrooms")] }),
   ]),
   { label: "ask about dinner", do: "say", text: "What should I make tonight?", answers: [parse()] },
-  suggestStep("code picks three", [
+  suggestCall("code picks three", [
     foodSafe("code picks three", [], "offered"),
     { neverSay: ["I remember", "you told me"], channels: ["tool", "card"] },
     { store: "three candidates and one selected", check: async (w) => { const r = w.answers.get("code picks three")?.body.result; return r?.candidateIds?.length === 3 && r.selectedId === r.candidateIds[0] ? true : JSON.stringify(r).slice(0, 300); } },
   ]),
   { label: "ask again", do: "say", text: "Anything else for dinner?", answers: [parse()] },
   {
-    ...suggestStep("the disliked ingredient is left off", [foodSafe("the disliked ingredient is left off", ["mushroom"])]),
+    ...suggestCall("the disliked ingredient is left off", [foodSafe("the disliked ingredient is left off", ["mushroom"])]),
     waits: "suggest(food) reads no food preference (tool-food.ts suggestTool passes only allergies; `excludes` are always empty), so the omelet with mushrooms is offered",
   },
 ]);
@@ -301,7 +301,7 @@ const FT12 = friend("FT12", 12, "Job search, pregnancy, debt guesses (the door)"
     do: "tool",
     tool: () => recallArgs("leaving my job"),
     answers: [{ endpoint: "responses.create", why: "recall reader: unparsable, so code-ranked excerpts answer", result: readerFails() }],
-    waits: "doors (spec §6): no topic door opens on the owner's words, and recallLines never reads an M guess, so the seeded job-search guess stays out even once the owner raises it",
+    waits: "doors on a guess (spec §6): the asked recall returns stated facts only, and the seed's guesses (alleged, proposed only) never come back, even once the owner raises the topic",
     // The seed's job-search guess (beat 4's words); the recall's other notes are stated facts.
     expect: [{ mustSay: { has: ["ready to leave Corvel"], channel: "tool" } }],
   },
@@ -335,7 +335,7 @@ const FT14 = friend("FT14", 14, "Joke, rule, allergy, soft taste", [
   { label: "extraction of the soft taste", do: "work", answers: [extract("a dislike, not a rule", (w) => [item({ act: "soft_pref", kind: "preference", predicate: "preference.food", value: { kind: "enum", code: "dislike" }, args: { dimension: "ingredient", targetRef: null }, spans: [spanOf(w, "I'm not big on olives")] })])] },
   { label: "still no rule", do: "check", of: "open", expect: [{ store: "core/rules still holds no allergy", check: async (w) => ((await rulesOf(w)).allergies.length === 0 ? true : JSON.stringify((await rulesOf(w)).allergies)) }] },
   { label: "ask about dinner", do: "say", text: "What should I make tonight?", answers: [parse()] },
-  suggestStep("food is not over-filtered", [foodSafe("food is not over-filtered", [], "offered")]),
+  suggestCall("food is not over-filtered", [foodSafe("food is not over-filtered", [], "offered")]),
 ]);
 
 const FT15 = friend("FT15", 15, "\"She's my sister-in-law, not my sister\"", [
