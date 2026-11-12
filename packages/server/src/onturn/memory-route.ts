@@ -79,6 +79,11 @@ export interface MemoryRouteInput {
   epoch: number;
   policyRev: number;
   hasher: Hasher;
+  /**
+   * Brief 043, finding 11: how many entries these routes may add to the turn's `handled` (the cap less the hardRule
+   * entry). An item past it is not applied on the turn and is left whole to extraction. Absent: no cap here.
+   */
+  entryCap?: number;
 }
 
 export interface MemoryOutcome {
@@ -125,7 +130,12 @@ function correctionKeys(v: CorrectionVerdict, targets: readonly Memory[], hasher
   return [...new Set(keys)];
 }
 
-const deferred = (route: Route, refs: Ref[]): OnTurnHandled => ({ route, outcome: "deferred", keys: [], refs: refs.slice(0, HANDLED_REFS_MAX), ruleKeys: [] });
+/**
+ * A deferred entry (brief 043, finding 8): never any keys or refs. A deferral is extraction's to apply, and a ref here
+ * would keep `pickOpen` and `closable` from offering that row to extraction. `_read` names what the route read, for
+ * the reader of this file only.
+ */
+const deferred = (route: Route, _read: Ref[]): OnTurnHandled => ({ route, outcome: "deferred", keys: [], refs: [], ruleKeys: [] });
 
 export async function planMemoryRoutes(tx: Reader, a: MemoryRouteInput): Promise<MemoryOutcome> {
   const routes = new Set<Route>([...(a.routes.correct ? (["correct"] as const) : []), ...(a.routes.transition ? (["transition"] as const) : [])]);
@@ -167,7 +177,10 @@ export async function planMemoryRoutes(tx: Reader, a: MemoryRouteInput): Promise
   let wroteCorrection = false;
   let wroteTransition = false;
 
-  for (const v of verdicts) {
+  // Brief 043, finding 11: life changes before corrections, and nothing past the cap is applied without its entry.
+  const ordered = [...verdicts.filter((v) => v.kind === "transition"), ...verdicts.filter((v) => v.kind !== "transition")];
+  for (const v of ordered) {
+    if ((v.kind === "correction" || v.kind === "transition") && a.entryCap !== undefined && out.entries.length >= a.entryCap) continue;
     if (v.kind === "correction") {
       const c = v.v;
       if (c.kind === "defer") {
@@ -219,6 +232,12 @@ export async function planMemoryRoutes(tx: Reader, a: MemoryRouteInput): Promise
       if (puts.length === 0) {
         out.entries.push({ route: "correct", outcome: "same", keys: [], refs: targetRefs.slice(0, HANDLED_REFS_MAX), ruleKeys: [] });
         out.same = true;
+        continue;
+      }
+      // Brief 043: a second item whose writes land on a row this turn already wrote (the same correction twice) is
+      // never written twice in one transaction; it is extraction's.
+      if (puts.some((p) => written.has(p.id))) {
+        out.entries.push(deferred("correct", []));
         continue;
       }
       for (const p0 of puts) {
@@ -287,12 +306,22 @@ export async function planMemoryRoutes(tx: Reader, a: MemoryRouteInput): Promise
         out.entries.push(deferred("transition", [...rows.values()].map(memRef)));
         continue;
       }
+      // Brief 043: the same change said twice in one turn writes once; the second is never a second write of a row.
+      if (puts.some((p) => written.has(p.id))) {
+        out.entries.push(deferred("transition", []));
+        continue;
+      }
       for (const p0 of puts) {
         const p = p0.expectRev === null ? { ...p0, row: rootedAtTurnSlice(p0.row, ev, a.hasher) } : p0;
         out.commands.push(p);
         written.set(p.id, p.row);
       }
-      if (puts.length > 0) wroteTransition = true;
+      // Brief 043, finding 8: a change that writes nothing is deferred, so extraction can still apply it.
+      if (puts.length === 0) {
+        out.entries.push(deferred("transition", []));
+        continue;
+      }
+      wroteTransition = true;
       const refs = [...new Map([...[...rows.values()].map(memRef), ...puts.map((p) => memRef(p.row))].map((r) => [r.id, r])).values()];
       out.entries.push({ route: "transition", outcome: "applied", keys: [...new Set(puts.map((p) => p.row.key))].slice(0, HANDLED_KEYS_MAX), refs: refs.slice(0, HANDLED_REFS_MAX), ruleKeys: [] });
     }

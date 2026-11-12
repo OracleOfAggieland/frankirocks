@@ -19,6 +19,10 @@ import { sameValue } from "./plan";
 import { plainMention } from "./not-allergy";
 import { hasFirstPerson, knownNameWords, mentionEid, mentionName, namesSomeone, resolveSubject, type SubjectInput, type SubjectResult } from "./subject";
 import { GENERIC_WORDS, REFERENCE_WORDS, itemNamesNothing } from "./names-own";
+import { ownerWordsSettle } from "./life-subject";
+import { selfIsLifeSubject } from "./self-life";
+import { renameRefuted } from "./rename-words";
+import { retractionSaid } from "./retract-words";
 import { spanClass, verifyTurnSpan } from "./spans";
 import type { AllergyVerdict, ArgPair, CorrectionVerdict, EntityKind, FastItem, FastSlotsOut, ItemVerdict, Need, QuestionKind, Route, Subject, TransitionKind, TransitionVerdict, ValidateContext } from "./types";
 
@@ -281,10 +285,14 @@ function correctionVerdict(item: Extract<FastItem, { kind: "correction" }>, inde
     if (at === null) return defer("value");
     const to = span.quote.slice(at.start, at.end);
     if (mentionName(to) === mentionName(currentWords)) return v({ kind: "same", targets: [target.logicalId] });
+    // Brief 043, finding 4: never against the owner's words ("her name is Mara, not Maya" never renames to Maya).
+    if (renameRefuted(span.quote, currentWords, to)) return defer("value");
     return spend({ kind: "rename", target: target.logicalId, entity: entity!, from: currentWords, to });
   }
   if (item.replacementValue === null) {
-    if (item.args === null && named) return spend({ kind: "retract", targets: targets.map((t) => t.logicalId) }); // C6
+    // Brief 043, finding 5: only on a negation tied to the target's value or its entity's name.
+    const retractWords = [currentWords, ...(otherEntity(target) === null ? [] : [currentNameOf(otherEntity(target)!, line, ctx)])].filter((w): w is string => w !== null);
+    if (item.args === null && named && retractionSaid(span.quote, retractWords)) return spend({ kind: "retract", targets: targets.map((t) => t.logicalId) }); // C6
     return defer("value"); // C6a
   }
   const value = item.replacementValue;
@@ -312,6 +320,9 @@ export const TRUTH_ORDER: Record<Exclude<TransitionKind, "scheduledStart" | "exp
   jobChangeOwn: ["employment.role", "person.relation"],
   jobChangeOther: ["employment.role"],
 };
+
+/** Life changes whose `isSelf` subject needs `selfIsLifeSubject` (brief 043, finding 6); the owner's death is refused at T6. */
+export const SELF_LIFE_KINDS: ReadonlySet<TransitionKind> = new Set(["illness", "recovery"]);
 
 /** Past words the date resolver reads forward and doesn't resolve (CQ 134): the change is placed at the turn. */
 const PAST_WORDS = /\b(yesterday|last (night|week|weekend|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|ago|earlier|just now|recently|this (morning|afternoon))\b/;
@@ -349,6 +360,12 @@ function transitionVerdict(item: Extract<FastItem, { kind: "transition" }>, inde
   if (!ctx.speakerCertain) return v({ kind: "defer", why: "speaker" });
   if (item.transition === "scheduledStart" || item.transition === "expire") return v({ kind: "defer", why: "scheduled" }); // T5
   const kind = item.transition;
+  // Brief 043, finding 1: the owner's words, not the model's ID or a cut-out span, choose who it happened to.
+  const settled = (s: Subject) => ownerWordsSettle({ subject: s, span, evidence: ctx.evidence, known: ctx.known, entities: ctx.entities });
+  if (!settled(item.subject) || (item.counterpart !== null && !settled(item.counterpart))) return v({ kind: "defer", why: "subject" });
+  // Brief 043, finding 6: the owner ill or recovered only when their words make them its subject, naming no one else.
+  const selfOnly = item.subject.isSelf && item.subject.entityId === null && item.subject.mention === null;
+  if (selfOnly && SELF_LIFE_KINDS.has(kind) && !selfIsLifeSubject(span.quote, knownNameWords(ctx.known, ctx.entities))) return v({ kind: "defer", why: "subject" });
   // A transition's "my job" names the speaker; "my brother" doesn't (CQ 159).
   const subject = subjectOf(item.subject, span.quote, ctx, "person", "transition");
   const counterpartKind: EntityKind = kind === "move" ? "place" : kind === "jobChangeOwn" || kind === "jobChangeOther" ? "organization" : "person";
