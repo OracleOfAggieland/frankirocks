@@ -38,6 +38,8 @@ import { APP_JUDGE_SETTINGS, type JudgeVerdict, judgeCreate, parseJudgeDone } fr
 import { type FastORefusal, LATE_TURN_MS, type LatencyRow, type LatencyTimes, emptyTimes, finishRow, pushRow } from "./latency";
 import { fastOProblem, issueFastO } from "./fast-o";
 import { sayExactly } from "./lines";
+// Brief 040: what a call sends for each tool; re-exported here so the core barrel needs no new line.
+export { CALL_ANSWER_ARGS, CALL_TOOL_NAMES, type CallToolName, callToolArgs, isCallToolName } from "./tool-args";
 import { type Infer } from "../schema/v";
 import { type SS, type StateAck, msFromTs, tsFromMs } from "../schema/primitives";
 import type { PermitKind } from "../schema/records";
