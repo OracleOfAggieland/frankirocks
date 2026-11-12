@@ -40,10 +40,12 @@ import { fastOProblem, issueFastO } from "./fast-o";
 import { sayExactly } from "./lines";
 // Brief 040: what a call sends for each tool; re-exported here so the core barrel needs no new line.
 export { CALL_ANSWER_ARGS, CALL_TOOL_NAMES, type CallToolName, callToolArgs, isCallToolName } from "./tool-args";
+import { type CallToolName, callToolArgs, isCallToolName } from "./tool-args";
 import { type Infer } from "../schema/v";
 import { type SS, type StateAck, msFromTs, tsFromMs } from "../schema/primitives";
 import type { PermitKind } from "../schema/records";
 import {
+  ANSWER_TOOL,
   type CloseRequest,
   type Deck,
   type OpenResponse,
@@ -52,6 +54,7 @@ import {
   type Proactive,
   RECALL_TOOL,
   type ReceiptRequest,
+  SUGGEST_TOOL,
   type SafeTurn,
   type Stamp,
   type StateRequest,
@@ -256,7 +259,7 @@ export type ReplyPurpose = "speech" | "recovery" | "tool";
 
 export interface ToolCallItem {
   callId: string;
-  name: "recall" | "make_phone_call";
+  name: CallToolName;
   arguments: string;
 }
 
@@ -558,6 +561,12 @@ export interface StepResult {
 export const TRANSCRIBE_LANGUAGE = "en";
 export const TRANSCRIBE_PROMPT = "A friendly conversation in English with Franki, a personal assistant. The speaker often mentions names of people, pets and places; spell names as said.";
 
+/**
+ * The tools a call offers the model, in every session and every reply that may call one (brief 040, item 1). All four
+ * are dispatched under one rule (dispatchTool, behind the reply's Permit); `answer` has no parameters (H-180).
+ */
+export const CALL_TOOLS = [RECALL_TOOL, PHONE_TOOL, SUGGEST_TOOL, ANSWER_TOOL] as const;
+
 export function sessionUpdate(instructions: string, transcribeModel: string): RealtimeClientEvent {
   // No `model` and no `voice`: those are fixed when the SDP proxy creates the call (R13.1, R13.5).
   return {
@@ -566,7 +575,7 @@ export function sessionUpdate(instructions: string, transcribeModel: string): Re
       type: "realtime",
       tracing: null,
       instructions,
-      tools: [RECALL_TOOL, PHONE_TOOL],
+      tools: [...CALL_TOOLS],
       audio: {
         input: {
           noise_reduction: { type: "near_field" },
@@ -633,7 +642,7 @@ export function replyCreate(st: VoiceState, reply: PendingReply, eventId: string
   const input = replyInput(st, reply);
   // Scope `ack` (the crisis care reply) has no tools (R12.6; question 88).
   const tools = reply.permit.scope === "ack" || reply.toolOutput?.name === "make_phone_call"
-    ? { tools: [] } : { tools: [RECALL_TOOL, PHONE_TOOL], tool_choice: "auto" };
+    ? { tools: [] } : { tools: [...CALL_TOOLS], tool_choice: "auto" };
   return tag({
     type: "response.create",
     response: { conversation: "none", instructions: deck.head.text + notes, input, ...tools, metadata },
@@ -646,7 +655,7 @@ export function specCreate(st: VoiceState, eventId: string): RealtimeClientEvent
   return withEventId(
     {
       type: "response.create",
-      response: { conversation: "none", instructions: st.deck!.head.text, input: replyInput(st, { toolCall: null, toolOutput: null }), tools: [RECALL_TOOL, PHONE_TOOL], tool_choice: "auto", metadata },
+      response: { conversation: "none", instructions: st.deck!.head.text, input: replyInput(st, { toolCall: null, toolOutput: null }), tools: [...CALL_TOOLS], tool_choice: "auto", metadata },
     },
     eventId,
   );
@@ -1840,12 +1849,10 @@ function replyKnown(s: Step, a: ActiveReply): void {
 
 /** KV02: a function call of an admitted reply goes to `/api/tool`. */
 function dispatchTool(s: Step, a: ActiveReply, call: ToolCallItem): void {
-  let args: unknown;
-  try {
-    args = JSON.parse(call.arguments);
-  } catch {
-    return;
-  }
+  // The same rule for every tool: arguments that don't parse send nothing. `answer` sends both IDs null (H-180).
+  const sent = callToolArgs(call.name, call.arguments);
+  if (sent === null) return;
+  const args = sent.args;
   // While its lead-in audio plays the reply stays SPEAKING; TOOL_WAIT starts when the audio stops (R6.1).
   s.set({ phase: a.audioStarted ? "SPEAKING" : "TOOL_WAIT", active: { ...a, pendingTool: call } });
   s.push({ kind: "tool", body: { stamp: a.permit.stamp, callId: call.callId, tool: { name: call.name, args } as Infer<typeof ToolRequest>["tool"] } });
@@ -2045,7 +2052,7 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string, lastLoudA
       return;
     }
     case "response.function_call_arguments.done": {
-      if (ev.name !== "recall" && ev.name !== "make_phone_call") return;
+      if (!isCallToolName(ev.name)) return;
       const sp = st.spec;
       if (sp !== null && sp.responseId === ev.response_id) {
         // KV02, R6.3: a call inside an unadmitted speculative reply is held, never dispatched yet.

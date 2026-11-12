@@ -309,7 +309,7 @@ export const RECALL_TOOL = {
 
 /**
  * Brief 022 (lane hero): the Realtime definitions for `suggest` and `answer`, strict JSON Schema like RECALL_TOOL.
- * Not yet in the voice machine's tool list; adding them there is the voice lane's.
+ * In the voice machine's tool list since brief 040 (`CALL_TOOLS` in voice/machine.ts).
  */
 export const SUGGEST_TOOL = {
   type: "function",
