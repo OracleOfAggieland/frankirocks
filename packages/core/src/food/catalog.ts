@@ -56,6 +56,14 @@ const ROWS: readonly Row[] = [
   ["fish_tacos", "Cod tacos with lime slaw", 20, "cod_fillet, tortillas, cabbage, lime, yogurt"],
   ["pesto_pasta", "Pesto pasta with peas", 15, "pasta, pesto, frozen_peas, lemon"],
   ["cashew_stir_fry", "Cashew chicken stir-fry", 25, "chicken_breast, cashews, bell_pepper, soy_sauce, rice, sesame_oil"],
+  // Made of whole, single-ingredient foods only (brief 037, finding 3), so a person with a rule still gets dinners.
+  ["egg_potato_hash", "Potato and pepper egg hash", 20, "egg, potato, bell_pepper, onion, olive_oil"],
+  ["lemon_salmon", "Lemon garlic salmon with rice and green beans", 25, "salmon_fillet, rice, green_beans, lemon, garlic, olive_oil"],
+  ["beef_broccoli_bowl", "Beef and broccoli rice bowl", 25, "ground_beef, broccoli, rice, ginger, garlic, olive_oil"],
+  ["cod_zucchini", "Cod with zucchini and tomatoes", 25, "cod_fillet, zucchini, tomato, lemon, olive_oil, basil"],
+  ["chicken_vegetable_rice", "Chicken and vegetable rice", 25, "chicken_breast, rice, carrot, frozen_peas, onion, olive_oil"],
+  ["pork_cabbage_skillet", "Pork and cabbage skillet", 25, "pork_chop, cabbage, carrot, ginger, olive_oil"],
+  ["red_lentil_dal", "Red lentil dal with rice", 30, "red_lentils, rice, onion, garlic, ginger, cumin, tomato, olive_oil"],
 ];
 
 const list = (s: string) => s.split(",").map((x) => x.trim()).filter((x) => x.length > 0);

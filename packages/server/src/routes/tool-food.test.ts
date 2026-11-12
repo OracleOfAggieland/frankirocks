@@ -21,6 +21,7 @@ import { toolRoute } from "./tool";
 import { answerTool, compareLoop, heroOffer } from "./tool-food";
 import { turnRoute } from "./turn";
 import { memoryTick } from "../time/tick";
+import { recordPendingRendered } from "../time/reminder";
 
 const UID = "owner-1";
 const SUGGEST = { domain: "food", query: "quick dinner", attendeeIds: [], when: null, contextId: null };
@@ -63,6 +64,11 @@ async function setup(opts: { turnText: string; shellfish?: boolean; rows?: boole
     const state = await tx.get<CoreState>(paths.core(UID, "state"));
     tx.update(paths.core(UID, "state"), { ...state!.data, currentZone: HERO_ZONE });
   });
+  // Brief 037, finding 4: a yes acts only on an offer shown just before it, so the offer (if any) is shown first.
+  const ctx0 = { uid: UID, deps: rig.deps, schedule: rig.sched.schedule };
+  const shown = await heroOffer(ctx0, s.stamp.generation);
+  if (shown !== null) await rig.store.transaction(UID, (tx) => recordPendingRendered(tx, UID, shown.pendingId as never, rig.deps.clock.read().opsClock.now, rig.deps.hasher));
+  rig.clock.advance(10);
   const turnRes = await callRoute(rig, turnRoute, asrTurn(s.stamp, 1, opts.turnText, [{ itemId: "item_1", commitSeq: 1 }]));
   if (turnRes.status !== 200) throw new Error(JSON.stringify(turnRes.body));
   const stamp = { ...s.stamp, turnId: testId("turn-1") };
@@ -145,7 +151,8 @@ describe("the hero offer and its yes", () => {
     // request with identical output on the same stamp collides on the seam's decision ID: contract question H-163.)
     const turn = (await rig.store.get(UID, paths.turn(UID, stamp.sessionId, stamp.turnId)))!.data as never;
     const again = await answerTool(ctx, stamp, { pendingId: offer.pendingId, choiceId: offer.yesId }, turn);
-    expect(again).toMatchObject({ state: "applied", receiptId: actionId });
+    // Brief 037, finding 1: answerTool returns its result and a write for the admission transaction.
+    expect(again.result).toMatchObject({ state: "applied", receiptId: actionId });
     const loops = (await rig.store.query<Memory>(UID, { collection: paths.collection(UID, "memories"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: 100 })).filter((d) => d.data.kind === "loop");
     expect(loops).toHaveLength(1);
 

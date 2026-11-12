@@ -64,7 +64,19 @@ export function takeoutLateMeetingV1(input: PatternInput): PatternResult {
   const majority = late.length * 2 > orders.length && lateCents * 2 > totalCents;
 
   const lateDates = new Set(late.map((o) => o.date));
-  const meetingIds = [...meetingsOn.entries()].filter(([d]) => lateDates.has(d)).flatMap(([, ids]) => ids).sort();
+  // A meeting held twice under one provider key is one meeting: it is cited once, by its lowest ID (brief 037, 10).
+  const providerOf = new Map(input.events.map((e) => [e.id, e.calendar.providerKey]));
+  const citedKeys = new Set<string>();
+  const meetingIds = [...meetingsOn.entries()]
+    .filter(([d]) => lateDates.has(d))
+    .flatMap(([, ids]) => ids)
+    .sort()
+    .filter((id) => {
+      const k = providerOf.get(id)!;
+      if (citedKeys.has(k)) return false;
+      citedKeys.add(k);
+      return true;
+    });
   const eventKey = new Map(input.events.map((e) => [e.id, e.rootKey]));
   const receiptIds = orders.flatMap((o) => (o.receipt === null ? [] : [o.receipt.id]));
   const rootKeys = [
