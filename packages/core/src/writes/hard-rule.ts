@@ -5,9 +5,9 @@
  * 1. Each allergy verdict moves its slots through `ruleTransition` (6.3). A proof must lie in a U slice of this turn
  *    (or be the asked rule's own proof with the answer on a U slice of this turn, answering rule 4); any other verdict
  *    writes nothing (P1). A rule made from an answer cites both Evidences in `dependsOn` (CQ 147). A newly active
- *    rule also supersedes, only where it answers them (CQ 132, narrowed by CQ 144): the anonymous pending rule with
- *    its code; for a food code, its subject's `unresolved` rule and an asked anonymous `unresolved` rule. Every
- *    other pending rule stays, so a pending rule leaves only for its own slot.
+ *    rule also supersedes, only where it answers them (CQ 132, narrowed by CQ 144 and brief 032 H3): the asked
+ *    anonymous rule this turn answers, with its code or, for a food code, `unresolved`; for a food code, its
+ *    subject's `unresolved` rule. Every other pending rule stays, so a pending rule leaves only for its own slot.
  * 2. Coverage: every alias found in the U parts of the cue sentences whose code no verdict carries becomes an
  *    anonymous pending rule (fail closed; an ignored item carries nothing, and so does a denial that reaches no rule,
  *    brief 032 H1). Only a plain mention a subject was
@@ -231,12 +231,11 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
           const out = apply(a.subject, code, { kind: "affirm", proof: p.proof, deps: p.dependsOn, install: activeRule(a.subject, code, p) });
           if (out === "ruleKept") keep(list[slotIndex(a.subject, code)]!.id, "duplicate");
           if (before !== "active" && (out === "ruleWritten" || out === "pendingResolved")) {
-            // Cross-slot reach (6.3, CQ 144): only the pending rules this rule answers.
-            supersede(slotIndex(null, code));
-            if (isFood(code)) {
-              supersede(slotIndex(a.subject, UNRESOLVED));
-              if (R !== null && R.anonymous && R.code === UNRESOLVED) supersede(list.findIndex((r) => r.id === R.id));
-            }
+            // Cross-slot reach (6.3, CQ 144): only the pending rules this rule answers. An anonymous rule leaves only
+            // when it is the asked rule and this turn answers it (brief 032 H3): a named person's rule never clears
+            // "one of the guests".
+            if (R !== null && R.anonymous && (R.code === code || (R.code === UNRESOLVED && isFood(code)))) supersede(list.findIndex((r) => r.id === R.id));
+            if (isFood(code)) supersede(slotIndex(a.subject, UNRESOLVED));
           }
         }
         break;

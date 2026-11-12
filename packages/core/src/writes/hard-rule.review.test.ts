@@ -87,3 +87,32 @@ describe("H2: coverage reads on past the cue sentence", () => {
     expect(p.rules.allergies.map((r) => r.code)).toEqual(["peanut"]);
   });
 });
+
+describe("H3: a named person's rule never clears the anonymous one", () => {
+  const anonPeanut: Rule = { id: "n".repeat(43), subjectId: null, code: "peanut", state: "pending", anonymous: true, proof: null, proofRev: null, rootKeys: [], dependsOn: [] };
+  const brother: Subject = { entityId: null, mention: null, isSelf: false };
+  const brotherItem = (t: string): FastItem => ({ ...item(t, "My brother's allergic to peanuts", "peanuts", "affirmed"), subject: { ...brother, mention: at(t, "My brother") } });
+
+  it("\"One of the guests is allergic to peanuts\", then \"My brother's allergic to peanuts.\": the guest's rule stays", () => {
+    const t = "My brother's allergic to peanuts.";
+    const p = plan(t, [brotherItem(t)], { ...emptyRules(), allergies: [{ ...anonPeanut }] });
+    expect(p.rules.allergies.some((r) => r.id === anonPeanut.id)).toBe(true);
+    expect(p.rules.allergies.some((r) => !r.anonymous && r.subjectId !== "self" && r.code === "peanut" && r.state === "active")).toBe(true);
+  });
+
+  it("the owner's own rule doesn't clear it either", () => {
+    const t = "I'm allergic to peanuts.";
+    const p = plan(t, [item(t, "I'm allergic to peanuts", "peanuts", "affirmed")], { ...emptyRules(), allergies: [{ ...anonPeanut }] });
+    expect(p.rules.allergies.map((r) => [r.subjectId, r.code, r.state])).toEqual([
+      [null, "peanut", "pending"],
+      ["self", "peanut", "active"],
+    ]);
+  });
+
+  it("answering the asked anonymous rule still resolves it", () => {
+    const t = "My brother's allergic to peanuts.";
+    const p = plan(t, [brotherItem(t)], { ...emptyRules(), allergies: [{ ...anonPeanut }] }, { answering: { rule: anonPeanut } });
+    expect(p.rules.allergies.some((r) => r.id === anonPeanut.id)).toBe(false);
+    expect(p.outcome).toMatchObject({ kind: "pendingResolved", by: "rule" });
+  });
+});

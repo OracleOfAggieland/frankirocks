@@ -146,11 +146,13 @@ describe("planHardRule", () => {
     expect(plan(t, [allergy(t, "any allergies", "denied")], { ...emptyRules(), allergies: [anon] }).rules.noneConfirmed).toEqual([]);
   });
 
-  it("a newly active rule resolves the anonymous filter with its code and the subject's unresolved rule", () => {
+  it("a newly active rule resolves its subject's unresolved rule; an anonymous rule nobody asked about stays", () => {
     const t = "I'm allergic to peanuts.";
     const rules = { ...emptyRules(), allergies: [fixtureRule("anonpeanut", null, "peanut", "pending"), fixtureRule("selfun", "self", "unresolved", "pending"), fixtureRule("other", null, "kiwi", "pending")] };
     const p = plan(t, [allergy(t, "peanuts")], rules);
+    // Brief 032 H3: the anonymous peanut rule wasn't asked, so the owner's own rule doesn't clear it.
     expect(p.rules.allergies.map((r) => [r.subjectId, r.code, r.state])).toEqual([
+      [null, "peanut", "pending"],
       [null, "kiwi", "pending"],
       ["self", "peanut", "active"],
     ]);
