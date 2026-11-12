@@ -15,6 +15,7 @@ import { renderedMemory } from "./memory-text";
 import { spokenGrade } from "./spoken";
 import { civilDay } from "./time";
 import { renameIndex, renameLine } from "./writes/renames";
+import { fromPaste, pasteQuestion } from "./writes/paste";
 import { PENDING_PREFIX, renderRulesSection } from "./writes/rules-section";
 
 export type HeadSection = (typeof HEAD_SECTIONS)[number];
@@ -240,6 +241,11 @@ function rulesLines(rules: CoreRules, audience: Au): HeadLine[] {
   // Allergies render by subject (brief 012 design 2.8, `renderRulesSection`). Standing rules are still never written
   // (G31), so a count is all a document holding them could say.
   const lines: HeadLine[] = renderRulesSection(rules, audience).map((text) => ({ section: "rules", text, ref: null }));
+  // Brief 041 part 1: a filter from a paste is never a rule; while its question is open, the Head carries the
+  // question, in code words, and nothing else of the paste.
+  const q = rules.ask?.q;
+  const open = q !== undefined && q.kind !== "none" && q.ruleId !== null ? rules.allergies.find((r) => r.id === q.ruleId && fromPaste(r)) : undefined;
+  if (open !== undefined) lines.push({ section: "rules", text: `Open question, ask it once: "${pasteQuestion(open.code)}"`, ref: null });
   if (rules.standing.length > 0) lines.push({ section: "rules", text: `${rules.standing.length} standing rules recorded; follow them silently.`, ref: null });
   return lines;
 }
