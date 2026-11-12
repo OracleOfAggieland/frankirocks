@@ -898,7 +898,8 @@ function startOpen(s: Step, zone: string, retrying: boolean): void {
     zone,
     awaitingOpen: true,
     error: null,
-    micMuted: false,
+    // A reconnect keeps the Owner's mute: only mutePressed or the end of the call changes it (R15.6, V1 step 3).
+    micMuted: retrying ? s.st.micMuted : false,
     recovery: retrying ? s.st.recovery : null,
     retryVisible: retrying ? s.st.retryVisible : false,
   });
@@ -992,7 +993,8 @@ function openFailed(s: Step): void {
  *                                                                                                      else false
  *   stateFailures             null                      keep                           null            -
  *   stateRetryVisible         false                     keep                           false           -
- *   micMuted                  false                     keep                           -               false
+ *   micMuted                  false                     keep                           -               retrying: keep;
+ *                                                                                                      else false
  *   outputMuted               true                      true (mute)                    -               -
  *   awaitingOpen              false (set by caller)     keep                           false           true
  *   hangingUp                 hangUp: a Session was     keep                           -               -

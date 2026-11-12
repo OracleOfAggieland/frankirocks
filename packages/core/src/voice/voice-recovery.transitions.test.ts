@@ -106,7 +106,7 @@ describe("connection recovery transitions", () => {
     expect(d.st).toMatchObject({ phase: "RECOVERY", recovery: { kind: "connection" }, outputMuted: true, judge: null, spec: null, pending: null, active: null });
   });
 
-  it.fails("RECOVERY + timer reconnect -> CONNECTING (a muted mic stays muted across the reconnect)", () => {
+  it("RECOVERY + timer reconnect -> CONNECTING (a muted mic stays muted across the reconnect)", () => {
     const d = live();
     play(d, { k: "mutePressed" }, 300);
     expect(d.st.micMuted).toBe(true);
