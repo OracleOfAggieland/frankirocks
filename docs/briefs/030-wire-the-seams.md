@@ -19,11 +19,19 @@ Each item names the lane that built the piece. If a report's seam list disagrees
 2. **The visit on open** (019, 027): `open` reads the visit ID as contracts line 736 gives it, so a visitor's session runs on their clone and its fixture clock.
 3. **The hero as a moment** (022, 023): the detector's result becomes an `insight` moment that delivery can choose, with the offer worded by the hero lane's templates; "yes" writes the list and the loop through the hero lane's handler; at `checkAt` the comparison runs and `celebrate` is delivered. It can never play in a session with a transition or crisis candidate, or within two turns of a check-in answer.
 4. **The Gate in front of what is said** (024): every candidate that delivery or a tool would put on the wire passes the Gate with the session's audience; the Deck's `whispers` are built by the whisper builder from Gate-approved candidates only; `compileHead`'s third-party labels pass `safeName`.
-   Ruling for this build, for the owner to confirm (question G-163 of brief 024): the Gate lane let an S2 detail be said aloud through an asked recall on an opened topic, following the carve-out list at spec line 120. Spec line 218 says that until the on-screen ask exists, S2 stays off the wire. The on-screen ask is not built, so line 218 wins: an asked S2 recall goes to a card, not aloud. Make it one named constant in the Gate, with a test, so it is one line to change when the ask is built.
+   Brief 033 fixed the Gate after a review and changed its inputs: read its "Outcome" section before wiring. The context now names the moment (`opener` or `idle`), a whisper is refused unless it matches the Gate result it was built from, `withWhispers` takes the audience, and an asked S2 recall goes to a card until the on-screen ask exists (question G-163). Do not edit `packages/core/src/gate/**` or `whisper/**` here; if a seam needs the Gate to change, write it down as a finding.
+   `writeSaid` still trusts the match its caller hands it (finding 12 of brief 033). Compute the match inside it, from the transcript and the whisper, with the time lane's matcher.
 5. **The ledger** (024): the turn, tool and receipt routes write said, held, steered, declined and blocked rows as IDs and reason codes, and the Lab's counts read them, so the five Lab counts brief 020 left uncounted become real.
 6. **Food and the answer in a call** (022, 017): the tool list the voice machine sends includes `suggest` and `answer`, behind the same Permit rules as `recall`. The golden corpus is re-recorded in that commit, with the count of calls moved and the reason.
 7. **The screen** (020, 027): rule motes in the jar from the rules document; the strip's money figure from the loop; the proactive line or card shown when `advance` or `open` returns one; the false-"gone" check on spoken transcripts through the receipt route.
 8. **Findings of brief 029:** each place where two merged pieces did not fit.
+
+9. **Smaller seams the lead collected while merging:**
+   - `routes/tool-food.ts` builds its snapshot with no blocks, so a blocked item could be offered. Give it the blocks the read route uses (brief 028, finding 3).
+   - `SeedResetRequest` and `ResetRequest` are two wire types for one request. Keep one.
+   - The decisions of the hard-rule route that need a ledger row are listed in the "Outcome" section of brief 032 (question W-166). Write those rows.
+   - In a call, a pasted line is held back with a message, because the voice machine's typed event carries no source (ruling W-179 of brief 018). Add the source to that event, so a pasted line in a call is sent as pasted text. Re-record the golden corpus in that commit if digests move.
+   - The seed lane's five properties run 20 to 40 cases. Bring them to 1,000 by making each case cheaper, not by weakening what it checks. This is the one place a committed property file may be edited, and only its run count and set-up.
 
 ## What stays out
 
