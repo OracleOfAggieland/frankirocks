@@ -47,9 +47,9 @@ describe("ui.visit", () => {
     expect(s.phase).toBe("failed");
     expect(s.failure).toBe("interrupted");
     expect(commands).toEqual([]);
-    const retried = run([{ kind: "retry" }], s);
+    const retried = run([{ kind: "retry", newVisitId: "v3" }], s);
     expect(retried.s.phase).toBe("cloning");
-    expect(retried.commands.at(-1)).toEqual({ kind: "reset", seq: 1, visitId: "v1" });
+    expect(retried.commands.at(-1)).toEqual({ kind: "reset", seq: 1, visitId: "v3" });
   });
 
   it("a failed clone is failed, never ready, and a barrier says so", () => {
@@ -102,24 +102,24 @@ describe("ui.visit", () => {
     const asked = visitStep(ready(), { kind: "startOverAsked" }).state;
     expect(asked.confirming).toBe(true);
     expect(visitStep(asked, { kind: "startOverCancelled" })).toEqual({ state: { ...asked, confirming: false }, commands: [] });
-    const go = visitStep(asked, { kind: "startOverConfirmed", inCall: false });
+    const go = visitStep(asked, { kind: "startOverConfirmed", inCall: false, newVisitId: "v2" });
     expect(go.state.phase).toBe("resetting");
-    expect(go.commands).toEqual([{ kind: "store", visit: { visitId: "v1", fixtureNamespace: null, worldClockMs: null } }, { kind: "reset", seq: 2, visitId: "v1" }]);
+    expect(go.commands).toEqual([{ kind: "store", visit: { visitId: "v2", fixtureNamespace: null, worldClockMs: null } }, { kind: "reset", seq: 2, visitId: "v2" }]);
   });
 
   it("a start over during a call ends the call first", () => {
     const asked = visitStep(ready(), { kind: "startOverAsked" }).state;
-    const go = visitStep(asked, { kind: "startOverConfirmed", inCall: true });
+    const go = visitStep(asked, { kind: "startOverConfirmed", inCall: true, newVisitId: "v2" });
     expect(go.state).toMatchObject({ phase: "resetting", endingCall: true });
     expect(go.commands.map((c) => c.kind)).toEqual(["store", "endCall"]);
     const ended = visitStep(go.state, { kind: "callEnded" });
-    expect(ended.commands).toEqual([{ kind: "reset", seq: 2, visitId: "v1" }]);
+    expect(ended.commands).toEqual([{ kind: "reset", seq: 2, visitId: "v2" }]);
     const back = visitStep(ended.state, { kind: "resetAnswered", seq: 2, fixtureNamespace: "ns2", worldMs: FRI });
     expect(back.state).toMatchObject({ phase: "ready", worldMs: FRI, visit: { fixtureNamespace: "ns2" } });
   });
 
   it("an unconfirmed start over is not accepted", () => {
-    expect(visitStep(ready(), { kind: "startOverConfirmed", inCall: false }).commands).toEqual([]);
+    expect(visitStep(ready(), { kind: "startOverConfirmed", inCall: false, newVisitId: "v2" }).commands).toEqual([]);
   });
 
   it("the badge shows while the shown clock differs from the real one, and only then", () => {
@@ -145,8 +145,26 @@ describe("ui.visit", () => {
     const cloning = run([{ kind: "entered", stored: null, newVisitId: "v1" }]).s;
     const failed = visitStep(cloning, { kind: "resetFailed", seq: 1, why: "timeout" }).state;
     const live = visitStep(cloning, { kind: "resetFailed", seq: 1, why: "live" }).state;
-    const resetting = visitStep(visitStep(ready(), { kind: "startOverAsked" }).state, { kind: "startOverConfirmed", inCall: false }).state;
+    const resetting = visitStep(visitStep(ready(), { kind: "startOverAsked" }).state, { kind: "startOverConfirmed", inCall: false, newVisitId: "v2" }).state;
     expect([INITIAL_VISIT, cloning, failed, resetting].map(inputAllowed)).toEqual([false, false, false, false]);
     expect([ready(), live].map(inputAllowed)).toEqual([true, true]);
+  });
+
+  // Brief 038 finding 4.
+  it("a STALE answer reloads the visit: another tab's newer clone is taken up and the old screen dropped", () => {
+    const pressed = visitStep(ready(), { kind: "boltPressed", toMs: THU });
+    const newer = { visitId: "v9", fixtureNamespace: "ns9", worldClockMs: THU };
+    const out = visitStep(pressed.state, { kind: "staleVisit", seq: pressed.state.seq, stored: newer });
+    expect(out.state).toMatchObject({ phase: "ready", visit: newer, worldMs: THU, bolt: "idle" });
+    expect(out.commands).toEqual([{ kind: "afterReset" }]);
+  });
+
+  it("a STALE answer with nothing newer stored ends the visit: Try again makes a new one", () => {
+    const s = ready();
+    const out = visitStep(s, { kind: "staleVisit", seq: null, stored: s.visit });
+    expect(out.state).toMatchObject({ phase: "failed", failure: "interrupted", worldMs: null });
+    expect(inputAllowed(out.state)).toBe(false);
+    const again = visitStep(out.state, { kind: "retry", newVisitId: "v5" });
+    expect(again.commands.at(-1)).toEqual({ kind: "reset", seq: again.state.seq, visitId: "v5" });
   });
 });

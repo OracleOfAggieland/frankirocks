@@ -19,7 +19,9 @@ The browser's half of a demo visit (brief 027, spec §15): one clone of the seed
 
 The input gate (`inputAllowed`, brief 038 finding 1): the screen takes input (a chip, a typed line, a new call) only in `ready` and `live`, once the server has said which account this is. In `none`, `cloning`, `resetting` and `failed` no Session is opened and no turn is sent, so nothing a visitor does writes to a fresh account before its clone.
 
-Start over is pressed, then confirmed once (`confirming`), then `resetting`: the stored visit is marked unconfirmed first, and if a call is open the machine asks the shell to end it (`endingCall`) and sends the reset only after `callEnded`. The same visit ID is reset.
+Start over is pressed, then confirmed once (`confirming`), then `resetting`: the stored visit is marked unconfirmed first, and if a call is open the machine asks the shell to end it (`endingCall`) and sends the reset only after `callEnded`. Start over and "Try again" each store and reset a new visit ID (brief 038 finding 4), so a tab still holding the old ID is STALE against the new clone.
+
+`staleVisit` (brief 038 finding 4): a visit call (an open naming the visit, a reset or a bolt) was answered STALE, and the shell read the stored visit again. A newer visit stored by another tab is taken up (`ready`, and the screen of the old one is dropped with `afterReset`); a stored LIVE answer is `live`; with nothing newer stored the visit is `failed` (`interrupted`), and "Try again" makes a new one.
 
 The bolt (`BoltPhase`: `idle`, `moving`, `waiting`) runs only in `ready`. A press asks advance for a time strictly after the world clock of the last accepted answer, and is ignored otherwise; `moving` until the answer. An answer stores the new world clock (never lower than the last) and, with a proactive line, asks the shell to show it. A barrier answer is `waiting` for its `retryAfterMs`, or `BARRIER_WAIT_MS`; any other failure is `idle` with `boltFailed`, the clock unchanged.
 
@@ -39,6 +41,8 @@ stateDiagram-v2
   ready --> resetting : start over confirmed
   resetting --> ready : reset answered
   resetting --> failed : reset failed
+  ready --> ready : STALE, a newer visit stored
+  ready --> failed : STALE, nothing newer stored
 ```
 
 `visitBadge` is the Time_Badge: present exactly when the shown clock (`shownClock`: the world clock once known, else the real one) differs from the real clock.

@@ -50,6 +50,7 @@ import { classifyTurn, normalizedTranscript, safeTurn, turnOrder, userTurnRecord
 import { drainExtractJobs } from "../worker/drain";
 import { extractJobId, extractJobRecord } from "../worker/extract-jobs";
 import { barrierError, parseError, scopeError, staleError } from "./errors";
+import { missingSessionError } from "./open-visit";
 import { Unrecorded, mutation } from "./mutation";
 import { typedReplyNote } from "./typed-reply";
 import { type HardRuleResult, type HardRuleRun, applyOpenProposals, executeHardRule } from "../onturn/execute";
@@ -226,7 +227,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           coreP.catch(() => {});
           fastOP.catch(() => {});
           const doc = await tx.get<Session>(paths.session(uid, req.sessionId));
-          if (doc === null) throw scopeError();
+          if (doc === null) throw missingSessionError((await coreP).state.data); // Brief 038 finding 4: an old visit's tab.
           const s0 = doc.data;
           if (s0.generation !== req.generation || (s0.status !== "minting" && s0.status !== "active" && !narrowedHere(s0))) throw staleError("session");
           const core = await coreP;

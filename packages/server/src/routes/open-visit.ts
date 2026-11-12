@@ -7,9 +7,19 @@
  * and opens nothing. A null visit is accepted, since the voice machine still sends null.
  */
 import type { CoreState } from "@franki/core";
-import { staleError } from "./errors";
+import { type RouteError, scopeError, staleError } from "./errors";
 
 export function checkOpenVisit(state: CoreState, visitId: string | null): void {
   if (visitId === null) return;
   if (state.clockMode !== "fixture" || state.visitId !== visitId) throw staleError("visit");
+}
+
+/**
+ * Brief 038 finding 4: a turn names no visit (the wire has no field for it, and the voice machine builds the turn),
+ * only its Session. A reset deletes every Session of the visit before it, so on a clone a turn whose Session is gone
+ * comes from a tab of an earlier visit: STALE, which tells that tab its visit is over. On a live account the answer
+ * stays SCOPE.
+ */
+export function missingSessionError(state: CoreState): RouteError {
+  return state.clockMode === "fixture" ? staleError("visit") : scopeError();
 }

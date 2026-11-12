@@ -63,7 +63,7 @@ describe("VisitModel", () => {
     expect(h.model.getSnapshot()).toMatchObject({ phase: "ready", visit: { visitId: vid("old") } });
   });
 
-  it("a failed clone shows try again, and try again resets the same visit", async () => {
+  it("a failed clone shows try again, and try again resets with a new visit ID", async () => {
     let fail = true;
     const h = harness({ answer: () => (fail ? Response.json({ error: "DEPENDENCY", retryAfterMs: 0 }, { status: 503 }) : Response.json(RESET_ANSWER)) });
     h.model.enter();
@@ -72,7 +72,7 @@ describe("VisitModel", () => {
     fail = false;
     h.model.retry();
     await flush();
-    expect(h.seen.map((s) => (s.body as { visitId: string }).visitId)).toEqual([vid("id1"), vid("id1")]);
+    expect(h.seen.map((s) => (s.body as { visitId: string }).visitId)).toEqual([vid("id1"), vid("id3")]);
     expect(h.model.getSnapshot().phase).toBe("ready");
   });
 
@@ -164,5 +164,17 @@ describe("VisitModel", () => {
     await flush();
     expect(again.model.getSnapshot().phase).toBe("live");
     expect(again.seen).toEqual([]);
+  });
+
+  it("a bolt answered STALE takes up the newer visit another tab stored (brief 038 finding 4)", async () => {
+    const storage = memoryStorage({ [KEY]: JSON.stringify({ visitId: vid("old"), fixtureNamespace: vid("ns"), worldClockMs: Date.parse(CLONE_WORLD) }) });
+    const h = harness({ storage, answer: () => Response.json({ error: "STALE", retryAfterMs: 0 }, { status: 409 }) });
+    h.model.enter();
+    // Tab B starts over and stores its new visit.
+    storage.data.set(KEY, JSON.stringify({ visitId: vid("new"), fixtureNamespace: vid("ns2"), worldClockMs: Date.parse(THURSDAY_WORLD) }));
+    h.model.press(Date.parse(THURSDAY_WORLD) + 3_600_000);
+    await flush();
+    expect(h.model.getSnapshot()).toMatchObject({ phase: "ready", visit: { visitId: vid("new"), fixtureNamespace: vid("ns2") }, worldMs: Date.parse(THURSDAY_WORLD) });
+    expect(h.afterResets()).toBe(1);
   });
 });

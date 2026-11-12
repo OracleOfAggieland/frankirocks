@@ -137,7 +137,9 @@ export type SeedCall<T> =
   | { ok: false; why: "barrier"; retryAfterMs: number }
   | { ok: false; why: "signedOut" | "timeout" | "failed" }
   /** Brief 038 finding 1: the reset's LIVE answer, a real account that is never reset. */
-  | { ok: false; why: "live" };
+  | { ok: false; why: "live" }
+  /** Brief 038 finding 4: STALE, this tab's visit is no longer the account's clone. */
+  | { ok: false; why: "stale" };
 
 /** Brief 038 finding 1: the reset's answer for a real account, which is never reset (HTTP 409, ErrorCode LIVE). */
 export const LIVE_ERROR = "LIVE";
@@ -146,6 +148,7 @@ function seedFailure(r: Exclude<ApiResult<unknown>, { ok: true }>): Exclude<Seed
   if (r.kind === "signedOut" || r.kind === "timeout") return { ok: false, why: r.kind };
   if (r.kind === "http" && (r.status === BARRIER_STATUS || r.error === "BARRIER")) return { ok: false, why: "barrier", retryAfterMs: r.retryAfterMs };
   if (r.kind === "http" && r.error === LIVE_ERROR) return { ok: false, why: "live" };
+  if (r.kind === "http" && r.error === "STALE") return { ok: false, why: "stale" };
   return { ok: false, why: "failed" };
 }
 

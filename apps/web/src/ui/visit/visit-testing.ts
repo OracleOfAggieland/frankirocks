@@ -116,7 +116,7 @@ export function runVisit(actions: readonly VisitAction[]): Trace {
         if (delivered.length > 0) feed(delivered[act.pick % delivered.length]!);
         break;
       case "retry":
-        feed({ kind: "retry" });
+        feed({ kind: "retry", newVisitId: `visit-${++ids}` });
         break;
       case "askStartOver":
         feed({ kind: "startOverAsked" });
@@ -125,7 +125,7 @@ export function runVisit(actions: readonly VisitAction[]): Trace {
         feed({ kind: "startOverCancelled" });
         break;
       case "confirm":
-        feed({ kind: "startOverConfirmed", inCall: act.inCall });
+        feed({ kind: "startOverConfirmed", inCall: act.inCall, newVisitId: `visit-${++ids}` });
         break;
       case "callEnded":
         feed({ kind: "callEnded" });

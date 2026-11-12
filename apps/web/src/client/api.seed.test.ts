@@ -45,6 +45,11 @@ describe("resetVisit", () => {
     expect(await resetVisit(api, RESET)).toEqual({ ok: false, why: "live" });
   });
 
+  it("answers stale on the STALE code (brief 038 finding 4)", async () => {
+    const { api } = fake(() => Response.json({ error: "STALE", retryAfterMs: 0 }, { status: 409 }));
+    expect(await resetVisit(api, RESET)).toEqual({ ok: false, why: "stale" });
+  });
+
   it("answers barrier on a BARRIER code under another status", async () => {
     const { api } = fake(() => Response.json({ error: "BARRIER", retryAfterMs: 0 }, { status: 409 }));
     expect(await resetVisit(api, RESET)).toEqual({ ok: false, why: "barrier", retryAfterMs: 0 });

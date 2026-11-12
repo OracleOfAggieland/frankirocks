@@ -55,12 +55,16 @@ export interface SignedInControllers {
  * clone yet, a clone being made or reset, or one that failed), no Session is opened and no typed line is sent, so
  * nothing a visitor does can write to the fresh account before its clone. The screen disables the same controls.
  */
-export function gatedApi(api: ApiClient, takesInput: () => boolean): ApiClient {
+export function gatedApi(api: ApiClient, takesInput: () => boolean, onStaleVisit: () => void = () => {}): ApiClient {
   const gated = new Set(["/api/session/open", "/api/turn"]);
   return {
-    call<T>(path: string, options?: Parameters<ApiClient["call"]>[1]) {
-      if (gated.has(path.split("?")[0]!) && !takesInput()) return Promise.resolve({ ok: false, kind: "http", status: 423, error: "BARRIER", retryAfterMs: 0 } as const);
-      return api.call<T>(path, options);
+    async call<T>(path: string, options?: Parameters<ApiClient["call"]>[1]) {
+      const route = path.split("?")[0]!;
+      if (gated.has(route) && !takesInput()) return { ok: false, kind: "http", status: 423, error: "BARRIER", retryAfterMs: 0 } as const;
+      const r = await api.call<T>(path, options);
+      // Brief 038 finding 4: an open that named this tab's visit was answered STALE: another tab started over.
+      if (route === "/api/session/open" && !r.ok && r.kind === "http" && r.error === "STALE") onStaleVisit();
+      return r;
     },
   };
 }
@@ -68,7 +72,11 @@ export function gatedApi(api: ApiClient, takesInput: () => boolean): ApiClient {
 export function createSignedInControllers(deps: ControllerDeps): SignedInControllers {
   const { clock } = deps;
   // The visit is made below; the gate reads it when a call is made, never before.
-  const talk = gatedApi(deps.api, () => inputAllowed(visit.getSnapshot()));
+  const talk = gatedApi(
+    deps.api,
+    () => inputAllowed(visit.getSnapshot()),
+    () => visit.reloadVisit(),
+  );
   const api = deps.api;
   const voice =
     deps.transcribeModel === null

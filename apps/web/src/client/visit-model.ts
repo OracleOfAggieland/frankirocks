@@ -84,19 +84,31 @@ export class VisitModel {
     return `${VISIT_STORAGE_PREFIX}${this.deps.uid}`;
   }
 
-  /** The lab opened. */
-  enter(): void {
+  private readStored(): StoredVisit | null {
     let raw: string | null = null;
     try {
       raw = this.deps.storage?.getItem(this.key) ?? null;
     } catch {
       raw = null;
     }
-    this.dispatch({ kind: "entered", stored: parseStoredVisit(raw), newVisitId: this.deps.newId() });
+    return parseStoredVisit(raw);
+  }
+
+  /** The lab opened. */
+  enter(): void {
+    this.dispatch({ kind: "entered", stored: this.readStored(), newVisitId: this.deps.newId() });
+  }
+
+  /**
+   * Brief 038 finding 4: a visit call (an open naming this visit, a reset or a bolt) was answered STALE. The tab reads
+   * the stored visit again: another tab's newer clone is taken up; with nothing newer, the visit shows "Try again".
+   */
+  reloadVisit(seq: number | null = null): void {
+    this.dispatch({ kind: "staleVisit", seq, stored: this.readStored() });
   }
 
   retry(): void {
-    this.dispatch({ kind: "retry" });
+    this.dispatch({ kind: "retry", newVisitId: this.deps.newId() });
   }
 
   askStartOver(): void {
@@ -108,7 +120,7 @@ export class VisitModel {
   }
 
   confirmStartOver(): void {
-    this.dispatch({ kind: "startOverConfirmed", inCall: this.deps.call?.inCall() ?? false });
+    this.dispatch({ kind: "startOverConfirmed", inCall: this.deps.call?.inCall() ?? false, newVisitId: this.deps.newId() });
   }
 
   press(toMs: number): void {
@@ -170,12 +182,14 @@ export class VisitModel {
   private async reset(seq: number, visitId: string): Promise<void> {
     const r = await resetVisit(this.deps.api, { requestId: this.deps.newId(), sessionId: this.deps.sessionId(), fixtureId: PERSONA_FIXTURE_ID, visitId, clientZone: this.deps.zone() });
     if (r.ok) this.dispatch({ kind: "resetAnswered", seq, fixtureNamespace: r.body.fixtureNamespace, worldMs: msFromTs(r.body.worldClock) });
+    else if (r.why === "stale") this.reloadVisit(seq);
     else this.dispatch({ kind: "resetFailed", seq, why: r.why });
   }
 
   private async advance(seq: number, fixtureNamespace: string, toMs: number): Promise<void> {
     const r = await advanceVisit(this.deps.api, { requestId: this.deps.newId(), fixtureNamespace, to: tsFromMs(toMs) });
     if (r.ok) this.dispatch({ kind: "advanceAnswered", seq, worldMs: msFromTs(r.body.worldClock), proactive: r.body.proactive });
+    else if (r.why === "stale") this.reloadVisit(seq);
     else this.dispatch({ kind: "advanceFailed", seq, why: r.why, retryAfterMs: r.ok === false && r.why === "barrier" ? r.retryAfterMs : 0 });
   }
 

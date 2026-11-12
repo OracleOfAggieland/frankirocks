@@ -56,20 +56,28 @@ export const INITIAL_VISIT: Readonly<VisitState> = Object.freeze({
   seq: 0,
 });
 
-/** `live`: the server answered LIVE, a real account that is never reset (brief 038 finding 1). */
-export type SeedFailureWhy = "barrier" | "signedOut" | "timeout" | "failed" | "live";
+/**
+ * `live`: the server answered LIVE, a real account that is never reset (brief 038 finding 1). `stale`: the server
+ * answered STALE, so this tab's visit is no longer the account's clone (brief 038 finding 4).
+ */
+export type SeedFailureWhy = "barrier" | "signedOut" | "timeout" | "failed" | "live" | "stale";
 
 export type VisitEvent =
   /** The lab opened, with what storage holds and a fresh ID to use if it holds nothing. */
   | { kind: "entered"; stored: StoredVisit | null; newVisitId: string }
   | { kind: "resetAnswered"; seq: number; fixtureNamespace: string; worldMs: number }
   | { kind: "resetFailed"; seq: number; why: SeedFailureWhy }
-  /** The visitor pressed "Try again" after a failed clone. */
-  | { kind: "retry" }
+  /** The visitor pressed "Try again" after a failed clone. Each reset has a new visit ID (brief 038 finding 4). */
+  | { kind: "retry"; newVisitId: string }
   | { kind: "startOverAsked" }
   | { kind: "startOverCancelled" }
-  /** The visitor confirmed start over; `inCall` says whether a call is open now. */
-  | { kind: "startOverConfirmed"; inCall: boolean }
+  /** The visitor confirmed start over; `inCall` says whether a call is open now. The new visit gets a new ID. */
+  | { kind: "startOverConfirmed"; inCall: boolean; newVisitId: string }
+  /**
+   * Brief 038 finding 4: a visit call was answered STALE (another tab started over, or this tab's visit is gone), and
+   * the shell read the stored visit again. `seq` is the request it answered, or null for a STALE open.
+   */
+  | { kind: "staleVisit"; seq: number | null; stored: StoredVisit | null }
   /** The call the reset waited for has ended (or its limit passed). */
   | { kind: "callEnded" }
   | { kind: "boltPressed"; toMs: number }
@@ -143,7 +151,8 @@ export function visitStep(s: VisitState, e: VisitEvent): VisitStep {
     case "retry": {
       if (s.phase !== "failed" || s.visit === null) return none(s);
       const seq = s.seq + 1;
-      const visit = unconfirmed(s.visit.visitId);
+      // Brief 038 finding 4: a new visit ID, so a tab still holding the old one is STALE against this clone.
+      const visit = unconfirmed(e.newVisitId);
       return { state: { ...s, phase: "cloning", visit, failure: null, confirming: false, seq }, commands: [{ kind: "store", visit }, { kind: "reset", seq, visitId: visit.visitId }] };
     }
     case "startOverAsked":
@@ -153,7 +162,8 @@ export function visitStep(s: VisitState, e: VisitEvent): VisitStep {
     case "startOverConfirmed": {
       if (!s.confirming || s.phase !== "ready" || s.visit === null) return none(s);
       // Marked unconfirmed first: a reload in the middle shows "Try again", never the old month as if nothing happened.
-      const visit = unconfirmed(s.visit.visitId);
+      // A new visit ID (brief 038 finding 4): another tab of the old visit is STALE against the new clone.
+      const visit = unconfirmed(e.newVisitId);
       const base: VisitState = { ...s, phase: "resetting", visit, confirming: false, bolt: "idle", boltFailed: false };
       if (e.inCall) return { state: { ...base, endingCall: true }, commands: [{ kind: "store", visit }, { kind: "endCall" }] };
       const seq = s.seq + 1;
@@ -191,6 +201,19 @@ export function visitStep(s: VisitState, e: VisitEvent): VisitStep {
     }
     case "waitOver":
       return s.bolt === "waiting" ? none({ ...s, bolt: "idle" }) : none(s);
+    case "staleVisit": {
+      if (s.phase === "none" || s.phase === "live" || s.endingCall) return none(s);
+      if (e.seq !== null && e.seq !== s.seq) return none(s);
+      const st = e.stored;
+      const base: VisitState = { ...s, bolt: "idle", boltFailed: false, confirming: false };
+      if (st !== null && st.live === true) return none({ ...base, phase: "live", visit: { ...st }, worldMs: null, failure: null });
+      // Another tab made a newer clone: this tab takes it up, and drops everything it showed of the old one.
+      if (known(st) && st.visitId !== s.visit?.visitId) {
+        return { state: { ...base, phase: "ready", visit: { ...st }, worldMs: st.worldClockMs, failure: null }, commands: [{ kind: "afterReset" }] };
+      }
+      // Nothing newer is stored: this tab's visit is over, and "Try again" makes a new one.
+      return none({ ...base, phase: "failed", failure: "interrupted", visit: st === null ? s.visit : { ...st }, worldMs: null });
+    }
   }
 }
 
