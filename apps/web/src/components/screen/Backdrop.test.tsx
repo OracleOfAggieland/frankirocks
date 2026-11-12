@@ -32,23 +32,24 @@ describe("Backdrop", () => {
     expect(lab.match(/data-fig="/g)).toHaveLength(4);
   });
 
-  it("keeps only the cables, the web, the floor line and one fig label at the door", () => {
+  it("keeps only the cables, the web and the floor line at the door, with no fig label", () => {
     expect(door).toContain('data-variant="door"');
-    expect(groups(door).sort()).toEqual(["cables", "figs", "floor", "web"]);
-    expect(door.match(/data-fig="/g)).toHaveLength(1);
-    // The door's pages number their own figures from 1, so the mains is FIG. 0 there.
-    expect(door).toContain("FIG. 0");
-    expect(door).not.toContain("FIG. 1");
+    expect(groups(door).sort()).toEqual(["cables", "floor", "web"]);
+    // The door's top bar, nav and hero sit where the mains label would hang, so the door draws none.
+    expect(door).not.toMatch(/data-fig="/);
+    expect(door).not.toContain("<text");
     expect(lab).toContain("FIG. 1 · the mains");
   });
 
   it("hangs the cables, the mains label and the web from the top of the screen, and keeps the slab movable", () => {
+    const topOf = (html: string) => html.match(/<g[^>]*data-crop="top"[^>]*>[\s\S]*?<g[^>]*data-crop="corner"/)?.[0] ?? "";
     for (const html of [lab, door]) {
-      const top = html.match(/<g[^>]*data-crop="top"[^>]*>[\s\S]*?<g[^>]*data-crop="corner"/)?.[0] ?? "";
-      expect(top).toContain('data-scenery="cables"');
-      expect(top).toMatch(/data-fig="[01]"/);
+      expect(topOf(html)).toContain('data-scenery="cables"');
       expect(html).toMatch(/data-crop="corner"[^>]*><g[^>]*data-scenery="web"/);
     }
+    expect(topOf(lab)).toContain('data-fig="1"');
+    // The mains words hang below the header rail: 124 px down at 1440 by 900, where one unit is one px.
+    expect(topOf(lab)).toMatch(/<text[^>]*y="124"/);
     // FIG. 3 and FIG. 4 are in the near depth with the slab and bench.
     const near = lab.slice(lab.indexOf('data-depth="near"'));
     for (const n of ["3", "4"]) expect(near).toContain(`data-fig="${n}"`);

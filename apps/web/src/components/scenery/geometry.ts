@@ -143,6 +143,15 @@ export function sliceCrop(widthPx: number, heightPx: number): { top: number; sid
   return { top: Math.max(0, SCENE.height - heightPx / s), side: Math.max(0, (SCENE.width - widthPx / s) / 2) };
 }
 
+/**
+ * The drawing y, inside the group shifted down by the top crop, that lands `px` screen pixels below the
+ * screen's top edge. That group's y reaches the screen as y * scale: h - 900 s + (y + top) s, and
+ * top = 900 - h / s, so the h terms cancel.
+ */
+export function hangY(px: number, widthPx: number, heightPx: number): number {
+  return px / coverScale(widthPx, heightPx);
+}
+
 /** A box on screen, in px. */
 export interface Box {
   readonly left: number;

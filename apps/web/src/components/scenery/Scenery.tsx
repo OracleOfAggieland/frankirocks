@@ -4,7 +4,8 @@
 // glow, and nothing moves by itself.
 // - The cables, the web and the mains label hang from the top of the screen: they are shifted down by
 //   however much the slice crops off the top (and the web in by the side crop), so a wide window never
-//   cuts them away.
+//   cuts them away. The mains label's words hang a fixed number of screen px down, below the header
+//   rail; the door has no mains label, since its hero and nav sit there.
 // - The slab sits under Franki's floor shadow: it is placed from the shadow's layout box on resize,
 //   scroll and layout change, and springs to its new place when the stage glides to the dock.
 // - The labels are written at 12 screen px whatever the drawing's scale.
@@ -25,28 +26,23 @@ import {
   SCENE,
   type Point,
   catenaryPoints,
-  catenaryY,
   coverScale,
   placeOnBox,
   placePoint,
   placementTransform,
   polyline,
   sliceCrop,
-  solveCatenary,
   webPaths,
 } from "./geometry";
-import { CABLES, DISCS, DISC_RY, SLAB, SLAB_MAX_SHARE, SLAB_PER_FLOOR, WEB_SPEC } from "./scene";
+import { CABLES, DISCS, DISC_RY, MAINS_AT, SLAB, SLAB_MAX_SHARE, SLAB_PER_FLOOR, WEB_SPEC, mainsLabel } from "./scene";
 import { FLOOR_SELECTOR, layoutBox, watchLayout, watchPointer } from "./watch";
 
 export type SceneryVariant = "lab" | "door";
 
 /** The fig label words. Decorative: the whole drawing is aria-hidden. */
 const FIG_WORDS = COPY.scenery;
-/**
- * The mains label's number: 1 in the lab; 0 at the door, whose pages number their own figures from 1
- * (the front door's hero, the 404 and 500 rooms).
- */
-const MAINS_N = { lab: "1", door: "0" } as const;
+/** The mains label as drawn on the server: for a 1440 by 900 window, until the first layout pass. */
+const MAINS_SSR = mainsLabel(SCENE.width, SCENE.height);
 
 /** Group opacities. Near things up to 0.55, far things about 0.3. */
 const OPACITY = { cables: 0.3, web: 0.34, shelf: 0.32, figs: 0.45, floor: 0.42, bench: 0.5, slab: 0.55 } as const;
@@ -60,10 +56,6 @@ const HIDDEN = "4 4";
 const CABLE_PATHS = CABLES.map((c) => polyline(catenaryPoints(c.from, c.to, c.a, c.segments)));
 const INSULATORS = CABLES.flatMap((c) => [c.from, c.to]);
 const DROPS = INSULATORS.map((p) => `M${p.x} -10 V${p.y}`).join(" ");
-
-// The mains label hangs off the first cable, near its right insulator.
-const MAINS_X = 500;
-const MAINS_AT = { x: MAINS_X, y: Math.round(catenaryY(solveCatenary(CABLES[0].from, CABLES[0].to, CABLES[0].a), MAINS_X) * 10) / 10 };
 
 const WEB = webPaths(WEB_SPEC);
 
@@ -192,12 +184,30 @@ function Slab({ placeRef }: { placeRef: Ref<SVGGElement> }) {
 }
 
 /** One fig label: a dot on the thing, a leader, and the words in mono. The text size is set in scenery.css. */
-function Fig({ n, words, dot, leader, text, className }: { n: string; words: string; dot: Point; leader: string; text: Point; className?: string }) {
+function Fig({
+  n,
+  words,
+  dot,
+  leader,
+  text,
+  className,
+  leaderRef,
+  textRef,
+}: {
+  n: string;
+  words: string;
+  dot: Point;
+  leader: string;
+  text: Point;
+  className?: string;
+  leaderRef?: Ref<SVGPathElement>;
+  textRef?: Ref<SVGTextElement>;
+}) {
   return (
     <g data-fig={n} className={className}>
       <circle cx={dot.x} cy={dot.y} r={1.6} />
-      <path d={leader} />
-      <text x={text.x} y={text.y} className="fill-ink-dim stroke-none font-mono">
+      <path ref={leaderRef} d={leader} />
+      <text ref={textRef} x={text.x} y={text.y} className="fill-ink-dim stroke-none font-mono">
         {`${FIG} ${n} · ${words}`}
       </text>
     </g>
@@ -223,6 +233,8 @@ export function Scenery({ variant = "lab" }: { variant?: SceneryVariant }) {
   const webRef = useRef<SVGGElement>(null);
   const slabRef = useRef<SVGGElement>(null);
   const slabFigRef = useRef<SVGGElement>(null);
+  const mainsLeaderRef = useRef<SVGPathElement>(null);
+  const mainsTextRef = useRef<SVGTextElement>(null);
 
   const ux = useMotionValue(0);
   const uy = useMotionValue(0);
@@ -265,6 +277,9 @@ export function Scenery({ variant = "lab" }: { variant?: SceneryVariant }) {
       webRef.current?.setAttribute("transform", `translate(${-Math.round(crop.side * 10) / 10} ${Math.round(crop.top * 10) / 10})`);
       svgRef.current?.style.setProperty("--scenery-inv", String(Math.round((1000 / coverScale(w, h))) / 1000));
       if (!lab) return;
+      const mains = mainsLabel(w, h);
+      mainsLeaderRef.current?.setAttribute("d", mains.leader);
+      mainsTextRef.current?.setAttribute("y", String(mains.textY));
       const floor = document.querySelector(FLOOR_SELECTOR);
       if (!(floor instanceof HTMLElement)) return;
       const p = placeOnBox(layoutBox(floor, window), w, h, { centre: SLAB_CENTRE, width: SLAB.rx * 2 }, SLAB_PER_FLOOR, SLAB_MAX_SHARE);
@@ -322,9 +337,19 @@ export function Scenery({ variant = "lab" }: { variant?: SceneryVariant }) {
         {/* Hung from the top of the screen: shifted down by the top crop. */}
         <g ref={topRef} data-crop="top">
           <Cables />
-          <Figs>
-            <Fig n={MAINS_N[variant]} words={FIG_WORDS.mains} dot={MAINS_AT} leader={`M${MAINS_AT.x} ${MAINS_AT.y + 2} V${MAINS_AT.y + 18}`} text={{ x: MAINS_X + 6, y: MAINS_AT.y + 24 }} />
-          </Figs>
+          {lab ? (
+            <Figs>
+              <Fig
+                n="1"
+                words={FIG_WORDS.mains}
+                dot={MAINS_AT}
+                leader={MAINS_SSR.leader}
+                text={{ x: MAINS_SSR.textX, y: MAINS_SSR.textY }}
+                leaderRef={mainsLeaderRef}
+                textRef={mainsTextRef}
+              />
+            </Figs>
+          ) : null}
         </g>
         {/* Kept in the top right corner: shifted down by the top crop and in by the side crop. */}
         <g ref={webRef} data-crop="corner">

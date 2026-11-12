@@ -6,6 +6,7 @@ import {
   catenaryPoints,
   catenaryY,
   coverScale,
+  hangY,
   parallaxUnit,
   placeOnBox,
   placePoint,
@@ -16,7 +17,23 @@ import {
   solveCatenary,
   webPaths,
 } from "./geometry";
-import { CABLES, COIL_LEFT, COIL_TOP, DISCS, DISC_RY, LADDER_TOP, SHELF_TOP, SLAB, SLAB_MAX_SHARE, SLAB_PER_FLOOR, WEB_SPEC } from "./scene";
+import {
+  CABLES,
+  COIL_LEFT,
+  COIL_TOP,
+  DISCS,
+  DISC_RY,
+  LADDER_TOP,
+  MAINS,
+  MAINS_AT,
+  SHELF_TOP,
+  SLAB,
+  SLAB_MAX_SHARE,
+  SLAB_PER_FLOOR,
+  TOP_BAND_PX,
+  WEB_SPEC,
+  mainsLabel,
+} from "./scene";
 
 const coord = fc.double({ min: -2000, max: 2000, noNaN: true });
 
@@ -228,6 +245,56 @@ describe("slice crop", () => {
       expect(low(CABLES[1]) + top).toBeLessThan(LADDER_TOP - 8);
       for (const p of webPts) if (p.x < COIL_LEFT + 100) expect(p.y + top).toBeLessThan(COIL_TOP);
     }
+  });
+});
+
+describe("mains label", () => {
+  /** The label's words are 12 screen px; count the whole em above the baseline, plus the far depth's drift. */
+  const LABEL_PX = 12;
+  const windows = () => {
+    const out: [number, number][] = [];
+    for (let w = 320; w <= 1920; w += 40) for (let h = 500; h <= 1200; h += 25) out.push([w, h]);
+    return out;
+  };
+
+  it("lands hangY points that many screen px below the top, through the top crop", () => {
+    fc.assert(
+      fc.property(size, fc.double({ min: 0, max: 400, noNaN: true }), ({ w, h }, px) => {
+        const { top } = sliceCrop(w, h);
+        expect(sceneToScreen({ x: 720, y: hangY(px, w, h) + top }, w, h).y).toBeCloseTo(px, 6);
+      }),
+    );
+  });
+
+  it("never draws its words in the top band, from 320 to 1920 px wide and 500 to 1200 px tall", () => {
+    for (const [w, h] of windows()) {
+      const { top } = sliceCrop(w, h);
+      const m = mainsLabel(w, h);
+      const baseline = sceneToScreen({ x: m.textX, y: m.textY + top }, w, h).y;
+      expect(baseline - LABEL_PX - DEPTH.far).toBeGreaterThanOrEqual(TOP_BAND_PX);
+      // And it stays near the band, so it still reads as hanging off the cable.
+      expect(baseline).toBeLessThan(TOP_BAND_PX + 40);
+    }
+  });
+
+  it("drops its leader from the dot on the cable down to beside the words", () => {
+    expect(MAINS_AT.y).toBeCloseTo(catenaryY(solveCatenary(CABLES[0].from, CABLES[0].to, CABLES[0].a), MAINS.x), 1);
+    expect(MAINS.x).toBeGreaterThan(CABLES[0].from.x);
+    expect(MAINS.x).toBeLessThan(CABLES[0].to.x - DISCS[2].rx);
+    for (const [w, h] of windows()) {
+      const m = mainsLabel(w, h);
+      const [, y0, y1] = numbers(m.leader);
+      expect(numbers(m.leader)[0]).toBe(MAINS_AT.x);
+      expect(y0).toBeCloseTo(MAINS_AT.y + 2, 1);
+      expect(y1).toBeGreaterThan(y0);
+      expect(y1).toBeLessThan(m.textY);
+      // The words hang over the shelf's end of the room: they must stay well above the shelf itself.
+      expect(m.textY).toBeLessThan(SHELF_TOP - 40);
+    }
+  });
+
+  it("is drawn for a 1440 by 900 window before the first layout pass", () => {
+    expect(mainsLabel(1440, 900).textY).toBe(MAINS.baselinePx);
   });
 });
 
