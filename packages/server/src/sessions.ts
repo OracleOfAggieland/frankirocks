@@ -82,6 +82,8 @@ export async function beginCloseInTx(
   sessionId: ID,
   now: number,
   epochDoc?: { data: CoreEpoch } | null,
+  /** Fields written with the close in the same update (brief 026: an error close keeps a narrowed audience). */
+  extra: Partial<Session> = {},
 ): Promise<{ callIds: string[]; closed: boolean } | null> {
   const doc = await tx.get<Session>(paths.session(uid, sessionId));
   if (doc === null || !LIVE_STATUSES.includes(doc.data.status)) return null;
@@ -89,7 +91,9 @@ export async function beginCloseInTx(
   const ts = tsFromMs(now);
   const closed = s.registeredCallIds.length === 0;
   if (OPEN_STATUSES.includes(s.status) || closed) {
-    tx.update(doc.path, { ...s, status: closed ? "closed" : "closing", browserState: "CLOSED", closedAt: closed ? ts : null, updatedAt: ts });
+    tx.update(doc.path, { ...s, ...extra, status: closed ? "closed" : "closing", browserState: "CLOSED", closedAt: closed ? ts : null, updatedAt: ts });
+  } else if (Object.keys(extra).length > 0) {
+    tx.update(doc.path, { ...s, ...extra, updatedAt: ts });
   }
   const epoch = epochDoc === undefined ? await tx.get<CoreEpoch>(paths.core(uid, "epoch")) : epochDoc;
   if (epochDoc === undefined && epoch !== null && epoch.data.activeSessionId === sessionId) {

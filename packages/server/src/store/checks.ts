@@ -16,6 +16,7 @@ import {
   Ledger,
   Memory,
   type Memory as MemoryT,
+  Moment,
   type Schema,
   Session,
   Turn,
@@ -52,6 +53,9 @@ export function schemaFor(p: ParsedPath): Schema<unknown> {
       return Overlay;
     case "effects":
       return Effect;
+    // Moments (brief 023).
+    case "moments":
+      return Moment;
   }
 }
 

@@ -60,7 +60,7 @@ export function heroSources(rows: readonly { id: string; data: Evidence }[], win
     const date = localDate(at, zone);
     if (!inWindow(date)) continue;
     const evening = localMinute(at, zone) >= EVENING_FROM_MINUTE;
-    purchases.push({ eid: r.id, cents: -o.amountCents, date, merchant: r.data.title, meetingEid: evening ? (lateMeetings.get(date) ?? null) : null });
+    purchases.push({ eid: r.id, cents: o.amountCents, date, merchant: r.data.title, meetingEid: evening ? (lateMeetings.get(date) ?? null) : null });
   }
   purchases.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.eid < b.eid ? -1 : 1));
   const late = purchases.filter((p) => p.meetingEid !== null);
