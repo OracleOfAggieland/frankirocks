@@ -82,3 +82,68 @@ A third lane (brief 042) is adding ledger rows for the hard-rule route's decisio
 ## Done
 
 The fixes with their red-first tests, the seven properties green, the checks of brief 016 with `npm run build`, and a section "Outcome" at the end of this file: per finding, the test, the commit and the ruling it changed (as numbered questions W-210 on, at the end of the list in `docs/briefs/025-report.md`); per property, the seed and counterexample; every existing assertion changed and why; what is not verified.
+
+## Outcome
+
+Built by Claude on lane `fix8`, with no Kiro run. Rulings and questions W-216 to W-227 are at the end of the list in `docs/briefs/025-report.md` (brief 041 had already used W-200 to W-215).
+
+### Findings
+
+| # | Failing test first (the reviewer's sequence) | Commit | Ruling |
+|---|---|---|---|
+| 1 | `server/src/routes/turn.review043.test.ts` "finding 1" (a) and (b); `server/src/worker/extract.review043.test.ts` "finding 1, extraction" | `83dc424` | W-217 |
+| 3 | `core/src/writes/hard-rule.review043.test.ts` "finding 3" (the three lines keep the rule; whole denials still clear it) | `881d460` | W-216 |
+| 2 | `turn.review043.test.ts` "finding 2" (death, care only, death with no items, deferred correction) | `8c27507` | W-218 |
+| 6 | `turn.review043.test.ts` and `core/src/writes/validate.review043.test.ts` "finding 6" | `4cefd80` | W-219 |
+| 4 | `turn.review043.test.ts` "finding 4" | `0b2a800` | W-220 |
+| 5 | `turn.review043.test.ts` "finding 5" | `34d217a` | W-221 |
+| 7 | `extract.review043.test.ts` "finding 7" (Al active, Alec wrong, Alex history) | `21f786d` | W-222, W-223 |
+| 8 | `turn.review043.test.ts` "finding 8" | `7d4aaee` | W-224 |
+| 9 | `turn.review043.test.ts` "finding 9" | `654f5fa` | W-225 |
+| 11 | `turn.review043.test.ts` "finding 11" | `ed04423` | W-226 |
+| 10 | Not this lane (brief 041 rewrote `resolveMention`). Untouched. | | |
+| 12 | Note only. | | W-227 |
+
+One more fix, found while writing property 1: two identical items in one FastSlots answer wrote one record twice and the turn answered 400. `4578e5a` defers the second item (W-224).
+
+Closed lists, each a named constant with its own unit tests: `life-subject.ts`, `self-life.ts`, `denial-words.ts` (`WHOLE_DENIALS`, `DENIAL_LEADS`, `DENIAL_POINTERS`, `CUE_POINTERS`), `rename-words.ts`, `retract-words.ts`, all in `packages/core/src/writes/`. Each fails closed to a deferral, or for finding 3 to keeping the rule.
+
+### New properties (1,000 runs each, red first against the code before the fix)
+
+| Property | File | Seed | Counterexample on the old code |
+|---|---|---|---|
+| 1 A typed turn is always answered | `server/src/routes/turn.typed-answered.property.test.ts` | 1845013159 | "My dad passed away last night." with the careful "My dad" death item and a transition candidate: no line |
+| 2 Only the owner's words choose who | `core/src/writes/life-subject-owner-words.property.test.ts` | 752086671 | "My dad's dog passed away last night." with subject entityId = dad: dad chosen |
+| 3 Never denied away | `core/src/writes/denied-away.property.test.ts` | 192324470 | "No. I think so." with a denied item removed the self peanut rule |
+| 4 A rename goes the owner's way | `core/src/writes/rename-direction.property.test.ts` | -969811648 | "No, her name is Maya, not Mira." with Maya stored and replacement Mira: renamed to Mira |
+| 5 What the route didn't do, extraction can | `server/src/routes/turn.route-left-to-extraction.property.test.ts` | 1058704789 | "I left my job yesterday and I start at Brill on Monday.", counterpart Brill, no call: the applied entry's refs kept extraction from ending the role |
+| 6 Wrong stays wrong | `server/src/worker/extract.wrong-stays-wrong.property.test.ts` | 216207467 | A=Alec, B=Sasha, C=Al, jobs t1, t3, t2: Alec left `history` |
+| 7 No stale Head after a death | `server/src/routes/turn.no-stale-head.property.test.ts` | 1881251497 | one later typed "Thanks for listening.": "The owner's dad is ill." still in People |
+
+### Existing assertions changed
+
+None. No committed test file was edited. `extract.past-never-demotes.property.test.ts` passes unchanged, so the one allowed edit (finding 7) was not used.
+
+### Outside the hot-file list
+
+- `packages/core/src/extract.ts` `planItem` (finding 1, extraction half): one check after the subject resolves, and a helper `mentionWords`. `resolveMention` is untouched.
+- `packages/server/src/routes/turn.ts`: two lines, the `refreshDirtyTurn` call beside the proposals block (finding 9) and its name on the import line. Not the typed-reply plan.
+- `packages/core/src/writes/notes.ts`: `TYPED_LINES.care`.
+
+### Merge of `build/plan-stages` (`9cd2a8b`)
+
+Conflicts, both sides kept: `core/extract.ts` `planItem` (brief 041's ambiguous-name hold and `people` roster first, then this brief's owner-words check); `core/writes/index.ts` (both sets of exports); `server/onturn/execute.ts` (imports only); `server/routes/turn.ts` (both imports; the pasted allergy runs first, then the dirty-Head refresh if nothing else changed the rules). After the merge, `testing/review-043.ts` `seed` accepts any predicate so property 7's `fact` row typechecks.
+
+### Checks after the merge
+
+`npx vitest run --maxWorkers=3`: exit 0, 530 files passed, 4,378 tests passed, 24 expected fail (26 before the merge).
+
+`npm run lint`: exit 0 (one existing warning in `avatar/three/brass.ts`). `npm run typecheck`: exit 0. `npm run build`: exit 0.
+
+### Not done, not verified
+
+- W-223: a correction whose job runs before the refuted value was ever saved still leaves that value unmarked. Property 6 leaves that order out. Its file header calls this "W-215", its number before the merge.
+- Brief 041's W-208: the on-turn routes still derive a person by name through `mentionEid` in `writes/subject.ts`, so two people with one name are not told apart on the turn. Not taken up here.
+- Finding 12 stays a known limit (W-227).
+- The typed plan now reads the memory plan outside the transaction; a write landing between that read and the commit makes the keys differ, and the turn then falls back to the closed or care line. Not tested under a race.
+- Nothing ran against the emulator, a live model or a real call.

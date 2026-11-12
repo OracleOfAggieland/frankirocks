@@ -53,7 +53,7 @@ import { barrierError, parseError, scopeError, staleError } from "./errors";
 import { missingSessionError } from "./open-visit";
 import { Unrecorded, mutation } from "./mutation";
 import { typedReplyNote } from "./typed-reply";
-import { type HardRuleResult, type HardRuleRun, applyOpenProposals, executeHardRule, executeOnTurn } from "../onturn/execute";
+import { type HardRuleResult, type HardRuleRun, applyOpenProposals, applyPastedAllergy, executeHardRule, executeOnTurn, refreshDirtyTurn } from "../onturn/execute";
 import { readOnTurnContext } from "../onturn/context";
 import { readSnapshot } from "../store/port";
 import { type TypedPlan, planTypedReply, readPreRoute, runHardRuleSlots, typedRouteNote } from "../onturn/route";
@@ -72,6 +72,7 @@ import { carryNarrowing, deckAllowed, lateNarrowing, narrowsHere, replacedNarrow
 import { holdMark, holdsOnTurn } from "../audience-swap";
 import { afterClosed } from "../sessions";
 import { driveHangupJob, ensureHangupJob } from "../worker/hangup";
+import { checkTapRequest, isControlTurn, isTap, postTap } from "./turn-tap";
 
 type TurnReq = Infer<typeof TurnRequest>;
 type TurnRes = Infer<typeof TurnResponse>;
@@ -83,7 +84,9 @@ const MAX_CAS_ATTEMPTS = 8;
 
 /** Request checks beyond the closed schema (R18.1, R18.8, R20.8). */
 export function checkTurnRequest(req: TurnReq): TurnReq {
-  if (req.uiControl !== null || req.source === "chip" || req.source === "trustedTap") throw parseError("control turns are not built");
+  // Brief 044, item 3: a trusted company or alone tap is the one control turn built; every other stays refused.
+  if (isControlTurn(req)) return checkTapRequest(req);
+  if (req.source === "chip") throw parseError("control turns are not built");
   if (req.source === "asr") {
     if (req.items.length === 0) throw parseError("asr needs items");
   } else if (req.items.length !== 0) throw parseError("typed turns carry no items");
@@ -150,6 +153,8 @@ export function wordsPer2s(transcript: string, items: TurnReq["items"]): boolean
 }
 
 export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes> {
+  // Brief 044, item 3: the walked-in tap has its own module.
+  if (isTap(req)) return postTap(ctx, req);
   const { uid, deps } = ctx;
   const typedText = req.transcriptState === "final" ? normalizedTranscript(req.transcript)! : "";
   const cls = classifyTurn(req);
@@ -339,6 +344,9 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
               if (proposed.rulesChanged) write = { kind: "committed", routes: ["hardRule"], note: null, deckRaised: true };
             }
           }
+          if (hr === null && evidence !== null && cls.cls === "T") proposed = (await applyPastedAllergy(tx, { uid, rules: (proposed?.rules ?? core.rules.data) as CoreRules, epoch: core.epoch.data, bundle: proposed?.bundle ?? core.bundle.data, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher, evidence, sessionId: req.sessionId, seq: req.clientSeq })) ?? proposed;
+          // Brief 043, finding 9: a Head a fastO life change left dirty is recompiled here, and the Deck rises.
+          if (hr === null && proposed === null) proposed = await refreshDirtyTurn(tx, { uid, epoch: core.epoch.data, bundle: core.bundle.data, rules: core.rules.data as CoreRules, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher, fastO: fastO !== null });
           const changed = hr ?? proposed;
           const stampOut = changed?.rulesChanged ? { ...currentStamp(req.sessionId, s0.generation, { epoch: core.epoch.data, rules: changed.rules, bundle: changed.bundle ?? core.bundle.data }), turnId: req.turnId } : stamp;
           const headOut = changed?.bundle?.head ?? head;

@@ -28,7 +28,10 @@ import {
   validate,
   type Infer,
   type Schema,
+  type Card,
+  type Stamp,
 } from "@franki/core";
+import { toolCardsThatFit } from "../ui/call-cards";
 import type { ApiClient, ApiResult } from "./api";
 import type { BrowserClock } from "./clock";
 import { permitPayloadHash } from "./hash";
@@ -119,6 +122,11 @@ export interface VoiceClientDeps {
    * was gone with no forget receipt), so the screen asks "Did you want that deleted?". Never changes call behavior.
    */
   onControlCheck?: () => void;
+  /**
+   * Brief 044, item 1: a tool answer's cards, when the call's Session and generation still fit their stamp
+   * (`toolCardsThatFit`), for the screen's Card_Dock. The machine gets the tool output and no card content.
+   */
+  onToolCards?: (cards: readonly Card[], stamp: Stamp) => void;
 }
 
 const liveTimers: TimerApi = { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
@@ -128,6 +136,9 @@ function parsed<T>(schema: Schema<T>, r: ApiResult<unknown>): T | null {
   const v = validate(schema, r.body);
   return v.ok ? v.value : null;
 }
+
+/** The server's answer that the visit an open named is gone (brief 038: 409 with ErrorCode STALE). */
+const isStale = (r: ApiResult<unknown>): boolean => !r.ok && r.kind === "http" && r.error === "STALE";
 
 export class VoiceClient {
   private state: VoiceState;
@@ -255,11 +266,15 @@ export class VoiceClient {
       case "turn":
         void this.postTurn(c.body, c.supersedesTurnId ?? null);
         return;
-      case "tool":
-        void this.post("/api/tool", { requestId: this.newId(), ...c.body }, TOOL_TIMEOUT_MS, ToolResponse).then((res) =>
-          this.dispatch(res === null ? { type: "toolFailed", callId: c.body.callId } : { type: "toolOk", callId: c.body.callId, response: res }),
-        );
+      case "tool": {
+        const sent = c.body.stamp;
+        void this.post("/api/tool", { requestId: this.newId(), ...c.body }, TOOL_TIMEOUT_MS, ToolResponse).then((res) => {
+          // The cards are read against the call as it is when the answer lands, before the machine moves on.
+          if (res !== null) this.showToolCards(toolCardsThatFit(this.state, sent, res), res.stamp);
+          this.dispatch(res === null ? { type: "toolFailed", callId: c.body.callId } : { type: "toolOk", callId: c.body.callId, response: res });
+        });
         return;
+      }
       case "close": {
         const done = this.deps.api
           .call("/api/session/close", { body: { requestId: this.newId(), ...c.body }, timeoutMs: CLOSE_TIMEOUT_MS })
@@ -302,6 +317,16 @@ export class VoiceClient {
     }
   }
 
+  /** A throwing screen never reaches the call. */
+  private showToolCards(cards: readonly Card[], stamp: Stamp): void {
+    if (cards.length === 0) return;
+    try {
+      this.deps.onToolCards?.(cards, stamp);
+    } catch {
+      // the screen's problem, not the call's
+    }
+  }
+
   // Routes ---------------------------------------------------------------------------------------
 
   private async post<T>(path: string, body: unknown, timeoutMs: number, schema: Schema<T>): Promise<T | null> {
@@ -311,6 +336,9 @@ export class VoiceClient {
   private async postOpen(body: Extract<VoiceCommand, { kind: "open" }>["body"]): Promise<void> {
     const sentAt = this.deps.clock.mono();
     const r = await this.deps.api.call<unknown>("/api/session/open", { body: { requestId: this.newId(), ...body }, timeoutMs: OPEN_TIMEOUT_MS });
+    // Brief 044, item 2: STALE names an old visit (a reset made a new one). The call ends with no retry; the
+    // controller's gate has already told the visit model to reload.
+    if (isStale(r)) return this.dispatch({ type: "visitGone", visitId: body.visitId });
     const res = parsed(OpenResponse, r) as Infer<typeof OpenResponse> | null;
     if (res === null) return this.dispatch({ type: "openFailed" });
     if (res.deck !== null) this.deps.clock.syncToServer(msFromTs(res.deck.issuedAt), sentAt, this.deps.clock.mono());

@@ -534,6 +534,9 @@ async function play(w: World, of: string): Promise<Res> {
   return send({ kind: "transcript", text: p.whisper.text });
 }
 
+/** The screen's taps by the name a script gives them, and the control verb each posts (brief 044, item 3). */
+const TAP_CONTROLS: Readonly<Record<string, string>> = { walkedIn: "company", justUs: "alone" };
+
 async function turn(step: Step & { do: "type" | "chip" | "say" | "tap" | "paste" }, w: World): Promise<Res> {
   if (w.stamp === null) throw new Error(`${step.do}: no session`);
   const seq = w.nextSeq;
@@ -558,14 +561,18 @@ async function turn(step: Step & { do: "type" | "chip" | "say" | "tap" | "paste"
   let body: Record<string, unknown> = base;
   // A chip's text counts as the owner's words and goes down the typed path (spec §15; brief 020 task 5).
   if (step.do === "say") body = { ...base, source: "asr", judge: step.judge ?? "timeout", items: [{ itemId: `item_${seq}_${w.counter}`, commitSeq: seq, final: true, audioEndOpsAt: "2026-11-03T12:00:00.000Z", audioDurationMs: 800 }] };
-  if (step.do === "tap") body = { ...base, source: "trustedTap", judge: "typed", transcriptState: "final", transcript: step.control, uiControl: step.control };
+  // Brief 044, item 3: a trusted tap names its control by verb, with no text and no targets.
+  if (step.do === "tap") body = { ...base, source: "trustedTap", judge: "typed", transcriptState: "final", transcript: "", uiControl: { verb: TAP_CONTROLS[step.control] ?? step.control, targetIds: [] } };
   // Brief 034 (addition): a pasted line, as the typed box posts it after a paste event.
   if (step.do === "paste") body = { ...base, source: "pasted" };
   w.vars.set(`request:${step.label}`, body);
   const res = await callRoute(w.rig, turnRoute, body);
   if (res.status === 200 && res.body.status !== "stale" && res.body.status !== "hold") {
-    w.nextSeq = seq + 1;
-    w.lastTurn = { turnId, text, source: step.do === "say" ? "asr" : "typed" };
+    // A tap is not a Turn: it takes no clientSeq (brief 044, ruling SB-222).
+    if (step.do !== "tap") {
+      w.nextSeq = seq + 1;
+      w.lastTurn = { turnId, text, source: step.do === "say" ? "asr" : "typed" };
+    }
     if (res.body.stamp !== undefined) w.stamp = { ...w.stamp, epoch: res.body.stamp.epoch, policyRev: res.body.stamp.policyRev, bundleRev: res.body.stamp.bundleRev, rulesRev: res.body.stamp.rulesRev };
   }
   if (res.status === 200) {
