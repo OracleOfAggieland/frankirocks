@@ -31,7 +31,7 @@ import { Stage } from "./avatar/Stage";
 import { CALL_ERRORS, CallScreen } from "./CallScreen";
 import { DebugPanel } from "./DebugPanel";
 import { LiveRegion } from "./LiveRegion";
-import { PhoneOnStage } from "./phone/RetroPhone";
+import { PhoneOnStage } from "./phone/PhoneOnStage";
 import { ReplyLine } from "./ReplyLine";
 import { MainScreen } from "./screen/MainScreen";
 import { SoundToggle, soundPreference } from "./SoundToggle";

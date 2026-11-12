@@ -36,7 +36,7 @@ The shell is `MainScreen` in `apps/web/src/components/screen/MainScreen.tsx`. It
 | Decides | `phoneStep`, `phonePolls`, `phoneShows` |
 | States | `PhonePhase` |
 | Events | `PhoneEvent` |
-| Tests | `apps/web/src/ui/phone/phone-call.test.ts`, `apps/web/src/client/phone-watch.test.ts`, `apps/web/src/components/phone/RetroPhone.test.tsx` |
+| Tests | `apps/web/src/ui/phone/phone-call.test.ts`, `apps/web/src/client/phone-watch.test.ts`, `apps/web/src/components/phone/PhoneOnStage.test.tsx` |
 
 The phone on Franki's wall during an outbound phone call. `absent` while no call is on the screen; `dialing`, `ringing` and `talking` while one is live; `ended` after a conversation and `missed` (busy, no answer, failed, or unconfirmed) after a call without one. Both stay for `PHONE_LINGER_MS`, then the phone leaves.
 
@@ -65,7 +65,7 @@ stateDiagram-v2
   missed --> dialing : a new request
 ```
 
-The shell is `PhoneWatch` in `apps/web/src/client/phone-watch.ts`, one per signed-in user. It sends `requested` and `settled` from each voice snapshot (`pendingPhoneCall`), `probe` from each answered typed turn, and `status` from `GET /api/phone/status`, read once at the start and then every `PHONE_POLL_MS` while `phonePolls` is true; a failed or malformed read counts as `unknown`. It keeps one timer: the next read, or the tick that ends the linger. The drawing is `RetroPhone` in `apps/web/src/components/phone/RetroPhone.tsx`, hung on the Stage by `PhoneOnStage`. The server's side of the status is `phoneStatus` in `packages/server/src/phone/status.ts`.
+The shell is `PhoneWatch` in `apps/web/src/client/phone-watch.ts`, one per signed-in user. It sends `requested` and `settled` from each voice snapshot (`pendingPhoneCall`), `probe` from each answered typed turn, and `status` from `GET /api/phone/status`, read once at the start and then every `PHONE_POLL_MS` while `phonePolls` is true; a failed or malformed read counts as `unknown`. It keeps one timer: the next read, or the tick that ends the linger. The phone is built in three.js (`apps/web/src/components/phone/three/model.ts`, moved by `motion.ts`) and hung on the Stage by `PhoneOnStage` in `apps/web/src/components/phone/PhoneOnStage.tsx`. The server's side of the status is `phoneStatus` in `packages/server/src/phone/status.ts`.
 
 ### `ui.cardSource`
 
