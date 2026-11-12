@@ -167,7 +167,7 @@ A commit while a reply is admitted or being checked is a barge-in. A commit whil
 | File | `packages/core/src/voice/machine.ts` |
 | State | `VoiceState` |
 
-`poll` asks for state once a second while a call is live, `refresh` 45 s after the last answer, and `stateRetry` after a failure (1, 2 and 5 s, with "Try again" for the state at 30 s). An answer requested before the last `/api/turn` answer (`stateSentAt <= lastTurnResponseAt`) gives only a higher Deck, and its ack is dropped with `ackDroppedStale: true`. In CONFIGURING, the call reaches LISTENING on the first answer whose ack matches the Deck; a failure there waits for the 1.5 s ack limit.
+`poll` asks for state once a second while a call is live, `refresh` 45 s after the last answer, and `stateRetry` after a failure (1, 2 and 5 s, with "Try again" for the state at 30 s). An answer requested before the last `/api/turn` answer (`stateSentAt <= lastTurnResponseAt`) gives only a higher Deck, and its ack is dropped with `ackDroppedStale: true`. In CONFIGURING, the call reaches LISTENING on the first answer whose ack matches the Deck; an answer whose ack is dropped as older than the last turn answer (often a late answer from an earlier Session) sends one more state request at once; a failure there waits for the 1.5 s ack limit, which bounds CONFIGURING either way.
 
 ### `voice.recovery`
 

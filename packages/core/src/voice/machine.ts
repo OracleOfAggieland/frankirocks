@@ -1156,10 +1156,12 @@ function onState(s: Step, res: Infer<typeof StateResponse>, sentAt?: number): vo
   const staleRequest = asked !== null && st.lastTurnResponseAt !== null && asked <= st.lastTurnResponseAt;
   if (!staleRequest || st.deck === null || res.deck === null || isHigher(res.deck, st.deck)) adoptDeck(s, res.deck);
   // R4.2: `ack:null` refuses fastO. R4.4: an ack requested before the last /api/turn answer can't grant it.
+  let ackDropped = false;
   if (res.ack === null) s.set({ ack: null, ackDroppedStale: false });
   else if (res.ack.stamp.sessionId === st.session.sessionId) {
     const stale = s.st.lastTurnResponseAt !== null && sent <= s.st.lastTurnResponseAt;
     s.set(stale ? { ack: null, ackDroppedStale: true } : { ack: res.ack, ackDroppedStale: false });
+    ackDropped = stale;
   }
   s.set({ stateFailures: null, stateRetryVisible: false });
   s.disarm("stateRetry", "stateRetryUi");
@@ -1168,6 +1170,11 @@ function onState(s: Step, res: Infer<typeof StateResponse>, sentAt?: number): vo
     s.disarm("ack", "connect", "retryUi", "reconnect");
     s.set({ phase: "LISTENING", recovery: null, retryVisible: false });
     s.arm("poll", s.now + POLL_MS);
+  } else if (s.st.phase === "CONFIGURING" && ackDropped) {
+    // The ack was dropped only because a turn answer (often an earlier Session's) landed after the request went
+    // out. Ask once more rather than wait out the ack limit; a request sent now is younger than that answer (V1
+    // step 5). The ack limit still bounds CONFIGURING.
+    postState(s);
   }
 }
 
