@@ -186,7 +186,7 @@ function offerFrom(ctx: RouteContext, rows: MoneyRows): HeroOffer | null {
     title: "Takeout and late meetings",
     lines: [
       `${formatDollars(pattern.totalCents)} on takeout, ${pattern.orderCount} orders, ${w.fromCivil} to ${w.toCivil}`,
-      `${formatDollars(pattern.lateCents)} of it on ${pattern.lateOrderCount} ${unit} with meetings after 6`,
+      `${formatDollars(pattern.lateCents)} of it in ${pattern.lateOrderCount} orders on ${unit} with meetings after 6`,
       "A pattern in your own records, not a cause",
     ],
     sources: evidenceRefs([...w.purchaseIds, ...pattern.meetingIds, ...pattern.receiptIds], rows.evidence, 32),
@@ -317,7 +317,7 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerAr
   if (rows === null || offer === null || args.pendingId !== offer.pendingId) return answer("stale");
   if (args.choiceId === offer.noId) return answer("declined");
   // Code decides the owner said yes: the choice must be "yes" and the owner's own words a plain yes.
-  if (args.choiceId !== offer.yesId || turn.sourceClass === "T" || !isPlainYes(turn.text)) return answer("clarify");
+  if (args.choiceId !== offer.yesId || turn.role !== "user" || turn.sourceClass !== "U" || !turn.final || !isPlainYes(turn.text)) return answer("clarify");
 
   const dinners = suggestFood({ rules: await readRules(ctx), attendeeIds: [] });
   if (dinners.candidates.length === 0) return answer("clarify");
@@ -375,7 +375,7 @@ export async function compareLoop(ctx: RouteContext, loopId: string, generation:
   const rows = await readMoneyRows(ctx, generation);
   if (rows === null) return null;
   const loop = doc.data.loop;
-  const input = { loop, purchases: rows.bank, bankCoverage: rows.coverage, worldNow: rows.clock.worldClock.now };
+  const input = { loop, purchases: rows.bank, receipts: rows.receipts, bankCoverage: rows.coverage, worldNow: rows.clock.worldClock.now };
   const takeout = loopPredicate(input);
   const totalFood = loopPredicate({ ...input, metric: "totalFoodSpend" });
   return { loopId, loop, takeout, totalFood, lines: celebration(loop, takeout, totalFood)?.lines ?? null };

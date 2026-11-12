@@ -2,6 +2,7 @@
  * The recipe catalog (spec §10, contracts `candidates`): plain dish names and closed ingredient manifests. A recipe's
  * allergen flags are computed from its manifest, never written by hand, so a flag can't drift from the ingredients.
  */
+import { gazetteerEntry } from "../writes/gazetteer";
 import { type Ingredient, ingredient } from "./ingredients";
 
 export const CATALOG_VERSION = "recipes1";
@@ -68,7 +69,8 @@ export const CATALOG: readonly FoodCandidate[] = RECIPES.map((r) => ({ ...r, kin
  * unknown, gives an `unknown` flag; a place (no manifest) gives one `unknown` flag.
  */
 export function allergenFlags(c: FoodCandidate, table: (id: string) => Ingredient | null = ingredient): AllergenFlag[] {
-  if (c.manifestVersion === null) return [{ code: "*", status: "unknown", basis: "unknown" }];
+  // A place, or a manifest that lists nothing, says nothing about allergens.
+  if (c.manifestVersion === null || c.ingredientIds.length === 0) return [{ code: "*", status: "unknown", basis: "unknown" }];
   const flags = new Map<string, AllergenFlag>();
   for (const id of c.ingredientIds) {
     const ing = table(id);
@@ -76,7 +78,11 @@ export function allergenFlags(c: FoodCandidate, table: (id: string) => Ingredien
       flags.set(`?${id}`, { code: "*", status: "unknown", basis: "unknown" });
       continue;
     }
-    for (const code of ing.allergens) flags.set(code, { code, status: "contains", basis: "manifest" });
+    for (const code of ing.allergens) {
+      // A code the gazetteer doesn't know can't be matched against a rule, so the status is unknown.
+      if (gazetteerEntry(code) === null) flags.set(`?${id}:${code}`, { code: "*", status: "unknown", basis: "unknown" });
+      else flags.set(code, { code, status: "contains", basis: "manifest" });
+    }
   }
   return [...flags.values()];
 }

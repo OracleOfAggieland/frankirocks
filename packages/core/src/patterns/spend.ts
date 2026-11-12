@@ -36,7 +36,10 @@ export interface SpendAsk {
 export interface SpendResult {
   orders: CountedOrder[];
   excluded: { id: string; reason: ExcludeReason }[];
-  /** True when a row that may belong to the window was left out for time or coverage. */
+  /**
+   * True when a row that may belong to the window was left out: unknown time, an uncovered date, a pending or
+   * unposted purchase, or a refund of a counted order that can't be netted yet.
+   */
   partial: boolean;
 }
 
@@ -83,30 +86,45 @@ export function spendRows(rows: readonly BankRow[], ask: SpendAsk): SpendResult 
   const originals: BankRow[] = [];
   let partial = false;
 
+  // A pending row that a posted row replaces is the same purchase; any other pending or unposted row in these
+  // categories may still land in the window, and so may a refund that can't be netted yet.
+  const superseded = new Set(rows.filter((r) => !r.bank.pending && r.bank.pendingOfId !== null).map((r) => r.bank.pendingOfId!));
+  const unsettled: BankRow[] = [];
+  const looseRefunds: BankRow[] = [];
+  const refundSeen = new Set<string>();
+
   for (const row of [...rows].sort(byId)) {
     const b = row.bank;
-    const reason: ExcludeReason | null = b.pending
-      ? "pending"
-      : b.removed
-        ? "removed"
-        : b.postedAt === null
-          ? "unposted"
-          : !categories.has(b.category)
-            ? "category"
-            : b.currency !== ask.currency
-              ? "currency"
-              : null;
-    if (reason !== null) {
-      excluded.push({ id: row.id, reason });
+    if (b.removed) {
+      excluded.push({ id: row.id, reason: "removed" });
       continue;
     }
     if (b.refundOfId !== null) {
-      if (b.amountCents >= 0) excluded.push({ id: row.id, reason: "amount" });
-      else refunds.set(b.refundOfId, [...(refunds.get(b.refundOfId) ?? []), row]);
+      // A refund nets against the order it names whatever its own category.
+      const reason: ExcludeReason | null = b.amountCents >= 0 ? "amount" : b.pending ? "pending" : b.postedAt === null ? "unposted" : b.currency !== ask.currency ? "currency" : refundSeen.has(b.providerKey) ? "duplicate" : null;
+      if (reason !== null) {
+        excluded.push({ id: row.id, reason });
+        if (reason !== "amount" && reason !== "duplicate") looseRefunds.push(row);
+        continue;
+      }
+      refundSeen.add(b.providerKey);
+      refunds.set(b.refundOfId, [...(refunds.get(b.refundOfId) ?? []), row]);
       continue;
     }
-    if (b.amountCents <= 0) {
-      excluded.push({ id: row.id, reason: "amount" });
+    const reason: ExcludeReason | null = b.pending
+      ? "pending"
+      : b.postedAt === null
+        ? "unposted"
+        : !categories.has(b.category)
+          ? "category"
+          : b.currency !== ask.currency
+            ? "currency"
+            : b.amountCents <= 0
+              ? "amount"
+              : null;
+    if (reason !== null) {
+      excluded.push({ id: row.id, reason });
+      if ((reason === "pending" || reason === "unposted") && categories.has(b.category) && b.currency === ask.currency && !superseded.has(row.id)) unsettled.push(row);
       continue;
     }
     originals.push(row);
@@ -145,6 +163,11 @@ export function spendRows(rows: readonly BankRow[], ask: SpendAsk): SpendResult 
     orders.push({ id: row.id, rootKey: row.rootKey, date: t.date, instant: t.instant, receipt: t.receipt, cents, refunds: own });
   }
   const counted = new Set(orders.map((o) => o.id));
+  for (const row of unsettled) {
+    const t = purchaseTime(row, ask.receipts ?? [], ask.zone);
+    if (t === null || dates.has(t.date)) partial = true;
+  }
+  if (looseRefunds.some((r) => counted.has(r.bank.refundOfId!))) partial = true;
   for (const [of, list] of refunds) {
     if (!counted.has(of)) for (const r of list) excluded.push({ id: r.id, reason: "refundOrphan" });
   }

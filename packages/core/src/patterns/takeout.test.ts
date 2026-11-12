@@ -67,6 +67,20 @@ describe("takeout_late_meeting_v1 on the hero fixture", () => {
     expect(heroOfferLine(p)).toBeNull();
   });
 
+  it("a pending purchase on a window date makes the result partial; one its posted row replaces doesn't", () => {
+    const pending = { ...bankRow("p1", "2026-10-24", 19 * 60, 5000), bank: { ...bankRow("p1", "2026-10-24", 19 * 60, 5000).bank, pending: true, postedAt: null } };
+    expect(takeoutLateMeetingV1(heroInput({ purchases: [...HERO_ORDERS, pending] })).status).toBe("partial");
+    const posted = { ...HERO_ORDERS[5]!, bank: { ...HERO_ORDERS[5]!.bank, pendingOfId: pending.id } };
+    expect(takeoutLateMeetingV1(heroInput({ purchases: [...HERO_ORDERS.slice(0, 5), posted, pending] })).status).toBe("eligible");
+  });
+
+  it("a refund nets whatever its category, once per provider key", () => {
+    const refund = (label: string) => ({ ...bankRow(label, "2026-10-23", 12 * 60, -1000, "other"), bank: { ...bankRow(label, "2026-10-23", 12 * 60, -1000, "other").bank, refundOfId: HERO_ORDERS[0]!.id, providerKey: testId("hpk_same") } });
+    const p = takeoutLateMeetingV1(heroInput({ purchases: [...HERO_ORDERS, refund("r1"), refund("r2")] }));
+    expect(p.totalCents).toBe(17600);
+    expect(p.lateRefundIds).toHaveLength(1);
+  });
+
   it("a window that isn't 21 dates is insufficient", () => {
     expect(takeoutLateMeetingV1(heroInput({ window: { fromCivil: "2026-10-05", toCivil: "2026-10-24", zone: "America/Chicago", currency: "USD" } })).status).toBe("insufficient");
   });

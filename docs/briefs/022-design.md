@@ -24,7 +24,7 @@ File: `packages/core/src/patterns/takeout.ts`. Constants: `TAKEOUT_LATE_V1` in t
 3. *Bank rows that count* (`spendRows`, shared with the loop). Posted (`pending:false`, `removed:false`, `postedAt` set), the category asked for (`takeout` here), the window's currency, a positive amount. A second posted row with the same `providerKey` is dropped as a duplicate. A refund (`refundOfId` set, negative amount) nets against the order it names and is cited with it; a refund of an order that isn't counted is excluded. An order netted to zero or below is not counted.
 4. *Purchase time.* Its own basis, never `postedAt` and never a mail date:
    - `providerAuthorized` with precision `instant` and an instant: the instant.
-   - Otherwise a receipt enriches: `match:"exact"`, `bankEvidenceId` naming this row, an `orderAt`, and amount and currency equal to the bank row's when the receipt has them. Its `orderAt` is used as a `receiptMatched` instant, but only when it falls on the bank row's own civil date (if the bank gave one). A receipt never adds an order: a receipt that names no counted bank row is ignored.
+   - Otherwise a receipt enriches: `match:"exact"`, `bankEvidenceId` naming this row, an `orderAt`, and amount and currency equal to the bank row's when the receipt has them. Its `orderAt` is used as a `receiptMatched` instant, but only when the bank row has its own civil date and the `orderAt` falls on it. A receipt never adds an order: a receipt that names no counted bank row is ignored.
    - `providerDate` with precision `day` and a civil date: the date, no instant.
    - Anything else is unknown. The row is excluded and the result is `partial`.
 5. *Orders in the pattern.* Orders whose local date is in the window and covered. An in-window order on an uncovered date is excluded and makes the result `partial`. Fewer than 6 orders, or a total of zero or less, gives `insufficient`.
@@ -105,3 +105,12 @@ File: `packages/server/src/routes/tool-food.ts`, one dispatch line each in `rout
 | 10 | The voice machine lists only `recall` and `make_phone_call` | The server accepts `suggest` and `answer`; adding them to the Realtime tool list is the voice lane's (voice/** isn't this lane's). | report |
 | 11 | Grocery items | The union of the three dinners' ingredient labels, sorted, at most 128. | `groceryItems` |
 | 12 | Incomplete reviews | One more review, then it stays `incomplete` and silent. | `INCOMPLETE_REVIEWS` |
+| 13 | Separate bank and calendar coverage | No connector documents exist, so `core/state.coverage` stands for both. | `patternFor` in tool-food.ts |
+| 14 | The hero's currency | `USD`; other currencies are excluded, never converted. | `HERO_CURRENCY` |
+| 15 | Evidence can't be queried by kind (only Q28 by ID has an index) | Read by ID, at most 2,000 documents and 128 rows of each kind; more and the hero says nothing. | `EVIDENCE_SCAN_MAX`, `MONEY_ROWS_MAX` |
+| 16 | A receipt on a bank row with no date | Ignored: a receipt only enriches a dated row, so it can never set a date. | `purchaseTime` |
+| 17 | An unknown-time row near the window | Posted within the window or up to 5 days after it: the result is `partial`. | `POSTING_LAG_DAYS` |
+| 18 | Who decides the owner said yes | Code: the choice is the offer's yes ID and the owner's own (non-pasted) words start with an affirmative and hold no negation or hedge. Anything else is `clarify` and writes nothing. | `isPlainYes` |
+| 19 | The loop's baseline was 14 of 21 dates covered | The comparison needs every date of both windows covered, so such a loop stays `incomplete` and silent. | `loopPredicate` |
+| 20 | Fixture clock mode | The handlers use `ownerClock`, which refuses fixture mode today; they follow it when F8 changes it. | `readMoneyRows` |
+| 21 | Loop Memory class and sensitivity | Class `C` (the owner's yes to a code offer), sensitivity `S1` (money). | `loopMemory` |

@@ -19,8 +19,8 @@ export function heroOfferParts(p: PatternResult): unknown[] {
   return ["heroOffer", p.detectorVersion, w.fromCivil, w.toCivil, w.zone, w.currency, p.totalCents, p.lateCents, [...w.purchaseIds].sort(), [...p.meetingIds].sort()];
 }
 
-const AFFIRM = /^(yes|yeah|yep|yup|sure|ok|okay|please|absolutely|definitely|let's do it|lets do it|let's do that|do it|go ahead|sounds good)\b/;
-const NEGATION = /\b(no|not|don't|dont|never|nope|nah|wait|later|stop|cancel|maybe)\b/;
+const AFFIRM = /^(yes|yeah|yep|yup|sure|ok|okay|absolutely|definitely|let's do it|lets do it|let's do that|do it|go ahead|sounds good)\b/;
+const NEGATION = /\b(no|not|don't|dont|never|nope|nah|wait|later|stop|cancel|maybe|can't|cant|won't|wont|but|except|skip|hold|rather|instead|without|unless|if)\b/;
 
 /**
  * True when the owner's own words are a plain yes: they start with an affirmative and hold no negation or hedge.

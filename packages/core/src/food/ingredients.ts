@@ -66,7 +66,7 @@ const ROWS: readonly Row[] = [
   ["cumin", "ground cumin", ""],
   ["basil", "fresh basil", ""],
   ["fish_sauce", "fish sauce", "anchovy"],
-  ["pesto", "basil pesto", "milk, pine_nut"],
+  ["pesto", "basil pesto", "milk, pine_nut, garlic"],
   ["mixed_seafood", "mixed seafood", "shellfish, fish"],
   ["mushroom", "mushrooms", "mushroom"],
   ["frozen_peas", "frozen peas", "pea"],

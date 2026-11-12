@@ -132,6 +132,21 @@ describe("three quick dinners for late-meeting nights", () => {
     expect(out.filter.removed).toContainEqual({ id: place.id, reason: "unknownAllergen", ruleId: null });
   });
 
+  it("a manifest that lists nothing, or an ingredient code the gazetteer doesn't know, is unknown status", () => {
+    const empty = { id: testId("empty"), kind: "recipe" as const, version: 1, name: "Empty", meal: "dinner" as const, minutes: 5, ingredientIds: [], manifestVersion: "recipes1" };
+    const odd = { id: testId("odd"), kind: "recipe" as const, version: 1, name: "Odd", meal: "dinner" as const, minutes: 5, ingredientIds: ["odd"], manifestVersion: "recipes1" };
+    const table = (id: string) => (id === "odd" ? { id, label: "odd", allergens: ["Peanuts"], known: true } : ingredient(id));
+    const out = suggestFood({ rules: [rule("peanut")], attendeeIds: [], catalog: [empty, odd, ...CATALOG], table });
+    expect(out.candidates.map((c) => c.id)).not.toContain(empty.id);
+    expect(out.candidates.map((c) => c.id)).not.toContain(odd.id);
+    expect(out.filter.removed.filter((r) => r.reason === "unknownAllergen").map((r) => r.id)).toEqual(expect.arrayContaining([empty.id, odd.id]));
+  });
+
+  it("a garlic rule keeps away pesto", () => {
+    const out = suggestFood({ rules: [rule("garlic")], attendeeIds: [] });
+    expect(out.filter.removed.map((r) => r.id)).toContain("pesto_pasta");
+  });
+
   it("groceries are the dinners' ingredients, once each", () => {
     const out = suggestFood({ rules: [], attendeeIds: [] });
     const items = groceryItems(out.candidates);

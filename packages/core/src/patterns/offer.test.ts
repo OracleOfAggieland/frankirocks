@@ -16,6 +16,6 @@ describe("the hero offer", () => {
   });
 
   it.each(["Yes", "Yes.", "Yeah, let's do it", "Sure", "OK please", "Sounds good"])("%s is a plain yes", (t) => expect(isPlainYes(t)).toBe(true));
-  it.each(["No", "Yes, but not tonight", "Maybe", "Wait", "I said yes to Dana", "", "Yes later", "Nah"])("%s is not", (t) => expect(isPlainYes(t)).toBe(false));
+  it.each(["No", "Yes, but not tonight", "Maybe", "Wait", "I said yes to Dana", "", "Yes later", "Nah", "Please hold off", "Sure, but I can't this week", "Okay, skip the groceries"])("%s is not", (t) => expect(isPlainYes(t)).toBe(false));
   it("no words are not a yes", () => expect(isPlainYes(null)).toBe(false));
 });

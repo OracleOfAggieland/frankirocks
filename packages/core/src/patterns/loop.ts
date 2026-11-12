@@ -8,7 +8,7 @@ import { tsFromMs } from "../schema/primitives";
 import type { LoopRecord, LoopWindow } from "../schema/records";
 import { addDays, datesFrom, dayStart, localAt, weekdayCounts } from "./civil";
 import { coversDate, spendRows } from "./spend";
-import type { BankObs, BankRow, LoopResult, LoopStatus, PatternResult } from "./types";
+import type { BankObs, BankRow, LoopResult, LoopStatus, PatternResult, ReceiptRow } from "./types";
 import { comparisonLines } from "./words";
 
 /** A loop whose coverage was missing gets this many more reviews, then stays incomplete and silent. */
@@ -48,8 +48,10 @@ export function planHeroLoop(p: PatternResult, acceptedAtMs: number, acceptedAct
 
 export interface LoopInput {
   loop: LoopRecord;
-  /** Bank rows around both windows (receipts aren't needed: the loop counts dates, and receipts never add). */
+  /** Bank rows around both windows. */
   purchases: readonly BankRow[];
+  /** Exact receipts: they date nothing on their own, but give a dated row its instant (receipts never add). */
+  receipts?: readonly ReceiptRow[];
   bankCoverage: Cov;
   worldNow: number;
   /** Compare another metric on the same windows (total food beside takeout); defaults to the loop's own. */
@@ -90,7 +92,7 @@ export function loopPredicate(input: LoopInput): LoopResult {
   if (![...bDates, ...cDates].every(covered)) return silent("incomplete", "uncovered");
 
   const categories = METRIC_CATEGORIES[metric];
-  const ask = (dates: string[]) => spendRows(input.purchases, { dates, zone: b.zone, currency: b.currency, categories, covered });
+  const ask = (dates: string[]) => spendRows(input.purchases, { dates, zone: b.zone, currency: b.currency, categories, covered, receipts: input.receipts ?? [] });
   const before = ask(bDates);
   const after = ask(cDates);
   if (before.partial || after.partial) return silent("incomplete", "rowsExcluded");
