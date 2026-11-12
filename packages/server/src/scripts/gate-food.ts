@@ -446,7 +446,6 @@ const MOMENTS: Moment[] = [
   },
   {
     id: "F24",
-    waits: { food: W.ATTENDEE },
     stated: "for a named person (\"my sister\"), typed",
     path: "dinner with attendees",
     state: "rules ready; the model passes no ID (none is visible to it)",
