@@ -46,6 +46,8 @@ import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
 import type { Reader, StoredDoc } from "../store/port";
 import { getMoment, momentVerdict } from "./verdict";
+import { offerAnswer } from "./answered";
+import { recordHeldAtClose } from "./held-reminder";
 
 /** Memories one tick reads for derive; past it, derive writes nothing that tick (fails closed). */
 export const MEMORY_SCAN_MAX = 2_000;
@@ -111,7 +113,7 @@ function insightDues(moments: readonly StoredDoc<Moment>[], rollupId: string): {
 }
 
 /** Every plan this owner's rows derive now, and the IDs that must not stay pending. */
-async function derivePlans(ctx: RouteContext, reader: Reader, zone: string): Promise<{ plans: MomentPlan[]; retired: string[]; rollupLive: boolean } | null> {
+async function derivePlans(ctx: RouteContext, reader: Reader, zone: string): Promise<{ plans: MomentPlan[]; retired: string[]; rollupLive: boolean; heroPendingId?: string | null } | null> {
   const { uid, deps } = ctx;
   const memories = await scanMemories(reader, uid);
   if (memories === null) {
@@ -138,7 +140,7 @@ async function derivePlans(ctx: RouteContext, reader: Reader, zone: string): Pro
     rollupLive = true;
     plans.push(...out.plans);
   }
-  return { plans, retired, rollupLive };
+  return { plans, retired, rollupLive, heroPendingId: offer?.pendingId ?? null };
 }
 
 const rowContext = (uid: string, core: { epoch: CoreDocs["epoch"]; state: CoreDocs["state"] }, opsNow: number, worldNow?: number): RowContext => ({
@@ -200,7 +202,7 @@ function applied(m: Moment, ts: readonly Transition[], opsNow: number, leaseToke
 }
 
 /** One moment's open, close or cancel, in its own transaction. */
-async function moveMoment(ctx: RouteContext, id: ID, rollupLive: boolean): Promise<Transition[] | "barrier"> {
+async function moveMoment(ctx: RouteContext, id: ID, rollupLive: boolean, heroPendingId: string | null = null): Promise<Transition[] | "barrier"> {
   const { uid, deps } = ctx;
   const path = paths.moment(uid, id);
   // A celebrate's predicate reads money rows outside the transaction; the loop is reread inside it.
@@ -218,6 +220,12 @@ async function moveMoment(ctx: RouteContext, id: ID, rollupLive: boolean): Promi
     const read = await momentVerdict(tx, uid, m, core, deps.clock, { rollupLive });
     // A source changed since this moment was planned: derive re-plans it on the next tick; nothing moves now.
     if (read === "stale") return [];
+    // Brief 042 item 2: an offer answered yes or no closes, with the answer as its reason, and is not offered again.
+    const answer = m.status === "pending" || m.status === "leased" ? await offerAnswer((p) => tx.get<Ledger>(p), uid, m, deps.hasher, heroPendingId) : null;
+    if (answer !== null) {
+      tx.update(path, { ...m, status: "cancelled", cancelReason: answer, leaseToken: null, leaseUntil: null, updatedAt: tsFromMs(ops) });
+      return [{ momentId: id, to: "cancelled", why: "policy" }];
+    }
     const verdict: SourceVerdict = read;
     const passes = comparison !== null && comparison.lines !== null && comparison.takeout.status === "eligible";
     const ts = planTick({ rows: [tickRowOf(id, m)], worldNow: pair.worldClock.now, opsNow: ops, source: () => verdict, passes: () => passes });
@@ -228,6 +236,8 @@ async function moveMoment(ctx: RouteContext, id: ID, rollupLive: boolean): Promi
       const after = comparison.takeout.afterCents ?? null;
       next = { ...next, payload: { ...next.payload, before, after, delta: before !== null && after !== null ? before - after : null } };
     }
+    // Brief 042 item 3: a reminder held under crisis that closes unsaid leaves a held row naming the reason.
+    if (next.status === "expired") await recordHeldAtClose(tx, uid, id, m, ops, deps.hasher);
     // Brief 030 P1-3: the comparison's result is stored on the loop (read before this transaction's writes).
     if (next.payload.kind === "celebrate" && comparison !== null) await storeLoopCheck(tx, uid, comparison, ops);
     tx.update(path, next);
@@ -256,7 +266,7 @@ export async function memoryTick(ctx: RouteContext): Promise<TickReport> {
     return report;
   }
   for (const doc of candidates(moments, pair.worldClock.now, pair.opsClock.now)) {
-    const ts = await guarded(ctx, () => moveMoment(ctx, doc.id as ID, derived?.rollupLive ?? false));
+    const ts = await guarded(ctx, () => moveMoment(ctx, doc.id as ID, derived?.rollupLive ?? false, derived?.heroPendingId ?? null));
     if (ts === "barrier") return { ...report, skipped: "barrier" };
     if (ts === null) continue;
     report.transitions.push(...ts);

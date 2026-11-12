@@ -379,7 +379,8 @@ export interface VoiceState {
    */
   staleOpen: boolean;
   hangingUp: boolean;
-  error: "open" | "close" | null;
+  /** `visit`: the server answered STALE to an open naming this tab's visit, so the call ended (brief 044, item 2). */
+  error: "open" | "close" | "visit" | null;
   // voice-control (design "New state")
   judge: JudgeState | null;
   spec: SpecState | null;
@@ -420,6 +421,12 @@ export interface VoiceState {
    * it. Never reset by an exit: it belongs to the tab's visit, not to a call. Absent (older states) reads as null.
    */
   visitId?: string | null;
+  /**
+   * The visit the server answered STALE for (brief 044, item 2): no open names it again. A press while it is still
+   * the tab's visit opens nothing; a `visitSet` to a new visit lets calls open again. Never reset by an exit, as
+   * `visitId`. Absent (older states) reads as null.
+   */
+  goneVisitId?: string | null;
   /** Audio of a response this call doesn't own started since the last clear; the next reply clears first (R3.2). */
   strayAudio?: boolean;
   /** Realtime `error` events this visit, by the client event they name (review of wave A, item 15). */
@@ -543,6 +550,11 @@ export type VoiceEvent =
   | { type: "typedSubmitted"; turnId: string; text: string; source: "typed" | "pasted" }
   /** The visit the screen's visit model holds now, or null for none (brief 040, item 4); the controller sends it on every change. */
   | { type: "visitSet"; visitId: string | null }
+  /**
+   * The server answered STALE to an open (brief 044, item 2): the visit it named is gone (a reset made a new one).
+   * `visitId` is the visit that open carried. The Voice_Client sends it in place of `openFailed` for that answer.
+   */
+  | { type: "visitGone"; visitId: string | null }
   /** `freshId` is a new random ID, used as the turnId if this event starts a Turn. `lastLoudAt` is the Voice_Client's
    * last loud input frame on the opsClock, sent with commits for the Latency_Clock. */
   | { type: "realtime"; event: RealtimeServerEvent; freshId: string; lastLoudAt?: number | null }
@@ -910,7 +922,9 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
   const s = new Step(state, now);
   switch (event.type) {
     case "callPressed":
-      if (state.phase === "CLOSED" && !state.hangingUp && !state.awaitingOpen) startOpen(s, event.zone, false);
+      // Brief 044, item 2: a visit the server answered STALE for never opens again; the screen reloads the visit.
+      if (state.phase === "CLOSED" && !state.hangingUp && !state.awaitingOpen && visitIsGone(state)) s.set({ error: "visit" });
+      else if (state.phase === "CLOSED" && !state.hangingUp && !state.awaitingOpen) startOpen(s, event.zone, false);
       break;
     case "retryPressed":
       if (state.phase === "RECOVERY" && state.recovery?.kind === "connection" && state.retryVisible) reconnect(s);
@@ -931,6 +945,13 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       break;
     case "openFailed":
       if (state.staleOpen) dropStaleOpen(s, null);
+      else if (state.awaitingOpen) openFailed(s);
+      break;
+    case "visitGone":
+      // The tab's own visit is gone: end the call, whatever it was waiting for. An older visit's answer (the tab
+      // has already moved on) is a failed open like any other.
+      if (event.visitId !== null && event.visitId === (state.visitId ?? null)) visitGone(s, event.visitId);
+      else if (state.staleOpen) dropStaleOpen(s, null);
       else if (state.awaitingOpen) openFailed(s);
       break;
     case "sdpFailed":
@@ -1097,6 +1118,25 @@ function onOpen(s: Step, res: Infer<typeof OpenResponse>): void {
   s.arm("connect", s.now + CONNECT_LIMIT_MS);
 }
 
+/** Whether the tab's visit is one the server answered STALE for (brief 044, item 2). */
+const visitIsGone = (st: VoiceState): boolean => (st.goneVisitId ?? null) !== null && st.goneVisitId === (st.visitId ?? null);
+
+/**
+ * Brief 044, item 2: the server answered STALE to an open naming the tab's visit. The call ends here, with no retry
+ * and no reconnect, and the visit is remembered so no later open names it. A Session still held is closed as the
+ * machine's own close (it was never the visit's). In CLOSED only the visit is remembered.
+ */
+function visitGone(s: Step, visitId: string): void {
+  const st = s.st;
+  s.set({ goneVisitId: visitId });
+  if (st.phase === "CLOSED" && !st.awaitingOpen) return;
+  s.mute();
+  s.push({ kind: "teardown" });
+  flushRecent(s);
+  if (st.session !== null) s.push({ kind: "close", body: { sessionId: st.session.sessionId, generation: st.session.generation, reason: MACHINE_CLOSE_REASON } });
+  s.set({ ...closedFields(st), awaitingOpen: false, staleOpen: false, error: "visit" });
+}
+
 function openFailed(s: Step): void {
   s.disarm("openWait");
   s.set({ awaitingOpen: false });
@@ -1167,7 +1207,10 @@ function openFailed(s: Step): void {
  *                             done; openFailed: keep
  *   zone                      -                         -                              -               the press's
  * Never reset by any exit: config, lastTurnResponseAt, ackDroppedStale, lastLoudAt, latency, eventSeq, strayAudio,
- * realtimeErrors, visitId, lastSpeechAt, proactiveDropped.
+ * realtimeErrors, visitId, goneVisitId, lastSpeechAt, proactiveDropped.
+ * A sixth exit, visitGone (STALE to an open naming the tab's visit; brief 044, item 2), resets as `closed` does,
+ * with awaitingOpen and staleOpen false, error "visit", hangingUp kept, recent flushed and marked done, and
+ * goneVisitId set to that visit. In CLOSED with no open awaited it sets only goneVisitId.
  * Not an exit, but a reset: when CONFIGURING reaches LISTENING, onState sets recovery to null and retryVisible to
  * false, and disarms ack, connect, retryUi and reconnect.
  * A fifth exit, startSwap (a `blocked` answer, or the end of a care reply after one), resets as `recovery` does,

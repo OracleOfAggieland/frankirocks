@@ -59,6 +59,8 @@ export const TYPED_LINES = {
   filtered: "Noted. I'll check with you before suggesting food.",
   none: "Saved.",
   corrected: "Corrected.",
+  /** Brief 043, finding 2: a typed life change or care-only turn when no reply can be used. Claims nothing. */
+  care: "I'm here with you.",
 } as const;
 
 /** The one typed line for a turn's templates: a question first (food stays filtered), then saved, kept, none. */

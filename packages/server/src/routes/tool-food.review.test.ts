@@ -83,7 +83,7 @@ async function setup(opts: { turns: string[]; rules?: Rule[]; proposals?: Rule[]
   };
   for (const [i, text] of opts.turns.entries()) {
     if (present === i && offer !== null) await show();
-    const res = await callRoute(rig, turnRoute, asrTurn(s.stamp, i + 1, text, [{ itemId: `item_${i + 1}`, commitSeq: i + 1 }]));
+    const res = await callRoute(rig, turnRoute, { ...asrTurn(s.stamp, i + 1, text, [{ itemId: `item_${i + 1}`, commitSeq: i + 1 }]), judge: "O" });
     if (res.status !== 200) throw new Error(JSON.stringify(res.body));
   }
   // A proposal lands after the turns: the next turn or open would install it (G39), and the food paths must read it

@@ -35,6 +35,14 @@ export function expiryAskLine(m: Memory): string {
   return `Is this still true: ${line.trim().replace(/[.!?]+$/, "").slice(0, MAX_WORDS)}?`;
 }
 
+/**
+ * Brief 042 item 3: a confirmed reminder whose due time passed while a crisis held it, said late at the next line
+ * not under crisis: "You asked me to remind you about X at 10 PM. I held it."
+ */
+export function heldReminderLine(note: string, minute: number): string {
+  return `You asked me to remind you about ${note.trim().replace(/[.!?]+$/, "").slice(0, MAX_WORDS) || "your reminder"} at ${clockLabel(minute)}. I held it.`;
+}
+
 export function reminderLine(note: string): string {
   return `Reminder: ${note.trim().replace(/[.!?]+$/, "").slice(0, MAX_WORDS)}.`;
 }

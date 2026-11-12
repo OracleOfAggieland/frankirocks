@@ -18,11 +18,13 @@
  * The Proactive is not part of the open's recorded answer: a replayed open (a lost answer) gets none, and the moment
  * stays leased for the next opening. Ruling, fails closed: a line is never sent twice from one render.
  */
-import { IDLE_SILENCE_MS, PERMIT_TTL_MS, type ID, type Moment, type Proactive, type Session, type Stamp, type Turn, msFromTs } from "@franki/core";
+import { IDLE_SILENCE_MS, PERMIT_TTL_MS, type ID, type Moment, type Proactive, type Session, type Stamp, type Turn, msFromTs, tsFromMs } from "@franki/core";
 import { gateAudience } from "../audience";
 import { raceLimit } from "../clock/timers";
 import { paths } from "../store/paths";
-import { type ProactiveDeck, type SessionSignals, chooseNow, proactiveOf } from "../time/proactive";
+import { type DeliveryVerdict, type ProactiveDeck, type SessionSignals, chooseNow, proactiveOf } from "../time/proactive";
+import { writeGateDecision } from "../ledger/said";
+import { heldPastDue, recordReminderHeld } from "../time/held-reminder";
 import { memoryTick, scanMoments } from "../time/tick";
 import { storeReader } from "../head-build";
 import type { RouteContext } from "./runtime";
@@ -98,7 +100,8 @@ async function deliver(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1],
 }
 
 async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals, deadline: number, deck: ProactiveDeck | null): Promise<Proactive | null> {
-  const { choice, moments } = await chooseNow(ctx, mode, signals);
+  const { choice, moments, verdicts } = await chooseNow(ctx, mode, signals);
+  if (verdicts !== undefined && verdicts.length > 0 && ctx.deps.clock.read().opsClock.now < deadline) await writeVerdictRows(ctx, stamp, signals, verdicts);
   if (choice.spoken === null) return null;
   const id = choice.spoken.momentId as ID;
   const m = moments.get(id);
@@ -112,6 +115,29 @@ async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>
   const turnId = ctx.deps.hasher.id(["proactiveTurn", stamp.sessionId, id, m.generation]) as ID;
   // Brief 045, finding 3: the Permit binds the Deck the same answer carries; with none, the line never plays.
   return proactiveOf(ctx, id, m, { ...stamp, turnId }, deck);
+}
+
+/**
+ * Brief 042 item 4: the rows for delivery's own Gate verdicts that were not `say`, IDs and reason codes only, at most
+ * one per candidate per Session: the rows' turn is the Session's delivery turn (`deliveryTurnId`), so the row ID is
+ * the same for every poll and open of that Session and a second write finds it stored. A `card` verdict is recorded
+ * with the Gate's own outcome for it, `steered`. At most `DELIVERY_ROWS_MAX` a call; the rest wait for the next.
+ */
+export const DELIVERY_ROWS_MAX = 8;
+export const deliveryTurnId = (hasher: { id(parts: unknown): string }, sessionId: string): ID => hasher.id(["deliveryVerdicts", sessionId]) as ID;
+
+async function writeVerdictRows(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, signals: SessionSignals, verdicts: readonly DeliveryVerdict[]): Promise<void> {
+  const { uid, deps } = ctx;
+  const turnId = deliveryTurnId(deps.hasher, stamp.sessionId);
+  await deps.store.transaction(uid, async (tx) => {
+    const at = { uid, now: tsFromMs(deps.clock.read().opsClock.now), epoch: stamp.epoch, policyRev: stamp.policyRev };
+    for (const v of verdicts.slice(0, DELIVERY_ROWS_MAX)) {
+      const row = { candidateId: v.momentId, refs: [{ type: "moment" as const, id: v.momentId, rev: v.rev }], noteIds: [], momentId: v.momentId, sessionId: stamp.sessionId as ID, turnId, audience: signals.audience ?? "unknown", permitKind: "proactive" as const };
+      await writeGateDecision(tx, deps.hasher, at, v.result, row);
+      // Brief 042 item 3: a reminder held for a crisis past its due time is recorded, to be said late.
+      if (v.moment !== undefined && v.worldNow !== undefined && heldPastDue(v.moment, v.result, v.worldNow)) await recordReminderHeld(tx, uid, v.momentId, v.moment, deps.clock.read().opsClock.now, deps.hasher);
+    }
+  });
 }
 
 /**
@@ -133,12 +159,12 @@ export async function openingProactive(ctx: RouteContext, stamp: Omit<Stamp, "tu
     if (ops >= deadline) return null;
     return deliver(ctx, { kind: "opening" }, stamp, signalsOf(s, ops, null), deadline, deck);
   })();
-  return withinDeadline(work, deadline - start, deps.timers);
+  return withinDeadline(work.catch((e: unknown) => logged(ctx, "opening", e)), deadline - start, deps.timers);
 }
 
 /** Logs a failed delivery read by name only, and says nothing. */
-function logged(ctx: RouteContext, mode: string): null {
-  ctx.deps.log("delivery.failed", { mode, error: "read" });
+function logged(ctx: RouteContext, mode: string, e: unknown): null {
+  ctx.deps.log("delivery.failed", { mode, error: e instanceof Error ? e.name : "unknown" });
   return null;
 }
 
@@ -164,9 +190,9 @@ async function withinDeadline<T>(work: Promise<T | null>, ms: number, timers: Pa
 export async function idleProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, budgetMs = Infinity, deck: ProactiveDeck | null = null): Promise<Proactive | null> {
   if (!(budgetMs > 0)) return null;
   // Brief 045 finding 9: every read delivery makes is inside the catch; a store blip never fails the route.
-  if (budgetMs === Infinity) return idleOnce(ctx, stamp, Infinity, deck).catch(() => logged(ctx, "session"));
+  if (budgetMs === Infinity) return idleOnce(ctx, stamp, Infinity, deck).catch((e: unknown) => logged(ctx, "session", e));
   const start = ctx.deps.clock.read().opsClock.now;
-  return withinDeadline(idleOnce(ctx, stamp, start + budgetMs, deck), budgetMs, ctx.deps.timers);
+  return withinDeadline(idleOnce(ctx, stamp, start + budgetMs, deck).catch((e: unknown) => logged(ctx, "session", e)), budgetMs, ctx.deps.timers);
 }
 
 async function idleOnce(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, deadline: number, deck: ProactiveDeck | null): Promise<Proactive | null> {

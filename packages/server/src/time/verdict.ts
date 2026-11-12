@@ -22,6 +22,7 @@ import {
   type SourceVerdict,
   docRef,
   eligible,
+  isMustSay,
   msFromTs,
   parseDep,
   sourceVerdict,
@@ -142,43 +143,109 @@ async function reminderSourceVerdict(r: Reader, uid: string, moment: Moment, dep
 /** What a reread says about `moment`'s source now. `r` is a transaction when the caller writes on the answer. */
 export async function momentVerdict(r: Reader, uid: string, moment: Moment, core: Core, clock: ClockPort, opts: VerdictOptions): Promise<MomentVerdict> {
   let v: MomentVerdict = "gone";
+  let action: StoredDoc<Ledger> | null = null;
   if (moment.memoryId !== null) v = await memoryVerdict(r, uid, moment, moment.memoryId, core, clock);
   else if (moment.rollupId !== null) v = opts.rollupLive === false ? "gone" : "ok";
   else if (moment.actionId !== null) {
-    const action = await r.get<Ledger>(paths.ledger(uid, moment.actionId));
+    action = await r.get<Ledger>(paths.ledger(uid, moment.actionId));
     if (action === null || action.data.kind !== "action" || action.data.state !== "complete") return "gone";
     v = await reminderSourceVerdict(r, uid, moment, action.data.dependsOn, core, clock);
   }
   // Brief 041 part 3 (spec §7, the death and illness rows), reread wherever this verdict is (the tick, `chooseNow`,
   // the render and admission), so a life change committed at any point before admission holds: a moment about
-  // someone recorded deceased is `gone`, except the one grief form the spec names; a wish or celebrate about someone
-  // whose care is open at gravity 3, or about anyone one hop from them, waits as `gone`; a check-in about a person
-  // whose care is all recorded resolved is `gone`. The tick then closes it with a reason code (`policy`).
+  // someone recorded deceased is `gone`, except the one grief form the spec names and a must-say the owner confirmed
+  // after the death was recorded (W-228); a wish or celebrate about someone whose care is open at gravity 3, or about
+  // anyone one hop from them, waits as `gone`; a check-in about a person whose care is all recorded resolved is
+  // `gone`. The tick then closes it with a reason code (`policy`).
   if (v !== "ok" || moment.kind === "griefAsk") return v;
-  const source = moment.memoryId === null ? null : ((await r.get<Memory>(paths.memory(uid, moment.memoryId)))?.data ?? null);
-  const roots = new Set([...moment.subjectIds, ...(source === null ? [] : [source.subjectId, ...source.entityIds])].filter((e) => e !== "self"));
+  // The moment's roots: its subjects, its source row's (and its note's, for a moved occasion), and for a reminder the
+  // rows its action depends on. Read from the view, so a pass over many moments reads the Memories once (W-229).
+  const lazy = { view: null as LifeView | null };
+  const view = async () => (lazy.view ??= await lifeView(r, uid));
+  const rowIds = [
+    ...(moment.memoryId === null ? [] : [moment.memoryId]),
+    ...(moment.payload.kind === "cue" && moment.payload.noteRef.type === "memory" ? [moment.payload.noteRef.id] : []),
+    ...(action === null ? [] : action.data.dependsOn.flatMap((d) => { const p = parseDep(d); return p !== null && p.collection === "memories" ? [p.id] : []; })),
+  ];
+  const own = moment.subjectIds.filter((e) => e !== "self");
+  if (own.length === 0 && rowIds.length === 0) return v;
+  const life = await view();
+  const roots = new Set([...own, ...rowIds.flatMap((id) => life.rowEntities.get(id) ?? [])]);
   if (roots.size === 0) return v;
-  const rows = (await readAllMemories(r, uid)).map((h) => h.memory).filter((m) => m.status === "active");
-  const code = (m: Memory) => (m.value.kind === "enum" ? m.value.code : null);
-  if (rows.some((m) => m.predicate === "person.life" && roots.has(m.subjectId) && code(m) === "deceased")) return "gone";
-  const careOf = (m: Memory): string | null => (m.predicate !== "care" ? null : String((m.args as { careSubjectRef?: unknown }).careSubjectRef ?? m.subjectId));
-  if (moment.kind === "wish" || moment.kind === "celebrate") {
-    const ill = new Set(rows.filter((m) => careOf(m) !== null && code(m) === "open" && m.gravity >= 3).map((m) => careOf(m)!));
-    // One hop (spec §7: "code walks one hop over entities"): an entity that shares an active row with the ill person.
-    const linked = new Set(ill);
-    for (const m of rows) {
-      const es = [m.subjectId, ...m.entityIds].filter((e) => e !== "self");
-      if (es.some((e) => ill.has(e))) for (const e of es) linked.add(e);
-    }
-    if ([...roots].some((e) => linked.has(e))) return "gone";
+  const died = [...roots].map((e) => life.deceasedAt.get(e)).filter((t): t is number => t !== undefined);
+  if (died.length > 0) {
+    // W-228: a must-say plays only when its confirmation is strictly after the latest death it is about. A missing
+    // time on either side counts as before.
+    const worldNow = ownerClock(core.state.data, clock).worldClock.now;
+    const confirmedAt = action === null ? NaN : msFromTs(action.data.createdAt);
+    const after = Number.isFinite(confirmedAt) && died.every((t) => Number.isFinite(t) && confirmedAt > t);
+    if (!(isMustSay(moment.kind, msFromTs(moment.dueAt), worldNow) && after)) return "gone";
   }
-  if (moment.kind === "checkIn") {
-    for (const e of roots) {
-      const care = rows.filter((m) => careOf(m) === e);
-      if (care.length > 0 && care.every((m) => code(m) === "resolved")) return "gone";
-    }
-  }
+  if ((moment.kind === "wish" || moment.kind === "celebrate") && [...roots].some((e) => life.graveLinked.has(e))) return "gone";
+  if (moment.kind === "checkIn" && [...roots].some((e) => life.careResolved.has(e))) return "gone";
   return v;
+}
+
+/**
+ * What the life check needs (brief 041 part 3, W-229), read once per Reader: `chooseNow` passes one reader for every
+ * moment it checks, and a transaction is one reader. A memo per Reader object, so no caller passes anything new and
+ * a later reader (a new pass, a new transaction) reads afresh, never a stale view.
+ *
+ * No declared index serves this read. The store allows only the shapes in `store/indexes.ts` (the composite indexes
+ * in `firestore.indexes.json`, and reads by ID), and none selects by `predicate`, so the life facts come from one
+ * paged scan of the Memories by ID, keeping only what the check uses. A composite index on (`predicate`, `status`)
+ * would let it read just the active `person.life` and `care` rows; the one-hop link and a moment's roots would then
+ * need an `entityIds` array-contains read per ill person and the source rows by ID.
+ */
+interface LifeView {
+  /** Each entity recorded deceased, and when (ops clock, the row's `createdAt`; the latest such row). */
+  deceasedAt: Map<string, number>;
+  /** Someone whose care is open at gravity 3, and every entity one hop from them (never `self`). */
+  graveLinked: Set<string>;
+  /** People whose care rows are all recorded resolved. */
+  careResolved: Set<string>;
+  /** Each row's subject and entities, `self` left out, by document ID (the other fields read active rows only). */
+  rowEntities: Map<string, string[]>;
+}
+
+const LIFE_VIEWS = new WeakMap<Reader, Promise<LifeView>>();
+
+function lifeView(r: Reader, uid: string): Promise<LifeView> {
+  let p = LIFE_VIEWS.get(r);
+  if (p === undefined) {
+    p = loadLifeView(r, uid);
+    LIFE_VIEWS.set(r, p);
+    // A failed read is not kept: the next call reads again.
+    p.catch(() => LIFE_VIEWS.delete(r));
+  }
+  return p;
+}
+
+async function loadLifeView(r: Reader, uid: string): Promise<LifeView> {
+  const rows = await readAllMemories(r, uid);
+  const code = (m: Memory) => (m.value.kind === "enum" ? m.value.code : null);
+  const careOf = (m: Memory): string | null => (m.predicate !== "care" ? null : String((m.args as { careSubjectRef?: unknown }).careSubjectRef ?? m.subjectId));
+  const view: LifeView = { deceasedAt: new Map(), graveLinked: new Set(), careResolved: new Set(), rowEntities: new Map() };
+  const care = new Map<string, string[]>();
+  const ill = new Set<string>();
+  for (const { id, memory: m } of rows) {
+    view.rowEntities.set(id, [m.subjectId, ...m.entityIds].filter((e) => e !== "self"));
+    if (m.status !== "active") continue;
+    if (m.predicate === "person.life" && code(m) === "deceased") view.deceasedAt.set(m.subjectId, Math.max(view.deceasedAt.get(m.subjectId) ?? -Infinity, msFromTs(m.createdAt)));
+    const c = careOf(m);
+    if (c === null) continue;
+    care.set(c, [...(care.get(c) ?? []), code(m) ?? ""]);
+    if (code(m) === "open" && m.gravity >= 3) ill.add(c);
+  }
+  for (const [e, codes] of care) if (codes.every((x) => x === "resolved")) view.careResolved.add(e);
+  // One hop (spec §7: "code walks one hop over entities"): an entity that shares an active row with the ill person.
+  for (const e of ill) view.graveLinked.add(e);
+  for (const { id, memory: m } of rows) {
+    if (m.status !== "active") continue;
+    const es = view.rowEntities.get(id)!;
+    if (es.some((e) => ill.has(e))) for (const e of es) view.graveLinked.add(e);
+  }
+  return view;
 }
 
 /**

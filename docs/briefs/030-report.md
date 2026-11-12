@@ -179,6 +179,23 @@ Built by Claude Code on `lane/wire`. No commit ends `Built-with: Kiro`. `build/p
 - Evidence has no class: calendar and bank rows read as O, and anything else as T.
 - A typed line shown on the screen is admitted on `shown_<turnId>` and stays `admitted`. It is never `said`.
 
+
+### Rulings from brief 042 and brief 045 part D, as questions for the owner
+
+1. A showing is recorded when the offer's playback ended uncut or its transcript matched, once per response; is a `pendingRendered` receipt from the screen (a typed line) still a showing? (Today yes; finding 7 is meant to narrow it.)
+2. A cancel revokes the latest showing of that offer in the Session, even one recorded from a matched transcript of the same response. Right?
+3. A yes writes only when the turn is certainly the owner's: judge `O`, or typed by the owner (no audio items, no judge). A timed-out judge's spoken "yes" is `clarify`. Right, given the judge often times out on short words?
+4. `SHOWINGS_PER_SESSION_MAX` = 16: past it a showing is not recorded, and a yes after other turns is `clarify`. Enough?
+5. An answered offer closes with `closed` for a yes and `declined` for a no (no `answered` cancel reason exists in the schema). Right?
+6. A no to the hero offer now writes a declined row, whoever said it, which closes the offer. Should a no also need the owner's certain voice?
+7. A reminder held under crisis is said late at the next line not under crisis, opening or idle whisper, whichever comes first (`HELD_LATE_ON_IDLE`), not only at an opening. Right?
+8. The late line reads "at 10 PM" (`clockLabel`), not "at 10". Right?
+9. At close, a held reminder writes a Gate `held` row naming `crisis`, scoped to the moment, beside the per-Session held rows; the Lab then counts it once more. Right?
+10. Delivery's Gate rows are one per candidate per outcome per Session (the Session's delivery turn), at most `DELIVERY_ROWS_MAX` = 8 a call. Right?
+11. `STATE_BUDGET_MS` = 1,200: the state route's own budget (the browser's 1,500 ms less 300 ms of network); the idle read gets what is left of it.
+12. `OPEN_ANSWER_MARGIN_MS` = 150 kept back from delivery's deadline, with `OPEN_CALLS_AFTER_DELIVERY` = 0.
+13. A `said` row records the Gate result as the `say` delivery acted on (render `free`, reasons `ok`); no stored result is read back. Right?
+
 ### Existing assertions and inputs changed
 
 - `routes/receipt-moments.test.ts`: the wish said on the receipt now matches `idTagged`, not `exactTemplate`. The open renders it now, and `idTagged` comes first in contracts §6's order.

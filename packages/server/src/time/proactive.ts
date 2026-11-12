@@ -15,7 +15,9 @@ import {
   type DeliveryCandidate,
   type DeliveryChoice,
   type DeliveryMode,
+  type GateResult,
   type ID,
+  type Ledger,
   type Memory,
   type Moment,
   type Permit,
@@ -44,7 +46,9 @@ import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 import { scanMoments } from "./tick";
 import { getMoment, momentNoteId, momentVerdict } from "./verdict";
-import { type GateSignals, gateCandidateOf, gateContextOf } from "./gate-candidate";
+import { offerAnswer } from "./answered";
+import { type GateSignals, candidateSensOf, gateCandidateOf, gateContextOf } from "./gate-candidate";
+import { heldReminderText } from "./held-reminder";
 import { isStoreError } from "../store/errors";
 
 /**
@@ -53,8 +57,22 @@ import { isStoreError } from "../store/errors";
  */
 export type SessionSignals = SessionHolds & GateSignals & { turnsSinceCheckInAnswer: number | null };
 
-/** The delivery choice now, over the opened moments whose lease still holds and whose source rereads `ok`. */
-export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: SessionSignals): Promise<{ choice: DeliveryChoice; moments: Map<ID, Moment> }> {
+/** Brief 042 item 4: a Gate verdict inside delivery that was not `say`, for the route to write as a row. */
+export interface DeliveryVerdict {
+  momentId: ID;
+  /** The moment's revision when the Gate was asked. */
+  rev: number;
+  result: GateResult;
+  /** The moment as read, and the owner's world time then (brief 042 item 3 reads a held reminder from them). */
+  moment?: Moment;
+  worldNow?: number;
+}
+
+/**
+ * The delivery choice now, over the opened moments whose lease still holds and whose source rereads `ok`. Brief 042
+ * item 4: `verdicts` holds each candidate the Gate did not let through (held, steered, declined or blocked).
+ */
+export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: SessionSignals): Promise<{ choice: DeliveryChoice; moments: Map<ID, Moment>; verdicts?: DeliveryVerdict[] }> {
   const { uid, deps } = ctx;
   const reader = storeReader(deps.store, uid);
   const core = await readCoreDocs(reader, uid);
@@ -62,19 +80,25 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
   const all = (await scanMoments(reader, uid)) ?? [];
   const leased = all.filter((r) => r.data.status === "leased" && r.data.leaseUntil !== null && Date.parse(r.data.leaseUntil) > pair.opsClock.now);
   // Brief 036 finding 2: every candidate's source is reread with the tick's verdict; anything not `ok` is skipped.
-  const rollupLive = leased.some((r) => r.data.rollupId !== null) ? (await heroOffer(ctx, 0).catch(() => null)) !== null : null;
+  const hero = leased.some((r) => r.data.rollupId !== null) ? await heroOffer(ctx, 0).catch(() => null) : undefined;
+  const rollupLive = hero === undefined ? null : hero !== null;
   const rows: typeof leased = [];
   for (const r of leased) if ((await momentVerdict(reader, uid, r.data, core, deps.clock, { rollupLive })) === "ok") rows.push(r);
+  // Brief 042 item 2: an offer already answered, yes or no, is not offered again.
+  const ledgerGet = (p: string) => reader.get<Ledger>(p);
+  for (let i = rows.length - 1; i >= 0; i--) if ((await offerAnswer(ledgerGet, uid, rows[i]!.data, deps.hasher, hero?.pendingId ?? null)) !== null) rows.splice(i, 1);
   const today = todayCounts(core.counters.data, civilDateAt(pair.worldClock.now, pair.worldClock.zone));
   // Brief 036 finding 3: the Gate runs here, for every candidate, in the unprompted context of this session. Only a
   // `say` that needs no sender's attribution (a code-worded line carries none) is offered to delivery.
   const context = gateContextOf(core, pair, mode, signals, today);
   const said: typeof rows = [];
+  const verdicts: DeliveryVerdict[] = [];
   for (const r of rows) {
     const candidate = await gateCandidateOf(reader, uid, r.id as ID, r.data, pair.worldClock.now);
     if (candidate === null) continue;
     const g = gate(candidate, context);
     if (g.verdict === "say" && g.render !== "attributed") said.push(r);
+    else if (g.verdict !== "say") verdicts.push({ momentId: r.id as ID, rev: r.data.rev, result: g, moment: r.data, worldNow: pair.worldClock.now });
   }
   const moments = new Map(said.map((r) => [r.id as ID, r.data]));
   const candidates: DeliveryCandidate[] = [];
@@ -98,12 +122,17 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
     worldNow: pair.worldClock.now,
     zone: pair.worldClock.zone,
   });
-  return { choice, moments };
+  return { choice, moments, verdicts };
 }
 
 /** The line a moment speaks, worded by code; null when it can't be worded now. Its sensitivity is the Gate's. */
 async function lineOf(ctx: RouteContext, m: Moment): Promise<string | null> {
-  if (m.payload.kind === "cue") return m.payload.template?.text ?? null;
+  if (m.payload.kind === "cue") {
+    // Brief 042 item 3: a reminder held under crisis past its due time is said late, by its own template.
+    const late = await heldReminderText(ctx, m);
+    if (late !== null) return late;
+    return m.payload.template?.text ?? null;
+  }
   if (m.payload.kind === "pattern") return (await heroOffer(ctx, 0))?.line ?? null;
   if (m.payload.kind === "celebrate") {
     const c = await compareLoop(ctx, m.payload.loopId, 0);
@@ -117,12 +146,8 @@ async function lineOf(ctx: RouteContext, m: Moment): Promise<string | null> {
  * reminder is as sensitive as the rows it came from; it is never S0 because its cue points at no memory. Null (the
  * line is not put out) when the source can't be read.
  */
-async function sensOf(ctx: RouteContext, momentId: ID, m: Moment): Promise<Sens | null> {
-  const { uid, deps } = ctx;
-  const reader = storeReader(deps.store, uid);
-  const core = await readCoreDocs(reader, uid);
-  const candidate = await gateCandidateOf(reader, uid, momentId, m, ownerClock(core.state.data, deps.clock).worldClock.now);
-  return candidate?.sens ?? null;
+async function sensOf(ctx: RouteContext, m: Moment): Promise<Sens | null> {
+  return candidateSensOf(storeReader(ctx.deps.store, ctx.uid), ctx.uid, m);
 }
 
 /**
@@ -161,7 +186,7 @@ export type ProactiveDeck = Pick<Deck, "head" | "turns">;
 export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, stamp: Stamp, deck: ProactiveDeck | null = null): Promise<Proactive | null> {
   const { deps } = ctx;
   const line = await lineOf(ctx, m);
-  const sens = line === null ? null : await sensOf(ctx, momentId, m);
+  const sens = line === null ? null : await sensOf(ctx, m);
   if (line === null || sens === null || sens === "S2") return null;
   const noteId = momentNoteId(deps.hasher, momentId, m) as ID;
   const text = line.slice(0, 1024);

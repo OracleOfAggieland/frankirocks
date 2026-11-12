@@ -48,6 +48,9 @@ import { CLOSED_SHEET, type SheetState } from "../client/sheet-model";
 import { INITIAL_VISIT, type VisitState, badgeFor, boltEnabled, inputAllowed } from "../ui/visit/visit-machine";
 import { boltTargets } from "../ui/visit/bolt-targets";
 import { proactiveCards, replyEntries, type ShownProactive } from "../ui/visit/proactive-view";
+import { type ShownCallCards, callCardProps } from "../ui/call-cards";
+import type { CompanyTapState } from "../client/company-tap";
+import { CompanyToggle } from "./surfaces/CompanyToggle";
 
 const SIGNED_OUT_VOICE = initialVoiceState({ transcribeModel: "" });
 const noop = () => {};
@@ -64,6 +67,9 @@ const noMemory = (): MemoryState => NO_MEMORY;
 const noVisit = (): VisitState => INITIAL_VISIT;
 const noSheet = (): SheetState => CLOSED_SHEET;
 const noShown = (): ShownProactive | null => null;
+const noCallCards = (): ShownCallCards | null => null;
+const NO_TAP: CompanyTapState = { company: false, sending: false, error: null };
+const noTap = (): CompanyTapState => NO_TAP;
 
 /** The browser's localStorage, or null where it cannot be reached (brief 027: the visit is kept there). */
 function browserStorage(): Storage | null {
@@ -188,6 +194,8 @@ export function App() {
       visit.stop();
       sheet.clear();
       proactive.clear();
+      signedIn.callCards.clear();
+      signedIn.company.clear();
     };
   }, [signedIn]);
 
@@ -199,6 +207,7 @@ export function App() {
     void signedIn?.memory.refresh();
     signedIn?.sheet.clear();
     signedIn?.proactive.clear();
+    signedIn?.callCards.clear();
   };
 
   const signIn = async () => {
@@ -282,6 +291,12 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
   const sheetState = useSyncExternalStore(controllers?.sheet.subscribe ?? noSubscribe, getSheet, getSheet);
   const getShown = controllers?.proactive.getSnapshot ?? noShown;
   const shown = useSyncExternalStore(controllers?.proactive.subscribe ?? noSubscribe, getShown, getShown);
+  // Brief 044, item 1: the cards the call's last tool answer brought.
+  const getCallCards = controllers?.callCards.getSnapshot ?? noCallCards;
+  const called = useSyncExternalStore(controllers?.callCards.subscribe ?? noSubscribe, getCallCards, getCallCards);
+  // Brief 044, item 3: the company toggle shows the audience the server last confirmed.
+  const getTap = controllers?.company.getSnapshot ?? noTap;
+  const tapped = useSyncExternalStore(controllers?.company.subscribe ?? noSubscribe, getTap, getTap);
 
   const stage = <StageFor snap={snap} phone={phone} />;
   const live = <LiveRegion message={snap.live.message} seq={snap.live.seq} />;
@@ -328,7 +343,7 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
   ];
   const receipt = mem.surfaces.receipt === null ? null : <Receipt {...mem.surfaces.receipt} />;
   // Brief 027: the proactive line's cards join the dock; the badge reads the real clock through the clock port.
-  const allCards = [...memoryCards, ...proactiveCards(shown)];
+  const allCards = [...memoryCards, ...callCardProps(called), ...proactiveCards(shown)];
   const pair = clock.read();
   // Brief 038 finding 5: no clock until the server has said which one the account runs on.
   const badge = badgeFor(vis, pair.opsClock.now, pair.worldClock.zone);
@@ -407,7 +422,18 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
       reply={inCall ? null : <ReplyLine entries={replyEntries(t.entries, shown)} />}
       cards={allCards}
       strip={mem.surfaces.strip === null ? null : <Strip {...mem.surfaces.strip} />}
-      chips={<Chips chips={MAIN_CHIPS} disabled={!takesInput || t.sending || (inCall && v.phase !== "LISTENING")} onChip={chip} />}
+      chips={
+        <div className="flex flex-col items-center gap-3">
+          <Chips chips={MAIN_CHIPS} disabled={!takesInput || t.sending || (inCall && v.phase !== "LISTENING")} onChip={chip} />
+          {/* Brief 044, item 3: the walked-in tap. Unavailable until the server has said which account this is. */}
+          <CompanyToggle company={tapped.company} disabled={!takesInput || tapped.sending} onChange={(next) => void controllers.company.tap(next ? "company" : "alone")} />
+          {tapped.error === null ? null : (
+            <p role="status" data-tap-error="" className="text-xs text-ink-dim">
+              {tapped.error}
+            </p>
+          )}
+        </div>
+      }
       jar={<Jar motes={mem.surfaces.jar} onOpen={() => (sheetState.open ? sheetModel.close() : void sheetModel.open())} />}
       lab={<Lab counters={mem.surfaces.lab?.counters ?? []} limits={mem.surfaces.lab?.limits ?? []} receipt={receipt} />}
       visit={

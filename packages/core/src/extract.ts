@@ -56,6 +56,7 @@ import { lookupAllergen } from "./writes/gazetteer";
 import type { RenameIndex } from "./writes/renames";
 import { type PeopleRoster, type PersonRole, personWithRole, sameRole } from "./writes/people";
 import { mentionName } from "./writes/subject";
+import { lifeMentionOwned } from "./writes/life-subject";
 
 // ---------------------------------------------------------------------------------------------
 // Literal prompts (contracts §5). Schema prompt = PREFIX + job literal.
@@ -839,6 +840,16 @@ export function chooseMention(token: string, item: ExtractItem, hasher: Hasher, 
   return { kind: "ambiguous", name: mention?.observedName ?? name, base: id, ids: [...all] };
 }
 
+/** The verified words of the item's subject mention, on its Evidence's text, or null (brief 043, finding 1). */
+function mentionWords(item: ExtractItem, ctx: PlanContext): { text: string; start: number; end: number } | null {
+  const m = item.mentions.find((x) => x.localId === item.subject);
+  if (m === undefined) return null;
+  const span = anchorSpan(m.span, ctx);
+  if (verifySpan(span, ctx) === null) return null;
+  const text = evidenceFieldText(ctx.packet.get(span.eid)!.evidence, span.fieldPath);
+  return text === null || text === undefined ? null : { text, start: span.start, end: span.end };
+}
+
 /** The rename index and when the item's Evidence was said, for `resolveMention`. */
 export interface MentionRenames {
   index: RenameIndex;
@@ -1047,6 +1058,10 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
   const people: MentionPeople | undefined = ctx.people === undefined ? undefined : { roster: ctx.people, stated: ctx.statedPeople };
   if (ambiguousMention(item, ctx.hasher, rn, people) !== null) return { kind: "hold", index, reasons: ["ambiguous"], eids };
   const subjectId = resolveMention(item.subject, item, ctx.hasher, rn, people);
+  // Brief 043, finding 1: a life change about someone else is written only on the owner's own words for them.
+  if (item.predicate === "person.life" && subjectId !== "self" && !lifeMentionOwned(mentionWords(item, ctx), item.mentions.find((m) => m.localId === item.subject)?.observedName ?? item.subject)) {
+    return { kind: "skip", index, reason: "target" };
+  }
   const value = resolveValue(item.value, item, ctx.hasher, rn, people);
   const args = resolveArgs(item.predicate, item.args, item, ctx.hasher, rn, people);
 
