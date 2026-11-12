@@ -29,6 +29,12 @@ export const OFFER_PREMISES = 2;
 export const CHECK_IN_WINDOW_MS = 7 * 86_400_000;
 /** Spec §6 floors: "a commitment due within 24 hours"; contracts §2 T logistics "<=24h". */
 export const MUST_SAY_WINDOW_MS = 86_400_000;
+/**
+ * Spec §6 line 218: until the on-screen "Here, or on screen?" ask is built, S2 stays off the wire, so an asked S2
+ * recall on an opened topic goes to a card (brief 033 finding 15, contract question G-163). Set true when the ask
+ * exists, and the recall is said again.
+ */
+export const S2_SCREEN_ASK_BUILT = false;
 /** Spec §5: no insight, celebrate or ask "within two turns of a check-in answer". */
 export const CHECK_IN_QUIET_TURNS = 2;
 
@@ -197,6 +203,7 @@ export function gate(c: GateCandidate, x: GateContext): GateResult {
         render: cell.reply,
         carveOut: carve,
       });
+      if (carve === "openedTopicRecall" && !S2_SCREEN_ASK_BUILT) r = lower(r, "card", "sensitivity");
     }
   }
   if (mustSay !== null) r = { ...r, mustSay, reasons: [...r.reasons, "mustSay"] };

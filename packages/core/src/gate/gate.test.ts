@@ -110,7 +110,8 @@ describe("gate: the spec's examples", () => {
     const c = cand({ sens: "S2", topic: dadTopic, queryTerms: ["dad"], toldAt: NOW });
     expect(gate(c, ctx())).toMatchObject({ verdict: "hold", reasons: ["ceiling"] });
     expect(gate(c, ctx({ trigger: "recall", ownerTurn: said("how is dad") })).verdict).toBe("hold");
-    expect(gate(c, ctx({ trigger: "recall", ownerTurn: said("how is dad doing in houston") }))).toMatchObject({ verdict: "say", carveOut: "openedTopicRecall" });
+    // Brief 033 finding 15: until the screen ask exists, the opened-topic owner recall goes to a card.
+    expect(gate(c, ctx({ trigger: "recall", ownerTurn: said("how is dad doing in houston") }))).toMatchObject({ verdict: "card", carveOut: "openedTopicRecall" });
     expect(gate(c, ctx({ trigger: "jarTap" }))).toMatchObject({ verdict: "card", carveOut: "jarTap" });
     // Allergies are exempt from S2 gates.
     expect(gate(cand({ sens: "S2", allergy: true }), ctx()).verdict).toBe("say");

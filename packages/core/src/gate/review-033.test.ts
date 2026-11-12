@@ -1,8 +1,8 @@
 /** The review of the Gate (brief 033): each finding on the reviewer's own inputs. */
 import { describe, expect, it } from "vitest";
 import { testId } from "../testing/samples";
-import { gate } from "./gate";
-import { gateCand, gateCtx } from "./testing/cases";
+import { S2_SCREEN_ASK_BUILT, gate } from "./gate";
+import { gateCand, gateCtx, ownerSaid } from "./testing/cases";
 
 const WORK = testId("topic-work");
 const work = { topicId: WORK, label: "work", labelClass: "U" as const, terms: ["work"], quiet: null };
@@ -32,5 +32,16 @@ describe("finding 14: one T ask per sender per day, at any sensitivity", () => {
     const c = gateCand({ sourceClass: "T", purpose: "ask", sender: { mailedByOwner: true } });
     expect(gate(c, gateCtx({ counts: counts({ senderAsks: 9 }) }))).toMatchObject({ verdict: "card", reasons: ["senderCap"] });
     expect(gate(c, gateCtx())).toMatchObject({ verdict: "say", render: "attributed" });
+  });
+});
+
+describe("finding 15: an asked S2 recall goes to a card until the screen ask exists", () => {
+  it("cards the opened-topic owner recall, behind one constant", () => {
+    expect(S2_SCREEN_ASK_BUILT).toBe(false);
+    const c = gateCand({ sens: "S2", topic: work, queryTerms: ["work"] });
+    const asked = { trigger: "recall" as const, ownerTurn: ownerSaid("how is work"), openedTopics: [WORK] };
+    expect(gate(c, gateCtx(asked))).toMatchObject({ verdict: "card", carveOut: "openedTopicRecall" });
+    // In +200, private, the door's code template comes first and is said instead.
+    expect(gate(c, gateCtx({ ...asked, build: "plus200" }))).toMatchObject({ verdict: "say", form: "door", carveOut: "door" });
   });
 });
