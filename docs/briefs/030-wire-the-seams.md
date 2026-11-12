@@ -51,6 +51,25 @@ A later review of the time lane (brief 036) moved the Gate for delivery inside `
 
 Before phase two, merge `build/plan-stages` and look for an "Outcome" section at the end of `docs/briefs/033-review-gate.md`, `docs/briefs/036-review-time.md` and `docs/briefs/031-review-voice.md`. If all are there, go on. If any is missing, stop at that boundary with the tree green and everything committed, and report what phase one did. The lead will send you on when the fixes have landed.
 
+### Phase two, in two parts
+
+Two fix lanes are still editing `packages/core/src/voice/**`, the hero's yes binding and `packages/server/src/food/**` when phase two starts (briefs 035 and 037). So phase two runs in two parts.
+
+**Part A, now: what the server says.** Delivery's choice as the `Proactive` on open and state and as an idle whisper, through the gated `chooseNow`; the hero offer and `celebrate` said; the Gate in front of every tool result and every whisper built outside delivery; the ledger rows, with the Lab's counts reading them; `writeSaid` computing its own match; showing a `Proactive` that an open returns.
+
+**Part B, when the lead sends you on: what the voice machine sends.** `suggest` and `answer` in the call's tool list, the pasted line in a call, and the visit ID in the voice open. Leave `packages/core/src/voice/**` and the golden corpus alone until then.
+
+Read the "Outcome" sections of briefs 033 and 036 before part A. Brief 036's has the table of changed signatures (`chooseNow`, `admitMoments`, `recordPlayback`, `isMustSay`, `proactiveOf`); brief 033's has the Gate's caller contract.
+
+Rulings of the lead for part A, each for the owner to confirm:
+
+- **A Gate `card` verdict is not spoken and not shown** until the on-screen ask exists (`S2_SCREEN_ASK_BUILT` is false). Write a `held` ledger row with the Gate's reason. Do not build a card route for it here.
+- **Crisis holds a confirmed reminder too.** Contracts line 332 lets `mustSay` skip quiet hours and caps, nothing else, so the Gate's reading stands over delivery's. A held reminder stays planned and is offered again at the next opening after crisis clears; it is never dropped silently. If the code drops it today, say so as a finding with the smallest fix.
+- **A session with no known audience is `unknown`, never `private`.** A route that has no audience for the session passes none, and `chooseNow` treats that as `unknown`.
+- **The hero offer's whisper carries the IDs the yes needs** (the pending ID and the choice IDs), as data for the server, never as words for the model. Brief 037 binds the yes to the offer just shown; use its binding when part B wires `answer`.
+
+Other lanes are making small edits in `packages/server/src/routes/open.ts`, `state.ts`, `turn.ts` and `receipt.ts` (a barrier check, a visit check, the narrowing on a repair). Keep each of your edits there to a few lines that call into a module, so the merges stay easy.
+
 ## How to work
 
 One seam per commit. For each: the test first (a route test, or the demo script that waits for it, which loses its `it.fails` in that commit), then the call. Keep each call small: the logic lives in the lane's module, and the route gains a few lines. If a seam needs the piece itself to change, change it in its own module, with its tests.
