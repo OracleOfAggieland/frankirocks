@@ -101,7 +101,7 @@ Built on `lane/voice-c` from `a974866`. Findings 1, 3 and 8 are fixed, one commi
 ### Finding 1: third-party text never reaches the voice model (`e653a58`)
 
 - **Fix.** A pasted line, or typed text the server would class T (`isThirdPartyLine` in `core/src/voice/third-party.ts`, which mirrors `classifyTyped`), is still posted to `/api/turn` as written and stored as third-party text. The reply's `response.create` carries `THIRD_PARTY_STAND_IN`, worded by code, never the text. `safeTurn` (`server/src/turns.ts`) returns null for a class-T Turn, so no Deck's `turns` holds it.
-- **Ruling changed:** question V-183. It reverses brief 040 item 3, which passed the pasted text to the model.
+- **Ruling changed:** question V-193. It reverses brief 040 item 3, which passed the pasted text to the model.
 - **Property 2, machine half** (`core/src/voice/third-party-never-to-model.property.test.ts`): red with seed 1006022383, path `1:0:0:0:0:0:0:0`, which shrank to setup, a pasted line, `turnOk` ready, hash, created; "step 6 sent zq0marker".
 - **Property 2, Deck half** (`server/src/turns.third-party.property.test.ts`): red with seed -1483023018, path `1:0:0:1`, counterexample `[" ","T","S0","user"]`, where a SafeTurn came back.
 - **Assertion changed:** in `machine.test.ts`, the brief 040 item 3 test now expects the reply not to contain the pasted text, and to contain the stand-in. It also gained a test that a typed line with a URL gets the stand-in.

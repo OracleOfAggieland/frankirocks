@@ -1,5 +1,5 @@
 /**
- * Third-party text in a call (brief 045, finding 1; question V-183). Pure.
+ * Third-party text in a call (brief 045, finding 1; question V-193). Pure.
  *
  * Text the owner pasted, or typed text the server will classify T (`classifyTyped`: a line feed, "From:",
  * "Subject:", a URL, or over 280 characters), is someone else's words. It is posted to /api/turn and stored as
