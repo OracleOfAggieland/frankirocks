@@ -118,6 +118,13 @@ Before the parts, the lead asked for one fix to the merge of brief 025. Commit `
 - The cost of `momentVerdict` reading every Memory on a large tenant (W-214).
 - Pending deliveries the tick hasn't reached yet stay `pending` or `leased` until their next pass (W-213).
 
+### Follow-ups (W-228, W-229)
+
+- W-228: a must-say about someone recorded deceased plays only if the owner confirmed it strictly after the death was recorded (`fb3629b`). Tests come first in `time/life-041.test.ts`. Property `time/must-say-after-death.property.test.ts`, red seed -1080007604, gap 0 (confirmed at the instant of the death): the reminder stayed leased.
+- W-229: the life facts are read once per Reader, not on every moment (`a1a1348`). On three wishes about Mom, one pass makes 38 store calls and 2 scans, down from 44 calls and 4 scans. The seeded persona stays at 36 calls (`time/life-cost.test.ts`).
+- The render's reread in `time/proactive.ts:137` is a second Reader, so a pass still reads the view twice. Making it one is the wire lane's call (W-229).
+- Not changed: W-207, W-208 and W-215 go to the owner's list as not started.
+
 ### Checks after the merges
 
 Merged `build/plan-stages` twice: `b78ae7f`, then `bae159f`, because the branch moved meanwhile. The first merge had one conflict, in the FRIEND summary counts. After `bae159f`:
