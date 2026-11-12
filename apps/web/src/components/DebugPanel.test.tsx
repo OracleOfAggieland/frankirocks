@@ -48,6 +48,8 @@ interface Store {
   ledger: DebugItem[];
   head: CoreBundle | null;
   session?: DebugPage["session"];
+  /** The rules section (brief 018 task B11); empty when absent. */
+  rules?: DebugItem[];
 }
 
 const baseStore = (): Store => ({
@@ -82,7 +84,7 @@ function fakeDebugApi(store: Store) {
     async call<T>(_path: string, options: ApiCallOptions = {}) {
       if (failing !== null) return failing as ApiResult<T>;
       const section = options.query?.section as DebugSection;
-      const items: DebugItem[] = section === "head" ? (store.head === null ? [] : [{ kind: "head", id: "bundle", record: store.head }]) : store[section];
+      const items: DebugItem[] = section === "head" ? (store.head === null ? [] : [{ kind: "head", id: "bundle", record: store.head }]) : section === "rules" ? (store.rules ?? []) : store[section];
       return { ok: true, status: 200, body: pageOf(section, items, section === "turns" ? (store.session ?? null) : null) } as ApiResult<T>;
     },
   };
@@ -225,8 +227,8 @@ describe("DebugPanel", () => {
     const b = model.refresh();
     const c = model.refresh();
     await Promise.all([a, b, c]);
-    // Six sections per load, two loads.
-    expect(calls).toBe(12);
+    // Seven sections per load (rules added by brief 018 task B11), two loads.
+    expect(calls).toBe(14);
   });
 });
 
@@ -328,5 +330,55 @@ describe("DebugPanel, Realtime errors (review of wave A, item 15)", () => {
     // None yet: the line still shows 0, so the live check can read it.
     const none = renderToStaticMarkup(<DebugPanel state={model.getSnapshot()} selectedMemoryId={null} onSelectMemory={() => {}} onRefresh={() => {}} />).replaceAll("<!-- -->", "");
     expect(none).toContain("Realtime errors 0");
+  });
+});
+
+// Brief 018 task B11: the rules section lists rules with their proof spans, pending rules, proposals and noneConfirmed.
+describe("DebugPanel rules", () => {
+  const rulesItem = (): DebugItem => {
+    const base = sampleCoreDocs().rules;
+    const proof = { eid: EID, fieldPath: "text" as const, start: 0, end: 20, quote: TEXT };
+    const rule = { id: testId("rule-1"), subjectId: "self", code: "shellfish", state: "active" as const, anonymous: false, proof, proofRev: 1, rootKeys: [], dependsOn: [] };
+    const brother = { ...rule, id: testId("rule-2"), subjectId: testId("bro"), code: "peanut", state: "pending" as const, proof: { ...proof, quote: "drifted" } };
+    const proposed = { ...rule, id: testId("rule-3"), subjectId: null, anonymous: true, code: "unresolved", state: "pending" as const, proof: null, proofRev: null };
+    return {
+      kind: "rules",
+      id: "rules",
+      record: {
+        ...base,
+        rulesRev: 2,
+        allergies: [rule, brother],
+        subjectLabels: [{ subjectId: testId("bro"), label: "my brother" }],
+        proposals: [{ id: testId("prop"), origin: "backstop", turnId: null, eid: EID, install: [proposed] }],
+        noneConfirmed: [testId("guest")],
+      },
+      proofs: [
+        { ruleId: rule.id, from: "rule", state: "verified" },
+        { ruleId: brother.id, from: "rule", state: "spanQuoteMismatch" },
+        { ruleId: proposed.id, from: "proposal", state: "none" },
+      ],
+    } as DebugItem;
+  };
+
+  it("lists rules, pending rules and proposals with their proof spans, and noneConfirmed", async () => {
+    const store = baseStore();
+    store.rules = [rulesItem()];
+    const { model } = await loaded(store);
+    expect(model.getSnapshot().error).toBeNull();
+    const html = render(model.getSnapshot());
+    expect(html).toContain('data-testid="rules"');
+    const rows = [...html.matchAll(/data-testid="rule-row" data-from="(\w+)" data-state="(\w+)" data-proof="(\w+)"/g)].map((m) => `${m[1]}:${m[2]}:${m[3]}`);
+    expect(rows).toEqual(["rule:active:verified", "rule:pending:spanQuoteMismatch", "proposal:pending:none"]);
+    expect(html).toContain("You · shellfish · active");
+    expect(html).toContain("my brother · peanut · pending");
+    expect(html).toContain("proposed (backstop)");
+    expect(html).toContain(`“${TEXT}”`);
+    expect(html.match(/data-testid="rule-proof-mismatch"/g)).toHaveLength(1);
+    expect(html).toContain(testId("guest"));
+  });
+
+  it("says so when there is no rules document", async () => {
+    const { model } = await loaded();
+    expect(render(model.getSnapshot())).toContain('data-testid="no-rules"');
   });
 });

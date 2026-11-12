@@ -1,4 +1,4 @@
-import { type CoreEpoch, type Ledger, type Session, type Turn } from "@franki/core";
+import { type CoreEpoch, type CoreRules, type Ledger, type Session, type Turn } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { fail, never, ok } from "../openai/fake";
@@ -10,6 +10,9 @@ import { decisionAnswer } from "../testing/decisions";
 import { callRoute, patchRecord, settle, testRig } from "../testing/fakes";
 import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
 import { REPAIR_DEADLINE_MS, repairDecisionId, runParseRepair } from "./repair";
+import { runRepairRoute } from "../onturn/late";
+
+type OpenedStamp = Awaited<ReturnType<typeof openTestSession>>["stamp"];
 
 const UID = "owner-1";
 const items = (n: number) => [{ itemId: `item_${n}`, commitSeq: n }];
@@ -192,5 +195,91 @@ describe("the Parse_Repair under contention (review of wave A, item 18)", () => 
     loseRepairCommits(rig, 1, () => patchRecord<Session>(rig.store, UID, paths.session(UID, s.sessionId), { parseLease: null }));
     await runScheduled(rig);
     expect((await turn(rig, s.sessionId, 1)).parseState).toBe("failed");
+  });
+});
+// Brief 018 task B9 (brief 012 G20, G39, CQ 113): the hardRule route after the lease, as a proposal, once per turn.
+describe("the Parse_Repair and the hardRule route (B9)", () => {
+  const rulesOf = async (rig: Rig) => (await rig.store.get<CoreRules>(UID, paths.core(UID, "rules")))!.data;
+  const spanOf = (eid: string, text: string, phrase: string) => ({ eid, fieldPath: "text" as const, start: text.indexOf(phrase), end: text.indexOf(phrase) + phrase.length, quote: phrase });
+  const peanuts = "I can't have peanuts, I swell up.";
+  const peanutItems = (eid: string) => [{ kind: "allergy" as const, subject: { entityId: null, mention: null, isSelf: true }, item: "peanuts", severity: "allergy" as const, polarity: "affirmed" as const, act: "direct" as const, span: spanOf(eid, peanuts, "I can't have peanuts") }];
+  const stampNow = async (rig: Rig, stamp: OpenedStamp): Promise<OpenedStamp> => {
+    const epoch = (await rig.store.get<CoreEpoch>(UID, paths.core(UID, "epoch")))!.data;
+    const bundle = (await rig.store.get<{ bundleRev: number }>(UID, paths.core(UID, "bundle")))!.data;
+    const rules = await rulesOf(rig);
+    return { ...stamp, epoch: epoch.epoch, policyRev: epoch.policyRev, bundleRev: bundle.bundleRev, rulesRev: rules.rulesRev };
+  };
+
+  it("a repaired hardRule hit with no cue word writes a proposal, raises no rulesRev, and the next turn applies it", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    rig.openai.script("decisions.create", never(), ok(decisionAnswer({ hardRule: 0.9 })));
+    rig.fastSlots.script((input) => ({ kind: "valid", out: { items: peanutItems(input.turn.eid), need: "none" }, ms: 50 }));
+    await post(rig, asrTurn(s.stamp, 1, peanuts, items(1)));
+    // No cue word and a failed parse: the turn itself ran no route.
+    expect(rig.fastSlots.calls).toHaveLength(0);
+    const before = await rulesOf(rig);
+    await runScheduled(rig);
+    expect(rig.fastSlots.calls).toHaveLength(1);
+    const rules = await rulesOf(rig);
+    expect(rules.rulesRev).toBe(before.rulesRev);
+    expect(rules.allergies).toEqual([]);
+    expect(rules.proposals).toHaveLength(1);
+    expect(rules.proposals[0]).toMatchObject({ origin: "repair", turnId: testId("turn-1"), install: [expect.objectContaining({ subjectId: "self", code: "peanut" })] });
+    expect(rules.handled.at(-1)!.entries).toEqual([expect.objectContaining({ route: "hardRule", outcome: "proposed" })]);
+    expect((await turn(rig, s.sessionId, 1)).parseState).toBe("committed");
+
+    rig.openai.always("responses.create", ok({ output_text: "ok" }));
+    await post(rig, asrTurn(await stampNow(rig, s.stamp), 2, "We watched a film about trains.", items(2)));
+    const after = await rulesOf(rig);
+    expect(after.proposals).toEqual([]);
+    expect(after.allergies.map((r) => `${r.subjectId}:${r.code}`)).toEqual(["self:peanut"]);
+    expect(after.rulesRev).toBe(before.rulesRev + 1);
+  });
+
+  it("a regex-triggered turn with a failed parse and then a repaired hit makes one FastSlots call and one handled entry", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    const text = "I'm allergic to shellfish.";
+    rig.openai.script("decisions.create", never(), ok(decisionAnswer({ hardRule: 0.9 })));
+    rig.fastSlots.script({ kind: "transport", ms: 0 });
+    await post(rig, asrTurn(s.stamp, 1, text, items(1)));
+    await runScheduled(rig);
+    expect(rig.fastSlots.calls).toHaveLength(1);
+    const rules = await rulesOf(rig);
+    expect(rules.handled.flatMap((h) => h.entries)).toHaveLength(1);
+    expect(rules.proposals).toEqual([]);
+  });
+
+  it("a repair whose FastSlots answer comes after the lease has still committed the parse, and proposes only", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    rig.openai.script("decisions.create", never(), ok(decisionAnswer({ hardRule: 0.9 })));
+    rig.fastSlots.script((input) => {
+      // The answer arrives well past REPAIR_LEASE_MS.
+      rig.clock.advance(5_000);
+      return { kind: "valid", out: { items: peanutItems(input.turn.eid), need: "none" }, ms: 5_000 };
+    });
+    await post(rig, asrTurn(s.stamp, 1, peanuts, items(1)));
+    await runScheduled(rig);
+    expect((await turn(rig, s.sessionId, 1)).parseState).toBe("committed");
+    expect((await session(rig, s.sessionId)).parseLease).toBeNull();
+    const rules = await rulesOf(rig);
+    expect(rules.proposals.map((p) => p.origin)).toEqual(["repair"]);
+    expect(rules.allergies).toEqual([]);
+  });
+
+  it("a second repair of the same turn proposes nothing more and makes no FastSlots call", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    rig.openai.script("decisions.create", never(), ok(decisionAnswer({ hardRule: 0.9 })));
+    rig.fastSlots.script((input) => ({ kind: "valid", out: { items: peanutItems(input.turn.eid), need: "none" }, ms: 50 }));
+    await post(rig, asrTurn(s.stamp, 1, peanuts, items(1)));
+    await runScheduled(rig);
+    const once = await rulesOf(rig);
+    const slow = { parse: { kind: "hit" }, probabilities: { hardRule: 0.9, uncertainSpeaker: 0.01, company: 0.01, quiet: 0.01 }, regex: [], ms: 1 } as never;
+    expect(await settle(runRepairRoute({ uid: UID, deps: rig.deps }, { sessionId: s.sessionId, turnId: testId("turn-1") }, slow), rig.clock, rig.timers).then((r) => r.value)).toBe("none");
+    expect(rig.fastSlots.calls).toHaveLength(1);
+    expect(await rulesOf(rig)).toEqual(once);
   });
 });

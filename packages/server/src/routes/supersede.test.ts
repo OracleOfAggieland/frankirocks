@@ -1,4 +1,4 @@
-import { type CoreEpoch, type Evidence, type Session, type Turn } from "@franki/core";
+import { type CoreEpoch, type CoreRules, type Evidence, type Session, type Turn, readRulesSection } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { ok } from "../openai/fake";
@@ -163,5 +163,50 @@ describe("a superseding alone (review of wave A, item 20)", () => {
     rig.openai.script("decisions.create", ok(decisionAnswer({ alone: 0.9 })));
     await post(rig, late(s.stamp, 1, "it's just us now"));
     expect((await session(rig, s.sessionId)).committedParseSeq).toBe(1);
+  });
+});
+
+// Brief 018 task B9 (brief 012 G20, CQ 113): a supersede runs the hardRule route in its own transaction, once.
+describe("the Superseding_Post and the hardRule route (B9)", () => {
+  const rulesOf = async (rig: Rig) => (await rig.store.get<CoreRules>(UID, paths.core(UID, "rules")))!.data;
+  const text = "I'm allergic to shellfish.";
+  const shellfish = (eid: string) => [
+    { kind: "allergy" as const, subject: { entityId: null, mention: null, isSelf: true }, item: "shellfish", severity: "allergy" as const, polarity: "affirmed" as const, act: "direct" as const, span: { eid, fieldPath: "text" as const, start: 0, end: 25, quote: text.slice(0, 25) } },
+  ];
+
+  it("an allergy line writes the rule, returns a higher Deck whose Head lists it, and no Permit", async () => {
+    const { rig, s } = await missingFirst();
+    rig.openai.script("decisions.create", ok(decisionAnswer({ hardRule: 0.9 })));
+    rig.fastSlots.script((input) => ({ kind: "valid", out: { items: shellfish(input.turn.eid), need: "none" }, ms: 50 }));
+    const before = await rulesOf(rig);
+    const res = await post(rig, late(s.stamp, 1, text));
+    expect(res.body).toMatchObject({ status: "ready", permit: null, notes: [] });
+    const rules = await rulesOf(rig);
+    expect(rules.allergies.map((r) => `${r.subjectId}:${r.code}:${r.state}`)).toEqual(["self:shellfish:active"]);
+    expect(rules.rulesRev).toBe(before.rulesRev + 1);
+    expect(res.body.stamp.rulesRev).toBe(rules.rulesRev);
+    expect(res.body.deck.rulesRev).toBe(rules.rulesRev);
+    expect(readRulesSection(res.body.deck.head.text)).toContainEqual({ subject: "You", code: "shellfish", state: "active" });
+    expect(rules.handled.at(-1)!.entries).toEqual([expect.objectContaining({ route: "hardRule", outcome: "ruleWritten" })]);
+    expect(rig.fastSlots.calls).toHaveLength(1);
+  });
+
+  it("an ordinary late transcript makes no FastSlots call and writes no rule", async () => {
+    const { rig, s } = await missingFirst();
+    const before = await rulesOf(rig);
+    await post(rig, late(s.stamp, 1, "my dog loves the park"));
+    expect(rig.fastSlots.calls).toHaveLength(0);
+    expect(await rulesOf(rig)).toEqual(before);
+  });
+
+  it("a failed FastSlots answer still fails closed: a pending rule, no saved claim", async () => {
+    const { rig, s } = await missingFirst();
+    rig.openai.script("decisions.create", ok(decisionAnswer({ hardRule: 0.9 })));
+    rig.fastSlots.script({ kind: "transport", ms: 0 });
+    const res = await post(rig, late(s.stamp, 1, text));
+    expect(res.body).toMatchObject({ permit: null, notes: [] });
+    const rules = await rulesOf(rig);
+    expect(rules.allergies.length).toBeGreaterThan(0);
+    expect(rules.allergies.every((r) => r.state === "pending")).toBe(true);
   });
 });

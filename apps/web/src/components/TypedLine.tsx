@@ -46,7 +46,7 @@ export interface TypedLineFieldProps extends TypedInputProps {
   onCollapse: () => void;
 }
 
-export function TypedLineField({ text, enabled, sending, canSend, error, onChange, onSubmit, onCollapse }: TypedLineFieldProps) {
+export function TypedLineField({ text, enabled, sending, canSend, error, onChange, onSubmit, onPaste, onCollapse }: TypedLineFieldProps) {
   const sendDisabled = !enabled || !canSend;
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const action = typedKeyAction({ key: e.key, shiftKey: e.shiftKey, isComposing: e.nativeEvent.isComposing }, text, sendDisabled);
@@ -75,6 +75,7 @@ export function TypedLineField({ text, enabled, sending, canSend, error, onChang
           autoFocus
           disabled={!enabled}
           onChange={(e) => onChange(e.target.value)}
+          onPaste={() => onPaste?.()}
           onKeyDown={onKeyDown}
           className="relative min-h-11 min-w-0 flex-1 resize-none bg-transparent py-2.5 pl-4 pr-2 text-left text-base text-ink focus-visible:outline-none disabled:opacity-50"
         />

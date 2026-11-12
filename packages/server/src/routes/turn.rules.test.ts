@@ -268,3 +268,18 @@ describe("the hardRule route (B6)", () => {
     expect(texts(res)).toEqual([TYPED_LINES.kept]);
   });
 });
+
+// Brief 018 task B10 (brief 012 G34, CQ 127): text a paste event supplied is T whatever its length.
+describe("pasted text is T (B10)", () => {
+  it("a pasted one-line allergy writes nothing in core/rules and opens no route", async () => {
+    for (const call of [false, true]) {
+      const { rig, stamp } = await setup(call);
+      const before = await rulesOf(rig);
+      const res = await post(rig, { ...typedTurn(stamp, 1, "I'm allergic to peanuts, please no satay"), source: "pasted" });
+      expect(res.status, String(call)).toBe(200);
+      expect(await rulesOf(rig), String(call)).toEqual(before);
+      expect(rig.fastSlots.calls, String(call)).toHaveLength(0);
+      expect(rig.openai.requestsTo("decisions.create"), String(call)).toHaveLength(0);
+    }
+  });
+});

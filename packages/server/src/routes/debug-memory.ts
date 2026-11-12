@@ -3,7 +3,7 @@
  * "GET /api/debug/memory"). Development only: while NODE_ENV is "production" it answers 404 CONFIG before any
  * Store_Port read. Read-only: no core documents, no request ledger.
  *
- * `?section=turns|evidence|memories|jobs|ledger|head[&sessionId=][&cursor=]`. Pages hold at most 50 items;
+ * `?section=turns|evidence|memories|jobs|ledger|head|rules[&sessionId=][&cursor=]`. Pages hold at most 50 items;
  * `nextCursor` is set exactly when more remain. A cursor names the last item of the previous page and must be a
  * record of the requesting Owner (otherwise SCOPE), so pages never repeat or skip items read with no writes in
  * between. Memory items carry their lineage from `resolveLineage`, with a mismatch flag.
@@ -38,6 +38,7 @@ import { paths } from "../store/paths";
 import type { StoredDoc } from "../store/port";
 import { readTurns } from "../worker/extract-jobs";
 import { configError, parseError, scopeError } from "./errors";
+import { rulesItem } from "./debug-rules";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 
 export const DEBUG_PAGE_SIZE = 50;
@@ -220,6 +221,7 @@ function s2Ids(p: DebugPage): string[] {
 export async function debugMemory(ctx: RouteContext, req: DebugReq): Promise<DebugPage> {
   const { uid, deps } = ctx;
   let result: DebugPage;
+  let rulesS2 = false;
   switch (req.section) {
     case "head": {
       const bundle = await deps.store.get<CoreBundle>(uid, paths.core(uid, "bundle"));
@@ -242,6 +244,13 @@ export async function debugMemory(ctx: RouteContext, req: DebugReq): Promise<Deb
       result = page("jobs", rows.map((r) => ({ kind: "job", id: r.id, record: r.data })), more, (i) => i.id);
       break;
     }
+    // Brief 018 task B11: the rules section, one item.
+    case "rules": {
+      const r = await rulesItem(ctx);
+      result = page("rules", r.item === null ? [] : [r.item], false, (i) => i.id);
+      if (r.revealsS2) rulesS2 = true;
+      break;
+    }
     case "memories": {
       const { rows, more } = await q28<Memory>(ctx, "memories", req.cursor);
       const items: DebugItem[] = await Promise.all(rows.map((r) => memoryItem(ctx, r)));
@@ -249,7 +258,7 @@ export async function debugMemory(ctx: RouteContext, req: DebugReq): Promise<Deb
       break;
     }
   }
-  const revealed = s2Ids(result);
+  const revealed = [...s2Ids(result), ...(rulesS2 ? ["rules"] : [])];
   if (revealed.length > 0) deps.log("debug.s2reveal", { uid, ids: revealed, opsAt: tsFromMs(deps.clock.read().opsClock.now) });
   return result;
 }
