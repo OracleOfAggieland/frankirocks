@@ -235,8 +235,9 @@ export type TurnBody = Omit<Infer<typeof TurnRequest>, "requestId">;
 
 export interface VoiceTurn {
   turnId: string;
-  source: "asr" | "typed";
-  /** Typed text; null for ASR turns. */
+  /** `pasted` when a paste event supplied the typed line (brief 040, item 3): posted as pasted, third-party text. */
+  source: "asr" | "typed" | "pasted";
+  /** Typed or pasted text; null for ASR turns. */
   text: string | null;
   items: VoiceItem[];
   /** End of speech: opsClock at the last `input_audio_buffer.committed` (C§6 t0=committed). */
@@ -514,7 +515,7 @@ export type VoiceEvent =
   /** The Voice_Client's SHA-256 of the payload a `hashPayload` command named. */
   | { type: "specHashed"; eventId: string; hash: string }
   /** A typed line sent while a call is live (design "One typed turn" step 4). */
-  | { type: "typedSubmitted"; turnId: string; text: string }
+  | { type: "typedSubmitted"; turnId: string; text: string; source: "typed" | "pasted" }
   /** `freshId` is a new random ID, used as the turnId if this event starts a Turn. `lastLoudAt` is the Voice_Client's
    * last loud input frame on the opsClock, sent with commits for the Latency_Clock. */
   | { type: "realtime"; event: RealtimeServerEvent; freshId: string; lastLoudAt?: number | null }
@@ -942,7 +943,7 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       break;
     case "typedSubmitted":
       if (state.phase === "LISTENING" && state.session !== null && state.deck !== null && event.text.trim() !== "") {
-        s.set({ turn: { turnId: event.turnId, source: "typed", text: event.text, items: [], tEnd: now, posted: null, staleRetried: false } });
+        s.set({ turn: { turnId: event.turnId, source: event.source === "pasted" ? "pasted" : "typed", text: event.text, items: [], tEnd: now, posted: null, staleRetried: false } });
         postTurn(s, "final");
       }
       break;
@@ -1407,7 +1408,7 @@ function buildTurnBody(st: VoiceState, turn: VoiceTurn, transcriptState: "final"
     .sort((a, b) => (a.commitSeq ?? Number.MAX_SAFE_INTEGER) - (b.commitSeq ?? Number.MAX_SAFE_INTEGER) || a.committedAt - b.committedAt)
     .map((i) => (i.commitSeq !== null ? i : { ...i, commitSeq: ++lastCommitSeq }));
   const transcript =
-    transcriptState !== "final" ? "" : turn.source === "typed" ? (turn.text ?? "") : items.map((i) => i.transcript ?? "").join(" ").slice(0, 8192);
+    transcriptState !== "final" ? "" : turn.source !== "asr" ? (turn.text ?? "") : items.map((i) => i.transcript ?? "").join(" ").slice(0, 8192);
   const body: TurnBody = {
     sessionId: session.sessionId,
     epoch: deck.epoch,
@@ -1419,7 +1420,7 @@ function buildTurnBody(st: VoiceState, turn: VoiceTurn, transcriptState: "final"
     clientSeq: st.nextClientSeq,
     source: turn.source,
     items:
-      turn.source === "typed"
+      turn.source !== "asr"
         ? []
         : items.map((i) => ({
             itemId: i.itemId,
@@ -1431,7 +1432,7 @@ function buildTurnBody(st: VoiceState, turn: VoiceTurn, transcriptState: "final"
     utteredWorldAt: tsFromMs(turn.tEnd),
     transcript,
     transcriptState,
-    judge: turn.source === "typed" ? "typed" : (turn.verdict ?? "timeout"),
+    judge: turn.source !== "asr" ? "typed" : (turn.verdict ?? "timeout"),
     pendingId: null,
     choiceId: null,
     supersedesRequestId: null,

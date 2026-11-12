@@ -89,7 +89,7 @@ export const COPY = {
   captions: { toggle: "Captions" },
   sound: { toggle: "Sound effects" },
   auth: { signIn: "Sign in to wake Franki", signOut: "Sign out", about: "About Franki" },
-  typed: { open: "Type to Franki", label: "Type to Franki", send: "Send", pastedInCall: "Pasted text can't go into a call. Send it after you hang up." },
+  typed: { open: "Type to Franki", label: "Type to Franki", send: "Send" },
   call: {
     start: "Call Franki",
     hangUp: "Hang up",

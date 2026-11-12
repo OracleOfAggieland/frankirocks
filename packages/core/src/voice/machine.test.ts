@@ -1077,11 +1077,22 @@ describe("wave A review fixes, item 2: the poll's Deck carries the safe turns", 
 describe("wave A review fixes, Part 2", () => {
   it("item 3: a typed line during a call gets its reply", () => {
     const r = listening();
-    r.ev({ type: "typedSubmitted", turnId: testId("typed-1"), text: "What is my dog called?" });
+    r.ev({ type: "typedSubmitted", turnId: testId("typed-1"), text: "What is my dog called?", source: "typed" });
     expect(turnBody(r)).toMatchObject({ source: "typed", transcriptState: "final" });
     expect(r.st.phase).toBe("HELD");
     r.ev({ type: "turnOk", turnId: testId("typed-1"), response: admitted(r, "slowOrdinary") }, 400);
     expect(sends(answerVerify(r)).map((e) => e.type)).toContain("response.create");
+  });
+
+  it("brief 040 item 3: a pasted line during a call is posted as pasted, with its text, and gets its reply like a typed one", () => {
+    const r = listening();
+    r.ev({ type: "typedSubmitted", turnId: testId("pasted-1"), text: "I'm allergic to sesame, from an email", source: "pasted" });
+    expect(turnBody(r)).toMatchObject({ source: "pasted", transcriptState: "final", judge: "typed", items: [], transcript: "I'm allergic to sesame, from an email" });
+    expect(r.st.phase).toBe("HELD");
+    r.ev({ type: "turnOk", turnId: testId("pasted-1"), response: admitted(r, "slowOrdinary") }, 400);
+    const create = sends(answerVerify(r)).find((e) => e.type === "response.create");
+    expect(create).toBeDefined();
+    expect(JSON.stringify(create)).toContain("allergic to sesame");
   });
 
   it("item 4: speech start while HELD with nothing in flight drops the wait; the late Permit doesn't play over the owner", () => {
@@ -1216,7 +1227,7 @@ describe("wave A review fixes, item 7: an admitted turn is posted after its repl
 
   it("a new turn's post first posts the held-back turn missing, so clientSeq keeps commit order", () => {
     const r = shortReply();
-    r.ev({ type: "typedSubmitted", turnId: testId("typed-2"), text: "And another thing" }, 100);
+    r.ev({ type: "typedSubmitted", turnId: testId("typed-2"), text: "And another thing", source: "typed" }, 100);
     const posts = r.log.flatMap((c) => (c.kind === "turn" ? [c.body] : []));
     expect(posts.map((b) => [b.transcriptState, b.clientSeq])).toEqual([
       ["missing", 1],
