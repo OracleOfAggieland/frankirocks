@@ -27,18 +27,26 @@ export interface DeliveryCandidate {
 /** An open session (whisper at the next idle moment) or a session opening (its first line). */
 export type DeliveryMode = { kind: "session"; listening: boolean; silentMs: number } | { kind: "opening" };
 
-export interface DeliveryInput {
+/**
+ * The session's holds (brief 036 finding 4: crisis and transition are separate inputs). `transition`: the session
+ * holds a transition candidate. `crisis`: it holds a crisis candidate. The older single flag still reads, failing
+ * closed: it holds as both, since it can't say which it meant.
+ */
+export type SessionHolds = { transition: boolean; crisis: boolean } | { transitionOrCrisis: boolean };
+
+export const holdsOf = (h: SessionHolds): { transition: boolean; crisis: boolean } =>
+  "transitionOrCrisis" in h ? { transition: h.transitionOrCrisis, crisis: h.transitionOrCrisis } : { transition: h.transition, crisis: h.crisis };
+
+export type DeliveryInput = SessionHolds & {
   candidates: readonly DeliveryCandidate[];
   mode: DeliveryMode;
-  /** The session holds a transition or crisis candidate. */
-  transitionOrCrisis: boolean;
   /** Turns since the owner answered a check-in in this session; null when none was answered. */
   turnsSinceCheckInAnswer: number | null;
   /** Proactive lines and heavy ones already spoken this world day (`countDelivery`). */
   today: { proactive: number; heavy: number };
   worldNow: number;
   zone: string;
-}
+};
 
 export type DeliveryReason =
   | "chosen"
@@ -47,6 +55,7 @@ export type DeliveryReason =
   | "dayCap"
   | "heavyCap"
   | "transitionHold"
+  | "crisisHold"
   | "afterCheckIn"
   | "notIdle"
   | "lowerRank"
@@ -61,8 +70,11 @@ export interface DeliveryChoice {
 /** Opening-line priority (spec §5): mustSay, wish, check-in, ask, insight, celebrate, others. */
 const RANK: Partial<Record<MomentKind, number>> = { wish: 1, checkIn: 2, ask: 3, expiryAsk: 3, insight: 4, celebrate: 5 };
 const rankOf = (c: DeliveryCandidate): number => (c.mustSay ? 0 : (RANK[c.kind] ?? 6));
-/** No insight, celebrate or ask with a transition or crisis candidate, or within two turns of a check-in answer. */
-const HELD_AFTER_CHECKIN: readonly MomentKind[] = ["insight", "celebrate", "ask", "expiryAsk"];
+/**
+ * No insight, celebrate or ask with a transition or crisis candidate, or within two turns of a check-in answer. A
+ * grief ask is held the same way (brief 036 finding 4).
+ */
+const HELD_AFTER_CHECKIN: readonly MomentKind[] = ["insight", "celebrate", "ask", "expiryAsk", "griefAsk"];
 const HEAVY_KINDS: readonly MomentKind[] = ["griefAsk", "transition", "door"];
 
 /** Heavy (design note 023 §5): the source's gravity is 2 or more, or the kind is heavy by nature. */
@@ -87,13 +99,23 @@ function speechLimit(c: DeliveryCandidate, input: DeliveryInput): DeliveryReason
 export function chooseDelivery(input: DeliveryInput): DeliveryChoice {
   const reasons: DeliveryChoice["reasons"] = [];
   const recentCheckIn = input.turnsSinceCheckInAnswer !== null && input.turnsSinceCheckInAnswer < CHECKIN_GAP_TURNS;
+  const { transition, crisis } = holdsOf(input);
   const open: DeliveryCandidate[] = [];
   for (const c of input.candidates) {
-    if (HELD_AFTER_CHECKIN.includes(c.kind) && !c.mustSay) {
-      if (input.transitionOrCrisis) {
-        reasons.push({ momentId: c.momentId, code: "transitionHold" });
-        continue;
-      }
+    if (c.mustSay) {
+      open.push(c);
+      continue;
+    }
+    if (HELD_AFTER_CHECKIN.includes(c.kind) && (transition || crisis)) {
+      reasons.push({ momentId: c.momentId, code: "transitionHold" });
+      continue;
+    }
+    // Crisis holds every candidate that is not mustSay: no wish or check-in after "He didn't make it".
+    if (crisis) {
+      reasons.push({ momentId: c.momentId, code: "crisisHold" });
+      continue;
+    }
+    if (HELD_AFTER_CHECKIN.includes(c.kind)) {
       if (recentCheckIn) {
         reasons.push({ momentId: c.momentId, code: "afterCheckIn" });
         continue;

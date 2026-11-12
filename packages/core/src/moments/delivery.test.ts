@@ -86,3 +86,24 @@ describe("said", () => {
     expect(matchSaid(r, { momentId: testId("x"), noteId: null, tokens: [], template: null, candidate: { name: "Thai Basil", reason: "" } })).toBe("none");
   });
 });
+
+describe("brief 036 finding 4: crisis and transition are separate", () => {
+  it("crisis holds a wish and a check-in; a mustSay still plays", () => {
+    const crisis = (cands: DeliveryCandidate[]) => {
+      const { transitionOrCrisis: _, ...rest } = input(cands);
+      return chooseDelivery({ ...rest, transition: false, crisis: true });
+    };
+    const out = crisis([cand("w", "wish"), cand("c", "checkIn")]);
+    expect(out.spoken).toBeNull();
+    expect(out.reasons.map((r) => r.code)).toEqual(["crisisHold", "crisisHold"]);
+    expect(crisis([cand("w", "wish"), cand("m", "commitmentDue", { mustSay: true })]).spoken?.momentId).toBe("m");
+  });
+
+  it("a transition holds a grief ask, not a wish; the old single flag holds as both", () => {
+    const { transitionOrCrisis: _, ...rest } = input([cand("g", "griefAsk"), cand("w", "wish")]);
+    const out = chooseDelivery({ ...rest, transition: true, crisis: false });
+    expect(out.reasons.find((r) => r.momentId === "g")?.code).toBe("transitionHold");
+    expect(out.spoken?.momentId).toBe("w");
+    expect(chooseDelivery(input([cand("w", "wish")], { transitionOrCrisis: true })).reasons[0]?.code).toBe("crisisHold");
+  });
+});

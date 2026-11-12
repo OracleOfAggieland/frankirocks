@@ -105,3 +105,9 @@ Heavy (`isHeavy`): a moment whose source has gravity ≥ 2, or kind `griefAsk`, 
 | 16 | The demo's "the takeout moment is due after the bolt" | The insight is due at local midnight after the window; ordering against the check-in is delivery's rank and the two-turn rule. The demo script (brief 029) decides the clock steps | report |
 | 17 | Moments, effects and blocks have no declared index for the tick's queries (Q15, Q16, Q35, Q25) | Paged ID scans (Q28) filtered in code, capped (`MOMENT_SCAN_MAX`, `MEMORY_SCAN_MAX`); a full page of effects fails closed | `time/tick.ts` |
 | 18 | A tick on a tenant with no core documents | Skipped (`noCore`), nothing written | `memoryTick` |
+
+## Contract questions added by brief 036 (the review of this lane)
+
+Each amends a ruling above, for the reading that fails closed. Each is the lead's ruling, for the owner to confirm.
+
+- **S-177 (amends §5 step 1, finding 4):** crisis and transition are separate inputs. Crisis holds every candidate that is not `mustSay` (`crisisHold`), so no wish or check-in plays after "He didn't make it". A transition holds insight, celebrate, ask, expiry ask and now `griefAsk` (`transitionHold`). The older single flag `transitionOrCrisis` still reads and holds as both.

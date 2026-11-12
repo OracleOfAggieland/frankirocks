@@ -18,6 +18,7 @@ import {
   type Permit,
   type Proactive,
   type Sens,
+  type SessionHolds,
   type Stamp,
   type W,
   PERMIT_TTL_MS,
@@ -39,10 +40,11 @@ import { paths } from "../store/paths";
 import { scanMoments } from "./tick";
 import { momentNoteId, momentVerdict } from "./verdict";
 
-export interface SessionSignals {
-  transitionOrCrisis: boolean;
-  turnsSinceCheckInAnswer: number | null;
-}
+/**
+ * The session's signals. Brief 036 finding 4: pass `transition` and `crisis` separately; the older
+ * `transitionOrCrisis` still reads, and holds as both (fails closed).
+ */
+export type SessionSignals = SessionHolds & { turnsSinceCheckInAnswer: number | null };
 
 /** The delivery choice now, over the opened moments whose lease still holds and whose source rereads `ok`. */
 export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: SessionSignals): Promise<{ choice: DeliveryChoice; moments: Map<ID, Moment> }> {
