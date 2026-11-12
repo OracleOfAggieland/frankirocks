@@ -116,7 +116,13 @@ export function memoryLine(m: Memory): string {
   return `- ${renderedMemory(m)}`;
 }
 
-function sectionOf(m: Memory): "people" | "apply" | "know" {
+/**
+ * The section a line goes in. A line naming someone whose current life row says they died stays in `know`, never
+ * a proactive section (G15, CQ 110; brief 025 task D3): the join reads the truth, adds no text, and reaches only
+ * lines whose `entityIds` hold that EID.
+ */
+function sectionOf(m: Memory, deceased: ReadonlySet<string> = new Set()): "people" | "apply" | "know" {
+  if ((m.entityIds ?? []).some((e) => deceased.has(e)) || (m.subjectId !== "self" && deceased.has(m.subjectId))) return "know";
   if (m.predicate.startsWith("person.")) return "people";
   if (m.predicate.startsWith("preference.") || m.predicate === "handling") return "apply";
   return "know";
@@ -128,6 +134,15 @@ export function compileHead(input: HeadInput): HeadResult {
   const { clock, rules } = input;
   const cap = Math.min(input.tokenCap ?? HEAD_TOKEN_CAP, HEAD_TOKEN_CAP);
 
+  // The deceased join (G15): read from every current, eligible life row, S2 included, since the death's own words
+  // are S2 and never render.
+  const deceased = new Set<string>();
+  for (const hm of input.memories) {
+    const m = hm.memory;
+    if (m.predicate !== "person.life" || m.status !== "active" || m.value.kind !== "enum" || m.value.code !== "deceased" || m.subjectId === "self") continue;
+    if (eligible({ ref: memoryDocRef(hm), row: m }, { ...input.ec, stage: "project" }, input.snapshot).allow) deceased.add(m.subjectId);
+  }
+
   // Candidate Memory lines: eligible and spoken-grade only (R26.2, R26.3, R28.1–R28.3).
   const passing: { section: "people" | "apply" | "know"; m: HeadMemory }[] = [];
   for (const hm of input.memories) {
@@ -138,7 +153,7 @@ export function compileHead(input: HeadInput): HeadResult {
     // By audience (voice-control R14.2, task 45): outside a private audience only S0 lines, as the admission rule
     // lets only S0 notes through (`notesAllowed`) and the Gate holds S1+ in company. The rules section is untouched.
     if (!headAdmitsSens(input.audience ?? "private", hm.memory.sens)) continue;
-    passing.push({ section: sectionOf(hm.memory), m: hm });
+    passing.push({ section: sectionOf(hm.memory, deceased), m: hm });
   }
   // Deterministic order: (section, predicate, key, id), so input order never matters (R26.12).
   passing.sort(
