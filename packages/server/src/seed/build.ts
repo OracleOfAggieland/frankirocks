@@ -602,7 +602,8 @@ function buildBank(line: BankLine, input: SeedInput, ids: ReturnType<typeof seed
     providerKey: ids.key("bank-row", line.id),
     pending,
     removed: false,
-    amountCents: -line.amountCents,
+    // A purchase is a positive amount, a refund a negative one: the hero detector's convention (brief 023, S-170).
+    amountCents: line.amountCents,
     currency: "USD",
     pendingOfId: null,
     refundOfId: null,
