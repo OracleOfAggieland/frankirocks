@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { CoreRules } from "../schema/records";
 import { planHardRule } from "./hard-rule";
 import { notAllergyByCode } from "./not-allergy";
-import { renderRulesSection } from "./rules-section";
+import { PERSONA_TEXT } from "../head";
+import { PENDING_PREFIX, renderRulesSection } from "./rules-section";
 import { TURN_AT, TURN_EID, buildEvidence, emptyRules, hardRuleTurn, spanAt, turnEvidenceOf, validateContext } from "./testing/arb-writes";
 import type { FastItem, FastSlotsOut, Subject } from "./types";
 import { validateItems } from "./validate";
@@ -167,5 +168,15 @@ describe("H1, found by the property: a denial reaches only a rule stored before 
     const t = "I'm allergic to eggs. I don't have any allergies.";
     const p = plan(t, [item(t, "I'm allergic to eggs", "eggs", "affirmed"), item(t, "I don't have any allergies", "any allergies", "denied")], emptyRules(), { need: "subject" });
     expect(filtered(p.rules, "self", "egg")).toBe(true);
+  });
+});
+
+describe("L1: a pending line is never called saved", () => {
+  it("the persona's saved-allergy lines leave out entries that start with PENDING_PREFIX", () => {
+    const lead = PENDING_PREFIX.slice(2, PENDING_PREFIX.indexOf(","));
+    expect(lead).toBe("Not yet clear");
+    const line = PERSONA_TEXT.split("\n").find((l) => l.includes("listed under Hard rules is saved"))!;
+    expect(line).toContain(`except a line that starts "${lead}": that allergy is not saved yet`);
+    expect(line).toContain(`listed under Hard rules outside a "${lead}" line`);
   });
 });
