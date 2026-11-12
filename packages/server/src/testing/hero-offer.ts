@@ -57,7 +57,7 @@ export async function hero() {
   };
   let t = 0;
   const say = async (s: OpenedSession, seq: number, text: string) => {
-    const res = await callRoute(rig, turnRoute, asrTurn(s.stamp, seq, text, [{ itemId: `item_${++t}`, commitSeq: seq }], "final", `t${t}`));
+    const res = await callRoute(rig, turnRoute, { ...asrTurn(s.stamp, seq, text, [{ itemId: `item_${++t}`, commitSeq: seq }], "final", `t${t}`), judge: "O" });
     if (res.status !== 200) throw new Error(JSON.stringify(res.body));
     return { ...s.stamp, turnId: testId(`turn-t${t}`) };
   };

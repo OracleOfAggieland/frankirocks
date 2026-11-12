@@ -107,39 +107,70 @@ export async function recordPendingRendered(tx: Tx, uid: string, pendingId: ID, 
 export const SHOWINGS_PER_SESSION_MAX = 16;
 export const showingEntryId = (hasher: Hasher, pendingId: string, sessionId: string, n: number): ID => hasher.id(["pendingShown", pendingId, sessionId, n]) as ID;
 
+/** Brief 045 finding 6: a cancel revokes the latest showing; the row says so beside it (ledger rows never change). */
+export const showingRevokedId = (hasher: Hasher, pendingId: string, sessionId: string, n: number): ID => hasher.id(["pendingShownRevoked", pendingId, sessionId, n]) as ID;
+/** One showing per response: a played-to-the-end line and its matching transcript are one showing, not two. */
+export const showingResponseId = (hasher: Hasher, pendingId: string, sessionId: string, responseId: string): ID => hasher.id(["pendingShownResponse", pendingId, sessionId, responseId]) as ID;
+
 type LedgerGet = (path: string) => Promise<StoredDoc<Ledger> | null>;
 
-/** The latest recorded showing of this offer in this session, or null. */
-export async function latestShowing(get: LedgerGet, uid: string, pendingId: string, sessionId: string, hasher: Hasher): Promise<StoredDoc<Ledger> | null> {
-  let last: StoredDoc<Ledger> | null = null;
+/** The latest showing of this offer in this session: none, revoked by a cancel, or shown (with its row). */
+export type Showing = { kind: "none" } | { kind: "revoked"; n: number } | { kind: "shown"; n: number; row: StoredDoc<Ledger> };
+
+export async function sessionShowing(get: LedgerGet, uid: string, pendingId: string, sessionId: string, hasher: Hasher): Promise<Showing> {
+  let last: { n: number; row: StoredDoc<Ledger> } | null = null;
   for (let n = 0; n < SHOWINGS_PER_SESSION_MAX; n++) {
     const row = await get(paths.ledger(uid, showingEntryId(hasher, pendingId, sessionId, n)));
     if (row === null) break;
-    last = row;
+    last = { n, row };
   }
-  return last;
+  if (last === null) return { kind: "none" };
+  if ((await get(paths.ledger(uid, showingRevokedId(hasher, pendingId, sessionId, last.n)))) !== null) return { kind: "revoked", n: last.n };
+  return { kind: "shown", ...last };
+}
+
+/** The latest recorded showing of this offer in this session, or null (null too when a cancel revoked it). */
+export async function latestShowing(get: LedgerGet, uid: string, pendingId: string, sessionId: string, hasher: Hasher): Promise<StoredDoc<Ledger> | null> {
+  const s = await sessionShowing(get, uid, pendingId, sessionId, hasher);
+  return s.kind === "shown" ? s.row : null;
+}
+
+/** A cancel: the latest showing of this offer in this session, if any and not yet revoked, is revoked. */
+export async function revokeShowing(tx: Tx, uid: string, pendingId: ID, sessionId: string, opsNow: number, hasher: Hasher): Promise<void> {
+  const s = await sessionShowing((p) => tx.get<Ledger>(p), uid, pendingId, sessionId, hasher);
+  if (s.kind !== "shown") return;
+  tx.create(paths.ledger(uid, showingRevokedId(hasher, pendingId, sessionId, s.n)), await decisionRow(tx, uid, pendingId, opsNow, "held"));
+}
+
+async function decisionRow(tx: Tx, uid: string, pendingId: ID, opsNow: number, as: "accepted" | "held"): Promise<Extract<Ledger, { kind: "decision" }>> {
+  const core = await readCoreDocs(tx, uid);
+  const now = tsFromMs(opsNow);
+  const ref = [{ type: "pending" as const, id: pendingId, rev: 1 }];
+  return {
+    ...cFields(uid, now, core.epoch.data.epoch, core.epoch.data.policyRev),
+    kind: "decision",
+    state: "complete",
+    at: now,
+    retainUntil: null,
+    payload: { purpose: "proactive", acceptedRefs: as === "accepted" ? ref : [], heldRefs: as === "held" ? ref : [], reasonCodes: [], audience: core.state.data.audience },
+  };
 }
 
 /**
  * Records one showing of this offer in this session (and the first showing's row, if there is none yet). Call it at
  * most once per offer per transaction: reads are not buffered, so a second call would pick the same slot.
  */
-export async function recordShowing(tx: Tx, uid: string, pendingId: ID, sessionId: string, opsNow: number, hasher: Hasher): Promise<void> {
+export async function recordShowing(tx: Tx, uid: string, pendingId: ID, sessionId: string, opsNow: number, hasher: Hasher, responseId: string | null = null): Promise<void> {
+  if (responseId !== null) {
+    const once = paths.ledger(uid, showingResponseId(hasher, pendingId, sessionId, responseId));
+    if ((await tx.get(once)) !== null) return;
+    tx.create(once, await decisionRow(tx, uid, pendingId, opsNow, "accepted"));
+  }
   await recordPendingRendered(tx, uid, pendingId, opsNow, hasher);
   let n = 0;
   while (n < SHOWINGS_PER_SESSION_MAX && (await tx.get(paths.ledger(uid, showingEntryId(hasher, pendingId, sessionId, n)))) !== null) n++;
   if (n >= SHOWINGS_PER_SESSION_MAX) return;
-  const core = await readCoreDocs(tx, uid);
-  const now = tsFromMs(opsNow);
-  const entry: Extract<Ledger, { kind: "decision" }> = {
-    ...cFields(uid, now, core.epoch.data.epoch, core.epoch.data.policyRev),
-    kind: "decision",
-    state: "complete",
-    at: now,
-    retainUntil: null,
-    payload: { purpose: "proactive", acceptedRefs: [{ type: "pending", id: pendingId, rev: 1 }], heldRefs: [], reasonCodes: [], audience: core.state.data.audience },
-  };
-  tx.create(paths.ledger(uid, showingEntryId(hasher, pendingId, sessionId, n)), entry);
+  tx.create(paths.ledger(uid, showingEntryId(hasher, pendingId, sessionId, n)), await decisionRow(tx, uid, pendingId, opsNow, "accepted"));
 }
 
 export type ReminderAnswer = { state: "applied"; actionId: ID; momentId: ID } | { state: "declined" | "clarify" | "stale" };

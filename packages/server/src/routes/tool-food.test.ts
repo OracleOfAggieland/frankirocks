@@ -69,7 +69,7 @@ async function setup(opts: { turnText: string; shellfish?: boolean; rows?: boole
   const shown = await heroOffer(ctx0, s.stamp.generation);
   if (shown !== null) await rig.store.transaction(UID, (tx) => recordPendingRendered(tx, UID, shown.pendingId as never, rig.deps.clock.read().opsClock.now, rig.deps.hasher));
   rig.clock.advance(10);
-  const turnRes = await callRoute(rig, turnRoute, asrTurn(s.stamp, 1, opts.turnText, [{ itemId: "item_1", commitSeq: 1 }]));
+  const turnRes = await callRoute(rig, turnRoute, { ...asrTurn(s.stamp, 1, opts.turnText, [{ itemId: "item_1", commitSeq: 1 }]), judge: "O" });
   if (turnRes.status !== 200) throw new Error(JSON.stringify(turnRes.body));
   const stamp = { ...s.stamp, turnId: testId("turn-1") };
   let n = 0;

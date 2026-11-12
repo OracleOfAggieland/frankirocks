@@ -25,7 +25,7 @@ import type { Tx } from "../store/port";
 import { getMoment } from "../time/verdict";
 import { heroOffer } from "./tool-food";
 import type { RouteContext } from "./runtime";
-import { recordShowing } from "../time/reminder";
+import { recordShowing, revokeShowing } from "../time/reminder";
 import { admitMoments, recordPlayback, recordSaid } from "../time/said";
 
 export const MOMENT_PERMIT_KIND = "proactive" as const;
@@ -33,27 +33,45 @@ export const MOMENT_PERMIT_KIND = "proactive" as const;
 export async function receiptMoments(tx: Tx, ctx: RouteContext, req: Infer<typeof ReceiptRequest>, opsNow: number): Promise<void> {
   const { uid, deps } = ctx;
   const ids = req.momentIds as ID[];
-  // Brief 042 item 1: each offer is recorded as shown at most once per receipt.
+  // Brief 042 item 1: each offer is recorded as shown at most once per receipt, per Session. Brief 045 finding 6: an
+  // offer is shown when its playback ended uncut or its transcript matched (once per response), and a cancel
+  // revokes its latest showing in this Session.
   const shown = new Set<ID>();
   const show = async (pendingId: ID): Promise<void> => {
     if (shown.has(pendingId)) return;
     shown.add(pendingId);
-    await recordShowing(tx, uid, pendingId, req.stamp.sessionId, opsNow, deps.hasher);
+    await recordShowing(tx, uid, pendingId, req.stamp.sessionId, opsNow, deps.hasher, req.responseId);
+  };
+  const revoke = async (pendingId: ID): Promise<void> => {
+    if (shown.has(pendingId)) return;
+    shown.add(pendingId);
+    await revokeShowing(tx, uid, pendingId, req.stamp.sessionId, opsNow, deps.hasher);
   };
   if (req.kind === "admitted" && req.permitKind === MOMENT_PERMIT_KIND) await admitMoments(tx, uid, ids, { responseId: req.responseId, noteIds: req.noteIds }, deps);
   // Brief 036 finding 14: a playback start is recorded, and a cancel before the line was said ends the moment.
   else if (req.kind === "playbackStarted" || req.kind === "cancelled") {
     for (const id of new Set(ids)) {
-      const before = req.kind === "playbackStarted" ? await getMoment(tx, paths.moment(uid, id)) : null;
-      const played = await recordPlayback(tx, uid, id, { kind: req.kind, responseId: req.responseId }, deps.clock);
-      if (played && before !== null) await offerShown(ctx, before.data, show);
+      const before = req.kind === "cancelled" ? await getMoment(tx, paths.moment(uid, id)) : null;
+      // The moment as it stood before the cancel, for the offer it carried.
+      const pendingId = before === null ? null : await shownPendingId(ctx, before.data);
+      await recordPlayback(tx, uid, id, { kind: req.kind, responseId: req.responseId }, deps.clock);
+      if (pendingId !== null && before!.data.responseId === req.responseId) await revoke(pendingId);
+    }
+  } else if (req.kind === "playbackEnded") {
+    // Brief 045 finding 6: played to the end, uncut, on this response.
+    for (const id of new Set(ids)) {
+      const doc = await getMoment(tx, paths.moment(uid, id));
+      if (doc === null || doc.data.responseId !== req.responseId || doc.data.playbackAt === null) continue;
+      if (doc.data.status === "admitted" || doc.data.status === "delivered") await offerShown(ctx, doc.data, show);
     }
   } else if (req.kind === "transcript") {
     const receipt = { kind: req.kind, responseId: req.responseId, momentIds: req.momentIds, noteIds: req.noteIds, text: req.text };
     for (const id of new Set(ids)) {
       const before = await getMoment(tx, paths.moment(uid, id));
+      const pendingId = before === null ? null : await shownPendingId(ctx, before.data);
       const match = await recordSaid(tx, uid, id, receipt, MOMENT_PERMIT_KIND, deps.clock, deps.hasher);
       if (match !== null && before !== null) await celebrated(tx, uid, before.data, opsNow);
+      if (match !== null && pendingId !== null) await show(pendingId);
     }
   } else if (req.kind === "pendingRendered" && req.pendingId !== null) await show(req.pendingId as ID);
   else if (req.kind === "pendingRendered") {

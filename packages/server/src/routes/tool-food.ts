@@ -69,7 +69,8 @@ import { forgetRowsFor } from "../forget/snapshot-rows";
 import { foregroundEC, storeReader } from "../head-build";
 import { cFields } from "../records";
 import type { Reader, Tx } from "../store/port";
-import { latestShowing, renderedEntryId } from "../time/reminder";
+import { renderedEntryId, sessionShowing } from "../time/reminder";
+import { gateAudience } from "../audience";
 import { paths } from "../store/paths";
 import { readFoodPrefs } from "../food/prefs-read";
 import type { RouteContext } from "./runtime";
@@ -501,16 +502,28 @@ function loopMemory(ctx: RouteContext, at: string, epoch: number, policyRev: num
  */
 export const YES_LOOKBACK_TURNS = 32;
 
+/**
+ * Brief 045 finding 6: a yes that writes comes from a turn that is certainly the owner's: the judge said `O`, or the
+ * owner typed it (no audio items, no judge). A timeout, an `H` or `U` verdict, or pasted text is not (fails closed).
+ */
+export function certainlyOwners(turn: Pick<Turn, "sourceClass" | "judge" | "itemIds">): boolean {
+  if (turn.sourceClass !== "U") return false;
+  return turn.judge === "O" || (turn.judge === null && turn.itemIds.length === 0);
+}
+
 async function yesFollowsOffer(ctx: RouteContext, pendingId: string, turnId: string, turn: Turn): Promise<boolean> {
   const { uid, deps } = ctx;
   // Brief 042 item 1: the latest showing in this session; a first showing recorded without one is read as before.
-  const shown =
-    (await latestShowing((p) => deps.store.get<Ledger>(uid, p), uid, pendingId, turn.sessionId, deps.hasher)) ??
-    (await deps.store.get<Ledger>(uid, paths.ledger(uid, renderedEntryId(deps.hasher, pendingId))));
+  // Brief 045 finding 6: a showing a cancel revoked binds nothing.
+  const showing = await sessionShowing((p) => deps.store.get<Ledger>(uid, p), uid, pendingId, turn.sessionId, deps.hasher);
+  if (showing.kind === "revoked") return false;
+  const shown = showing.kind === "shown" ? showing.row : await deps.store.get<Ledger>(uid, paths.ledger(uid, renderedEntryId(deps.hasher, pendingId)));
   if (shown === null || shown.data.kind !== "decision") return false;
   const shownAt = Date.parse(shown.data.at);
   const session = await deps.store.get<Session>(uid, paths.session(uid, turn.sessionId));
   if (session === null || Date.parse(session.data.startedAt) > shownAt || Date.parse(turn.committedAt) < shownAt) return false;
+  // Brief 045 finding 6: only in a private Session (`unknown` fails closed).
+  if (gateAudience(session.data, deps.clock.read().opsClock.now).audience !== "private") return false;
   const rows = await deps.store.query<Turn>(uid, {
     collection: paths.turns(uid, turn.sessionId),
     where: [{ field: "seq", op: ">=", value: Math.max(0, turn.seq - YES_LOOKBACK_TURNS) }],
@@ -594,6 +607,8 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, callArgs: Answ
   // Code decides the owner said yes: the choice must be "yes", the owner's own words a plain yes, and the yes the
   // owner's next turn after the offer was shown.
   if (args.choiceId !== offer.yesId || turn.role !== "user" || turn.sourceClass !== "U" || !turn.final || !isPlainYes(turn.text)) return only("clarify");
+  // Brief 045 finding 6: the turn is certainly the owner's, on both paths (IDs and nulls); anything else asks again.
+  if (!certainlyOwners(turn)) return only("clarify");
   if (!(await yesFollowsOffer(ctx, offer.pendingId, stamp.turnId, turn))) return only("clarify");
 
   // Brief 039: the owner's diets and dislikes, and those of anyone the yes names, as suggest reads them.

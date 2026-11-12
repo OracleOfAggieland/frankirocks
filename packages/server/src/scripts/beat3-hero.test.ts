@@ -179,7 +179,7 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
       expect: [{ mustSay: { card: "Takeout and late meetings" } }],
     },
     { label: "the offer plays on the call", do: "play", of: "open after the bolt" },
-    { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
+    { label: "the owner says yes", do: "say", text: "Yes, let's do it", judge: "O", answers: [parse()] },
     {
       label: "Franki writes the list and the loop",
       do: "tool",
@@ -269,7 +269,7 @@ function beat3YesOnFriday(): Script {
     { label: "the wish plays on Friday's call", do: "play", of: "open on Friday" },
     { label: "a quiet moment on the call", do: "idle", expect: [{ mustSay: { template: "hero.offer", has: ["$186"], channel: "proactive" } }] },
     { label: "the offer plays as an idle whisper", do: "play", of: "a quiet moment on the call" },
-    { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
+    { label: "the owner says yes", do: "say", text: "Yes, let's do it", judge: "O", answers: [parse()] },
     {
       label: "Franki writes the list and the loop",
       do: "tool",

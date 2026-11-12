@@ -685,7 +685,7 @@ function heroScript(id: string, what: "hero dinners" | "list write"): GateScript
       // The offer comes as an idle whisper, and the yes follows it (brief 037, H-168).
       { label: "a quiet moment on the call", do: "idle" },
       { label: "the offer plays as an idle whisper", do: "play", of: "a quiet moment on the call" },
-      { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
+      { label: "the owner says yes", do: "say", text: "Yes, let's do it", judge: "O", answers: [parse()] },
       { label: "the Head at the yes lists the rule", do: "check", of: "the owner says yes", expect: [headFilters("the owner says yes", [{ subjects: YOU, allergen: "milk" }])] },
       {
         label: yes,
