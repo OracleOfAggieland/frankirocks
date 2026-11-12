@@ -7,34 +7,45 @@
  *     start, or is ended by a cancel before it was said.
  *   - `transcript`: each moment it names gets `saidAt` only if it was admitted on this response and the words match
  *     (`recordSaid`, with its ledger `delivery` row). No row, no claim.
- *   - `pendingRendered`: the offer is recorded as shown, so a later yes may act on it.
+ *   - `pendingRendered`: records nothing (brief 045 finding 12). Its pending ID is the client's word, so it is never
+ *     a showing; the offer is shown only where the server's own render is played (below).
+ *
+ * Brief 045 finding 12: every receipt counts only for a moment rendered for this receipt's Session (`sentHere`,
+ * from the Session ID the render recorded). Finding 7: a receipt from the screen (`SCREEN_RESPONSE_PREFIX`) admits
+ * no moment that asks for an answer, so an offer shown on a typed open is not used up and stays for a call.
  *
  * Brief 030 part A adds what playback and a matched transcript mean for the moment's own record:
  *
  *   - a `celebrate` moment said moves its loop from `eligible` to `celebrated` (`markCelebrated`);
  *   - brief 042 item 5: a transcript of a response that admitted a moment's whisper writes its Gate `said` row
  *     (`writeSaid`, whose matcher decides; no match, no row; one row per turn and note, so never twice);
- *   - an offer whose playback ended uncut or whose transcript matched, or a `pendingRendered` receipt naming its
- *     moment (shown on the screen), is shown (`recordShowing`, per Session; a cancel revokes it). The hero offer's pending ID is
+ *   - an offer whose playback ended uncut or whose transcript matched is shown (`recordShowing`, per Session; a cancel revokes it). The hero offer's pending ID is
  *     data for the server, never words for the model: it is recomputed from the rows now, and written only when the
  *     offer's line is still the one the moment rendered (fails closed: a changed offer is not shown);
  *
  * Ruling (fails closed): only a `proactive` Permit admits a moment, since moments travel only under one
  * (`time/proactive.ts`); the delivery row of a matched transcript names that kind.
  */
-import { type ClockPort, type GateResult, type Hasher, type ID, type Infer, type Memory, type Moment, type ReceiptRequest, type Session, falseGone, markCelebrated, tsFromMs } from "@franki/core";
+import { type GateResult, type ID, type Infer, type Memory, type Moment, type ReceiptRequest, type Session, falseGone, markCelebrated, tsFromMs } from "@franki/core";
 import { gateAudience } from "../audience";
 import { readCoreDocs } from "../core-docs";
 import { writeSaid } from "../ledger/said";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import { getMoment } from "../time/verdict";
+import { asksForAnswer } from "../time/proactive";
 import { heroOffer } from "./tool-food";
 import type { RouteContext } from "./runtime";
 import { recordShowing, revokeShowing } from "../time/reminder";
 import { admitMoments, recordPlayback, recordSaid } from "../time/said";
 
 export const MOMENT_PERMIT_KIND = "proactive" as const;
+/**
+ * Brief 045 finding 7: the response IDs a typed screen admits its lines on (`shown_<turnId>`, the browser's
+ * `shownResponseId`). A call's responses are the voice model's (`resp_…`). Ruling: an admission on a screen response
+ * never admits a line that asks for an answer, whatever the client shows.
+ */
+export const SCREEN_RESPONSE_PREFIX = "shown_";
 
 export async function receiptMoments(tx: Tx, ctx: RouteContext, req: Infer<typeof ReceiptRequest>, opsNow: number): Promise<void> {
   const { uid, deps } = ctx;
@@ -53,11 +64,27 @@ export async function receiptMoments(tx: Tx, ctx: RouteContext, req: Infer<typeo
     shown.add(pendingId);
     await revokeShowing(tx, uid, pendingId, req.stamp.sessionId, opsNow, deps.hasher);
   };
-  if (req.kind === "admitted" && req.permitKind === MOMENT_PERMIT_KIND) await admitMoments(tx, uid, ids, { responseId: req.responseId, noteIds: req.noteIds }, deps);
+  // Brief 045 finding 12: every receipt below counts only for a moment rendered for this Session.
+  const sent = async (id: ID) => {
+    const doc = await getMoment(tx, paths.moment(uid, id));
+    return doc !== null && sentHere(doc.data, req.stamp.sessionId) ? doc : null;
+  };
+  if (req.kind === "admitted" && req.permitKind === MOMENT_PERMIT_KIND) {
+    // Brief 045 finding 7: the screen's receipt admits no line that asks for an answer; it stays for a call.
+    const screen = req.responseId.startsWith(SCREEN_RESPONSE_PREFIX);
+    const admissible: ID[] = [];
+    for (const id of new Set(ids)) {
+      const doc = await sent(id);
+      if (doc !== null && !(screen && asksForAnswer(doc.data))) admissible.push(id);
+    }
+    await admitMoments(tx, uid, admissible, { responseId: req.responseId, noteIds: req.noteIds }, deps);
+  }
   // Brief 036 finding 14: a playback start is recorded, and a cancel before the line was said ends the moment.
   else if (req.kind === "playbackStarted" || req.kind === "cancelled") {
     for (const id of new Set(ids)) {
-      const before = req.kind === "cancelled" ? await getMoment(tx, paths.moment(uid, id)) : null;
+      const here = await sent(id);
+      if (here === null) continue;
+      const before = req.kind === "cancelled" ? here : null;
       // The moment as it stood before the cancel, for the offer it carried.
       const pendingId = before === null ? null : await shownPendingId(ctx, before.data);
       await recordPlayback(tx, uid, id, { kind: req.kind, responseId: req.responseId }, deps.clock);
@@ -66,30 +93,29 @@ export async function receiptMoments(tx: Tx, ctx: RouteContext, req: Infer<typeo
   } else if (req.kind === "playbackEnded") {
     // Brief 045 finding 6: played to the end, uncut, on this response.
     for (const id of new Set(ids)) {
-      const doc = await getMoment(tx, paths.moment(uid, id));
+      const doc = await sent(id);
       if (doc === null || doc.data.responseId !== req.responseId || doc.data.playbackAt === null) continue;
       if (doc.data.status === "admitted" || doc.data.status === "delivered") await offerShown(ctx, doc.data, show);
     }
   } else if (req.kind === "transcript") {
     const receipt = { kind: req.kind, responseId: req.responseId, momentIds: req.momentIds, noteIds: req.noteIds, text: req.text };
     for (const id of new Set(ids)) {
-      const before = await getMoment(tx, paths.moment(uid, id));
-      const pendingId = before === null ? null : await shownPendingId(ctx, before.data);
+      const before = await sent(id);
+      if (before === null) continue;
+      const pendingId = await shownPendingId(ctx, before.data);
       const match = await recordSaid(tx, uid, id, receipt, MOMENT_PERMIT_KIND, deps.clock, deps.hasher);
       if (before !== null) await saidRow(tx, ctx, req, id, before.data, opsNow);
       if (match !== null && before !== null) await celebrated(tx, uid, before.data, opsNow);
       if (match !== null && pendingId !== null) await show(pendingId);
     }
-  } else if (req.kind === "pendingRendered" && req.pendingId !== null) await show(req.pendingId as ID);
-  else if (req.kind === "pendingRendered") {
-    // Brief 030 part A: a line shown on the screen (a typed session's Proactive) names its moments, not a pending ID;
-    // each one admitted on this response is shown, as a played one is.
-    for (const id of new Set(ids)) {
-      const doc = await getMoment(tx, paths.moment(uid, id));
-      if (doc !== null && doc.data.status === "admitted" && doc.data.responseId === req.responseId) await offerShown(ctx, doc.data, show);
-    }
   }
+  // Brief 045 findings 7 and 12: a `pendingRendered` receipt (a line on the screen) is never a showing. A screen shows
+  // no line that asks for an answer, and a client-sent pending ID names nothing the server sent. An offer is shown
+  // only by its playback ending uncut or its transcript matching, in a call.
 }
+
+/** Brief 045 finding 12: the moment was rendered for this Session, so a Permit issued to it carried the moment. */
+export const sentHere = (m: Moment, sessionId: string): boolean => m.rendered !== null && "sessionId" in m.rendered && m.rendered.sessionId === sessionId;
 
 /** The pending ID of the offer a moment plays, or null. The hero's is recomputed and must match the rendered line. */
 export async function shownPendingId(ctx: RouteContext, m: Moment): Promise<ID | null> {

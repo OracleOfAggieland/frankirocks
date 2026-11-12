@@ -317,6 +317,8 @@ export interface FoodOutcome {
   result: Result;
   /** Null when there is nothing to check: nothing food was answered. */
   write: FoodWrite | null;
+  /** Brief 045 finding 12: the hero offer a no declined, for the route's row; the result itself carries no pending ID. */
+  declinedPendingId?: string;
 }
 
 /**
@@ -414,6 +416,18 @@ export async function suggestTool(ctx: RouteContext, stamp: Stamp, args: Suggest
     cards: [...ask, ...(out.candidates.length === 0 ? [] : [foodCard(ctx, out.candidates, "Quick dinners")])],
   };
   return { result, write: rules === null ? null : write };
+}
+
+/**
+ * Brief 045 finding 10 (ruling): under any audience that is not private, `suggest` asks no question drawn from a
+ * stored Memory, and its cards carry nothing above S0. The diet question and its ask card are the owner's own
+ * Memory, so both go, with the pending ID; the question waits for a private turn. A question worded by code alone
+ * (the rules could not be read) stays. The dinners are unchanged: they still keep every rule and diet.
+ */
+export function suggestForAudience(result: Extract<Result, { name: "suggest" }>, audience: string): Extract<Result, { name: "suggest" }> {
+  if (audience === "private") return result;
+  const fromMemory = result.pendingId !== null || result.cards.some((c) => c.kind === "ask");
+  return { ...result, question: fromMemory ? null : result.question, pendingId: null, cards: result.cards.filter((c) => c.kind !== "ask" && c.sens === "S0") };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -589,7 +603,8 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, callArgs: Answ
   const { uid, deps } = ctx;
   const byCode = callArgs.pendingId === null || callArgs.choiceId === null;
   let args: { pendingId: string | null; choiceId: string | null } = callArgs;
-  const answer = (state: "applied" | "declined" | "clarify" | "stale", receiptId: string | null = null, cards: Card[] = []): Result => ({ name: "answer", state, receiptId, pendingId: args.pendingId, cards });
+  // Brief 045 finding 12: the hero offer's pending ID is data for the server; no answer result carries it.
+  const answer = (state: "applied" | "declined" | "clarify" | "stale", receiptId: string | null = null, cards: Card[] = []): Result => ({ name: "answer", state, receiptId, pendingId: null, cards });
   const only = (state: "declined" | "clarify" | "stale"): FoodOutcome => ({ result: answer(state), write: null });
   // A diet question is answered by its pending ID; a call's null IDs never match one, so they fall to the hero offer
   // below and are `clarify` when no offer is bound (brief 040, H-186).
@@ -603,7 +618,7 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, callArgs: Answ
     args = chosen;
   }
   if (rows === null || offer === null || args.pendingId !== offer.pendingId) return only("stale");
-  if (args.choiceId === offer.noId) return only("declined");
+  if (args.choiceId === offer.noId) return { ...only("declined"), declinedPendingId: offer.pendingId };
   // Code decides the owner said yes: the choice must be "yes", the owner's own words a plain yes, and the yes the
   // owner's next turn after the offer was shown.
   if (args.choiceId !== offer.yesId || turn.role !== "user" || turn.sourceClass !== "U" || !turn.final || !isPlainYes(turn.text)) return only("clarify");

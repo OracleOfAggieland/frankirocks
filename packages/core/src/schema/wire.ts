@@ -154,7 +154,9 @@ export type InspectItem = Infer<typeof InspectItem>;
 export const WireError = obj({ error: ErrorCode, retryAfterMs: nat(0, 5000) });
 export type WireError = Infer<typeof WireError>;
 
-export const Proactive = obj({ turnId: ID, permit: Permit, whisper: W, cards: arr(Card, 2) });
+// Brief 045 finding 7: `asks` says the line asks for an answer (an offer or a question), so a typed screen, which has
+// no way to answer it, neither shows nor admits it. Answers built before the field have none.
+export const Proactive = union(obj({ turnId: ID, permit: Permit, whisper: W, cards: arr(Card, 2), asks: bool }), obj({ turnId: ID, permit: Permit, whisper: W, cards: arr(Card, 2) }));
 
 export const SnapshotView = obj({
   cards: arr(Card, 50),

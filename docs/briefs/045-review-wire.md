@@ -168,25 +168,25 @@ No trace moved in any of the three commits. At the merge of `build/plan-stages` 
 
 ## Outcome, part D
 
-Lane `wire`. Findings 6 and 9 are done; findings 7, 10 and 12, and the open's tail reserve, are not started and go to a fresh builder. Brief 042's items 1 to 5 were built in the same lane; see that brief's "Outcome".
+Lane `wire`. Findings 6 and 9 are done by the first builder. Findings 7, 10 and 12 and the open's tail reserve are done by a second builder (below). Brief 042's items 1 to 5 were built in the same lane; see that brief's "Outcome".
 
 | Finding | Commit | Test, red first | Ruling, as a numbered question in `030-report.md` |
 |---|---|---|---|
 | 9. Delivery never fails a route | `c8685c2` (with the coordinator's open budget), `e244a3a` | `routes/open-budget.test.ts`, "a store failure in delivery's reads": the idle read threw `blip` before | 11, 12 |
 | 6. Shown means heard to the end; only the owner's private yes writes | `79571ab`, tests `d1e85ca` | `routes/offer-heard-to-the-end.test.ts`: 9 of 11 red before | 1, 2, 3 |
-| 7. A typed open shows only lines that need no answer | not started | | |
-| 10. `suggest` asks nothing private in company | not started | | |
-| 12. A receipt counts only for what was sent | not started | | |
-| The open's tail reserve (coordinator, after part S) | not started | | |
+| 7. A typed open shows only lines that need no answer | `d1aa086` (with 12) | `routes/receipt-sent.test.ts` (finding 7 part) and `apps/web/src/client/proactive-shown.test.ts` | 21 |
+| 10. `suggest` asks nothing private in company | `87cb11f` | `food/suggest-company.test.ts`: 3 cases | 17 |
+| 12. A receipt counts only for what was sent | `d1aa086` | `routes/receipt-sent.test.ts`: 4 cases, red before | 18, 19, 20, 22 |
+| The open's tail reserve (coordinator, after part S) | `83e2492` | `routes/open-budget.test.ts`, the count test: 675 ms against 600 before | 24 |
 
 ### Properties
 
 | Property | File | Seed | Counterexample before the fix |
 |---|---|---|---|
 | Only an owner's yes to an offer heard to the end writes | `routes/yes-to-offer-heard.property.test.ts` | 45061 | `[["admitted","playbackStarted"],"O","private",false]` |
-| A receipt counts only for what was sent | not written | | |
-| Delivery never breaks a route | not written as a property; the injected-failure test above covers the open's and the idle read's own reads | | |
-| Food asks nothing private in company | not written | | |
+| A receipt counts only for what was sent | `routes/receipt-counts-only-sent.property.test.ts` | 45102 | `[false,"B",["admitted"],true,false,false]`: Session B admitted a moment it was never sent |
+| Delivery never breaks a route | `routes/delivery-never-breaks.property.test.ts` (`0fe2977`) | 45103 | with delivery's catches removed: `["state",0,false]`, a 503 when the idle read's first store call failed |
+| Food asks nothing private in company | `food/suggest-company.property.test.ts` | 45104 | `["company","ended","What's for dinner tonight?"]` answered "Still vegetarian, or was September it?" |
 
 ### The open's budget, measured on the injected clock
 
@@ -285,3 +285,37 @@ Setup-only changes, no assertion touched:
 - `packages/core/src/schema/wire.ts` and the web client files: the audience field.
 
 **Only a live call can show:** the three reads' real latency against Firestore, and the toggle flipping on a real call's poll. No live call, paid model call or emulator run was made.
+
+### Second builder: findings 7, 10 and 12, and the tail reserve
+
+All four properties run 1,000 runs. Rulings are questions 14 to 24 in `030-report.md`, lane `wire`.
+
+- **Finding 10 (`87cb11f`).** `suggestForAudience` in `tool-food.ts` applies under any audience but private, or on a Session narrowed here. It nulls a question drawn from a Memory and the pending ID, and keeps only S0 cards, with no ask card.
+- **Findings 12 and 7 (`d1aa086`, one commit: both change the same checks in `receipt-moments.ts`).**
+  - **The render.** A moment's render records the Session and the pending ID it was sent with.
+  - **The receipts.** Every receipt counts only for a moment rendered for its own Session (`sentHere`). `pendingRendered` records nothing.
+  - **The answer.** The answer result carries no pending ID.
+  - **The `asks` flag.** `Proactive` carries `asks`. The screen shows only `asks: false` (`showsOnScreen`). A screen response (`shown_` prefix) admits no asking moment.
+  - **The fixture.** `testing/hero-offer.ts` `show` now writes the showing row as setup, since a client receipt no longer makes one.
+- **Property 3 (`0fe2977`).**
+  - **The test.** Delivery's store calls are found by their stack (`delivery-wire` or `server/src/time/`). One of them fails, or that call and all after it, on the open or the state route.
+  - **What it checks.** The answer equals the one with every delivery call failing, apart from `proactive`. A line that is sent was rendered for that Session with those words.
+  - **Red first.** It went red with the catches removed. The finding 9 fix was already in (`c8685c2`).
+- **The tail reserve (`83e2492`).** See brief 042's "Second builder". The open's transaction is 8 round trips, the prior close at worst 8, and the reserve is 1,825 ms.
+
+#### Existing assertions changed, and why
+
+- **`answer-call.test.ts` (applied, declined) and `tool-food.test.ts` ("'yes' writes the grocery list...").** The result's `pendingId` is now expected to be `null`, not the offer's pending ID, by question 20.
+- **`receipt-moments.test.ts`.** "a pendingRendered receipt records the render once" is now "a pendingRendered receipt records no render", by question 19. This is a behaviour assertion, reversed by finding 12's ruling.
+- **`answer-call.test.ts` "one null and one ID is clarify".** The two argument pairs now run on separate setups, with the same assertions (200, clarify, no action). On one turn, the second request asked for the same Permit as the first and answered 409 (question 22).
+
+#### Left
+
+- The open's install of proposals writes no rule row (question 16).
+- Question 22, the Permit ID of a repeated tool output.
+
+#### What only a live call or a browser can show
+
+- **On the screen.** A typed open with the hero offer shows nothing, and the offer then plays on the next call.
+- **On a call.** Each receipt for a line on a call names the Session it was sent to.
+- **On the emulator.** The `collide` case against the 1,825 ms reserve (not run here: no emulator in this lane).

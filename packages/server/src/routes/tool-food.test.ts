@@ -137,7 +137,7 @@ describe("the hero offer and its yes", () => {
     const offer = (await heroOffer(ctx, stamp.generation))!;
     const res = await tool({ name: "answer", args: { pendingId: offer.pendingId, choiceId: offer.yesId } });
     expect(validate(ToolResponse, res.body).ok).toBe(true);
-    expect(res.body.result).toMatchObject({ name: "answer", state: "applied", pendingId: offer.pendingId });
+    expect(res.body.result).toMatchObject({ name: "answer", state: "applied", pendingId: null });
     const actionId = res.body.result.receiptId as string;
     const action = await rig.store.get<Ledger>(UID, paths.ledger(UID, actionId));
     expect(action?.data).toMatchObject({ kind: "action", state: "complete", payload: { executor: "makeList", pendingId: offer.pendingId } });

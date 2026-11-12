@@ -2,11 +2,12 @@
  * The hero fixture over the routes, for brief 042 item 1: open sessions, record the offer as shown through the receipt
  * route, commit turns, and answer through the tool route.
  */
-import { type CoreState, type Ledger, type Proactive, buildSlice } from "@franki/core";
+import { type CoreState, type ID, type Ledger, type Proactive, buildSlice } from "@franki/core";
 import { HERO_BASELINE_GROCERIES, HERO_COVERAGE, HERO_MEETINGS, HERO_ORDERS, HERO_ZONE, instantAt, sampleEvidence, testId } from "@franki/core/testing";
 import { ensureCoreDocs } from "../core-docs";
 import { openRoute } from "../routes/open";
 import { receiptRoute } from "../routes/receipt";
+import { recordShowing } from "../time/reminder";
 import { toolRoute } from "../routes/tool";
 import { turnRoute } from "../routes/turn";
 import { paths } from "../store/paths";
@@ -50,10 +51,13 @@ export async function hero() {
     return s;
   };
   let r = 0;
+  // Setup: the offer recorded as shown in this Session, as the receipt route records a line heard to the end. Brief
+  // 045 findings 7 and 12: a client's `pendingRendered` naming a pending ID no longer shows anything, so this writes
+  // the showing row directly, once per call (each call stands for one response).
   const show = async (s: OpenedSession, pendingId: string) => {
     rig.clock.advance(10);
-    const res = await callRoute(rig, receiptRoute, { requestId: testId(`show${++r}`), stamp: { ...s.stamp, turnId: testId(`show-turn-${r}`) }, responseId: `resp_show_${r}`, kind: "pendingRendered", momentIds: [], noteIds: [], pendingId, permitKind: null, text: null });
-    if (res.status !== 200) throw new Error(JSON.stringify(res.body));
+    const responseId = `resp_show_${++r}`;
+    await rig.store.transaction(UID, (tx) => recordShowing(tx, UID, pendingId as ID, s.sessionId, rig.deps.clock.read().opsClock.now, rig.deps.hasher, responseId));
     rig.clock.advance(10);
   };
   let t = 0;

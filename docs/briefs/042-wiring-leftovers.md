@@ -39,7 +39,7 @@ The seven items with their tests, the three properties with seeds recorded, the 
 
 ## Outcome
 
-Built in lane `wire`. Items 1 to 5 are done; items 6 and 7 are not started and go to a fresh builder (see "Left" below). Brief 045's ruling on finding 6 changed item 1's shape, and the open's budget came first by the coordinator's word; both are recorded here and in brief 045's "Outcome, part D".
+Built in lane `wire`. Items 1 to 5 are done. A second builder in the same lane did items 6 and 7 and the open's tail reserve (see "Second builder" below). Brief 045's ruling on finding 6 changed item 1's shape, and the open's budget came first by the coordinator's word; both are recorded here and in brief 045's "Outcome, part D".
 
 ### Items, with their commits
 
@@ -51,8 +51,8 @@ Built in lane `wire`. Items 1 to 5 are done; items 6 and 7 are not started and g
 | 4. Delivery's own Gate verdicts get rows | `159a2a6` (built before item 3, which reads these holds) | `routes/delivery-verdict-rows.test.ts`; property `routes/verdict-rows.property.test.ts` |
 | 3. A reminder held under crisis is never lost | `6bd1fe2` | `time/held-reminder.test.ts`: held, said late once, or closed with a held row |
 | 5. `said` rows from what was heard | `9b71bdd` | `routes/said-rows.test.ts`; property `routes/said-row-only-on-match.property.test.ts` |
-| 6. The nine W-166 rows | not started | |
-| 7. Beats waiting on delivery | not started | |
+| 6. The nine W-166 rows | `e9e2e8b` | `routes/rule-rows.test.ts`: 11 cases, all red before |
+| 7. Beats waiting on delivery | `14eba84` (no step turned green; see below) | `testing/voice-call.test.ts`: a second call replayed the first open before |
 
 ### Properties
 
@@ -61,6 +61,7 @@ Built in lane `wire`. Items 1 to 5 are done; items 6 and 7 are not started and g
 | A shown offer can always be answered once | `routes/offer-answered-once.property.test.ts` | 42042 | counterexample before item 1: `["show","open","show","yes","open"]` |
 | Every verdict that is not say has exactly one row | `routes/verdict-rows.property.test.ts` | 42044 | counterexample with no row writer: `[0,0,"unknown",false,false,["idle"]]` |
 | No row, no claim; no match, no row | `routes/said-row-only-on-match.property.test.ts` | 42053 | counterexample with no `said` writer: `[["line"]]` |
+| No rule change without its row (item 6) | `routes/rule-rows.property.test.ts` | 42066 | one typed "I'm allergic to shellfish." turn: "new rule self:shellfish:active has no row" |
 
 All three at 1,000 runs. The second takes about 5 minutes (a persona reset per run).
 
@@ -92,3 +93,38 @@ None. Items 6 and 7 hold the beats' waits.
 - A barge-in after one word of the hero offer, then "Okay?", writes nothing; the offer heard to the end and a plain yes writes the list.
 - The late reminder line on the first open after a crisis clears, spoken once.
 - The open answering inside 3.5 s with a 75 ms round trip on the real store (the emulator's `collide` case is still red, from the open's own transaction, not delivery; see brief 045's "Outcome, part D").
+
+### Second builder: items 6 and 7, and the open's tail reserve
+
+Rulings are questions 14 to 24 in `030-report.md`, lane `wire`.
+
+- **Item 6 (`e9e2e8b`).** Each decision of the hard-rule route writes a ledger row of kind `rule`: ruleWritten, pendingWritten, pendingResolved, ruleKept, noneConfirmed, proposalWritten, proposalInstalled, denialRecorded and notAllergy (`RULE_DECISIONS` in `core/schema/records.ts`).
+  - The rows are written from the turn, the late path, pasted text, the turn route's install of open proposals, the backstop and the repair (`onturn/rule-rows.ts`).
+  - The edits to `onturn/execute.ts` are additive. `validate.ts`, `subject.ts` and `typed-reply.ts` are untouched.
+  - Not done: the open's own install of proposals (`routes/open.ts`); question 16.
+- **Item 7 (`14eba84`).**
+  - **Beat 2.** The check-in is not chosen because the Gate holds it, not because delivery ranks it wrong (question 23). Its wait text now says so.
+  - **Beat 1.** The texture is new behaviour, not a template matter: no seeded Memory or moment carries `texture` (`seed/build.ts` writes `[]`), and nothing joins the gap-year episode to the wish. It still waits.
+  - **Card steps.** Beat 1's and beat 3's still wait for a card route.
+  - **No step turned green.** No step was turned green by the `play` or `idle` stand-ins.
+  - **ScriptCall IDs.** ScriptCall now numbers each call on a rig past the last (`CALL_ID_STRIDE`). Part S's hand renumbering in `audience-call-again.test.ts` is removed.
+- **The open's tail reserve (`83e2492`).**
+  - **Round trips removed.**
+    - The open's transaction reads its request entry with the core documents, so it is 8 round trips as the Firestore adapter makes them, down from 9.
+    - `ensureExtractJobs` reads in two waves whatever the number of Turns. With 5 Turns at 75 ms that is 975 ms before and 300 ms after.
+  - **The reserve.** `OPEN_TAIL_RESERVE_MS` = (2 × 8 + 8) × 75 + 25 = 1,825 ms (question 24).
+  - **The injected-clock test.**
+    - `open-budget.test.ts` gained an `asFirestore` charge mode and a count test, red first at 675 ms against 600.
+    - The `collide` case now checks that the reserve held the transaction and the close.
+    - The emulator test is unchanged.
+- **Step 5, skipped.** The render's second `momentVerdict` read was left alone. Sharing the choice's Reader would drop the reread that stops a line after a death recorded in between, so it is not cheap.
+
+#### Existing assertions changed
+
+- `audience-call-again.test.ts`: the hand renumbering of the second call was removed, because the harness does it now. No assertion changed.
+- `beat2-biscuit.test.ts`: the reason text of `CHECKIN_WAITS` was changed. No expected line changed.
+
+#### What a live call or a signed-in browser must still show
+
+- Rule rows on Firestore: they are written in the turn's own commit, which was not run against the emulator here.
+- The open's 8 round trips and the 1,825 ms reserve on the emulator's `collide` case (`npm run test:emulator`, not run here).

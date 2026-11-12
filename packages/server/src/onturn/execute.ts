@@ -9,8 +9,8 @@
  *   leaves the bundle `dirty` with the old Head and sends no route note; the rules still commit.
  * - The turn is an answer only when `core/rules.ask` is asked in this Session both at arrival and in the
  *   transaction (3.0).
- * - The ledger decisions `planHardRule` returns are not written as rows in wave B: the `handled` entry records the
- *   outcome and every code a denial named (a ruling for the report).
+ * - The route's decisions are ledger `rule` rows (brief 042 item 6, W-166): `executeHardRule` returns them, read
+ *   from what changed and the plan's ledger decisions, and the transaction that commits writes them (`rule-rows.ts`).
  */
 import {
   type Au,
@@ -50,6 +50,7 @@ import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import { type MemoryOutcome, NO_MEMORY, overlay, planMemoryRoutes, writeMemoryCommands } from "./memory-route";
 import { askedHere } from "./trigger";
+import { type RuleDecision, installDecisions, turnDecisions, writeRuleRows } from "./rule-rows";
 
 type Asked = NonNullable<ReturnType<typeof askedHere>>;
 
@@ -88,6 +89,8 @@ export interface HardRuleResult {
   kinds: RouteNoteKind[];
   write: TurnWrite;
   entry: OnTurnHandled;
+  /** Brief 042 item 6 (W-166): the decisions to write as ledger rows; the caller that commits writes them. */
+  decisions: RuleDecision[];
 }
 
 const SUBJECT_LABELS_MAX = 256;
@@ -122,11 +125,11 @@ function recompiled(run: CompileRun, rules: CoreRules, laid: { memories: HeadMem
  * Open proposals on a turn the route didn't run on (G39): applied first, the Head recompiled when a rule was added.
  * No route note: nothing was said on this turn.
  */
-export function applyOpenProposals(run: CompileRun & { rules: CoreRules }): { rules: CoreRules; rulesChanged: boolean; bundle: CoreBundle | null } | null {
+export function applyOpenProposals(run: CompileRun & { rules: CoreRules }): { rules: CoreRules; rulesChanged: boolean; bundle: CoreBundle | null; decisions: RuleDecision[] } | null {
   const applied = applyProposals(run.rules);
   if (!applied.changed) return null;
   const rulesChanged = applied.rules.rulesRev !== run.rules.rulesRev;
-  return { rules: applied.rules, rulesChanged, bundle: rulesChanged ? recompiled(run, applied.rules) : null };
+  return { rules: applied.rules, rulesChanged, bundle: rulesChanged ? recompiled(run, applied.rules) : null, decisions: installDecisions(run.rules, applied.rules) };
 }
 
 /**
@@ -148,6 +151,9 @@ export async function applyPastedAllergy(
   const bundle = context === null ? null : recompiled({ ...run, context }, pasted.rules);
   tx.update(paths.core(run.uid, "rules"), pasted.rules);
   if (bundle !== null) tx.update(paths.core(run.uid, "bundle"), bundle);
+  // Brief 042 item 6: each filter is a pendingWritten row with origin `pasted`.
+  const decisions = turnDecisions(run.rules, pasted.rules, { outcome: { kind: "pendingKept", ruleIds: [] }, note: [], ledger: [] }, run.evidence.eid as ID, [], { pasted: true });
+  writeRuleRows(tx, ruleRowAt(run, "pasted", pasted.rules, { sessionId: run.sessionId, turnId: run.evidence.record.turnId ?? null }), decisions);
   return { rules: pasted.rules, rulesChanged, bundle };
 }
 
@@ -255,8 +261,10 @@ export function executeHardRule(run: HardRuleRun): HardRuleResult {
     : kinds.length > 0 || cut || memory.same
       ? { kind: "kept", routes, note: null, cut }
       : { kind: "none" };
+  // Brief 042 item 6: the proposals installed first, each citing its own Evidence, then this turn's own decisions.
+  const decisions = [...(applied.changed ? installDecisions(run.rules, rules0) : []), ...turnDecisions(rules0, plan.rules, plan, ev.eid as ID, verdicts)];
   // `rulesChanged` tells the caller the Deck rises: the rules or the Head changed.
-  return { rules, rulesChanged: rulesRevChanged || (bundle !== null && !dirtied), bundle, outcome: plan.outcome, kinds, write, entry };
+  return { rules, rulesChanged: rulesRevChanged || (bundle !== null && !dirtied), bundle, outcome: plan.outcome, kinds, write, entry, decisions };
 }
 
 /**
@@ -281,7 +289,30 @@ export async function executeOnTurn(tx: Tx, run: HardRuleRun): Promise<HardRuleR
   const result = executeHardRule({ ...run, memory });
   // A failed compile still commits the writes (design 3.0 step 6).
   writeMemoryCommands(tx, run.uid, memory.commands);
+  // Brief 042 item 6: the route's decisions, in the transaction that writes `core/rules`.
+  writeRuleRows(tx, ruleRowAt(run, "turn", result.rules, run), result.decisions);
   return result;
+}
+
+/** Where and when a writer of `core/rules` records its rule rows (brief 042 item 6). */
+export function ruleRowAt(
+  run: Pick<CompileRun, "uid" | "epoch" | "clock" | "hasher"> & { rules: CoreRules },
+  source: Parameters<typeof writeRuleRows>[1]["source"],
+  after: CoreRules,
+  ids: { sessionId: string | null; turnId: string | null },
+): Parameters<typeof writeRuleRows>[1] {
+  return {
+    uid: run.uid,
+    source,
+    sessionId: ids.sessionId,
+    turnId: ids.turnId,
+    rulesDocRev: run.rules.rev,
+    rulesRev: after.rulesRev,
+    now: tsFromMs(run.clock.opsClock.now),
+    epoch: run.epoch.epoch,
+    policyRev: run.epoch.policyRev,
+    hasher: run.hasher,
+  };
 }
 
 /**

@@ -62,17 +62,19 @@ export async function ensureExtractJobs(uid: string, sessionId: ID, deps: { stor
   const wanted = turns.filter(({ turn }) => turn.role === "user" && turn.evidenceId !== null && turn.sourceClass === "U" && turn.parseState === "committed");
   if (wanted.length === 0) return [];
   return deps.store.transaction(uid, async (tx) => {
-    const epoch = await tx.get<CoreEpoch>(paths.core(uid, "epoch"));
+    // Two round trips whatever the number of Turns (the open awaits this on the prior Session's close; its tail
+    // reserve counts them): core/epoch and every Job together, then the Evidence of the Turns with no Job.
+    const jobs = wanted.map(({ turn }) => ({ eid: turn.evidenceId!, jobId: extractJobId(turn.evidenceId!, deps.hasher) }));
+    const [epoch, ...existing] = await Promise.all([tx.get<CoreEpoch>(paths.core(uid, "epoch")), ...jobs.map((j) => tx.get(paths.job(uid, j.jobId)))]);
     const core = { epoch: epoch?.data.epoch ?? 1, policyRev: epoch?.data.policyRev ?? 1 };
+    const missing = jobs.filter((_, i) => existing[i] === null);
+    const evidence = await Promise.all(missing.map((j) => tx.get<Evidence>(paths.evidence(uid, j.eid))));
     const created: ID[] = [];
-    for (const { turn } of wanted) {
-      const eid = turn.evidenceId!;
-      const jobId = extractJobId(eid, deps.hasher);
-      if ((await tx.get(paths.job(uid, jobId))) !== null) continue;
-      const evidence = await tx.get<Evidence>(paths.evidence(uid, eid));
-      if (evidence === null) continue;
-      tx.create(paths.job(uid, jobId), extractJobRecord(uid, eid, evidence.data, deps.clock.read().opsClock.now, core));
-      created.push(jobId);
+    for (const [i, j] of missing.entries()) {
+      const e = evidence[i]!;
+      if (e === null) continue;
+      tx.create(paths.job(uid, j.jobId), extractJobRecord(uid, j.eid, e.data, deps.clock.read().opsClock.now, core));
+      created.push(j.jobId);
     }
     return created;
   });

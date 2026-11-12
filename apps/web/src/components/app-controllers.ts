@@ -11,7 +11,7 @@ import { MemoryModel } from "../client/memory-model";
 import { PhoneWatch } from "../client/phone-watch";
 import { randomId } from "../client/ids";
 import { ProactiveShelf } from "../client/proactive-shelf";
-import { confirmShown } from "../client/proactive-shown";
+import { confirmShown, showsOnScreen } from "../client/proactive-shown";
 import { SheetModel } from "../client/sheet-model";
 import { type StorageLike, VisitModel } from "../client/visit-model";
 import { TypedTurns } from "../client/typed-turns";
@@ -122,6 +122,8 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     // Brief 030 part A: the open's line is shown, and the server is told it was.
     onAudience: (stamp, audience) => company.adopt(stamp, audience),
     onProactive: (p: Proactive): void => {
+      // Brief 045 finding 7: a line that asks for an answer stays for a call.
+      if (!showsOnScreen(p)) return;
       proactive.show(p, typed.getSnapshot().entries.length);
       void confirmShown(api, p, () => randomId());
     },
