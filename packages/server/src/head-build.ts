@@ -3,6 +3,7 @@
  * and the Evidence their `dependsOn` names, inside the caller's transaction, then runs the pure `compileHead`.
  */
 import {
+  type Au,
   type ClockPair,
   type CoreEpoch,
   type CoreRules,
@@ -136,8 +137,10 @@ export async function buildHead(
   core: { epoch: CoreEpoch; rules: CoreRules },
   clock: ClockPair,
   generation: number,
+  /** Who may hear the call (task 45); private when absent, which compiles exactly as before. */
+  audience?: Au,
 ): Promise<HeadResult> {
   const memories = await readAllMemories(reader, uid);
   const snapshot = await snapshotFor(reader, uid, memories, core.epoch, generation);
-  return compileHead({ memories, ec: foregroundEC(uid, core.epoch, clock, generation), snapshot, rules: core.rules, clock });
+  return compileHead({ memories, ec: foregroundEC(uid, core.epoch, clock, generation), snapshot, rules: core.rules, clock, ...(audience === undefined ? {} : { audience }) });
 }

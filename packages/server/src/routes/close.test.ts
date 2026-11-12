@@ -8,6 +8,7 @@ import { callRoute, patchRecord, recordingSchedule, runScheduled, testRig } from
 import { extractJobId } from "../worker/extract-jobs";
 import { hangupJobId } from "../worker/hangup";
 import { LEASE_MS } from "../worker/jobs";
+import { RECONNECT_WAIT_MS } from "../audience-swap";
 import { closeRoute } from "./close";
 import { openRoute } from "./open";
 
@@ -194,5 +195,45 @@ describe("POST /api/session/close", () => {
     expect(await rig.store.get(UID, paths.job(UID, extractJobId(eid, rig.deps.hasher)))).toBeNull();
     await close();
     expect((await rig.store.get<Job>(UID, paths.job(UID, extractJobId(eid, rig.deps.hasher))))?.data).toMatchObject({ kind: "extract", status: "queued", sourceIds: [eid] });
+  });
+});
+
+// voice-control task 51 (brief 026): an error close keeps a narrowed audience across a reconnect (R14.6, R14.8; Q81).
+describe("POST /api/session/close: the narrowed audience (task 51)", () => {
+  const T0 = Date.UTC(2026, 10, 3, 12);
+  it('reason "error" on a non-private Session sets waitDeadline + 60 s', async () => {
+    for (const audience of ["company", "unknown"] as const) {
+      const { rig, sessionId, close, session } = await opened(["rtc_1"]);
+      rig.openai.always("realtime.calls.hangup", ok(null));
+      await patchRecord<Session>(rig.store, UID, paths.session(UID, sessionId), { audience });
+      await close({ reason: "error" });
+      expect((await session()).waitDeadline, audience).toBe(tsFromMs(T0 + RECONNECT_WAIT_MS));
+    }
+  });
+
+  it('reason "error" with no call, and on a Session already closing, keeps it too', async () => {
+    const a = await opened();
+    await patchRecord<Session>(a.rig.store, UID, paths.session(UID, a.sessionId), { audience: "company" });
+    expect((await a.close({ reason: "error" })).body).toEqual({ state: "closed" });
+    expect((await a.session()).waitDeadline).toBe(tsFromMs(T0 + RECONNECT_WAIT_MS));
+
+    const b = await opened(["rtc_1"]);
+    b.rig.openai.always("realtime.calls.hangup", never());
+    await patchRecord<Session>(b.rig.store, UID, paths.session(UID, b.sessionId), { audience: "company", status: "closing" });
+    await b.close({ reason: "error" });
+    expect((await b.session()).waitDeadline).toBe(tsFromMs(T0 + RECONNECT_WAIT_MS));
+  });
+
+  it('reason "user" leaves it null, and so does an error close of a private Session', async () => {
+    const a = await opened(["rtc_1"]);
+    a.rig.openai.always("realtime.calls.hangup", ok(null));
+    await patchRecord<Session>(a.rig.store, UID, paths.session(UID, a.sessionId), { audience: "company" });
+    await a.close({ reason: "user" });
+    expect((await a.session()).waitDeadline).toBeNull();
+
+    const b = await opened(["rtc_1"]);
+    b.rig.openai.always("realtime.calls.hangup", ok(null));
+    await b.close({ reason: "error" });
+    expect((await b.session()).waitDeadline).toBeNull();
   });
 });

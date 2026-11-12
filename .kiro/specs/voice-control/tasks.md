@@ -444,9 +444,9 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
 
 ### Group B1 (parallel)
 
-- [ ] 45. Head compile by audience
+- [x] 45. Head compile by audience
   - Requirements: R14.2
-  - Depends on: 44 · Estimate: 1.5 h · Actual:
+  - Depends on: 44 · Estimate: 1.5 h · Actual: about 0.2 h. Built by Claude Code (brief 026). `headAdmitsSens` in `head.ts`: outside `private` only S0 lines, so `unknown` narrows too (fails closed); `buildHead` takes the audience
   - Files: `packages/core/src/head.ts`, `packages/core/src/head.test.ts`, `packages/server/src/head-build.ts`
   - Witness: `head.test.ts` › with audience `company` no line with `sens ≠ S0` appears, the rules section is unchanged, the Now line says `Audience: company.`; private is byte-identical to today. `head.property.test.ts` still passes untouched.
   - Commit: `feat(head): compile by audience`
@@ -467,32 +467,32 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `machine.test.ts` › `blocked` with no Permit tears down, opens with `previousSessionId`, posts no close, stays `thinking`; `blocked` with a care Permit plays it, then swaps after it ends or a barge-in; the swap line plays from `proactive` once the ack matches; a swap failure goes to connection recovery; a lost connection with an Outstanding_Turn waits for its response or deadline. Property 10 green; properties 1–7 and 12 still green.
   - Commit: `feat(voice): call swap for company and quiet`
 
-- [ ] 48. `/api/turn`: company, quiet and the hang-up
+- [x] 48. `/api/turn`: company, quiet and the hang-up
   - Requirements: R14.1, R14.5, R14.7, R14.8; Q68, Q79, Q81
-  - Depends on: 45 · Estimate: 3 h · Actual:
+  - Depends on: 45 · Estimate: 3 h · Actual: about 0.6 h. Built by Claude Code (brief 026). The logic is in `packages/server/src/audience-swap.ts`; `/api/turn` runs the rule in wave B. Narrowed here means a live Session with a `waitDeadline` and a non-private audience; its turns answer `blocked` before the Stamp and clientSeq checks and store no Turn. Property 10's server half is `routes/turn.narrowing.property.test.ts`, red first at seed 749011380
   - Files: `packages/server/src/routes/turn.ts`, `packages/server/src/audience.ts`, `packages/server/src/routes/turn-audience.test.ts` (new)
   - Witness: `turn-audience.test.ts` › a company or quiet hit with a live call stores `company` (with `reasonCodes:["quiet"]` for quiet), raises `policyRev`, sets `waitDeadline` +10 s, moves the Session to `closing`, writes the hangup Job and answers `blocked`; with crisis also a candidate it answers `blocked` with the care Permit, `waitDeadline` +60 s and no hang-up; every later turn on that Session answers `blocked` (property 10, server half).
   - Commit: `feat(turn): company and quiet narrow and hang up`
 
 ### Group B3 (parallel)
 
-- [ ] 49. `/api/turn`: alone
+- [x] 49. `/api/turn`: alone
   - Requirements: R15.1, R15.8
-  - Depends on: 48 · Estimate: 2 h · Actual:
+  - Depends on: 48 · Estimate: 2 h · Actual: about 0.3 h. Built by Claude Code (brief 026). The Head for the audience a parse may move to (`alone` private, `company` or `quiet` company) is compiled from a snapshot before the transaction (`precompileAudienceHead`) and written only if the rules and epoch it read still hold and no hardRule write took core/bundle; otherwise the Deck keeps its Head. A typed company line with no call (row 9) gets the narrow Head the same way
   - Files: `packages/server/src/routes/turn.ts`, `packages/server/src/routes/turn-alone.test.ts` (new)
   - Witness: `turn-alone.test.ts` › `alone` stores `private`, raises `policyRev`, compiles a full Head with `bundleRev + 1`, returns the new Deck and the ALONE ack note; no hang-up; a gap stays a gap.
   - Commit: `feat(turn): alone widens the session`
 
-- [ ] 50. Open with the carried audience and the swap line
+- [x] 50. Open with the carried audience and the swap line
   - Requirements: R14.2, R14.3, R14.8; Q81
-  - Depends on: 45, 48 · Estimate: 2.5 h · Actual:
+  - Depends on: 45, 48 · Estimate: 2.5 h · Actual: about 0.4 h. Built by Claude Code (brief 026). One more read in the open's transaction (the named Session, under the Owner's uid). The line is spoken only for an inherited `company` with no crisis; an inherited `unknown` starts narrow and silent. The Permit's decision cites `H("swapline", sessionId)`, which names no stored Turn. `tests/firestore/open-retry.test.ts` (the 3.5 s budget) is the emulator's and was not run here
   - Files: `packages/server/src/routes/open.ts`, `packages/server/src/routes/open-audience.test.ts` (new)
   - Witness: `open-audience.test.ts` › an open naming a narrowed Session within `waitDeadline` starts `company` with the narrow Head and a `proactive` `postCommitControl` carrying the COMPANY ack note; no line after a crisis; past `waitDeadline` or for another Owner's Session it starts `private`; the open stays inside its 3.5 s budget in `tests/firestore/open-retry.test.ts`.
   - Commit: `feat(open): carry a narrowed audience into the fresh call`
 
-- [ ] 51. Close keeps a narrowed audience on an error close
+- [x] 51. Close keeps a narrowed audience on an error close
   - Requirements: R14.6, R14.8; Q81
-  - Depends on: 48 · Estimate: 0.5 h · Actual:
+  - Depends on: 48 · Estimate: 0.5 h · Actual: about 0.2 h. Built by Claude Code (brief 026). Non-private is the Effective_Audience, an expired lease counting as `unknown`; the deadline is written in the close's own Session update (`beginCloseInTx` takes the extra fields). `open-audience.test.ts` also walks the reconnect: an error close of a company Session, then an open that starts company and hears the line again
   - Files: `packages/server/src/routes/close.ts`, `packages/server/src/routes/close.test.ts`
   - Witness: `close.test.ts` › `reason:"error"` on a non-private Session sets `waitDeadline` +60 s; `reason:"user"` leaves it null.
   - Commit: `feat(close): keep a narrowed audience across a reconnect`
@@ -506,9 +506,9 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
 
 ### Group B4
 
-- [ ] 53. Wave B checks and report
+- [x] 53. Wave B checks and report
   - Requirements: R24.1, R24.3
-  - Depends on: 45–52 · Estimate: 1.5 h · Actual:
+  - Depends on: 45–52 · Estimate: 1.5 h · Actual: about 0.3 h. Built by Claude Code (brief 026). Four of the five checks exit 0; `npm run test:emulator` was not run (no network, shared emulator port), and the live-check steps are written, not run
   - Files: `docs/briefs/011-report.md`
   - Witness: the five checks of task 44; the report's wave B section with the same headings, and live-check steps for "my cousin just sat down" (swap, company line, narrow Head in the Debug_Panel), "keep that between us" (quiet as company), "okay, it's just us now" (alone line, full Head), and a crisis line said with someone present (care reply, then the swap, no company line).
   - Commit: `docs: brief 011 report, wave B`

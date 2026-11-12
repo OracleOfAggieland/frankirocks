@@ -307,3 +307,60 @@ The run (c) comparisons (28 of 30, 1 of 30, 718 and 1,103 ms, 1,317 ms, about 80
 No item was declined. Wave B has not started.
 
 **Checks** (telemetry variables set, no network call, nothing with `--live`): `npm test` three runs in a row, 164 files and 1,527 tests each; `npm run lint`, `npm run typecheck` and `npm run build` exit 0.
+
+## Wave B (tasks 45 to 53; briefs 017 and 026)
+
+Built by Claude Code, not by Kiro: the machine and client half (tasks 46, 47, 52) under brief 017, the server half (tasks 45, 48 to 51) and this section (task 53) under brief 026. The full report of the server half is `docs/briefs/026-report.md`.
+
+### Checks
+
+`npx vitest run` (389 files, 3,716 tests), `npm run lint`, `npm run typecheck` and `npm run build` exit 0 on `79f844c`; see `docs/briefs/026-report.md`, "Checks". `npm run test:emulator` was not run: it fetches firebase-tools through `npx -y`, this build makes no network call, and the emulator's port is shared between lanes. No command called OpenAI.
+
+### What was built and where
+
+- **45** `packages/core/src/head.ts` (`headAdmitsSens`): outside `private` the Head keeps only S0 Memory lines. `packages/server/src/head-build.ts`: `buildHead` takes the audience.
+- **46, 47, 52** See `docs/briefs/017-report.md`.
+- **48, 49** `packages/server/src/audience-swap.ts` holds the logic; `routes/turn.ts` runs the rule in wave B and keeps one block per seam: `narrowedHere` (row 1), `precompileAudienceHead` (before the transaction), `audienceEffect` (in it), and the hangup Job after the response.
+- **50** `routes/open.ts`: the named Session is read under the Owner's uid; `inheritedAudience` and the swap line through the Admission_Seam.
+- **51** `routes/close.ts` with `errorCloseCarry`; `sessions.ts`'s `beginCloseInTx` takes the extra fields so the close stays one Session update.
+
+### Properties that ran red
+
+- Property 10, machine half (task 46): see `docs/briefs/017-report.md`.
+- Property 10, server half (`packages/server/src/routes/turn.narrowing.property.test.ts`, new in task 48): red first at seed 749011380. Shrunk counterexample: a company hit at 0.30 with judge H on a live call answered `ordinary`, since the route still ran the rule in wave A. Fixed by tasks 48's wave B rule and the narrowed-Session branch.
+
+### Contract questions
+
+V-165 to V-170, in `docs/briefs/026-report.md`.
+
+### Requirement changes
+
+None.
+
+### What couldn't be checked
+
+The swap on a real call; the second microphone grant; a real Realtime hang-up; the open's 3.5 s budget with the extra read (`tests/firestore/open-retry.test.ts`, emulator only); whether the swap line's Permit (10 s TTL from the open) is still valid when the fresh call's ack matches on a slow network.
+
+### Live check for the owner (R24.2, wave B)
+
+Run on localhost with the Debug_Panel open (`?debug=1`), in Chrome. Before the check, tell Franki one personal thing in a private call (for example "My sister Ana is moving in with me next month"), and confirm in the Debug_Panel's Head that it is listed.
+
+1. **"My cousin just sat down."**
+   - The reply stops. The avatar shows thinking, and the call button stays in its hang-up form. There is a short gap with no sound, then exactly "Got it. I'll keep things general for now."
+   - Debug_Panel: the old Session's audience is `company`. The decision for the turn is a hold with reasons `audience`, `blocked`. A new Session appears with audience `company`. Its Head has the Now line "Audience: company.", no line about Ana, and the Hard rules section unchanged.
+   - Then ask "What do you know about my family?" Franki answers from the narrow Head and says nothing about Ana.
+2. **"Keep that between us."** (Start from a fresh private call.)
+   - The same swap and the same company line as step 1. Quiet is recorded as company (Q79).
+   - Debug_Panel: the decision's reasons include `quiet`; the new Session's audience is `company`.
+3. **"Okay, it's just us now."** (In the company call from step 1 or 2.)
+   - Exactly "Okay, just us again." No hang-up, no gap.
+   - Debug_Panel: audience `private`. The Deck's bundleRev is one higher, and its Head lists Ana again with "Audience: private.".
+4. **A crisis line said with someone present.** For example: "My cousin's here and I really can't cope anymore."
+   - A care reply that mentions 988 plays in full, on the same call. Then the swap happens, with no company line.
+   - Debug_Panel: the first Session's audience is `company` with crisis set. The new Session is `company`, with no proactive line.
+   - If the care reply is not heard, or the company line is heard after it, stop and report.
+5. **What would be a stop.** Any reply heard on the old call after step 1's line ends, any S1+ line in the new Session's Head, or a swap on a plain line (for example "Hey Franki, how's it going?"; Q95) is a stop. Note the turn, the verdict and the class probabilities from the Debug_Panel.
+
+### Stop
+
+Wave B ends here.

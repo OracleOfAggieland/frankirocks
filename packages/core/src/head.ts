@@ -128,6 +128,9 @@ export function compileHead(input: HeadInput): HeadResult {
     if (!eligible(x, { ...input.ec, stage: "project" }, input.snapshot).allow) continue;
     if (!spokenGrade(x, input.ec, input.snapshot).allow) continue;
     if (hm.memory.sens === "S2") continue;
+    // By audience (voice-control R14.2, task 45): outside a private audience only S0 lines, as the admission rule
+    // lets only S0 notes through (`notesAllowed`) and the Gate holds S1+ in company. The rules section is untouched.
+    if (!headAdmitsSens(input.audience ?? "private", hm.memory.sens)) continue;
     passing.push({ section: sectionOf(hm.memory), m: hm });
   }
   // Deterministic order: (section, predicate, key, id), so input order never matters (R26.12).
@@ -211,6 +214,14 @@ function rulesLines(rules: CoreRules, audience: Au): HeadLine[] {
 function nowLines(clock: ClockPair, audience: Au): HeadLine[] {
   const { date, weekday } = civilDay(clock.worldClock.now, clock.worldClock.zone);
   return [{ section: "now", text: `Now: ${weekday} ${date}, time zone ${clock.worldClock.zone}. Audience: ${audience}.`, ref: null }];
+}
+
+/**
+ * Whether a Memory line of this Sensitivity may sit in a Head compiled for this audience (task 45). Private takes
+ * every spoken-grade line below S2; company and unknown take S0 only (fails closed for unknown).
+ */
+export function headAdmitsSens(audience: Au, sens: Memory["sens"]): boolean {
+  return audience === "private" || sens === "S0";
 }
 
 function memoryDocRef(hm: HeadMemory): DocRef {

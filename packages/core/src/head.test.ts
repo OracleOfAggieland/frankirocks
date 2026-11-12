@@ -173,3 +173,48 @@ describe("compileHead", () => {
     expect(compiled(many).head.text.length).toBeLessThanOrEqual(14_000);
   });
 });
+
+// voice-control task 45 (brief 026): the Head compiles by audience (R14.2; design "Open with inheritance").
+describe("compileHead by audience (task 45)", () => {
+  const shellfish = { id: testId("rule"), subjectId: "self", code: "shellfish", state: "active" as const, anonymous: false, proof: null, proofRev: null, rootKeys: [], dependsOn: [] };
+  const withRules = (memories: HeadMemory[], audience?: "private" | "company" | "unknown") => {
+    const base = input(memories);
+    const r = compileHead({ ...base, rules: { ...base.rules, allergies: [shellfish] }, ...(audience === undefined ? {} : { audience }) });
+    if (!r.ok) throw new Error(r.error);
+    return r;
+  };
+  const mix = () => [
+    mem(1, { sens: "S0", value: { kind: "text", text: "plain fact" } }),
+    mem(2, { sens: "S1", value: { kind: "text", text: "personal fact" } }),
+    mem(3, { sens: "S2", value: { kind: "text", text: "secret fact" } }),
+  ];
+
+  it("with company: no line above S0, the rules section unchanged, and the Now line says the audience", () => {
+    const company = withRules(mix(), "company");
+    const memoryLines = company.lines.filter((l) => l.ref !== null);
+    expect(memoryLines.map((l) => l.ref!.id)).toEqual([testId("m1")]);
+    expect(company.head.text).toContain("plain fact");
+    expect(company.head.text).not.toContain("personal fact");
+    expect(company.head.text).not.toContain("secret fact");
+    expect(company.head.selectedRefs.map((r) => r.id)).toEqual([testId("m1")]);
+    // The rules section is what the rules renderer gives for the audience, every hard rule still in it.
+    const rulesOf = (r: typeof company) => r.lines.filter((l) => l.section === "rules").map((l) => l.text);
+    const noMemories = withRules([], "company");
+    expect(rulesOf(company)).toEqual(rulesOf(noMemories));
+    expect(rulesOf(company).join("\n")).toContain("shellfish");
+    expect(company.lines.find((l) => l.section === "now")!.text).toMatch(/ Audience: company\.$/);
+  });
+
+  it("with unknown: no line above S0 either (fails closed)", () => {
+    const unknown = withRules(mix(), "unknown");
+    expect(unknown.lines.filter((l) => l.ref !== null).map((l) => l.ref!.id)).toEqual([testId("m1")]);
+  });
+
+  it("private is byte-identical to a compile with no audience, S1 lines included", () => {
+    const priv = withRules(mix(), "private");
+    const none = withRules(mix());
+    expect(priv).toEqual(none);
+    expect(priv.head.text).toContain("personal fact");
+    expect(priv.lines.find((l) => l.section === "now")!.text).toMatch(/ Audience: private\.$/);
+  });
+});
