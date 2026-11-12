@@ -2,11 +2,16 @@
  * @machine voice.call
  * The only code that decides what the call does next. State: VoiceState; events: VoiceEvent; deciding function:
  * step. Exits: closedFields (hangUp, openFailed), connectionRecovery, onOpen, startOpen; their reset table is above
- * closedFields. Every wait is a TimerName; its meaning table is on that type.
- * Always: every wait has its deadline in state, and a timer whose deadline is absent or not reached does nothing;
- * and the rules listed below.
- * Never: read a clock, a random source or the network; throw. An event type, timer name or Realtime type with no
- * case changes nothing at run time; a member of a listed union with no case fails the typecheck.
+ * closedFields. Every timed wait that fires is a TimerName; its meaning table is on that type. Three more deadlines
+ * are kept in state with no timer and read only when a later event looks at them: outstanding[].deadline,
+ * missing[].until, and stateSentAt + STATE_STALE_MS.
+ * Always: an armed wait has its deadline in state until it is disarmed; a timer whose deadline is absent does
+ * nothing, and one that arrives before its deadline only re-arms the same deadline (an `armTimer` command can
+ * outlive its deadline when the same step disarms it); and the rules listed below.
+ * Never: read a clock, a random source or the network. Never throws on a well-typed VoiceEvent. A listed Realtime
+ * type that arrives without its fields throws today: conversation.item.added, response.created, response.done,
+ * response.output_audio_transcript.done and error. An event type, timer name or Realtime type with no case changes
+ * nothing at run time; a member of a listed union with no case fails the typecheck.
  *
  * Browser call-state reducer (design "Browser state machine"; R13, R15, R16.3, R17.2, R17.3; KV02, KV04, KV05,
  * KV06, KV13). Pure: `step(state, event, now)` returns the next state and the commands the Voice_Client runs, in
@@ -14,8 +19,8 @@
  * network; IDs a new Turn needs arrive on the event (`freshId`), and hashing is a command (`verifyPermit`) whose
  * answer comes back as the `permitChecked` event.
  *
- * Timers are commands too (`armTimer`). The deadline is also kept in state, and a `timer` event whose deadline is
- * absent or not yet reached is ignored, so a stale timer can never move the machine.
+ * Timers are commands too (`armTimer`). The deadline is also kept in state. A `timer` event whose deadline is
+ * absent is ignored, and one whose deadline is not yet reached re-arms it, so a stale timer can never move the machine.
  *
  * Rules that hold in every state:
  *   - output audio is muted unless the phase is SPEAKING under a Permit that passed its checks (KV02);
@@ -87,7 +92,7 @@ export const ADMITTED_TRANSCRIPT_LIMIT_MS = 5_000;
 export const TURN_RESPONSE_LIMIT_MS = 5_000;
 /** A Turn posted `missing` waits this long from the post for a late transcript (the Superseding_Post). */
 export const MISSING_WINDOW_MS = 10_000;
-/** `/api/session/state` while a call is live, never two in flight (R4.5). */
+/** `/api/session/state` while a call is live, never two in flight (R4.5; the poll row on TimerName says when two can be). */
 export const POLL_MS = 1_000;
 /** A state request with no answer after this is treated as lost, so polling can go on (the client's limit is 1.5 s). */
 export const STATE_STALE_MS = 5_000;
@@ -113,15 +118,18 @@ export type VoicePhase =
   | "RECOVERY";
 
 /**
- * Every wait of the call. A wait is an `armTimer` command plus its deadline in `deadlines`; a `timer` event acts only
- * when that deadline is present and reached (onTimer), and each handler re-checks the phase, because leaving a phase
- * does not always disarm. What each name means, by the phase it is armed in (and the function that arms it); a live
- * phase is one of IN_CALL:
+ * Every timed wait of the call. A wait is an `armTimer` command plus its deadline in `deadlines`; a `timer` event
+ * acts only when that deadline is present and reached (onTimer). One that arrives before its deadline re-arms the
+ * same deadline and changes nothing else. Each handler re-checks the phase or the field it acts on (awaitingOpen,
+ * the Turn, the reply, heldBack, stateFailures), because leaving a phase does not always disarm. What each name
+ * means, by the phase it is armed in (and the function that arms it); a live phase is one of IN_CALL:
  *
- *   openWait      CONNECTING (startOpen): /api/session/open has OPEN_LIMIT_MS to answer. Fires: openFailed, which
- *                 closes with error "open", or inside connection recovery schedules the next reconnect.
- *   connect       CONNECTING (onOpen): SDP and the data channel have CONNECT_LIMIT_MS from the open answer (R15.8).
- *                 Fires in CONNECTING: connection recovery.
+ *   openWait      CONNECTING (startOpen): /api/session/open has OPEN_LIMIT_MS to answer. Fires while awaitingOpen:
+ *                 openFailed, which closes with error "open", or inside connection recovery goes back to RECOVERY
+ *                 and schedules the next reconnect if an attempt remains.
+ *   connect       CONNECTING (onOpen): CONNECT_LIMIT_MS from the open answer to channelOpen. R15.8 means SDP and the
+ *                 data channel only, but the Voice_Client's `connect` asks for the microphone first, so the
+ *                 browser's permission prompt runs inside this limit today. Fires in CONNECTING: connection recovery.
  *   ack           CONFIGURING (channelOpen): a StateAck matching the Deck within ACK_LIMIT_MS of `session.update`
  *                 (R13.9). Fires in CONFIGURING: connection recovery.
  *   item          WAIT_ITEM (onCommitted): every commit's `conversation.item.added` within ITEM_WAIT_MS (R15.10).
@@ -130,9 +138,11 @@ export type VoicePhase =
  *                 admission (admit) to t0 + ADMITTED_TRANSCRIPT_LIMIT_MS (R7.6). Fires: the unposted ASR Turn is
  *                 posted `missing`.
  *   permit        Two meanings under one name; whichever arm came last sets the deadline.
- *                 (1) The answer wait. HELD, JUDGING or SPECULATING (postTurn "final"): the post +
- *                 TURN_RESPONSE_LIMIT_MS (R7.5). Any phase but RECOVERY (requestVerify, only when none is armed): the
- *                 hash check of a pending Permit has TURN_RESPONSE_LIMIT_MS (KV06).
+ *                 (1) The answer wait. HELD, JUDGING or SPECULATING (postTurn "final", for a Turn not admitted): the
+ *                 post + TURN_RESPONSE_LIMIT_MS (R7.5). Also RECOVERY (line), when the transcript arrives after the
+ *                 admitted reply's `response.create` was refused; it does nothing there, and lineDone ends the
+ *                 Turn. Any phase but RECOVERY (requestVerify, only when none is armed): the hash check of a pending
+ *                 Permit has TURN_RESPONSE_LIMIT_MS (KV06).
  *                 (2) The hold. HELD, entered from SPEAKING, TOOL_WAIT, HELD, JUDGING or SPECULATING when a higher
  *                 Stamp cancels the reply (cancelAll): now + HOLD_LIMIT_MS for a Permit under the new Deck.
  *                 Fires in HELD, JUDGING or SPECULATING with no active reply: RECOVERY with nothing to play, then
@@ -144,18 +154,26 @@ export type VoicePhase =
  *   stateRetry    Any phase with a Session after CONFIGURING (onStateFailed): a failed state request is retried after
  *                 1, 2 and 5 s. Fires in a live phase or RECOVERY.
  *   stateRetryUi  As stateRetry, armed at the first failure: show the state retry button RETRY_UI_MS after it.
- *   reconnect     RECOVERY, connection (connectionRecovery, openFailed): the next open after 1, 2 and 5 s.
- *   retryUi       RECOVERY, connection (connectionRecovery): show "Try again" RETRY_UI_MS after recovery began.
+ *   reconnect     RECOVERY, connection (connectionRecovery, openFailed): the next open after 1, 2 and 5 s, while an
+ *                 attempt remains; after the third, none is armed.
+ *   retryUi       RECOVERY, connection (connectionRecovery, unless "Try again" already shows): show "Try again"
+ *                 RETRY_UI_MS after recovery began.
  *   tool          TOOL_WAIT, or SPEAKING while the lead-in plays (dispatchTool): /api/tool has TOOL_LIMIT_MS.
  *                 Fires: LISTENING.
- *   lineDone      RECOVERY, line (postTurn `missing`, onTurn `recoveryOnly`, the permit wait, a refused
+ *   lineDone      RECOVERY, line (postTurn `missing` or `failed` for a Turn not admitted, onTurn `recoveryOnly`
+ *                 when not already in RECOVERY, the permit wait, a refused
  *                 `response.create`): the fallback end of a recovery with no neutral line playing. Disarmed when
  *                 audio starts. Fires with no audio started: cancel what is in flight, LISTENING.
  *   judge         JUDGING or SPECULATING (startJudge): a verdict by t0 + JUDGE_LIMIT_MS (R3.5). Fires: the slow path.
  *   poll          LISTENING onward and RECOVERY (onState on reaching LISTENING, then itself): one state request per
- *                 POLL_MS, never two in flight (R4.5).
+ *                 POLL_MS (R4.5). Never two in flight for one Session as long as every state answer is that
+ *                 Session's own: stateOk and stateFailed do not name their request, and onState and onStateFailed
+ *                 clear stateSentAt before they look at whose answer it is, so a late answer from an earlier Session
+ *                 ends the wait early (and a bare stateFailed also counts a failure against this Session).
  *   swap          Never armed yet (wave B). Its handler does nothing.
- *   speakCap      HELD or RECOVERY at admission (admit), re-armed in SPEAKING when audio starts: SPEAK_CAP_MS.
+ *   speakCap      HELD, RECOVERY or TOOL_WAIT at admission (admit; TOOL_WAIT when the adopted speculative reply
+ *                 already holds a recall call), re-armed in SPEAKING when audio starts: SPEAK_CAP_MS. Fires with an
+ *                 active reply: cancel all, LISTENING.
  *   heldBack      LISTENING (toListening): an admitted Turn whose reply ended before its transcript, until
  *                 t0 + ADMITTED_TRANSCRIPT_LIMIT_MS. Fires: posted `missing`.
  */
@@ -935,7 +953,8 @@ function openFailed(s: Step): void {
  * The reset table: what each exit does to each field. A new VoiceState field gets a cell in every column here.
  *   closed    closedFields, as hangUp and openFailed (outside connection recovery) apply it; phase CLOSED.
  *   recovery  connectionRecovery; phase RECOVERY, kind "connection". (openFailed inside connection recovery resets
- *             nothing: it stays in RECOVERY and schedules the next reconnect.)
+ *             no call field: awaitingOpen false, openWait disarmed, phase back to RECOVERY, and the next reconnect
+ *             if an attempt remains.)
  *   open      onOpen with a usable answer: the start of every Session, first call or reconnect.
  *   press     startOpen: Call pressed, or a reconnect from RECOVERY; phase CONNECTING.
  * "keep" and "-" both leave the field as it was: "keep" where a reset might be expected, "-" where the exit has
@@ -955,11 +974,14 @@ function openFailed(s: Step): void {
  *   instructions              null                      keep                           null            -
  *   nextClientSeq             keep                      keep                           1               -
  *   lastCommitSeq             keep                      keep                           0               -
- *   deadlines                 {}                        {}, then retryUi, reconnect    -openWait,      +openWait
- *                                                                                      +connect
- *   recovery                  null                      connection; since and          -               retrying: keep;
- *                                                       attempts kept if already in                    else null
- *                                                       one, else now and 0
+ *   deadlines                 {}                        {}, then retryUi unless        -openWait,      +openWait
+ *                                                       Try again shows, and           +connect
+ *                                                       reconnect while attempts < 3
+ *   recovery                  null                      connection; since and          -               retrying: kept,
+ *                                                       attempts kept if already in                    after reconnect()
+ *                                                       one, else now and 0                            added 1 to attempts
+ *                                                                                                      and disarmed
+ *                                                                                                      reconnect; else null
  *   retryVisible              false                     keep                           -               retrying: keep;
  *                                                                                                      else false
  *   stateFailures             null                      keep                           null            -
@@ -976,6 +998,8 @@ function openFailed(s: Step): void {
  *   zone                      -                         -                              -               the press's
  * Never reset by any exit: config, lastTurnResponseAt, ackDroppedStale, lastLoudAt, latency, eventSeq, strayAudio,
  * realtimeErrors.
+ * Not an exit, but a reset: when CONFIGURING reaches LISTENING, onState sets recovery to null and retryVisible to
+ * false, and disarms ack, connect, retryUi and reconnect.
  */
 function closedFields(st: VoiceState): Partial<VoiceState> {
   return {
@@ -1060,7 +1084,8 @@ function postState(s: Step): void {
   const { session, deck, ack } = s.st;
   if (session === null || deck === null) return;
   // R4.5: never two state requests in flight, whichever of poll, refresh, stateRetry or the retry button asks
-  // (review of wave A, item 10). An answer, a failure or STATE_STALE_MS ends the one in flight.
+  // (review of wave A, item 10). An answer, a failure or STATE_STALE_MS ends the one in flight; the answer or
+  // failure need not be this Session's (the poll row on TimerName).
   if (s.st.stateSentAt !== null && s.now - s.st.stateSentAt < STATE_STALE_MS) return;
   s.set({ stateSentAt: s.now });
   s.push({
