@@ -32,13 +32,17 @@ const post = (rig: Rig, body: unknown) => settle(callRoute(rig, turnRoute, body)
 const epochDoc = async (rig: Rig) => (await rig.store.get<CoreEpoch>(UID, paths.core(UID, "epoch")))!.data;
 const readerCalls = (rig: Rig) => rig.openai.requestsTo("responses.create").filter((r) => (r.body as { model?: string }).model === "test-bg-model").length;
 
-/** Extraction answers with no items unless scripted; the recall reader answers with an empty supported read. */
+/**
+ * Extraction answers with no items unless scripted. The recall reader answers with one statement cited to the
+ * stored Memory's root span, which survives only when that Memory was supplied to the reader.
+ */
 function rig(): Rig {
   const r = testRig();
+  const span = { eid: turnEvidenceId(testId("turn-s1-1"), r.deps.hasher), fieldPath: "text", start: 0, end: LINE.length, quote: LINE };
   r.openai.respond("responses.create", (body) =>
     (body as { model?: string }).model === "test-brain-model"
       ? ok(completed(JSON.stringify(extractOutput([]))))
-      : ok(completed(JSON.stringify({ kind: "supported", statements: [], alternatives: [] }))),
+      : ok(completed(JSON.stringify({ kind: "supported", statements: [{ text: "Your dog is called Pip.", citations: [span], memoryIds: [] }], alternatives: [] }))),
   );
   return r;
 }
@@ -89,7 +93,8 @@ async function recall(r: Rig, stamp: SS, seq: number) {
   await runScheduled(r);
   const before = readerCalls(r);
   const res = await callRoute(r, toolRoute, { requestId: testId(`tool-${seq}`), stamp: { ...stamp, turnId: testId(`turn-s2-${seq}`) }, callId: "call_1", tool: { name: "recall", args: ARGS } });
-  return { status: res.body.status, coverage: res.body.result?.coverage?.state, readerCalls: readerCalls(r) - before };
+  const notes = ((res.body.result?.notes ?? []) as { text: string }[]).map((n) => n.text);
+  return { status: res.body.status, notes, readerCalls: readerCalls(r) - before };
 }
 
 /** Calls 1 to 3: store Pip, a call with the rise and a recall, then the next open. */
@@ -112,6 +117,7 @@ describe("a policyRev rise and stored Memories", () => {
     expect(out.raised).toBe(0);
     expect(out.call2Head.text).toContain(FACT);
     expect(out.recalled.readerCalls).toBe(1);
+    expect(out.recalled).toMatchObject({ status: "ready", notes: ["Your dog is called Pip."] });
     expect(out.call3Head.text).toContain(FACT);
     expect(out.call3Head.selectedRefs).toHaveLength(1);
   });
@@ -123,6 +129,7 @@ describe("a policyRev rise and stored Memories", () => {
       expect(out.raised).toBe(1);
       expect(out.call2Head.text).toContain(FACT);
       expect(out.recalled.readerCalls).toBe(1);
+      expect(out.recalled).toMatchObject({ status: "ready", notes: ["Your dog is called Pip."] });
       expect(out.call3Head.text).toContain(FACT);
       expect(out.call3Head.selectedRefs).toHaveLength(1);
     });
@@ -131,11 +138,18 @@ describe("a policyRev rise and stored Memories", () => {
   it("a raised epoch (the forget fence) still hides a Memory stored before it", async () => {
     const r = rig();
     const first = await storePip(r);
+    // Before the fence, the stored Memory is in the next Head.
+    const before = await open(r, "open1b", first);
+    expect(before.head.text).toContain(FACT);
+    await close(r, "close1b", before.sessionId);
     const e = await epochDoc(r);
     await patchRecord<CoreEpoch>(r.store, UID, paths.core(UID, "epoch"), { epoch: e.epoch + 1, policyRev: e.policyRev + 1 });
-    const s2 = await open(r, "open2", first);
+    const s2 = await open(r, "open2", before.sessionId);
     expect(s2.stamp.epoch).toBe(e.epoch + 1);
     expect(s2.head.text).not.toContain(FACT);
     expect(s2.head.selectedRefs).toHaveLength(0);
+    const recalled = await recall(r, s2.stamp, 1);
+    expect(recalled.readerCalls).toBe(0);
+    expect(recalled.notes).toEqual([]);
   });
 });
