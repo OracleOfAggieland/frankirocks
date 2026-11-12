@@ -11,6 +11,7 @@ import { chooseNow, proactiveOf } from "./proactive";
 import { confirmReminder, offerReminder, recordPendingRendered } from "./reminder";
 import { admitMoment, deliveryEntryId, recordSaid } from "./said";
 import { memoryTick, scanMoments } from "./tick";
+import { momentNoteId } from "./verdict";
 
 const UID = "owner-1";
 const ZONE = "America/Chicago";
@@ -118,7 +119,8 @@ describe("delivery, said and the reminder", () => {
     await memoryTick(ctx);
     const wishId = byKind(await moments(rig), "wish")[0]![0] as never;
     const tx = <T>(fn: (t: Parameters<Parameters<typeof rig.store.transaction>[1]>[0]) => Promise<T>) => rig.store.transaction(UID, fn);
-    expect(await tx((t) => admitMoment(t, UID, wishId, "resp_1", rig.clock))).toBe(true);
+    const noteIds = [momentNoteId(rig.deps.hasher, wishId, (await moments(rig)).get(wishId)!)];
+    expect(await tx((t) => admitMoment(t, UID, wishId, { responseId: "resp_1", noteIds }, rig.deps))).toBe(true);
     const counters = await rig.store.get<{ counts: { kind: string; count: number }[] }>(UID, paths.core(UID, "counters"));
     expect(counters?.data.counts).toContainEqual({ kind: "speech", count: 1 });
     const receipt = (text: string) => ({ kind: "transcript" as const, responseId: "resp_1", momentIds: [wishId], noteIds: [], text });

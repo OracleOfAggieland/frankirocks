@@ -37,6 +37,7 @@ import { compareLoop, heroOffer } from "../routes/tool-food";
 import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 import { scanMoments } from "./tick";
+import { momentNoteId } from "./verdict";
 
 export interface SessionSignals {
   transitionOrCrisis: boolean;
@@ -105,7 +106,7 @@ export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, st
   const ops = deps.clock.read().opsClock.now;
   const expiresAt = tsFromMs(ops + PERMIT_TTL_MS);
   const whisper: W = {
-    noteId: deps.hasher.id(["momentNote", momentId, m.generation]) as ID,
+    noteId: momentNoteId(deps.hasher, momentId, m) as ID,
     rev: 1,
     kind: "moment",
     text: line.text.slice(0, 1024),

@@ -14,42 +14,35 @@
  */
 import {
   type CoreDocs,
-  type Effect,
-  type Evidence,
   type ID,
   type Ledger,
   type Memory,
   type Moment,
   type MomentPlan,
   type RowContext,
-  type Snapshot,
   type SourceVerdict,
   type Transition,
-  type Block,
   derivePattern,
   deriveExpiry,
   deriveLoop,
   deriveOccasion,
   deriveReminder,
-  docRef,
-  eligible,
   heroRollupId,
   mergeMoment,
   msFromTs,
-  parseDep,
   planTick,
   retireMoment,
-  sourceVerdict,
   tickRowOf,
   tsFromMs,
 } from "@franki/core";
 import { ownerClock, readCoreDocs } from "../core-docs";
-import { foregroundEC, storeReader } from "../head-build";
+import { storeReader } from "../head-build";
 import { heroOffer, compareLoop } from "../routes/tool-food";
 import type { RouteContext } from "../routes/runtime";
 import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
-import type { Reader, StoredDoc, Tx } from "../store/port";
+import type { Reader, StoredDoc } from "../store/port";
+import { momentVerdict } from "./verdict";
 
 /** Memories one tick reads for derive; past it, derive writes nothing that tick (fails closed). */
 export const MEMORY_SCAN_MAX = 2_000;
@@ -57,10 +50,6 @@ export const MEMORY_SCAN_MAX = 2_000;
 export const TICK_PAGE = 100;
 /** Moment rows one tick reads; past it, the tick opens nothing (fails closed). */
 export const MOMENT_SCAN_MAX = 2_000;
-/** Blocks and effects reread at open (contracts Snapshot `blocks` cap). */
-const REREAD_MAX = 100;
-/** Hold effects that stop a moment about their target or subject. */
-const HOLDING_EFFECTS: readonly Effect["kind"][] = ["quiet", "careHold", "celebrationHold"];
 
 export interface TickReport {
   /** `barrier`: a forget or reset holds the tenant; `noCore`: no core documents yet. Nothing was written. */
@@ -165,7 +154,9 @@ async function writePlan(ctx: RouteContext, plan: MomentPlan | null, retiredId: 
   // A plain read first: most ticks change nothing, and a no-op needs no transaction.
   const seen = await deps.store.get<Moment>(uid, path);
   const ops = deps.clock.read().opsClock.now;
-  const peek = plan !== null ? (seen === null ? true : seen.data.status === "pending") : seen?.data.status === "pending";
+  // Brief 036 finding 1: a leased row is re-planned too, so a moved occasion never speaks its old time.
+  const movable = (m: Moment | undefined) => m?.status === "pending" || m?.status === "leased";
+  const peek = plan !== null ? seen === null || movable(seen.data) : movable(seen?.data);
   if (!peek) return false;
   return deps.store.transaction(uid, async (tx) => {
     const core = await readCoreDocs(tx, uid);
@@ -189,58 +180,6 @@ function candidates(moments: readonly StoredDoc<Moment>[], worldNow: number, ops
     return false;
   });
   return due.sort((a, b) => msFromTs(a.data.dueAt) - msFromTs(b.data.dueAt) || (a.id < b.id ? -1 : 1)).slice(0, TICK_PAGE);
-}
-
-/** Rereads a Memory source in the transaction: its row, its dependencies, the blocks and the hold effects. */
-async function memoryVerdict(tx: Tx, uid: string, moment: Moment, memoryId: string, core: Awaited<ReturnType<typeof readCoreDocs>>, ctx: RouteContext): Promise<SourceVerdict> {
-  const doc = await tx.get<Memory>(paths.memory(uid, memoryId));
-  const m = doc?.data ?? null;
-  // A moved occasion speaks for its newest row; the moment's note names it.
-  const noteId = moment.payload.kind === "cue" && moment.payload.noteRef.type === "memory" ? moment.payload.noteRef.id : memoryId;
-  const current = noteId === memoryId ? m : ((await tx.get<Memory>(paths.memory(uid, noteId)))?.data ?? null);
-  const plain = sourceVerdict(current);
-  if (plain !== "ok" || current === null) return plain;
-  // Every dependency must be in the snapshot, or eligible denies the row.
-  const deps: { ref: ReturnType<typeof docRef>; row: Evidence | Memory }[] = [];
-  for (const dep of current.dependsOn) {
-    const parsed = parseDep(dep);
-    if (parsed === null) return "gone";
-    if (parsed.collection === "evidence") {
-      const e = await tx.get<Evidence>(paths.evidence(uid, parsed.id));
-      if (e !== null) deps.push({ ref: docRef("evidence", e.id, e.data.rev), row: e.data });
-    } else {
-      const d = await tx.get<Memory>(paths.memory(uid, parsed.id));
-      if (d !== null) deps.push({ ref: docRef("memories", d.id, d.data.rev), row: d.data });
-    }
-  }
-  const blocks = await tx.query<Block>({ collection: paths.collection(uid, "blocks"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: REREAD_MAX });
-  const pair = ownerClock(core.state.data, ctx.deps.clock);
-  // An expiry ask is about a row whose bound has passed: read it as it stood just before.
-  const world = moment.kind === "expiryAsk" && current.validTo !== null ? Math.min(pair.worldClock.now, msFromTs(current.validTo) - 1) : pair.worldClock.now;
-  const ec = { ...foregroundEC(uid, core.epoch.data, { ...pair, worldClock: { ...pair.worldClock, now: world } }, 0), stage: "read" as const, purpose: "proactive" as const };
-  const snapshot: Snapshot = {
-    uid,
-    epoch: core.epoch.data,
-    session: null,
-    job: null,
-    localGeneration: 0,
-    refs: [docRef("memories", noteId, current.rev), ...deps.map((d) => d.ref)],
-    rows: [current, ...deps.map((d) => d.row)],
-    blocks: blocks.map((b) => b.data),
-    coverage: core.state.data.coverage,
-    complete: blocks.length < REREAD_MAX,
-  };
-  const er = eligible({ ref: docRef("memories", noteId, current.rev), row: current }, ec, snapshot);
-  if (!er.allow) return er.reason === "blocked" ? "forgotten" : "gone";
-  // Q25 has no declared index here; the first page by ID, filtered in code. A full page fails closed.
-  const effectPage = await tx.query<Effect>({ collection: paths.collection(uid, "effects"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: REREAD_MAX });
-  if (effectPage.length >= REREAD_MAX) return "gone";
-  const effects = effectPage.filter((e) => e.data.state === "active");
-  const subjects = new Set(moment.subjectIds.filter((s) => s !== "self"));
-  const held = effects.some(
-    (e) => HOLDING_EFFECTS.includes(e.data.kind) && ((e.data.target.id === memoryId || e.data.target.id === noteId) || (e.data.scope.subjectId !== null && subjects.has(e.data.scope.subjectId))),
-  );
-  return held ? "gone" : "ok";
 }
 
 /** Applies a moment's planned transitions to its row. */
@@ -271,13 +210,10 @@ async function moveMoment(ctx: RouteContext, id: ID, rollupLive: boolean): Promi
     const m = doc.data;
     const pair = ownerClock(core.state.data, deps.clock);
     const ops = pair.opsClock.now;
-    let verdict: SourceVerdict = "gone";
-    if (m.memoryId !== null) verdict = await memoryVerdict(tx, uid, m, m.memoryId, core, ctx);
-    else if (m.rollupId !== null) verdict = rollupLive ? "ok" : "gone";
-    else if (m.actionId !== null) {
-      const action = await tx.get<Ledger>(paths.ledger(uid, m.actionId));
-      verdict = action !== null && action.data.kind === "action" && action.data.state === "complete" ? "ok" : "gone";
-    }
+    const read = await momentVerdict(tx, uid, m, core, deps.clock, { rollupLive });
+    // A source changed since this moment was planned: derive re-plans it on the next tick; nothing moves now.
+    if (read === "stale") return [];
+    const verdict: SourceVerdict = read;
     const passes = comparison !== null && comparison.lines !== null && comparison.takeout.status === "eligible";
     const ts = planTick({ rows: [tickRowOf(id, m)], worldNow: pair.worldClock.now, opsNow: ops, source: () => verdict, passes: () => passes });
     if (ts.length === 0) return ts;

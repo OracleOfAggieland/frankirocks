@@ -81,10 +81,13 @@ const planned = (m: Moment) =>
 export function mergeMoment(existing: Moment | null, p: MomentPlan, c: RowContext, hasher: Hasher): Moment | null {
   const fresh = momentRow(p, c, hasher);
   if (existing === null) return fresh;
-  if (existing.status !== "pending") return null;
+  if (existing.status !== "pending" && existing.status !== "leased") return null;
   if (planned(existing) === planned(fresh)) return null;
   return {
     ...existing,
+    status: "pending",
+    leaseToken: null,
+    leaseUntil: null,
     scheduleRev: fresh.scheduleRev,
     dueAt: fresh.dueAt,
     closeAt: fresh.closeAt,
@@ -99,8 +102,11 @@ export function mergeMoment(existing: Moment | null, p: MomentPlan, c: RowContex
   };
 }
 
-/** A retired moment (a wish moved to at or after its start): a pending row is skipped; anything else stays. */
+/**
+ * A retired moment (a wish moved to at or after its start): a pending or leased row is skipped, and a lease is
+ * dropped (brief 036 finding 1); anything else stays.
+ */
 export function retireMoment(existing: Moment | null, c: RowContext): Moment | null {
-  if (existing === null || existing.status !== "pending") return null;
-  return { ...existing, status: "skipped", updatedAt: tsFromMs(c.opsNow) };
+  if (existing === null || (existing.status !== "pending" && existing.status !== "leased")) return null;
+  return { ...existing, status: "skipped", leaseToken: null, leaseUntil: null, updatedAt: tsFromMs(c.opsNow) };
 }
