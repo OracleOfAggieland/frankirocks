@@ -147,11 +147,23 @@ body {
   visibility: hidden;
 }
 
-/* Signed out, the Wordmark sits about 24 px above the stage, inside the canvas layer's top spill. The radial mask is
-   intersected with a vertical one that is clear down to the Wordmark's bottom edge (9% of the canvas at the 240 px
-   stage) and opaque by 17%, above the ghost's hair (about 19%). Computed from CANVAS_FRAME, not yet measured. */
+/* Signed out, the Wordmark's box ends 24 px above the avatar box (the stage section's gap-6), inside the canvas
+   layer's top spill. The radial mask is intersected with a vertical one that is clear down to the Wordmark's bottom
+   edge and opaque by 17% of the canvas, above the ghost's hair (about 19%). From CANVAS_FRAME, for a stage W wide the
+   canvas is 1.47W tall and starts 0.23W above the box, so the Wordmark's edge is (0.23W - 24px) / 1.47W down the
+   canvas: calc(15.646% - 24px), since a stop's percentage is of the canvas height. That is 8.8% at the 240 px stage
+   and 10.8% at 340 px, always under 17%. Computed, not yet measured. */
 [data-screen="signed-out"] [data-three-layer="canvas"] {
-  mask-image: radial-gradient(closest-side, black 72%, transparent), linear-gradient(to bottom, transparent 9%, black 17%);
+  mask-image: radial-gradient(closest-side, black 72%, transparent), linear-gradient(to bottom, transparent calc(15.646% - 24px), black 17%);
+  mask-composite: intersect;
+}
+
+/* Signed in, the header rail and the empty strip slot sit above the stage section, whose top padding (py-4) is the
+   16 px above the avatar box. The same vertical mask, clear down to the section's top edge, keeps the opaque canvas
+   off the rail, its seam and the slots: (0.23W - 16px) / 1.47W, so calc(15.646% - 16px). That is 11.1% at the
+   240 px stage and 12.4% at 340 px, always under 17%. Computed, not yet measured. */
+[data-screen="signed-in"] [data-three-layer="canvas"] {
+  mask-image: radial-gradient(closest-side, black 72%, transparent), linear-gradient(to bottom, transparent calc(15.646% - 16px), black 17%);
   mask-composite: intersect;
 }
 

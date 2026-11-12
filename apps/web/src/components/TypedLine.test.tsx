@@ -66,3 +66,23 @@ describe("TypedLine", () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("TypedLine looks (brief 015)", () => {
+  it("collapsed, the keyboard glyph is quiet: no edge", () => {
+    const html = renderToStaticMarkup(<TypedLine {...field} />);
+    const tag = /<button[^>]*data-typed-line="collapsed"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(tag).toContain("text-ink-dim");
+    expect(tag).not.toMatch(/(^|\s)border(\s|-)/);
+  });
+
+  it("open, it is one glass capsule with a stitched inner outline and a brass Send, and it materializes", () => {
+    const html = renderToStaticMarkup(<TypedLine {...field} defaultOpen />);
+    expect(html.match(/data-typed-capsule=""/g)).toHaveLength(1);
+    expect(html).toMatch(/data-typed-capsule="" class="[^"]*\bmat-glass\b[^"]*\bfranki-materialize\b[^"]*\brounded-chip\b/);
+    expect(html).toMatch(/data-stitch-outline=""[^>]*class="[^"]*border-dashed border-stitch/);
+    expect(html).toMatch(/aria-hidden="true" data-stitch-outline/);
+    expect(html).toMatch(/<button type="submit"[^>]*class="[^"]*\bmat-brass\b[^"]*"[^>]*>Send</);
+    // The capsule draws the focus ring for its field.
+    expect(html).toMatch(/data-typed-capsule="" class="[^"]*has-\[textarea:focus-visible\]:outline-brass-hi/);
+  });
+});

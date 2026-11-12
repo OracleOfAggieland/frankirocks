@@ -46,7 +46,11 @@ describe("Built with Kiro footer (R16.7)", () => {
     for (const [label, page] of pages) {
       const html = renderToStaticMarkup(RootLayout(layoutProps(page)));
       expect(footerCount(html), label).toBe(1);
-      expect(html, label).toMatch(/<footer[^>]*>Built with Kiro<\/footer><\/body>/);
+      // The footer is the body's last element: a seam, then the text, then the spider toggle (brief 015).
+      const footer = /<footer[^>]*data-testid="built-with-kiro"[^>]*>([\s\S]*?)<\/footer><\/body>/.exec(html)?.[1];
+      expect(footer, label).toBeDefined();
+      expect(footer!.indexOf("data-footer-seam"), label).toBeGreaterThanOrEqual(0);
+      expect(footer!.indexOf("data-footer-seam"), label).toBeLessThan(footer!.indexOf(">Built with Kiro<"));
     }
   });
 
@@ -77,11 +81,14 @@ describe("Built with Kiro footer (R16.7)", () => {
     const signedOut = renderToStaticMarkup(
       <AuthPanel state={{ kind: "signedOut", error: { cause: "popupBlocked", message: "blocked msg" } }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />,
     );
-    expect(signedOut).toMatch(/<button type="button"[^>]*>Sign in to wake Franki<\/button>/);
+    // The bolt glyph leads the words inside the button (brief 015).
+    expect(signedOut).toMatch(/<button type="button"[^>]*>(<svg[^>]*aria-hidden="true"[\s\S]*?<\/svg>)Sign in to wake Franki<\/button>/);
+    expect(signedOut).toMatch(/<a [^>]*href="\/"[^>]*>About Franki<\/a>/);
+    expect(signedIn).not.toContain("About Franki");
     expect(signedOut).not.toMatch(/<button[^>]*\sdisabled=""/);
     expect(signedOut).toContain('data-cause="popupBlocked"');
 
     const loading = renderToStaticMarkup(<AuthPanel state={{ kind: "loading" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />);
-    expect(loading).toMatch(/<button[^>]*\sdisabled=""[^>]*>Sign in to wake Franki/);
+    expect(loading).toMatch(/<button[^>]*\sdisabled=""[^>]*>(<svg[\s\S]*?<\/svg>)?Sign in to wake Franki/);
   });
 });

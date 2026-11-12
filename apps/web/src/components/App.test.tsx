@@ -50,6 +50,8 @@ describe("App while signed out", () => {
     const html = renderToStaticMarkup(<App />);
     expect(html).toContain('data-screen="signed-out"');
     expect(html).toContain('data-look="Dormant"');
+    // A quiet way back to the front door (brief 015).
+    expect(html).toMatch(/<a [^>]*href="\/"[^>]*>About Franki<\/a>/);
     expect(fetchSpy.mock.calls.filter(([url]) => String(url).startsWith("/api/") && !String(url).startsWith("/api/health"))).toEqual([]);
   });
 });

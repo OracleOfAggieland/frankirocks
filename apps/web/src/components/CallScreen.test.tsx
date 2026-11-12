@@ -1,9 +1,11 @@
 // Call controls (FSC R16.4 to R16.6, R13.8, R15.8; lab-ui-foundation R14.4 to R14.6). Moved from
 // StandInAvatar.test.tsx; the class assertions follow the token classes of R14.4.
 import { type VoiceState, initialVoiceState } from "@franki/core";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { CALL_ERRORS, CallScreen } from "./CallScreen";
+import { CALL_ERRORS, CallScreen, pressSparks } from "./CallScreen";
 
 const noop = () => {};
 const base = initialVoiceState({ transcribeModel: "m" });
@@ -86,5 +88,102 @@ describe("call controls (R16.4–R16.6)", () => {
     const html = screen(voice({ phase: "LISTENING" }));
     expect(html.match(/<button/g)?.length).toBe(2);
     expect(html.match(/focus-visible:outline-2/g)?.length).toBe(2);
+  });
+});
+
+const SCREEN_CSS = readFileSync(join(__dirname, "screen/screen.css"), "utf8");
+/** The start tag of the first element that carries `marker`. */
+const startTag = (html: string, marker: string) => new RegExp(`<[a-z]+[^>]*${marker}[^>]*>`).exec(html)?.[0] ?? "";
+
+describe("the call button's bezel and status lines (brief 015)", () => {
+  it("a knurled bezel surrounds the button: round for the start form, squared for hang-up, outside the button", () => {
+    const closed = screen(base);
+    const live = screen(voice({ phase: "LISTENING" }));
+    expect(closed).toContain('data-call-bezel="round"');
+    expect(live).toContain('data-call-bezel="square"');
+    for (const html of [closed, live]) {
+      // The bezel comes before the button, so the button and its focus ring paint over the metal.
+      expect(html.indexOf("data-bezel-ring")).toBeLessThan(html.indexOf("data-form="));
+      expect(callButtonHtml(html)).not.toContain("data-bezel");
+      expect(startTag(html, "data-bezel-ring")).toContain('aria-hidden="true"');
+      expect(startTag(html, "data-bezel-ring")).toContain("pointer-events-none");
+    }
+    // The 64 px core keeps its classes.
+    expect(cls(closed)).toContain("h-16 w-16");
+    expect(cls(live)).toContain("h-16 w-16");
+  });
+
+  it("the knurl's ticks divide the band evenly: 72 round, 80 square", () => {
+    const period = (html: string) => {
+      const [dash, gap] = (/data-bezel-knurl[^>]*>\s*<[a-z]+[^>]*stroke-dasharray="([^"]+)"/.exec(html)?.[1] ?? "").split(" ").map(Number);
+      return dash + gap;
+    };
+    const round = 2 * Math.PI * 40.5;
+    const square = 4 * (81 - 41) + 2 * Math.PI * 20.5;
+    expect(period(screen(base)) * 72).toBeCloseTo(round, 2);
+    expect(period(screen(voice({ phase: "LISTENING" }))) * 80).toBeCloseTo(square, 2);
+  });
+
+  it("disabled, the bezel is dim and the start core dark; enabled, the core is lit ecto", () => {
+    const off = screen(base, false);
+    expect(off).toContain('data-bezel-state="dim"');
+    expect(off).toContain('data-core="dark"');
+    expect(callButtonHtml(off)).not.toContain("bg-ecto");
+    const on = screen(base);
+    expect(on).toContain('data-bezel-state="lit"');
+    expect(on).toContain('data-core="lit"');
+  });
+
+  it("only the round knurl turns, slowly, on hover or focus, and only with motion allowed", () => {
+    expect(screen(base)).toMatch(/data-bezel-knurl="" class="franki-anim"/);
+    expect(screen(voice({ phase: "LISTENING" }))).not.toMatch(/data-bezel-knurl="" class="franki-anim"/);
+    const motionBlock = /@media \(prefers-reduced-motion: no-preference\) \{([\s\S]*?)\n\}/.exec(SCREEN_CSS)?.[1] ?? "";
+    expect(motionBlock).toMatch(/\[data-call-bezel="round"\] \[data-bezel-knurl\] \{[^}]*animation: franki-bezel-turn[^}]*animation-play-state: paused/);
+    expect(motionBlock).toMatch(/:has\(> button:enabled:focus-visible\) \[data-bezel-knurl\] \{\s*animation-play-state: running/);
+    expect(motionBlock).not.toContain(":hover");
+    // Hover runs it only where a pointer can hover, so a tap on a touch screen never leaves it turning.
+    const hoverBlock = /@media \(prefers-reduced-motion: no-preference\) and \(hover: hover\) \{([\s\S]*?)\n\}/.exec(SCREEN_CSS)?.[1] ?? "";
+    expect(hoverBlock).toMatch(/\[data-call-bezel="round"\]:has\(> button:enabled:hover\) \[data-bezel-knurl\] \{\s*animation-play-state: running/);
+    expect(SCREEN_CSS.replace(hoverBlock, "")).not.toContain(":hover");
+    // Outside the media query nothing runs the turn.
+    expect(SCREEN_CSS.replace(motionBlock, "")).not.toMatch(/animation:\s*franki-bezel-turn/);
+  });
+
+  it("the button's hit area covers the whole 88 px bezel, round for start and squared for hang-up", () => {
+    const closed = cls(screen(base));
+    const live = cls(screen(voice({ phase: "LISTENING" })));
+    for (const c of [closed, live]) expect(c.replaceAll("&#x27;", "'")).toContain("before:absolute before:-inset-3 before:content-['']");
+    expect(closed).toContain("before:rounded-full");
+    expect(live).toContain("before:rounded-[24px]");
+    // The 64 px core keeps its classes.
+    expect(closed).toContain("h-16 w-16");
+  });
+
+  it("a press sends the ring spark only from an enabled start form", () => {
+    expect(pressSparks(true, false)).toBe(true);
+    expect(pressSparks(true, true)).toBe(false);
+    expect(pressSparks(false, false)).toBe(false);
+    expect(pressSparks(false, true)).toBe(false);
+  });
+
+  it("the status lines under the button are mono 12", () => {
+    const tag = (html: string, marker: string) => startTag(html, marker);
+    expect(tag(screen(voice({ phase: "LISTENING", micMuted: true })), 'data-testid="muted-indicator"')).toMatch(/font-mono text-xs/);
+    expect(tag(screen(voice({ error: "open" })), 'data-step="open"')).toMatch(/font-mono text-xs/);
+    const missing = renderToStaticMarkup(<CallScreen voice={base} enabled configMissing="X" onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />);
+    expect(tag(missing, "data-config-missing")).toMatch(/font-mono text-xs/);
+  });
+
+  it("mute is a brass toggle with a microphone glyph, struck through while muted, beside the button", () => {
+    const open = screen(voice({ phase: "LISTENING" }));
+    const muted = screen(voice({ phase: "LISTENING", micMuted: true }));
+    expect(open).toContain('data-mic="open"');
+    expect(open).not.toContain("data-strike");
+    expect(muted).toContain('data-mic="struck"');
+    expect(muted).toContain("data-strike");
+    expect(muted).toMatch(/aria-pressed="true"[^>]*class="[^"]*\bmat-brass\b/);
+    // The call button holds the middle column whether or not the mute toggle is there.
+    expect(startTag(open, "data-call-bezel")).toContain("col-start-2");
+    expect(open).toMatch(/aria-label="Mute microphone"[^>]*class="[^"]*\bcol-start-3\b/);
   });
 });
