@@ -1,8 +1,6 @@
 /**
- * The ApiClient's token step (`createApiClient`), pinned as it behaves today. `call` promises a closed ApiResult,
- * but the token is awaited before the timeout is armed and outside the try: a hanging token is not on the
- * timeout, and a rejecting one rejects the call. One case is written red first (`it.fails`): the behaviour wanted
- * later, that a rejecting token resolves `network`.
+ * The ApiClient's token step (`createApiClient`). `call` promises a closed ApiResult: a rejecting token resolves
+ * `network` (B1). The token is still awaited before the timeout is armed, so a hanging token is not on the timeout.
  *
  * Timers are vitest's fake timers, so `timeoutMs` runs on virtual time.
  */
@@ -45,15 +43,7 @@ describe("ApiClient token step", () => {
     vi.useRealTimers();
   });
 
-  // Today's side of the red case "a rejecting getToken resolves network": the change that removes its `.fails` deletes this case.
-  it("today: a rejecting getToken rejects the call instead of resolving an ApiResult", async () => {
-    const fetch = hangingFetch();
-    const api = createApiClient({ getToken: () => Promise.reject(new Error("auth/network-request-failed")), fetch });
-    await expect(api.call("/api/session/close", { body: {}, timeoutMs: 1_500 })).rejects.toThrow("auth/network-request-failed");
-    expect(fetch.calls).toBe(0);
-  });
-
-  it.fails("a rejecting getToken resolves network", async () => {
+  it("a rejecting getToken resolves network", async () => {
     const fetch = hangingFetch();
     const api = createApiClient({ getToken: () => Promise.reject(new Error("auth/network-request-failed")), fetch });
     await expect(api.call("/api/session/close", { body: {}, timeoutMs: 1_500 })).resolves.toEqual({ ok: false, kind: "network" });
