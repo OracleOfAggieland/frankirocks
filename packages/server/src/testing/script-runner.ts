@@ -53,6 +53,7 @@ import { decisionAnswer } from "./decisions";
 import { extractOutput } from "./extract-fixtures";
 import type { FakeSlotsScript } from "./fake-fast-slots";
 import { type TestRig, callRoute, runScheduled, settle, testRig } from "./fakes";
+import { ScriptCall } from "./voice-call";
 
 export const SCRIPT_UID = "owner-1";
 /** The seed's zone in every script. */
@@ -61,7 +62,8 @@ export const SCRIPT_ZONE = "America/Chicago";
 // ---------------------------------------------------------------------------------------------
 // Outputs: everything Franki says, shows or hands back, in one list.
 
-export type Channel = "note" | "card" | "proactive" | "tool" | "read" | "head" | "model" | "probe";
+/** `heard`: what the voice model was told to say on a live call and said (the `call` steps; brief 045). */
+export type Channel = "note" | "card" | "proactive" | "tool" | "read" | "head" | "model" | "probe" | "heard";
 
 export interface Output {
   step: string;
@@ -94,6 +96,8 @@ export interface World {
   vars: Map<string, unknown>;
   ctx: RouteContext;
   counter: number;
+  /** The live call of the `call` steps: the real voice machine against the real routes (brief 045). */
+  call?: ScriptCall | null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -262,6 +266,18 @@ export type Action =
   | { do: "play"; of: string }
   /** The owner stays quiet on a live call for `IDLE_SILENCE_MS`, and the browser polls the state route once. */
   | { do: "idle" }
+  /**
+   * Brief 045, finding 3: Call pressed on the real voice machine. Its open goes to the open route, setup runs to its
+   * ack through the state route, and an opening line plays only if the machine verifies its Permit. The step's answer
+   * is the open's; what the model was told to say is on channel `heard`.
+   */
+  | { do: "call" }
+  /** On the live call, the owner stays quiet for `IDLE_SILENCE_MS`; the machine's poll goes and any idle line plays. */
+  | { do: "callQuiet" }
+  /** On the live call, a line typed into the box, posted by the machine; the step's answer is the turn's. */
+  | { do: "callType"; text: string }
+  /** The live call hangs up. */
+  | { do: "hangUp" }
   /** A built function that no route calls yet. Each probe is a finding: the seam is built and unwired. */
   | { do: "probe"; name: string; run: (w: World) => Promise<unknown> }
   /** Setup that stands in for a missing writer. Each is named in the report. */
@@ -503,6 +519,11 @@ async function act(step: Step, w: World): Promise<Res> {
       return w.answers.get(step.of) ?? null;
     case "play":
       return play(w, step.of);
+    case "call":
+    case "callQuiet":
+    case "callType":
+    case "hangUp":
+      return onCall(step, w);
     case "idle": {
       if (w.stamp === null) throw new Error("idle: no session");
       rig.clock.advance(IDLE_SILENCE_MS);
@@ -515,6 +536,39 @@ async function act(step: Step, w: World): Promise<Res> {
       step satisfies never;
       return null;
   }
+}
+
+/** A step on the live call (brief 045): runs it, then records the routes' answers and what was heard. */
+async function onCall(step: Step & { do: "call" | "callQuiet" | "callType" | "hangUp" }, w: World): Promise<Res> {
+  if (step.do === "call") {
+    w.call = new ScriptCall(w.rig, w.zone);
+    await w.call.press();
+  } else if (w.call == null) throw new Error(`${step.do}: no call`);
+  else if (step.do === "callQuiet") await w.call.quiet(IDLE_SILENCE_MS);
+  else if (step.do === "callType") await w.call.type(step.text);
+  else await w.call.hangUp();
+  const call = w.call;
+  const log = call.take();
+  const st = call.st;
+  if (st.session !== null && st.deck !== null) {
+    w.sessionId = st.session.sessionId;
+    w.stamp = { sessionId: st.session.sessionId, epoch: st.deck.epoch, policyRev: st.deck.policyRev, bundleRev: st.deck.bundleRev, rulesRev: st.deck.rulesRev, generation: st.session.generation };
+  }
+  // A receipt the machine sent for a played reply must land: it is how a line is admitted and said.
+  const lost = log.answers.find((a) => a.route === "receipt" && a.status !== 200);
+  if (lost !== undefined) throw new Error(`${step.do}: a receipt was refused: ${lost.status} ${canonicalJSON(lost.body)}`);
+  for (const a of log.answers) {
+    if (a.status !== 200) continue;
+    if (a.route === "open" && a.body.deck != null) push(w, step.label, "head", a.body.deck.head, a.body.deck.head.text);
+    if ((a.route === "open" || a.route === "state") && a.body.proactive != null) push(w, step.label, "proactive", a.body.proactive, proactiveText(a.body.proactive));
+    if (a.route === "turn") for (const n of a.body.notes ?? []) push(w, step.label, "note", n, n.text);
+    if (a.route === "turn" && step.do === "callType" && a.body.stamp != null) w.lastTurn = { turnId: a.body.stamp.turnId, text: step.text, source: "typed" };
+  }
+  for (const text of log.heard) push(w, step.label, "heard", text);
+  w.vars.set(`heard:${step.label}`, log.heard);
+  const main = step.do === "call" ? "open" : step.do === "callQuiet" ? "state" : step.do === "callType" ? "turn" : "close";
+  const answer = log.answers.find((a) => a.route === main && (main !== "state" || a.body?.proactive != null)) ?? log.answers.find((a) => a.route === main);
+  return answer === undefined ? null : { status: answer.status, body: answer.body };
 }
 
 /** The receipts a voice client sends for a played Proactive; the answer is the transcript receipt's. */
