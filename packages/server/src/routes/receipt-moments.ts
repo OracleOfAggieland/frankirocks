@@ -11,7 +11,7 @@
  *
  * Brief 030 part A adds what playback and a matched transcript mean for the moment's own record:
  *
- *   - an offer that starts playing is shown (`pendingRendered` for its pending ID). The hero offer's pending ID is
+ *   - an offer that starts playing, or a `pendingRendered` receipt naming its moment (shown on the screen), is shown (`pendingRendered` for its pending ID). The hero offer's pending ID is
  *     data for the server, never words for the model: it is recomputed from the rows now, and written only when the
  *     offer's line is still the one the moment rendered (fails closed: a changed offer is not shown);
  *
@@ -44,6 +44,14 @@ export async function receiptMoments(tx: Tx, ctx: RouteContext, req: Infer<typeo
     const receipt = { kind: req.kind, responseId: req.responseId, momentIds: req.momentIds, noteIds: req.noteIds, text: req.text };
     for (const id of new Set(ids)) await recordSaid(tx, uid, id, receipt, MOMENT_PERMIT_KIND, deps.clock, deps.hasher);
   } else if (req.kind === "pendingRendered" && req.pendingId !== null) await recordPendingRendered(tx, uid, req.pendingId as ID, opsNow, deps.hasher);
+  else if (req.kind === "pendingRendered") {
+    // Brief 030 part A: a line shown on the screen (a typed session's Proactive) names its moments, not a pending ID;
+    // each one admitted on this response is shown, as a played one is.
+    for (const id of new Set(ids)) {
+      const doc = await getMoment(tx, paths.moment(uid, id));
+      if (doc !== null && doc.data.status === "admitted" && doc.data.responseId === req.responseId) await offerShown(tx, ctx, doc.data, opsNow);
+    }
+  }
 }
 
 /** The pending ID of the offer a moment plays, or null. The hero's is recomputed and must match the rendered line. */
