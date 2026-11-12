@@ -39,6 +39,16 @@ Each item names the lane that built the piece. If a report's seam list disagrees
 - Tuning anything against a live model or a live call.
 - Corrections and life changes (brief 025's).
 
+## Two phases
+
+Three fix lanes are still open when this brief starts: the voice fixes (brief 031, in `packages/core/src/voice/**`), the hard-rule fixes (brief 032, in `packages/core/src/writes/**` and `packages/server/src/onturn/**`) and the Gate fixes (brief 033). Leave those folders alone until their lanes have merged. So this brief runs in two phases.
+
+**Phase one: everything that puts no new words on the wire.** The tick on open, on a jump and from the state route; the visit on open; the `said` match in the receipt route; the hero's result stored as an `insight` moment and the loop's check at `checkAt` (stored, not yet delivered); the screen's leftovers, including showing a `proactive` when one is returned; the findings of brief 029 (the hero window after a jump, the loop's lineage, the Lab's count of guesses); and the smaller seams of item 9 except the pasted line in a call.
+
+**Phase two: everything that does.** Delivery's choice as the `Proactive` on open and state and as an idle whisper; the hero offer and `celebrate` said; the Gate in front of all of it; the ledger rows; `suggest` and `answer` in a call; the pasted line in a call. Nothing in phase two may be built so that a candidate reaches the wire without passing the Gate, not even for one commit.
+
+Before phase two, merge `build/plan-stages` and look for an "Outcome" section at the end of `docs/briefs/033-review-gate.md` and of `docs/briefs/031-review-voice.md`. If both are there, go on. If either is missing, stop at that boundary with the tree green and everything committed, and report what phase one did. The lead will send you on when the fixes have landed.
+
 ## How to work
 
 One seam per commit. For each: the test first (a route test, or the demo script that waits for it, which loses its `it.fails` in that commit), then the call. Keep each call small: the logic lives in the lane's module, and the route gains a few lines. If a seam needs the piece itself to change, change it in its own module, with its tests.
