@@ -116,3 +116,34 @@ Not tested:
 - the open's 3.5 s budget with the extra read (`tests/firestore/open-retry.test.ts`, emulator only);
 - whether the swap line's Permit (10 s TTL from the open) is still live when the fresh call's ack matches on a slow network;
 - every live-check step in `011-report.md`.
+
+## Contract questions added by brief 035
+
+These amend the rulings above. Brief 035's "Outcome" names the commits.
+
+- **V-171.** Amends V-167 (finding 7). A turn on a narrowed Session is kept: Turn, Evidence and Extract_Job. The hard-rule executor runs under the narrowed audience, and a crisis candidate sets the crisis modifier. The answer stays `blocked` with no Permit. Proposal: v3 says those words are kept, and that a guest's words can therefore reach extraction.
+- **V-172.** Amends V-166 and Q81's "carries to the next open until" (finding 5).
+  - Built: an open inherits from any non-private Session it names, deadline or not. A close with reason `user` marks the Session private.
+  - The problem: no close reason is stored, and the voice machine sends `user` not only from the Owner's hang-up but also from `startSwap` (for a Session other than the one swapped from) and from `dropStaleOpen`.
+  - Proposal: v3 gives the Owner's own close its own reason.
+- **V-173.** Amends Q81's 10 s (finding 6). The swap wait is `SWAP_LIMIT_MS + OPEN_LIMIT_MS`, 17 s, imported from the voice machine. Once a set wait (the swap's or an error close's) expires, the open starts `unknown`: the S0 Head and no swap line, never private. A browser still retrying an open (1, 2 and 5 s) past 17 s gets that `unknown` start. Proposal: v3 states the wait in terms of the browser's limits.
+- **V-174.** Amends "A guard test changed" (finding 4).
+  - The wave B raise sits in `audienceEffect`, behind the Server_Rule's audience row, not behind `changesWhatIsSaid(..., "B")`, which crisis and forget alone also pass.
+  - The guard names five sites by function: `audienceEffect`, `lateNarrowing`, `carryNarrowing`, `repairTx` and `postSupersede`.
+  - Rows 8 and 9 test whether company or quiet fires among the candidates, whatever class was chosen.
+- **V-175.** Amends design "Wave B" (findings 3, 11 and 9).
+  - Row 7 with a firing company or quiet candidate, typed with no call: S0 notes and company recorded, with the raise and the crisis modifier.
+  - A row 8 or row 6 `blocked` answer carries no Deck.
+  - `/api/session/state` on a Session narrowed here issues no StateAck and no Deck.
+- **V-176.** Amends design "Open with inheritance" (findings 8 and 13).
+  - A company hit that commits on a Session an open already replaced narrows the open's Session, with the hang-up when it is live.
+  - The inheriting Session copies the crisis modifier.
+- **V-177.** Amends "Rulings needed", item 5 (findings 1, 2 and 10).
+  - A narrowing whose precompiled Head no longer fits compiles it in the transaction. If that fails, no Deck goes out.
+  - The hard-rule executor compiles with the audience the turn ends with: company when a company or quiet candidate fires.
+  - An `alone` line is not counted, so its Head stays narrow until the next compile.
+  - A narrowing parse on a turn whose rule then holds (a parse gap) also compiles narrow. Both cases fail closed.
+- **V-178.** The late doors (the Parse_Repair and the Superseding_Post) narrow on company or quiet, but don't widen on `alone`. Proposal: v3 says whether a late `alone` widens.
+- **V-179.** A typed reply's note takes the highest sens of the Head's Memories and the earlier safe turns (finding 12). Its `rootKeys` and `dependsOn` still come from the Head only, so a forget of a root that only an earlier turn carried doesn't reach the note. Proposal: v3 says whether the safe turns' roots join the note.
+- **V-180.** `alone` has no check of who said it, and the spec doesn't ask for one (finding 14, no change). A guest saying "it's just us now" widens the audience. Proposal: v3 says whether `alone` needs the Owner's voice or a typed turn.
+- **V-181.** `/api/tool` still runs the Server_Rule in wave A with `narrowedHere` false, so brief 035's property 1 doesn't probe it. Proposal: the brief that wires the tool route adds it to the property's probes.
