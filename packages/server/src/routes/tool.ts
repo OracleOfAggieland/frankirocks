@@ -20,6 +20,7 @@
  * The response is sent within TOOL_RESULT_LIMIT_MS (R27.5): the read's deadline shrinks by whatever the parse wait and reads used.
  */
 import { narrowedHere } from "../audience-swap";
+import { gateToolOutput } from "./gate-tool";
 import {
   type Evidence,
   type Infer,
@@ -215,7 +216,9 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
         wave: "A",
       };
       const planned = serverRule(rule);
-      const output = result.name === "recall" && planned.kind === "permit" && planned.notes !== "all" ? { ...result, notes: result.notes.filter((n) => n.sens === "S0"), snapshot: result.snapshot === null ? null : limitSnapshot(result.snapshot, "S0") } : result;
+      const limited = result.name === "recall" && planned.kind === "permit" && planned.notes !== "all" ? { ...result, notes: result.notes.filter((n) => n.sens === "S0"), snapshot: result.snapshot === null ? null : limitSnapshot(result.snapshot, "S0") } : result;
+      // Brief 030 part A: the Gate in front of the result, its rows written here.
+      const output = await gateToolOutput(tx, ctx, { session: s, turn, stamp: req.stamp, core, purpose: req.tool.name === "recall" ? req.tool.args.purpose : null }, limited);
       const admitted = admitRule(
         tx,
         {
