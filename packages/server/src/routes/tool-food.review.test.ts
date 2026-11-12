@@ -99,6 +99,48 @@ async function setup(opts: { turns: string[]; rules?: Rule[]; proposals?: Rule[]
 
 const yes = (o: { pendingId: string; yesId: string } | null) => ({ name: "answer", args: { pendingId: o?.pendingId ?? "none", choiceId: o?.yesId ?? "none" } });
 
+describe("finding 1: the list is written inside the admission, from the rules read there", () => {
+  async function interleaved(write: (r: CoreRules) => CoreRules) {
+    const t = await setup({ turns: ["Yes, let's do it"] });
+    // The rule lands after the handler's reads and before anything is written: just before the call's second
+    // transaction (the first records the request).
+    const real = t.rig.store.transaction.bind(t.rig.store);
+    let calls = 0;
+    t.rig.store.transaction = (async (uid: string, fn: never) => {
+      calls += 1;
+      if (calls === 2) await real(uid, async (tx) => {
+        const doc = (await tx.get<CoreRules>(paths.core(UID, "rules")))!;
+        tx.update(paths.core(UID, "rules"), write(doc.data));
+      });
+      return real(uid, fn);
+    }) as typeof t.rig.store.transaction;
+    const res = await t.tool(yes(t.offer));
+    t.rig.store.transaction = real;
+    return { ...t, res };
+  }
+
+  it("an egg rule written between the read and the write: the route is stale and nothing is written", async () => {
+    const t = await interleaved(withRules([rule("egg")]));
+    expect(t.res.body.status).toBe("stale");
+    expect(await t.actions()).toEqual([]);
+  });
+
+  it("an egg proposal written between (rulesRev unchanged): no list holds eggs", async () => {
+    const t = await interleaved(withProposal([rule("egg", "self", "pending")]));
+    for (const a of await t.actions()) expect(t.listOf(a)).not.toContain("eggs");
+    if (t.res.body.result?.state === "applied") for (const l of t.res.body.result.cards[0].lines as string[]) expect(l).not.toMatch(/eggs/);
+  });
+
+  it("with no rule written, the yes writes the list once, admitted", async () => {
+    const t = await setup({ turns: ["Yes, let's do it"] });
+    const res = await t.tool(yes(t.offer));
+    expect(res.body.status).toBe("ready");
+    expect(res.body.permit).not.toBeNull();
+    expect(res.body.result.state).toBe("applied");
+    expect(await t.actions()).toHaveLength(1);
+  });
+});
+
 describe("finding 2: the food paths filter by every stored rule of every subject", () => {
   it("is one named constant, set", () => expect(FILTER_EVERY_SUBJECT).toBe(true));
 

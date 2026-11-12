@@ -151,7 +151,8 @@ describe("the hero offer and its yes", () => {
     // request with identical output on the same stamp collides on the seam's decision ID: contract question H-163.)
     const turn = (await rig.store.get(UID, paths.turn(UID, stamp.sessionId, stamp.turnId)))!.data as never;
     const again = await answerTool(ctx, stamp, { pendingId: offer.pendingId, choiceId: offer.yesId }, turn);
-    expect(again).toMatchObject({ state: "applied", receiptId: actionId });
+    // Brief 037, finding 1: answerTool returns its result and a write for the admission transaction.
+    expect(again.result).toMatchObject({ state: "applied", receiptId: actionId });
     const loops = (await rig.store.query<Memory>(UID, { collection: paths.collection(UID, "memories"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: 100 })).filter((d) => d.data.kind === "loop");
     expect(loops).toHaveLength(1);
 

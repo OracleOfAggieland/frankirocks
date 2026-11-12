@@ -64,7 +64,7 @@ import { heroAnchor } from "../time/hero-anchor";
 import { forgetRowsFor } from "../forget/snapshot-rows";
 import { foregroundEC, storeReader } from "../head-build";
 import { cFields } from "../records";
-import type { Reader } from "../store/port";
+import type { Reader, Tx } from "../store/port";
 import { renderedEntryId } from "../time/reminder";
 import { paths } from "../store/paths";
 import type { RouteContext } from "./runtime";
@@ -301,11 +301,31 @@ export async function heroOffer(ctx: RouteContext, generation: number): Promise<
 // suggest(food)
 
 /**
+ * A food tool's check and write, run inside the admission transaction (brief 037, finding 1). It reads only: given
+ * the rules read there, it refuses (null, and the route is stale) when `rulesRev` isn't the stamp's or the dinners
+ * those rules give aren't the ones answered; otherwise it returns the write to run after the Permit is issued.
+ */
+export type FoodWrite = (tx: Tx, rules: CoreRules) => Promise<(() => void) | null>;
+
+export interface FoodOutcome {
+  result: Result;
+  /** Null when there is nothing to check: nothing food was answered. */
+  write: FoodWrite | null;
+}
+
+/**
  * The rules every food path reads (brief 037, finding 11): `core/rules.allergies` and every open proposal's rules (a
  * late repair's or the backstop's, not yet installed by a turn or `open`). Pending filters as if active.
  */
 export function foodRulesOf(rules: Pick<CoreRules, "allergies" | "proposals">): FoodRule[] {
   return [...rules.allergies, ...(rules.proposals ?? []).flatMap((p) => p.install)];
+}
+
+/** Everyone the food filter treats as eating (FILTER_EVERY_SUBJECT): the model's attendees plus every rule's subject. */
+export function eatersOf(rules: readonly FoodRule[], modelIds: readonly string[]): string[] {
+  const out = new Set(modelIds);
+  if (FILTER_EVERY_SUBJECT) for (const r of rules) if (r.subjectId !== null) out.add(r.subjectId);
+  return [...out].sort();
 }
 
 async function readRules(ctx: RouteContext): Promise<FoodRule[] | null> {
@@ -315,13 +335,6 @@ async function readRules(ctx: RouteContext): Promise<FoodRule[] | null> {
   } catch {
     return null;
   }
-}
-
-/** Everyone the food filter treats as eating (FILTER_EVERY_SUBJECT): the model's attendees plus every rule's subject. */
-export function eatersOf(rules: readonly FoodRule[], modelIds: readonly string[]): string[] {
-  const out = new Set(modelIds);
-  if (FILTER_EVERY_SUBJECT) for (const r of rules) if (r.subjectId !== null) out.add(r.subjectId);
-  return [...out].sort();
 }
 
 /** Three quick dinners for these rules, filtered for every subject they name. */
@@ -340,14 +353,20 @@ function foodCard(ctx: RouteContext, picked: readonly FoodCandidate[], title: st
   };
 }
 
-export async function suggestTool(ctx: RouteContext, _stamp: Stamp, args: SuggestArgs): Promise<Result> {
+/**
+ * suggest(food). Brief 037, findings 1 and 11: the dinners are checked again in the admission transaction against the
+ * rules read there (a proposal lands without raising `rulesRev`), and the route is stale when they differ.
+ */
+export async function suggestTool(ctx: RouteContext, stamp: Stamp, args: SuggestArgs): Promise<FoodOutcome> {
   if (args.domain !== "food") {
-    return { name: "suggest", candidateIds: [], selectedId: null, reason: "", pendingId: null, question: null, coverage: UNKNOWN_COV, cards: [] };
+    return { result: { name: "suggest", candidateIds: [], selectedId: null, reason: "", pendingId: null, question: null, coverage: UNKNOWN_COV, cards: [] }, write: null };
   }
   const rules = await readRules(ctx);
   const out = dinnersFor(rules, args.attendeeIds);
+  const picked = out.candidates.map((c) => c.id).join("|");
+  const write: FoodWrite = async (_tx, now) => (now.rulesRev === stamp.rulesRev && dinnersFor(foodRulesOf(now), args.attendeeIds).candidates.map((c) => c.id).join("|") === picked ? () => undefined : null);
   ctx.deps.log("tool.suggest", { kept: out.filter.kept.length, removed: out.filter.removed.length, picked: out.candidates.length });
-  return {
+  const result: Result = {
     name: "suggest",
     candidateIds: out.candidates.map((c) => candidateId(ctx, c)),
     selectedId: out.selectedId === null ? null : candidateId(ctx, out.candidates[0]!),
@@ -357,6 +376,7 @@ export async function suggestTool(ctx: RouteContext, _stamp: Stamp, args: Sugges
     coverage: rules === null ? UNKNOWN_COV : COMPLETE_COV,
     cards: out.candidates.length === 0 ? [] : [foodCard(ctx, out.candidates, "Quick dinners")],
   };
+  return { result, write: rules === null ? null : write };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -461,36 +481,39 @@ async function yesFollowsOffer(ctx: RouteContext, pendingId: string, turnId: str
   return !rows.some((r) => r.id !== turnId && r.data.role === "user" && r.data.seq <= turn.seq && Date.parse(r.data.committedAt) >= shownAt);
 }
 
-export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerArgs, turn: Turn): Promise<Result> {
+
+export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerArgs, turn: Turn): Promise<FoodOutcome> {
   const { uid, deps } = ctx;
   const answer = (state: "applied" | "declined" | "clarify" | "stale", receiptId: string | null = null, cards: Card[] = []): Result => ({ name: "answer", state, receiptId, pendingId: args.pendingId, cards });
+  const only = (state: "declined" | "clarify" | "stale"): FoodOutcome => ({ result: answer(state), write: null });
   const rows = await readMoneyRows(ctx, stamp.generation, heroScope);
   const offer = rows === null ? null : offerFrom(ctx, rows);
-  if (rows === null || offer === null || args.pendingId !== offer.pendingId) return answer("stale");
-  if (args.choiceId === offer.noId) return answer("declined");
+  if (rows === null || offer === null || args.pendingId !== offer.pendingId) return only("stale");
+  if (args.choiceId === offer.noId) return only("declined");
   // Code decides the owner said yes: the choice must be "yes", the owner's own words a plain yes, and the yes the
   // owner's next turn after the offer was shown.
-  if (args.choiceId !== offer.yesId || turn.role !== "user" || turn.sourceClass !== "U" || !turn.final || !isPlainYes(turn.text)) return answer("clarify");
-  if (!(await yesFollowsOffer(ctx, offer.pendingId, stamp.turnId, turn))) return answer("clarify");
+  if (args.choiceId !== offer.yesId || turn.role !== "user" || turn.sourceClass !== "U" || !turn.final || !isPlainYes(turn.text)) return only("clarify");
+  if (!(await yesFollowsOffer(ctx, offer.pendingId, stamp.turnId, turn))) return only("clarify");
 
-  const dinners = dinnersFor(await readRules(ctx));
-  if (dinners.candidates.length === 0) return answer("clarify");
+  const planned = dinnersFor(await readRules(ctx));
+  if (planned.candidates.length === 0) return only("clarify");
   const actionId = deps.hasher.id(["heroAction", offer.pendingId]);
   const loopId = deps.hasher.id(["heroLoop", offer.pendingId]);
   const loop = planHeroLoop(offer.pattern, rows.clock.worldClock.now, actionId);
-  if (loop === null) return answer("stale");
+  if (loop === null) return only("stale");
   const cited = loopCited(offer.pattern, rows.evidence);
-  if (cited.length > LOOP_CITED_MAX || cited.some((eid) => loopRootSlice(rows.evidence.get(eid)!) === null)) return answer("stale");
-  const card = foodCard(ctx, dinners.candidates, "Three quick dinners for those nights");
+  if (cited.length > LOOP_CITED_MAX || cited.some((eid) => loopRootSlice(rows.evidence.get(eid)!) === null)) return only("stale");
+  const card = foodCard(ctx, planned.candidates, "Three quick dinners for those nights");
+  const pickedIds = planned.candidates.map((c) => c.id).join("|");
 
-  await deps.store.transaction(uid, async (tx) => {
-    const path = paths.ledger(uid, actionId);
-    if ((await tx.get(path)) !== null) return;
-    const core = await readCoreDocs(tx, uid);
+  const write: FoodWrite = async (tx, rules) => {
+    if (rules.rulesRev !== stamp.rulesRev) return null;
+    const dinners = dinnersFor(foodRulesOf(rules));
+    if (dinners.candidates.map((c) => c.id).join("|") !== pickedIds) return null;
+    if ((await tx.get(paths.ledger(uid, actionId))) !== null) return () => undefined;
     const at = tsFromMs(deps.clock.read().opsClock.now);
-    const { epoch, policyRev } = core.epoch.data;
     const entry: ActionEntry = {
-      ...cFields(uid, at, epoch, policyRev),
+      ...cFields(uid, at, stamp.epoch, stamp.policyRev),
       kind: "action",
       state: "complete",
       at,
@@ -505,11 +528,14 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerAr
         loopId,
       },
     };
-    tx.create(path, entry);
-    tx.create(paths.memory(uid, loopId), loopMemory(ctx, tsFromMs(rows.clock.worldClock.now), epoch, policyRev, loopId, loop, offer.pattern, rows.evidence));
-  });
-  deps.log("tool.heroYes", { actionId, loopId });
-  return answer("applied", actionId, [card]);
+    const memory = loopMemory(ctx, tsFromMs(rows.clock.worldClock.now), stamp.epoch, stamp.policyRev, loopId, loop, offer.pattern, rows.evidence);
+    return () => {
+      tx.create(paths.ledger(uid, actionId), entry);
+      tx.create(paths.memory(uid, loopId), memory);
+      deps.log("tool.heroYes", { actionId, loopId });
+    };
+  };
+  return { result: answer("applied", actionId, [card]), write };
 }
 
 // ---------------------------------------------------------------------------------------------
