@@ -232,9 +232,11 @@ function beat3YesOnFriday(): Script {
     { label: "open on Friday", do: "open" },
     { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
     {
-      ...pick("Franki writes the list and the loop"),
+      label: "Franki writes the list and the loop",
+      do: "tool",
       tool: (w: World) => ({ name: "answer", args: { pendingId: offerOf(w)?.pendingId ?? "none", choiceId: offerOf(w)?.yesId ?? "none" } }),
       waits: LINEAGE_WAITS,
+      expect: pick("Franki writes the list and the loop").expect!,
     },
     { ...pick("the strip after the yes"), waits: LINEAGE_WAITS },
     { label: "three weeks of rows arrive", do: "bank", lines: shifted },
