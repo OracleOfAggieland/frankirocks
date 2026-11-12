@@ -19,6 +19,7 @@ import { asrTurn, openTestSession } from "../testing/session-fixtures";
 import { toolRoute } from "./tool";
 import { answerTool, compareLoop, heroOffer } from "./tool-food";
 import { turnRoute } from "./turn";
+import { memoryTick } from "../time/tick";
 
 const UID = "owner-1";
 const SUGGEST = { domain: "food", query: "quick dinner", attendeeIds: [], when: null, contextId: null };
@@ -161,6 +162,26 @@ describe("the hero offer and its yes", () => {
     expect(yes.body.result.state).toBe("applied");
     const loop = (await text.rig.store.get<Memory>(UID, paths.memory(UID, loopId)))!.data;
     expect(loop.rootSlices.every((x) => x.start !== null && x.end !== null)).toBe(true);
+  });
+
+  it("at checkAt the tick stores the comparison: the loop is eligible and its celebrate moment carries the numbers (brief 030 P1-3)", async () => {
+    const { rig, ctx, stamp, tool } = await setup({ turnText: "Yes, let's do it" });
+    const offer = (await heroOffer(ctx, stamp.generation))!;
+    const yes = await tool({ name: "answer", args: { pendingId: offer.pendingId, choiceId: offer.yesId } });
+    expect(yes.body.result.state).toBe("applied");
+    const loopId = rig.deps.hasher.id(["heroLoop", offer.pendingId]);
+    await insertRows(rig, [...HERO_AFTER_ORDERS, ...HERO_AFTER_GROCERIES]);
+    const loopOf = async () => (await rig.store.get<Memory>(UID, paths.memory(UID, loopId)))!.data.loop!;
+
+    await memoryTick(ctx);
+    expect((await loopOf()).state).toBe("waiting");
+
+    rig.clock.setWorld(instantAt("2026-11-17", 9 * 60, HERO_ZONE));
+    await memoryTick(ctx);
+    expect((await loopOf()).state).toBe("eligible");
+    const moments = await rig.store.query<{ kind: string; status: string; payload: Record<string, unknown> }>(UID, { collection: paths.collection(UID, "moments"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: 100 });
+    const celebrate = moments.find((m) => m.data.kind === "celebrate");
+    expect(celebrate?.data).toMatchObject({ status: "leased", payload: { kind: "celebrate", loopId, before: 18600, after: 7100, delta: 11500 } });
   });
 
   it("words that aren't a plain yes write nothing", async () => {
