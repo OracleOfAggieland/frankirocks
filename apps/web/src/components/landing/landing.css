@@ -1,1 +1,188 @@
-/* The front door's page, bar, rail, hero and story: keyframes and loops. */
+/* The front door's page, bar, rail, hero and story: keyframes and loops. Colours come from the tokens, times from
+   the --dur-* variables. Only transform and opacity animate, apart from the headline's one-time unblur. */
+
+@keyframes door-materialize {
+  from { opacity: 0; transform: translateY(12px); filter: blur(6px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+@keyframes door-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes door-window {
+  from { transform: translateX(-101%); }
+  to { transform: translateX(0); }
+}
+@keyframes door-window-inner {
+  from { transform: translateX(101%); }
+  to { transform: translateX(0); }
+}
+
+/* In the components layer, so a material utility on the same element (mat-gold on a post) wins. */
+@layer components {
+/* A stitched seam: a thin thread with short cross-ticks, fading out at both ends. Decorative. */
+.door-seam {
+  height: 7px;
+  background:
+    linear-gradient(var(--color-stitch), var(--color-stitch)) 0 50% / 100% 1px no-repeat,
+    repeating-linear-gradient(90deg, var(--color-stitch) 0 1px, transparent 1px 10px) 4px 0 / 100% 100% no-repeat;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 18%, black 82%, transparent);
+  mask-image: linear-gradient(90deg, transparent, black 18%, black 82%, transparent);
+}
+
+/* ---- Hero: words materialize on the stagger; the underline under "stitched" draws itself. ---- */
+
+.door-word {
+  display: inline-block;
+}
+
+/* The underline sits just under the baseline of the italic word, which has no descenders. Its window opens from
+   the left: the outer box moves in from the left while the thread inside moves the other way, so the thread
+   itself stays still and appears as if drawn. */
+.door-underline {
+  position: absolute;
+  left: 0.02em;
+  right: 0.06em;
+  top: calc(100% - 0.07em);
+  height: 0.13em;
+  overflow: hidden;
+  pointer-events: none;
+}
+.door-underline-thread {
+  position: absolute;
+  inset: 0;
+  color: var(--color-ink-dim);
+  background:
+    linear-gradient(currentColor, currentColor) 0 50% / 100% max(1.5px, 0.022em) no-repeat,
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 0.1em,
+      currentColor 0.1em calc(0.1em + max(1.5px, 0.022em)),
+      transparent calc(0.1em + max(1.5px, 0.022em)) 0.26em
+    );
+  border-radius: 1px;
+}
+
+
+@media (prefers-reduced-motion: no-preference) {
+  .door-word {
+    animation: door-materialize calc(var(--dur-base) * 2.5) var(--ease-ecto) both;
+    animation-delay: calc(var(--dur-quick) + var(--stagger) * var(--i, 0));
+  }
+  .door-underline {
+    animation: door-window var(--dur-ritual) var(--ease-ecto) both;
+    animation-delay: calc(var(--dur-base) * 2 + var(--stagger) * var(--i, 0));
+  }
+  .door-underline-thread {
+    animation: door-window-inner var(--dur-ritual) var(--ease-ecto) both;
+    animation-delay: calc(var(--dur-base) * 2 + var(--stagger) * var(--i, 0));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .door-word {
+    animation: door-fade var(--dur-base) linear both;
+  }
+}
+
+/* The hero's "Watch a loop close" arrow nudges down on hover. */
+.door-down {
+  transition: transform var(--dur-quick) var(--ease-ecto);
+}
+@media (prefers-reduced-motion: no-preference) {
+  a:hover > .door-down {
+    transform: translateY(2px);
+  }
+}
+
+/* ---- Story: Franki's words, quoted, with a stitched left edge. ---- */
+
+.door-says {
+  position: relative;
+  padding-left: 20px;
+}
+.door-says::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 7px;
+  pointer-events: none;
+  color: color-mix(in srgb, var(--color-ink-dim) 60%, transparent);
+  background:
+    linear-gradient(currentColor, currentColor) 50% 0 / 1px 100% no-repeat,
+    repeating-linear-gradient(180deg, currentColor 0 1px, transparent 1px 9px) 0 3px / 100% 100% no-repeat;
+}
+
+/* ---- Rail ---- */
+
+.door-rail-track {
+  background: repeating-linear-gradient(180deg, var(--color-stitch) 0 4px, transparent 4px 8px);
+}
+.door-rail-line-track {
+  background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--color-stitch) 70%, transparent) 0 6px, transparent 6px 10px);
+}
+
+/* A binding post: a 14 px ring on a dark core. Reached, an ecto core lights inside it with the ecto glow. Gold
+   (mat-gold, set in the markup) once the switch is thrown. The ring turns brass under the pointer and on focus. */
+.door-post {
+  position: relative;
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1.5px solid var(--color-ink-dim);
+  background: var(--color-night-0);
+  transition:
+    border-color var(--dur-quick) var(--ease-ecto),
+    transform var(--dur-base) var(--ease-ecto);
+}
+.door-post::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 999px;
+  background: var(--color-ecto);
+  box-shadow: var(--shadow-ecto-glow);
+  opacity: 0;
+  transform: scale(0.3);
+  transition:
+    opacity var(--dur-base) var(--ease-ecto),
+    transform var(--dur-base) var(--ease-ecto);
+}
+.door-post[data-post="lit"] {
+  border-color: color-mix(in srgb, var(--color-ecto) 70%, var(--color-ink-dim));
+}
+.door-post[data-post="lit"]::after {
+  opacity: 1;
+  transform: scale(1);
+}
+.door-post[data-post="gold"] {
+  border-color: var(--color-brass-hi);
+}
+.door-post[data-post="gold"]::after {
+  opacity: 0;
+}
+a:hover > .door-post,
+a:focus-visible > .door-post {
+  border-color: var(--color-brass-hi);
+}
+@media (prefers-reduced-motion: no-preference) {
+  a:hover > .door-post {
+    transform: scale(1.12);
+  }
+}
+/* Reduced motion: the rail fills without glow, and the core only fades in, at full size. */
+.door-post-calm::after {
+  box-shadow: none;
+  transform: none;
+  transition-property: opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .door-post::after {
+    box-shadow: none;
+    transform: none;
+    transition-property: opacity;
+  }
+}
+}
