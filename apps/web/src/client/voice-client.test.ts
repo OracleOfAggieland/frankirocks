@@ -623,7 +623,7 @@ describe("Voice_Client call swap (voice-control R14.3, R14.4, R14.6)", () => {
     let blockedOnce = false;
     let opens = 0;
     return (api: ApiClient): ApiClient => ({
-      call: async <T,>(path: string, o?: Parameters<ApiClient["call"]>[1]) => {
+      call: async (path: string, o?: Parameters<ApiClient["call"]>[1]) => {
         if (path === "/api/session/open" && ++opens === 2 && opts.failSwapOpen === true) return { ok: false, kind: "http", status: 503, error: null, retryAfterMs: 0 } as const;
         const r = await api.call<any>(path, o);
         if (path === "/api/turn" && !blockedOnce && r.ok) {
