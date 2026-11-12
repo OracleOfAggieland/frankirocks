@@ -32,7 +32,7 @@ The owner is **Riley**, an operations analyst at Corvel Freight, interviewing fo
 | `clear.ts` | Deletes every row of a tenant, paged by document ID (Q28), turns too |
 | `reset.ts` | The reset sequence |
 | `hero-check.ts` | Reads the hero's numbers back out of the seeded rows, for tests and the report |
-| `regenerate.ts` | The port a later paid run would use to regenerate packets; fake by default |
+| `regenerate.ts` | The port a later paid run would use to regenerate packets; fake by default, no live reader built, and the load refuses its output until it has a parser version |
 
 `packages/core/src/claims.ts` holds the closed output schemas of ClaimsV1, PrivateReadOwnV1 and PrivateReadInboundV1. `routes/seed-reset.ts` is the route, and `apps/web/src/app/api/seed/reset/route.ts` its thin adapter.
 
@@ -57,7 +57,7 @@ Each line's time is `{ day, minute }`: days from the clone's Friday and a local 
 
 ## The fixture clock
 
-`ownerClock` returns `{ worldClock: { now: state.worldClock, zone: currentZone }, opsClock: live }` in fixture mode (contracts line 271). The extraction worker now takes its world time from `ownerClock` too, or a judge's "Thursday" would resolve against the real date. Moving the clock forward is brief 023's job. The seam is `setWorldClock(tx, uid, to)` in `seed/clock-state.ts`, which only moves `state.worldClock`, refuses while a barrier is up (KS09), and is not yet called by any route.
+`ownerClock` returns `{ worldClock: { now: state.worldClock, zone: currentZone }, opsClock: live }` in fixture mode (contracts line 271). The extraction worker now takes its world time from `ownerClock` too, or a judge's "Thursday" would resolve against the real date. Moving the clock forward is brief 023's job. The seam is `setWorldClock(tx, uid, namespace, to, opsNow)` in `seed/clock-state.ts`, which only moves `state.worldClock`, refuses while a barrier is up (KS09) or when `namespace` is not the current clone, and is not yet called by any route.
 
 ## The order of a reset
 

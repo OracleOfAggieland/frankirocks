@@ -634,6 +634,9 @@ function buildBank(line: BankLine, input: SeedInput, ids: ReturnType<typeof seed
 
 /** Builds every row of a seed, or throws `SeedLoadError`. Deterministic in its inputs. */
 export async function buildSeed(fixture: SeedFixture, input: SeedInput): Promise<SeedRows> {
+  // Every row is stamped SEED_PARSER_VERSION, which says "written by hand". Model-made packets need a parser version
+  // of their own first (a ruling), so the load fails closed on them.
+  if (fixture.origin !== "authored") fail("packetInvalid", fixture.id, `origin ${fixture.origin} has no parser version`);
   const ids = seedIds(input.namespace, input.hasher);
   const friday = localDate(input.worldStart, input.zone);
   const seen = new Set<string>();

@@ -155,7 +155,8 @@ export type SeedLine = TurnLine | MailLine | CalendarLine | BankLine;
 export interface SeedFixture {
   /** The route's fixtureId: a 43-character ID shape. */
   id: string;
-  origin: "authored";
+  /** `authored`: packets written by hand. `regenerated`: packets from `regenerate.ts`, which the load refuses for now. */
+  origin: "authored" | "regenerated";
   /** The hero window: this many local dates, ending the day before the clone's Friday. */
   windowDays: number;
   lines: SeedLine[];
