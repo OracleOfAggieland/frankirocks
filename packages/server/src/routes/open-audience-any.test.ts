@@ -1,5 +1,5 @@
 // Brief 045 part S: the audience at an open. One block per finding, each the reviewer's sequence as a route test.
-import { COMPANY_LINE, type Session, tsFromMs } from "@franki/core";
+import { COMPANY_LINE, type Session, holdsOf, tsFromMs } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { ok } from "../openai/fake";
@@ -10,6 +10,8 @@ import { resetAs } from "../testing/seed";
 import { asrTurn, typedTurn } from "../testing/session-fixtures";
 import { PERSONAL_FACT } from "../testing/two-memories";
 import { UID, closeWith, doorRig, postTurn, sessionOf } from "../testing/audience-doors";
+import { HOLD_CARRY_MS } from "../audience-swap";
+import { signalsOf } from "./delivery-wire";
 import { openRoute } from "./open";
 
 const headText = (body: any): string => body?.deck?.head?.text ?? "";
@@ -87,5 +89,33 @@ describe("finding 4: an open that inherits a narrowed audience opens with the sw
     expect((await sessionOf(rig, b.body.sessionId)).audience).toBe("company");
     expect(b.body.proactive === null || b.body.proactive.whisper.text === COMPANY_LINE).toBe(true);
     expect(b.body.proactive?.whisper.text ?? null).not.toBe("Good luck at 2 PM: Tessellate Labs final interview.");
+  });
+});
+
+describe("finding 5: a crisis or life-change hold crosses a hang-up", () => {
+  it('"My mom passed away", the Owner hangs up, and 16 minutes later the next Session holds insights, celebrations and asks', async () => {
+    const { rig, s } = await doorRig(false);
+    rig.openai.script("decisions.create", ok(decisionAnswer({})));
+    const t = await postTurn(rig, typedTurn(s.stamp, 1, "My mom passed away last night."));
+    expect(t.status).toBe(200);
+    expect(holdsOf(signalsOf(await sessionOf(rig, s.sessionId), rig.clock.read().opsClock.now, null)).transition).toBe(true);
+    expect((await closeWith(rig, s.sessionId, "user", "close-a")).status).toBe(200);
+    rig.clock.advance(16 * 60_000);
+    rig.clock.setWorld(rig.clock.read().worldClock.now + 16 * 60_000);
+    const b = await openUnnamed(rig, "open-b");
+    const next = await sessionOf(rig, b.body.sessionId);
+    expect(next.audience).toBe("private");
+    expect(holdsOf(signalsOf(next, rig.clock.read().opsClock.now, null)).transition).toBe(true);
+  });
+
+  it("past HOLD_CARRY_MS of world time, the next Session holds nothing", async () => {
+    const { rig, s } = await doorRig(false);
+    rig.openai.script("decisions.create", ok(decisionAnswer({})));
+    await postTurn(rig, typedTurn(s.stamp, 1, "My mom passed away last night."));
+    await closeWith(rig, s.sessionId, "user", "close-a");
+    rig.clock.advance(HOLD_CARRY_MS + 60_000);
+    rig.clock.setWorld(rig.clock.read().worldClock.now + HOLD_CARRY_MS + 60_000);
+    const b = await openUnnamed(rig, "open-b");
+    expect(holdsOf(signalsOf(await sessionOf(rig, b.body.sessionId), rig.clock.read().opsClock.now, null)).transition).toBe(false);
   });
 });

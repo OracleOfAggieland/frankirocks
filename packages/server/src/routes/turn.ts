@@ -69,6 +69,7 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 import { audienceEffect, narrowedHere, precompileAudienceHead } from "../audience-swap";
 // Brief 035: the review of the audience wave.
 import { carryNarrowing, deckAllowed, lateNarrowing, narrowsHere, replacedNarrowing, swapWindowCare, turnEndAudience, withNarrowHead } from "../audience-swap";
+import { holdMark, holdsOnTurn } from "../audience-swap";
 import { afterClosed } from "../sessions";
 import { driveHangupJob, ensureHangupJob } from "../worker/hangup";
 
@@ -427,11 +428,15 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
               : { ...currentStamp(req.sessionId, s0.generation, { epoch: aud.epoch, rules: changed?.rulesChanged ? changed.rules : core.rules.data, bundle: aud.bundle ?? (changed?.rulesChanged ? (changed.bundle ?? core.bundle.data) : core.bundle.data) }), turnId: req.turnId };
           const headOut2 = aud?.bundle?.head ?? headOut;
           const now = tsFromMs(ops);
+          const hold = holdsOnTurn(rule.parse, slow?.regex ?? []);
+          if (hold) tx.update(paths.core(uid, "state"), holdMark(core.state.data, pair.worldClock.now));
           tx.update(doc.path, {
             ...next,
             ...(aud?.session ?? {}),
             ...swapWindowCare(s0, rule, ops),
             ...(carry?.self ?? {}),
+            // Brief 045 (finding 5): a crisis or life-change turn holds insights, celebrations and asks, here and after.
+            ...(hold ? { transitionCandidateSeq: s0.transitionCandidateSeq ?? req.clientSeq } : {}),
             nextClientSeq: req.clientSeq + 1,
             lastClientSeq: req.clientSeq,
             committedParseSeq,

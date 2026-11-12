@@ -29,6 +29,7 @@ import {
   OPEN_LIMIT_MS,
   SWAP_LIMIT_MS,
   type Session,
+  REGEX_TABLE,
   crisisFires,
   msFromTs,
   narrowsAudience,
@@ -212,6 +213,28 @@ export function inheritedAudience(prev: Session | null, opsNow: number): { audie
   const expired = prev.waitDeadline !== null && msFromTs(prev.waitDeadline) < opsNow;
   return { audience: expired ? "unknown" : audience, crisis: prev.modifiers.crisis !== null, crisisAt: prev.modifiers.crisis };
 }
+
+/** Brief 045 (finding 5): how long a crisis or life-change turn holds unprompted insights, celebrations and asks. */
+export const HOLD_CARRY_MS = 24 * 60 * 60_000;
+const HOLD_REGEX = new Set(REGEX_TABLE.filter((r) => r.family === "crisis" || r.family === "lifeChange").map((r) => r.id));
+
+/**
+ * Brief 045 (finding 5): whether a turn starts the hold. A crisis or life-change regex hit, or a crisis or transition
+ * candidate in the parse, whoever said it and whether or not it fired (fails closed).
+ */
+export function holdsOnTurn(parse: RuleParse, regex: readonly string[]): boolean {
+  return regex.some((id) => HOLD_REGEX.has(id)) || (parse.kind === "hit" && (parse.candidates.includes("crisis") || parse.candidates.includes("transition")));
+}
+
+/**
+ * The hold's mark: `core/state.modifiers.crisis`, the owner's, holds the world time of the latest such turn (a reset
+ * starts it over). The turn's own Session also holds, through `transitionCandidateSeq`, for the rest of that Session.
+ */
+export const holdMark = (state: CoreState, worldNow: number): CoreState => ({ ...state, modifiers: { ...state.modifiers, crisis: tsFromMs(worldNow) } });
+
+/** Whether the owner's hold still runs at `worldNow`: inside `HOLD_CARRY_MS` of the mark, whatever the audience. */
+export const holdCarried = (state: CoreState, worldNow: number): boolean =>
+  state.modifiers.crisis !== null && worldNow - msFromTs(state.modifiers.crisis) < HOLD_CARRY_MS;
 
 /** Brief 045 (finding 2): the most recent Sessions an open reads, by last turn, for the latest closing or closed one. */
 export const RECENT_SESSIONS_READ = 3;

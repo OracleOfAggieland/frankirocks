@@ -46,7 +46,7 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 026: a narrowed audience carried into the fresh call, with the swap line (voice-control task 50).
 import { type Proactive, type Session, turnRef } from "@franki/core";
 import { admitRule } from "../admission/seam";
-import { inheritCandidates, inheritedSession, narrowestInherited, speaksSwapLine, swapLineRule, swapLineTurnId } from "../audience-swap";
+import { holdCarried, inheritCandidates, inheritedSession, narrowestInherited, speaksSwapLine, swapLineRule, swapLineTurnId } from "../audience-swap";
 import { checkOpenVisit } from "./open-visit";
 import { openingProactive } from "./delivery-wire";
 
@@ -182,7 +182,9 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
 
       const stamp = currentStamp(sessionId, 1, { epoch: core.epoch.data, rules, bundle });
       const fresh = newSession(uid, { stamp, now: ops, startedBy: req.initiator });
-      tx.create(paths.session(uid, sessionId), inherited === null ? fresh : inheritedSession(fresh, inherited));
+      // Brief 045 (finding 5): inside the owner's hold, the new Session holds insights, celebrations and asks too.
+      const held = holdCarried(state, pair.worldClock.now) ? { ...fresh, transitionCandidateSeq: 0 } : fresh;
+      tx.create(paths.session(uid, sessionId), inherited === null ? held : inheritedSession(held, inherited));
       const epoch: CoreEpoch = { ...core.epoch.data, activeSessionId: sessionId, activeCallId: null, updatedAt: now };
       tx.update(paths.core(uid, "epoch"), epoch);
       tx.update(paths.core(uid, "state"), { ...state, updatedAt: now });
