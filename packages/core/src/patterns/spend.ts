@@ -38,7 +38,8 @@ export interface SpendResult {
   excluded: { id: string; reason: ExcludeReason }[];
   /**
    * True when a row that may belong to the window was left out: unknown time, an uncovered date, a pending or
-   * unposted purchase, or a refund of a counted order that can't be netted yet.
+   * unposted purchase, a refund of a counted order that can't be netted yet, or a negative row with no link
+   * posted on or after the window's first date.
    */
   partial: boolean;
 }
@@ -126,6 +127,9 @@ export function spendRows(rows: readonly BankRow[], ask: SpendAsk): SpendResult 
     if (reason !== null) {
       excluded.push({ id: row.id, reason });
       if ((reason === "pending" || reason === "unposted") && categories.has(b.category) && b.currency === ask.currency && !superseded.has(row.id)) unsettled.push(row);
+      // A negative row in a counted category with no link may refund a counted order: posted on or after the
+      // window's first date, it makes the result partial, never silently left out (brief 037, finding 8).
+      if (reason === "amount" && b.amountCents < 0 && ask.dates.length > 0 && localAt(Date.parse(b.postedAt!), ask.zone).date >= ask.dates[0]!) partial = true;
       continue;
     }
     originals.push(row);
