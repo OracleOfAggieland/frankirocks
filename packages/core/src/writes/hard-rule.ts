@@ -23,6 +23,7 @@ import { canonicalJSON } from "../ids";
 import type { EID, ID, Span } from "../schema/primitives";
 import type { CoreRules } from "../schema/records";
 import { GAZETTEER_VERSION, NONE_CODE, gazetteerEntry, lookupAllergen, scanAliases } from "./gazetteer";
+import { affirmsAllergen, hasDenialForm } from "./denial-words";
 import { type Range, cueSentenceRanges, cueSentenceUParts, cueSentences, cueSpan, notAllergyByCode } from "./not-allergy";
 import { ruleTransition } from "./rule-state";
 import { spanClass, uParts, verifyTurnSpan } from "./spans";
@@ -160,6 +161,22 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
    */
   const denialReaches = (subject: EID | null, code: string): boolean => rules.allergies.some((r) => (r.anonymous ? null : r.subjectId) === subject && r.code === code);
 
+  /**
+   * W-187 (brief 025): the model's polarity alone never removes a rule. A denial resolves a stored pending rule only
+   * when it is the asked rule this turn answers, the owner's words (the verdict's verified span) hold a denial from the
+   * closed list, and the turn holds no affirming cue for that allergen. Otherwise the rule stays and Franki asks
+   * about it again (`reask`).
+   */
+  const mayRemove = (rule: AllergyRule, proof: Span): boolean =>
+    turn.answering !== null && R !== null && rule.id === R.id && hasDenialForm(proof.quote) && !affirmsAllergen(ev.text, rule.code);
+  let reask: ID | null = null;
+  /** A pending rule a denial reached but may not remove: kept, and asked about again. */
+  const keepDenied = (rule: AllergyRule) => {
+    keptPending.add(rule.id);
+    if (reask === null) reask = rule.id;
+    questions.add("isAllergy");
+  };
+
   /** Whether the item at `index` denies any allergy at all ("any allergies", "anything"), naming no item to file. */
   const namesOnlyNone = (index: number): boolean => {
     const it = turn.out?.items[index];
@@ -261,7 +278,8 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
           const target = list.find((r) => r.id === a.answers && r.state === "pending");
           if (target !== undefined) {
             carried.add(target.code);
-            apply(null, target.code, { kind: "deny" });
+            if (mayRemove(target, a.proof)) apply(null, target.code, { kind: "deny" });
+            else keepDenied(target);
           }
           ledger.push({ eid: ev.eid, outcome: "denialRecorded", codes: target === undefined || target.code === UNRESOLVED ? [] : [target.code] });
           break;
@@ -276,6 +294,11 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
             if (!denialReaches(S, code)) continue;
             carried.add(code);
             reached = true;
+          }
+          const at = slotIndex(S, code);
+          if (at >= 0 && list[at]!.state === "pending" && !mayRemove(list[at]!, a.proof)) {
+            keepDenied(list[at]!);
+            continue;
           }
           const out = apply(S, code, { kind: "deny" });
           if (out === "ruleKept") keep(list[slotIndex(S, code)]!.id, "denied");
@@ -376,9 +399,10 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
   if (kept.some(([, why]) => why !== "denied")) note.push("ruleAlready");
   if (kept.some(([, why]) => why === "denied")) note.push("ruleKept");
   if (noneGained) note.push("noneSaved");
-  const asked = question === null ? null : question === "notListed" ? keptP.length > 0 || newPending.length > 0 : newPending.length > 0;
+  const reasked = reask !== null && afterIds.has(reask) && newPending.length === 0 ? reask : null;
+  const asked = question === null ? null : question === "notListed" ? keptP.length > 0 || newPending.length > 0 : newPending.length > 0 || (question === "isAllergy" && reasked !== null);
   if (question !== null && asked) note.push(`ask.${question}` as RouteNoteKind);
 
   const next: CoreRules = didChange ? { ...rules, allergies: list, noneConfirmed: none, rulesRev: rules.rulesRev + 1, gazetteerVersion: GAZETTEER_VERSION } : rules;
-  return { rules: next, outcome, note, ledger };
+  return { rules: next, outcome, note, ledger, reask: reasked };
 }

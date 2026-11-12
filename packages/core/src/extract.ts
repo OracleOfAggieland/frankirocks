@@ -53,6 +53,8 @@ import { civilDateAt, looksLikeTime, resolvePeriod, resolveSpoken, spokenOnLabel
 import { MEMORY_TEXT_CHARS, claimText } from "./memory-text";
 import { checkRange, tokenize, utf8 } from "./text";
 import { lookupAllergen } from "./writes/gazetteer";
+import type { RenameIndex } from "./writes/renames";
+import { mentionName } from "./writes/subject";
 
 // ---------------------------------------------------------------------------------------------
 // Literal prompts (contracts §5). Schema prompt = PREFIX + job literal.
@@ -523,6 +525,18 @@ export interface PlanContext {
    */
   handled?: readonly { subjectId: string | null; code: string }[];
   /**
+   * The rename index (G14, brief 025 task C4): a renamed entity's current name resolves to it, and its old name, in
+   * Evidence said after the rename, to a new entity salted with the rename's Memory ID.
+   */
+  renames?: RenameIndex;
+  /**
+   * The memory keys and Memory IDs the on-turn correct and transition routes handled for this Evidence (brief 012
+   * section 5, brief 025 task C5): an item on one of the keys is skipped `handled`, and none of the IDs can be named
+   * as a target.
+   */
+  handledKeys?: readonly string[];
+  handledRefs?: readonly string[];
+  /**
    * The packet's other inputs (memory-spec §4: the packet "records all actual inputs"): the Evidence of the earlier
    * turns it carried and the `open` Memories. Each is named in `contextIds` and `dependsOn` (`e:<eid>`,
    * `m:<id>@<rev>`), and earlier Evidence in `packetEids`. A Memory this Item replaces is left out of `dependsOn`: it
@@ -717,16 +731,30 @@ const NO_TM_PROMOTION = (p: string) =>
  * their type and name. `existingId` is ignored: the roster is empty in this slice, so no supplied ID exists, and an
  * unsupplied ID would let the model point a Memory at an arbitrary entity.
  */
-export function resolveMention(token: string, item: ExtractItem, hasher: Hasher): string {
+export function resolveMention(token: string, item: ExtractItem, hasher: Hasher, rn?: MentionRenames): string {
   if (token === "self") return "self";
   const mention = item.mentions.find((m) => m.localId === token);
   if (mention?.existingId === "self") return "self";
-  const name = (mention?.observedName ?? token).normalize("NFKC").trim().toLowerCase();
-  return hasher.id(["mention", mention?.type ?? "topic", name]);
+  // Task C2: the one function that turns words into a name ("my dad" and "Dad" are one name).
+  const name = mentionName(mention?.observedName ?? token);
+  const id = hasher.id(["mention", mention?.type ?? "topic", name]);
+  if (rn === undefined) return id;
+  // Task C4 (G14): the new name is the renamed entity; the old name, said after the rename, is somebody else.
+  for (const [entity, r] of rn.index.renames) {
+    if (r.to !== null && mentionName(r.to.name) === name) return entity;
+    if (id === entity && rn.at > r.at) return hasher.id(["mention", mention?.type ?? "topic", name, r.renameId]);
+  }
+  return id;
 }
 
-function resolveValue(v: ExtractItem["value"], item: ExtractItem, hasher: Hasher): Value {
-  return v.kind === "entity" ? { kind: "entity", ref: resolveMention(v.mention, item, hasher) } : v;
+/** The rename index and when the item's Evidence was said, for `resolveMention`. */
+export interface MentionRenames {
+  index: RenameIndex;
+  at: string;
+}
+
+function resolveValue(v: ExtractItem["value"], item: ExtractItem, hasher: Hasher, rn?: MentionRenames): Value {
+  return v.kind === "entity" ? { kind: "entity", ref: resolveMention(v.mention, item, hasher, rn) } : v;
 }
 
 function isEntityField(predicate: string, key: string): boolean {
@@ -736,9 +764,9 @@ function isEntityField(predicate: string, key: string): boolean {
   return field === EID || (field?.meta.t === "nullable" && field.meta.inner === EID);
 }
 
-function resolveArgs(predicate: string, args: Record<string, unknown>, item: ExtractItem, hasher: Hasher): Record<string, unknown> {
+function resolveArgs(predicate: string, args: Record<string, unknown>, item: ExtractItem, hasher: Hasher, rn?: MentionRenames): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(args)) out[k] = isEntityField(predicate, k) && typeof v === "string" ? resolveMention(v, item, hasher) : v;
+  for (const [k, v] of Object.entries(args)) out[k] = isEntityField(predicate, k) && typeof v === "string" ? resolveMention(v, item, hasher, rn) : v;
   return out;
 }
 
@@ -909,9 +937,12 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
   for (const s of rootSlices) sens = maxSens(sens, s.sens);
   const gravity = Math.max(item.gravity, gravityFloor(quoted));
 
-  const subjectId = resolveMention(item.subject, item, ctx.hasher);
-  const value = resolveValue(item.value, item, ctx.hasher);
-  const args = resolveArgs(item.predicate, item.args, item, ctx.hasher);
+  // Transcript order (G35): an item is asserted when its root Evidence was, never when its job commits.
+  const saidAt = verified.reduce((at, v) => (v.evidence.assertedAt > at ? v.evidence.assertedAt : at), verified[0]!.evidence.assertedAt);
+  const rn: MentionRenames | undefined = ctx.renames === undefined || ctx.renames.renames.size === 0 ? undefined : { index: ctx.renames, at: saidAt };
+  const subjectId = resolveMention(item.subject, item, ctx.hasher, rn);
+  const value = resolveValue(item.value, item, ctx.hasher, rn);
+  const args = resolveArgs(item.predicate, item.args, item, ctx.hasher, rn);
 
   // Time (memory-spec §5): the model gives the words said; code resolves them against when and where they were
   // said. Unresolved words keep the day they were said, so "next Friday" is never read against a later week.
@@ -930,6 +961,8 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
 
   const scopeId = scopeIdOf(item.predicate, item.scope, args, value, ctx.hasher, occasionDay);
   const key = ctx.hasher.id(idParts.memoryKey(subjectId, item.predicate, scopeId));
+  // A key the on-turn route corrected or changed for this Evidence is the route's (brief 025 task C5).
+  if (ctx.handledKeys?.includes(key) === true) return { kind: "skip", index, reason: "handled" };
   const id = ctx.hasher.id(idParts.memory(ctx.jobId, index));
 
   // Entities the Memory names, and its spoken line with names from the Owner's own words.
@@ -965,7 +998,7 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
   // §8): a model slip that names the Owner's name in a pet correction changes nothing.
   const closable = (mid: string): boolean => {
     const o = ctx.open?.get(mid);
-    return o !== undefined && o.predicate === item.predicate && o.kind !== "rule" && o.predicate !== "allergy";
+    return o !== undefined && o.predicate === item.predicate && o.kind !== "rule" && o.predicate !== "allergy" && ctx.handledRefs?.includes(mid) !== true;
   };
   let targets = [item.changes[0]?.targetMid ?? null, item.memoryId].filter((t): t is string => t !== null && closable(t));
   // An event or commitment keys on its day, so "the dentist moved to Tuesday" no longer shares Friday's key. When the
@@ -1010,10 +1043,10 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
     closeReason: null,
     lastSupportAt: null,
     flow: item.flow,
-    assertedAt: ctx.worldNow,
-    validFrom: ctx.worldNow,
+    assertedAt: saidAt,
+    validFrom: saidAt,
     validTo: period === null ? null : tsFromMs(period.endMs + 1),
-    validFromKey: ctx.worldNow,
+    validFromKey: saidAt,
     validFromKnown: true,
     when: spokenWhen === null ? { kind: "none" } : { kind: "spoken", spoken: spokenWhen },
     time: resolved === null ? null : timeRow(resolved),

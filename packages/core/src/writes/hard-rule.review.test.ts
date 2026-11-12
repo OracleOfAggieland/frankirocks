@@ -62,7 +62,7 @@ describe("H1: a wrong polarity never loses a stated allergy", () => {
     expect(filtered(p.rules, null, "peanut")).toBe(true);
   });
 
-  it("a denial that reaches a slot still carries its code: an active rule is kept, a pending one resolved", () => {
+  it("a denial that reaches a slot still carries its code: an active rule is kept, a pending one kept off an answering turn (W-187)", () => {
     const t = "I'm not allergic to peanuts.";
     const active: Rule = { id: "a".repeat(43), subjectId: "self", code: "peanut", state: "active", anonymous: false, proof: null, proofRev: null, rootKeys: [], dependsOn: [] };
     const kept = plan(t, [item(t, "I'm not allergic to peanuts", "peanuts", "denied")], { ...emptyRules(), allergies: [active] });
@@ -70,8 +70,9 @@ describe("H1: a wrong polarity never loses a stated allergy", () => {
     expect(kept.outcome).toMatchObject({ kind: "ruleKept", why: "denied" });
     const pending: Rule = { ...active, id: "p".repeat(43), state: "pending" };
     const resolved = plan(t, [item(t, "I'm not allergic to peanuts", "peanuts", "denied")], { ...emptyRules(), allergies: [pending] });
-    expect(resolved.outcome).toEqual({ kind: "pendingResolved", ruleIds: [pending.id], by: "denial" });
-    expect(resolved.rules.allergies).toEqual([]);
+    // Brief 025, W-187: off an answering turn the pending rule stays, and coverage files nothing more for peanut.
+    expect(resolved.outcome).toEqual({ kind: "pendingKept", ruleIds: [pending.id] });
+    expect(resolved.rules.allergies).toEqual([pending]);
   });
 });
 

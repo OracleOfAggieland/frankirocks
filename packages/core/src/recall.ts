@@ -20,6 +20,7 @@ import { type Infer, arr, obj, oneOf, str, union, validate } from "./schema/v";
 import type { RecallResult, W } from "./schema/wire";
 import { spokenGrade } from "./spoken";
 import { tokenize } from "./text";
+import { renameIndex, renameLine } from "./writes/renames";
 
 export const RECALL_ALL_PROMPT =
   "Packet only/no action. Preserve source/guess/roles/time. Nearest is not proof; conflict=uncertain; unsupported=not_in_packet, not absence. No coverage/disclosure upgrade/outside facts. Tool is not permission. Why needs receipt. Cite supplied refs/spans.";
@@ -125,19 +126,25 @@ export function recallLines(
     passing.push(r);
   }
   passing.sort((a, b) => cmp(a.memory.predicate, b.memory.predicate) || cmp(a.memory.key, b.memory.key) || cmp(a.id, b.id));
-  const lines = passing.slice(0, RECALL_MAX_LINES).map((r) => ({
+  // Renames (G14, brief 025 task C4): old names become the current one, or the line is left out.
+  const renames = renameIndex(rows, passing);
+  const shown = passing.flatMap((r) => {
+    const renamed = renameLine(renderedMemory(r.memory), r.memory, renames);
+    return renamed === null ? [] : [{ r, renamed }];
+  });
+  const lines = shown.slice(0, RECALL_MAX_LINES).map(({ r, renamed }) => ({
     item: {
       id: r.id,
-      text: recallLineText(r.memory),
+      text: renamed.text.slice(0, RECALL_LINE_CHARS),
       roots: rootSpans(r.memory, evidence),
-      refs: [{ type: "memory" as const, id: r.id, rev: r.memory.rev }],
+      refs: [{ type: "memory" as const, id: r.id, rev: r.memory.rev }, ...renamed.refs.filter((x) => x.id !== r.id)],
       class: r.memory.sourceClass,
       sens: r.memory.sens,
     },
     rootKeys: [...r.memory.rootKeys],
     dependsOn: [...r.memory.dependsOn],
   }));
-  return { lines, eligibleCount: passing.length };
+  return { lines, eligibleCount: shown.length };
 }
 
 export type RecallPurpose = "answer" | "plan" | "why";
