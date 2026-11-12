@@ -93,6 +93,14 @@ async function sourceFacts(r: Reader, uid: string, m: Moment): Promise<SourceFac
 }
 
 /**
+ * The sensitivity the Gate candidate for this moment carries (`gateCandidateOf`'s `sens`), from the same source read,
+ * or null when that source can't be read (brief 045, finding 8). Needs no clock: sensitivity doesn't depend on time.
+ */
+export async function candidateSensOf(r: Reader, uid: string, m: Moment): Promise<Sens | null> {
+  return (await sourceFacts(r, uid, m))?.sens ?? null;
+}
+
+/**
  * The Gate candidate for one opened moment, read now. A due confirmed reminder claims `commitmentDue` with its due
  * time no earlier than now, since a commitment that has come due is still due (ruling S-186 in docs/briefs/023-design.md).
  */

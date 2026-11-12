@@ -5,10 +5,13 @@
  *   `chooseNow`    reads the opened (leased) moments, today's counts and the owner's world time, and runs the pure
  *                  `chooseDelivery`;
  *   `proactiveOf`  turns the chosen moment into a `Proactive` for a session stamp: a code-worded whisper and a
- *                  `proactive` Permit bound to its hash. S2 never goes on the wire (KC09 floor).
+ *                  `proactive` Permit bound to the hash of the reply payload the browser will check (brief 045,
+ *                  finding 3): the stamp, the Deck the same answer carries (its Head and safe turns), the whisper
+ *                  as the one note, no audio and no tool output. S2 never goes on the wire (KC09 floor).
  */
 import {
   type Card,
+  type Deck,
   type DeliveryCandidate,
   type DeliveryChoice,
   type DeliveryMode,
@@ -24,7 +27,7 @@ import {
   type Stamp,
   type W,
   PERMIT_TTL_MS,
-  canonicalJSON,
+  payloadHash,
   chooseDelivery,
   civilDateAt,
   idParts,
@@ -44,7 +47,7 @@ import { paths } from "../store/paths";
 import { scanMoments } from "./tick";
 import { getMoment, momentNoteId, momentVerdict } from "./verdict";
 import { offerAnswer } from "./answered";
-import { type GateSignals, gateCandidateOf, gateContextOf } from "./gate-candidate";
+import { type GateSignals, candidateSensOf, gateCandidateOf, gateContextOf } from "./gate-candidate";
 import { heldReminderText } from "./held-reminder";
 import { isStoreError } from "../store/errors";
 
@@ -122,28 +125,29 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
   return { choice, moments, verdicts };
 }
 
-/** The line a moment speaks, worded by code, and its sensitivity; null when it can't be worded now. */
-async function lineOf(ctx: RouteContext, m: Moment): Promise<{ text: string; sens: Sens } | null> {
-  const { uid, deps } = ctx;
+/** The line a moment speaks, worded by code; null when it can't be worded now. Its sensitivity is the Gate's. */
+async function lineOf(ctx: RouteContext, m: Moment): Promise<string | null> {
   if (m.payload.kind === "cue") {
     // Brief 042 item 3: a reminder held under crisis past its due time is said late, by its own template.
     const late = await heldReminderText(ctx, m);
-    if (late !== null) return { text: late, sens: "S0" };
-    const text = m.payload.template?.text ?? null;
-    if (text === null) return null;
-    const ref = m.payload.noteRef;
-    const source = ref.type === "memory" ? await deps.store.get<Memory>(uid, paths.memory(uid, ref.id)) : null;
-    return { text, sens: source?.data.sens ?? "S0" };
+    if (late !== null) return late;
+    return m.payload.template?.text ?? null;
   }
-  if (m.payload.kind === "pattern") {
-    const offer = await heroOffer(ctx, 0);
-    return offer === null ? null : { text: offer.line, sens: "S1" };
-  }
+  if (m.payload.kind === "pattern") return (await heroOffer(ctx, 0))?.line ?? null;
   if (m.payload.kind === "celebrate") {
     const c = await compareLoop(ctx, m.payload.loopId, 0);
-    return c?.lines == null ? null : { text: c.lines.join(" "), sens: "S1" };
+    return c?.lines == null ? null : c.lines.join(" ");
   }
   return null;
+}
+
+/**
+ * The sensitivity a moment's line goes on the wire at: the Gate candidate's, read now (brief 045, finding 8). A
+ * reminder is as sensitive as the rows it came from; it is never S0 because its cue points at no memory. Null (the
+ * line is not put out) when the source can't be read.
+ */
+async function sensOf(ctx: RouteContext, m: Moment): Promise<Sens | null> {
+  return candidateSensOf(storeReader(ctx.deps.store, ctx.uid), ctx.uid, m);
 }
 
 /**
@@ -171,13 +175,21 @@ async function render(ctx: RouteContext, momentId: ID, m: Moment, noteId: string
   }
 }
 
-/** The chosen moment as a `Proactive` for this session's stamp, or null (no words, S2, or no longer leased). */
-export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, stamp: Stamp): Promise<Proactive | null> {
+/** The Deck a `Proactive` goes out with: the browser hashes its Head and safe turns into the reply payload. */
+export type ProactiveDeck = Pick<Deck, "head" | "turns">;
+
+/**
+ * The chosen moment as a `Proactive` for this session's stamp, or null (no words, S2, or no longer leased). The
+ * Permit is bound to the payload the browser checks with `deck`, the Deck in the same answer. With no Deck the Permit
+ * is bound to a null Head, which no browser holds, so the line never plays (fails closed).
+ */
+export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, stamp: Stamp, deck: ProactiveDeck | null = null): Promise<Proactive | null> {
   const { deps } = ctx;
   const line = await lineOf(ctx, m);
-  if (line === null || line.sens === "S2") return null;
+  const sens = line === null ? null : await sensOf(ctx, m);
+  if (line === null || sens === null || sens === "S2") return null;
   const noteId = momentNoteId(deps.hasher, momentId, m) as ID;
-  const text = line.text.slice(0, 1024);
+  const text = line.slice(0, 1024);
   if (!(await render(ctx, momentId, m, noteId, text))) return null;
   const ops = deps.clock.read().opsClock.now;
   const expiresAt = tsFromMs(ops + PERMIT_TTL_MS);
@@ -188,13 +200,13 @@ export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, st
     text,
     rootKeys: m.rootKeys.slice(0, 128),
     dependsOn: m.dependsOn.slice(0, 256),
-    sens: line.sens,
+    sens,
     expiresAt,
     unprompted: true,
     momentId,
     tokens: [],
   };
-  const approvedPayloadHash = deps.hasher.sha256(new TextEncoder().encode(canonicalJSON({ whisper, momentId })));
+  const approvedPayloadHash = payloadHash({ stamp, head: deck?.head ?? null, notes: [whisper], turns: deck?.turns ?? [], audioIds: [], toolOutput: null }, deps.hasher);
   const permit: Permit = {
     permitId: deps.hasher.id(idParts.permit(stamp, "proactive", approvedPayloadHash)) as ID,
     stamp,

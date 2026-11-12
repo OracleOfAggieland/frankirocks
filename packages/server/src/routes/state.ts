@@ -101,7 +101,8 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
   // Brief 030 part A: an idle whisper, gated inside `chooseNow`, only where the ack checks passed.
   // Coordinator ruling on brief 042: the poll's budget holds; the whisper gets what is left of it, or waits.
   const spent = ctx.deps.clock.read().opsClock.now - (ctx.startedOpsAt ?? ctx.deps.clock.read().opsClock.now);
-  return res.ack === null ? res : { ...res, proactive: await idleProactive(ctx, res.stamp, STATE_BUDGET_MS - spent) };
+  // Brief 045, finding 3: no Deck, no line (its Permit binds the Deck's Head and safe turns).
+  return res.ack === null || res.deck === null ? res : { ...res, proactive: await idleProactive(ctx, res.stamp, STATE_BUDGET_MS - spent, res.deck) };
 }
 
 export const stateRoute: RouteSpec<StateReq> = {

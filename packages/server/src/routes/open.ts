@@ -220,9 +220,10 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       times.lap("priorMs");
     }
     // Brief 030 part A: delivery's opening line, gated inside `chooseNow`, only where no swap line was spoken.
-    if (stamp === null || response.state !== "connecting" || response.proactive !== null) return response;
+    // Brief 045, finding 3: no Deck, no line (its Permit binds the Deck's Head and safe turns).
+    if (stamp === null || response.state !== "connecting" || response.proactive !== null || response.deck === null) return response;
     // The budget is the contract; the line is optional: delivery gets what is left of it, as one deadline.
-    const proactive = await openingProactive(ctx, stamp, OPEN_BUDGET_MS - times.elapsed(), session ?? undefined);
+    const proactive = await openingProactive(ctx, stamp, OPEN_BUDGET_MS - times.elapsed(), session ?? undefined, response.deck);
     times.lap("deliveryMs");
     return { ...response, proactive };
   });

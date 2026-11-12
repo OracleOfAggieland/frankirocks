@@ -22,7 +22,7 @@ import { IDLE_SILENCE_MS, PERMIT_TTL_MS, type ID, type Moment, type Proactive, t
 import { gateAudience } from "../audience";
 import { raceLimit } from "../clock/timers";
 import { paths } from "../store/paths";
-import { type DeliveryVerdict, type SessionSignals, chooseNow, proactiveOf } from "../time/proactive";
+import { type DeliveryVerdict, type ProactiveDeck, type SessionSignals, chooseNow, proactiveOf } from "../time/proactive";
 import { writeGateDecision } from "../ledger/said";
 import { heldPastDue, recordReminderHeld } from "../time/held-reminder";
 import { memoryTick, scanMoments } from "../time/tick";
@@ -90,16 +90,16 @@ export async function turnsSinceCheckInAnswer(ctx: RouteContext, s: Session, ses
  * A failed choice or render says nothing (fails closed) and never fails the route that already committed: the moment
  * stays leased and is offered again. Logged by name only.
  */
-async function deliver(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals, deadline = Infinity): Promise<Proactive | null> {
+async function deliver(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals, deadline = Infinity, deck: ProactiveDeck | null = null): Promise<Proactive | null> {
   try {
-    return await deliverOnce(ctx, mode, stamp, signals, deadline);
+    return await deliverOnce(ctx, mode, stamp, signals, deadline, deck);
   } catch (e) {
     ctx.deps.log("delivery.failed", { mode: mode.kind, error: e instanceof Error ? e.name : "unknown" });
     return null;
   }
 }
 
-async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals, deadline: number): Promise<Proactive | null> {
+async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals, deadline: number, deck: ProactiveDeck | null): Promise<Proactive | null> {
   const { choice, moments, verdicts } = await chooseNow(ctx, mode, signals);
   if (verdicts !== undefined && verdicts.length > 0 && ctx.deps.clock.read().opsClock.now < deadline) await writeVerdictRows(ctx, stamp, signals, verdicts);
   if (choice.spoken === null) return null;
@@ -113,7 +113,8 @@ async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>
   // Past the deadline nothing is rendered: the route has answered, or is about to, without this line.
   if (ctx.deps.clock.read().opsClock.now >= deadline) return null;
   const turnId = ctx.deps.hasher.id(["proactiveTurn", stamp.sessionId, id, m.generation]) as ID;
-  return proactiveOf(ctx, id, m, { ...stamp, turnId });
+  // Brief 045, finding 3: the Permit binds the Deck the same answer carries; with none, the line never plays.
+  return proactiveOf(ctx, id, m, { ...stamp, turnId }, deck);
 }
 
 /**
@@ -143,7 +144,7 @@ async function writeVerdictRows(ctx: RouteContext, stamp: Omit<Stamp, "turnId">,
  * The opening line of a fresh session, or null. `budgetMs` is what is left of the open's budget; the open passes
  * the Session it just wrote, so no read is spent on it. Never answers after the deadline (fails closed: no line).
  */
-export async function openingProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, budgetMs: number, session?: Session): Promise<Proactive | null> {
+export async function openingProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, budgetMs: number, session?: Session, deck: ProactiveDeck | null = null): Promise<Proactive | null> {
   const { deps } = ctx;
   const start = deps.clock.read().opsClock.now;
   const left = budgetMs - OPEN_ANSWER_MARGIN_MS;
@@ -156,7 +157,7 @@ export async function openingProactive(ctx: RouteContext, stamp: Omit<Stamp, "tu
     if (tickLimit > 0) await raceLimit(memoryTick(ctx), tickLimit, deps.timers);
     const ops = deps.clock.read().opsClock.now;
     if (ops >= deadline) return null;
-    return deliver(ctx, { kind: "opening" }, stamp, signalsOf(s, ops, null), deadline);
+    return deliver(ctx, { kind: "opening" }, stamp, signalsOf(s, ops, null), deadline, deck);
   })();
   return withinDeadline(work.catch((e: unknown) => logged(ctx, "opening", e)), deadline - start, deps.timers);
 }
@@ -186,15 +187,15 @@ async function withinDeadline<T>(work: Promise<T | null>, ms: number, timers: Pa
  * and nothing else is read until it has been silent for `IDLE_SILENCE_MS` (its last turn or receipt, and the last
  * speech start the browser reported).
  */
-export async function idleProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, budgetMs = Infinity): Promise<Proactive | null> {
+export async function idleProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, budgetMs = Infinity, deck: ProactiveDeck | null = null): Promise<Proactive | null> {
   if (!(budgetMs > 0)) return null;
   // Brief 045 finding 9: every read delivery makes is inside the catch; a store blip never fails the route.
-  if (budgetMs === Infinity) return idleOnce(ctx, stamp, Infinity).catch((e: unknown) => logged(ctx, "session", e));
+  if (budgetMs === Infinity) return idleOnce(ctx, stamp, Infinity, deck).catch((e: unknown) => logged(ctx, "session", e));
   const start = ctx.deps.clock.read().opsClock.now;
-  return withinDeadline(idleOnce(ctx, stamp, start + budgetMs).catch((e: unknown) => logged(ctx, "session", e)), budgetMs, ctx.deps.timers);
+  return withinDeadline(idleOnce(ctx, stamp, start + budgetMs, deck).catch((e: unknown) => logged(ctx, "session", e)), budgetMs, ctx.deps.timers);
 }
 
-async function idleOnce(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, deadline: number): Promise<Proactive | null> {
+async function idleOnce(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, deadline: number, deck: ProactiveDeck | null): Promise<Proactive | null> {
   const doc = await ctx.deps.store.get<Session>(ctx.uid, paths.session(ctx.uid, stamp.sessionId));
   if (doc === null || (doc.data.status !== "active" && doc.data.status !== "minting")) return null;
   const s = doc.data;
@@ -203,5 +204,5 @@ async function idleOnce(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, deadlin
   const silentMs = ops - lastSound;
   if (!(silentMs >= IDLE_SILENCE_MS)) return null;
   const turns = await turnsSinceCheckInAnswer(ctx, s, stamp.sessionId);
-  return deliver(ctx, { kind: "session", listening: true, silentMs }, stamp, signalsOf(s, ops, turns), deadline);
+  return deliver(ctx, { kind: "session", listening: true, silentMs }, stamp, signalsOf(s, ops, turns), deadline, deck);
 }
