@@ -36,3 +36,5 @@ export * from "./recall";
 export * from "./phone";
 export * from "./memory-text";
 export * from "./writes";
+export * from "./patterns";
+export * from "./food";
