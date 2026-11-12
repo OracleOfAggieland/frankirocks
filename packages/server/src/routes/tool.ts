@@ -57,7 +57,7 @@ import { admitRule } from "../admission/seam";
 import { effectiveAudience, hasParseGap } from "../audience";
 import type { ResponsesResult } from "../openai/responses";
 import { placePhoneCall } from "../phone/outbound";
-import { answerTool, suggestTool } from "./tool-food";
+import { answerTool, suggestForAudience, suggestTool } from "./tool-food";
 import { recordHeroDeclined } from "../time/answered";
 import { paths } from "../store/paths";
 import { barrierError, scopeError } from "./errors";
@@ -220,8 +220,10 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       };
       const planned = serverRule(rule);
       const limited = result.name === "recall" && planned.kind === "permit" && planned.notes !== "all" ? { ...result, notes: result.notes.filter((n) => n.sens === "S0"), snapshot: result.snapshot === null ? null : limitSnapshot(result.snapshot, "S0") } : result;
+      // Brief 045 finding 10: in company (or narrowed here), suggest asks nothing drawn from a Memory and shows only S0.
+      const shaped = limited.name === "suggest" ? suggestForAudience(limited, narrowed ? "narrowed" : rule.audience) : limited;
       // Brief 030 part A: the Gate in front of the result, its rows written here.
-      const output = await gateToolOutput(tx, ctx, { session: s, turn, stamp: req.stamp, core, purpose: req.tool.name === "recall" ? req.tool.args.purpose : null }, limited);
+      const output = await gateToolOutput(tx, ctx, { session: s, turn, stamp: req.stamp, core, purpose: req.tool.name === "recall" ? req.tool.args.purpose : null }, shaped);
       const admitted = admitRule(
         tx,
         {

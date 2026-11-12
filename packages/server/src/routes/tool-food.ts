@@ -416,6 +416,18 @@ export async function suggestTool(ctx: RouteContext, stamp: Stamp, args: Suggest
   return { result, write: rules === null ? null : write };
 }
 
+/**
+ * Brief 045 finding 10 (ruling): under any audience that is not private, `suggest` asks no question drawn from a
+ * stored Memory, and its cards carry nothing above S0. The diet question and its ask card are the owner's own
+ * Memory, so both go, with the pending ID; the question waits for a private turn. A question worded by code alone
+ * (the rules could not be read) stays. The dinners are unchanged: they still keep every rule and diet.
+ */
+export function suggestForAudience(result: Extract<Result, { name: "suggest" }>, audience: string): Extract<Result, { name: "suggest" }> {
+  if (audience === "private") return result;
+  const fromMemory = result.pendingId !== null || result.cards.some((c) => c.kind === "ask");
+  return { ...result, question: fromMemory ? null : result.question, pendingId: null, cards: result.cards.filter((c) => c.kind !== "ask" && c.sens === "S0") };
+}
+
 // ---------------------------------------------------------------------------------------------
 // answer: the hero offer's "yes"
 
