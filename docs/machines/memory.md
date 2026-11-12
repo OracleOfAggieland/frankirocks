@@ -52,6 +52,7 @@ Three fields of the Session decide whether the room is trusted:
 | `packages/server/src/sessions.ts` (`beginCloseInTx`) | clears `activeSessionId` and `activeCallId` when they name the closing Session |
 | `packages/server/src/routes/turn.ts`, a Superseding_Post with a hit that changes what is said | `policyRev + 1` |
 | `packages/server/src/intents/repair.ts` (`runParseRepair`), a repaired hit that cuts | `policyRev + 1` |
+| `packages/server/src/seed/reset.ts` (`resetVisit`) | `barrier` up and through its phases (see `memory.forget`); at the end `seedCoreDocs` writes `epoch + 1`, `barrier` null, `activeSessionId` and `activeCallId` null, `policyRev` kept |
 
 These two are the only places that raise `policyRev`, each behind `changesWhatIsSaid`; `scripts/policy-rev-raises.test.ts` fails when another appears. No write, proposal, the repair's hardRule route or the extraction backstop raises it (`.kiro/steering/memory-writes.md`).
 
@@ -64,7 +65,7 @@ A raised `policyRev` is the counter that cancels speech, Decks and work in fligh
 | Status | documented |
 | File | `packages/core/src/schema/records.ts` |
 
-`core/epoch.barrier` is null or a forget in progress, whose `phase` is one of `fence`, `close`, `resolve`, `install`, `closure`, `resume`, with a deadline and up to 32 queued control operations. While it is not null, session open answers `blocked`, and the state, turn and tool routes refuse with the barrier error. On this branch the barrier is only ever written as null (`initialCoreDocs`); the phases are listed in this order in the schema, and no code moves between them yet.
+`core/epoch.barrier` is null or a forget in progress, whose `phase` is one of `fence`, `close`, `resolve`, `install`, `closure`, `resume`, with a deadline and up to 32 queued control operations. While it is not null, session open answers `blocked`, and the state, turn and tool routes refuse with the barrier error. No forget code moves through these phases yet. The seed reset (`packages/server/src/seed/reset.ts`, brief 019) is the one writer that raises it: `fence` when it starts, `close` while it closes Sessions and hangs up calls, `install` while it clears and reloads the tenant, then null in the transaction that writes the clone's core documents. It never uses `resolve`, `closure` or `resume`. A barrier held by another operation, or by a reset still inside its `RESET_BARRIER_MS` deadline, refuses the reset with the barrier error; the reset takes over only its own tenant's crashed reset after the deadline. `initialCoreDocs` writes it null.
 
 ### `memory.head`
 
