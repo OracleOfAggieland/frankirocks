@@ -1,5 +1,5 @@
 import { HEAD_SECTIONS, type CoreBundle, type DebugSessionView, type Evidence, type LatencyRow, type Ledger, summarize } from "@franki/core";
-import { type DebugData, type DebugState, decisionsByTurn, highlight, issuerLabel, jobSource, ledgerTurnId } from "../client/debug-panel";
+import { type DebugData, type DebugState, decisionsByTurn, highlight, issuerLabel, jobSource, ledgerTurnId, ruleRows } from "../client/debug-panel";
 
 /**
  * The Debug_Panel (R21.9, R29.3–R29.8, R29.10). Presentational: data comes from `DebugPanelModel`. Every stored
@@ -234,6 +234,7 @@ function Sections({ data, selectedMemoryId, onSelectMemory }: { data: DebugData;
       </div>
 
       <HeadView bundle={data.head} />
+      <RulesView item={data.rules} />
     </>
   );
 }
@@ -353,6 +354,49 @@ function HeadView({ bundle }: { bundle: CoreBundle | null }) {
         selectedRefs: <span className={mono}>{head.selectedRefs.map((r) => `${r.type}:${r.id}@${r.rev}`).join(", ") || "none"}</span>
       </p>
       <pre className="mt-2 whitespace-pre-wrap text-xs text-ink">{head.text}</pre>
+    </div>
+  );
+}
+
+/**
+ * The hard rules (brief 018 task B11): each rule and each open proposal's rule with its subject, state and proof
+ * span, and whether the span still matches its Evidence; then `noneConfirmed` and the open question.
+ */
+function RulesView({ item }: { item: DebugData["rules"] }) {
+  if (item === null) {
+    return (
+      <div className={box} data-testid="no-rules">
+        <h3 className="mb-2 font-semibold">Hard rules</h3>
+        <p className="text-ink-dim">No rules document yet.</p>
+      </div>
+    );
+  }
+  const r = item.record;
+  const rows = ruleRows(item);
+  const q = r.ask.q;
+  return (
+    <div className={box} data-testid="rules">
+      <h3 className="mb-2 font-semibold">Hard rules</h3>
+      <p className="text-ink-dim">
+        rulesRev {r.rulesRev} · {r.allergies.filter((a) => a.state === "active").length} active · {r.allergies.filter((a) => a.state === "pending").length} pending · {r.proposals.length} open proposals
+      </p>
+      {rows.length === 0 ? <p className="text-ink-dim">No rules.</p> : null}
+      <ul className="mt-2 flex flex-col gap-1">
+        {rows.map((row) => (
+          <li key={`${row.from}:${row.id}`} data-testid="rule-row" data-from={row.from} data-state={row.state} data-proof={row.proof}>
+            {row.from === "proposal" ? <span className="text-ink-dim">proposed ({row.origin}) · </span> : null}
+            {row.subject} · {row.code} · {row.state}
+            {row.quote === null ? <span className="text-ink-dim"> · no proof</span> : <span> · “{row.quote}” <span className={mono}>{row.span}</span></span>}
+            {row.proof !== "verified" && row.proof !== "none" ? <span data-testid="rule-proof-mismatch" className="text-ember"> · {row.proof}</span> : null}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2">
+        noneConfirmed: <span className={mono}>{r.noneConfirmed.join(", ") || "none"}</span>
+      </p>
+      <p>
+        question: <span className={mono}>{q.kind === "none" ? "none" : `${q.kind} ${q.ruleId ?? "anyone"}`}</span>
+      </p>
     </div>
   );
 }

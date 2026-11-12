@@ -24,7 +24,7 @@ import {
   When,
   Zone,
 } from "./primitives";
-import { CoreBundle, Evidence, Job, Ledger, Memory, PermitKind, Session, Turn, setWireResultFor } from "./records";
+import { CoreBundle, CoreRules, Evidence, Job, Ledger, Memory, PermitKind, Session, Turn, setWireResultFor } from "./records";
 import { type Infer, type Schema, arr, bool, literal, nat, nullable, obj, oneOf, str, tagged, union } from "./v";
 
 const Oid = str(128, { min: 1 });
@@ -455,7 +455,7 @@ setWireResultFor((route) => RESPONSE_BY_ROUTE[route]);
 // ---------------------------------------------------------------------------------------------
 // Development debug route (design "GET /api/debug/memory"; R29). Not the contract's /api/memory.
 
-export const DEBUG_SECTIONS = ["turns", "evidence", "memories", "jobs", "ledger", "head"] as const;
+export const DEBUG_SECTIONS = ["turns", "evidence", "memories", "jobs", "ledger", "head", "rules"] as const;
 export const DebugSection = oneOf(DEBUG_SECTIONS);
 export type DebugSection = Infer<typeof DebugSection>;
 
@@ -482,6 +482,17 @@ export const DebugLineage = obj({
   failures: arr(obj({ kind: LineageFailureKind, index: nat(), eid: nullable(ID) }), 256),
 });
 
+// Brief 018 task B11 (brief 012 B11): the rules section. One item holds `core/rules` (rules, subject labels, open
+// proposals, `noneConfirmed`, the open question) and the check of every proof span against its Evidence.
+export const RULE_PROOF_STATES = ["verified", "none", "missingEvidence", "spanQuoteMismatch", "revMismatch"] as const;
+export const DebugRuleProof = obj({
+  ruleId: ID,
+  /** A rule in `allergies`, or one an open proposal would install. */
+  from: oneOf(["rule", "proposal"]),
+  state: oneOf(RULE_PROOF_STATES),
+});
+export type DebugRuleProof = Infer<typeof DebugRuleProof>;
+
 export const DebugItem = tagged("kind", {
   turn: obj({ kind: literal("turn"), id: ID, record: Turn }),
   evidence: obj({ kind: literal("evidence"), id: ID, record: Evidence }),
@@ -504,6 +515,8 @@ export const DebugItem = tagged("kind", {
   }),
   session: obj({ kind: literal("session"), id: ID, record: Session }),
   head: obj({ kind: literal("head"), id: literal("bundle"), record: CoreBundle }),
+  // Brief 018 task B11.
+  rules: obj({ kind: literal("rules"), id: literal("rules"), record: CoreRules, proofs: arr(DebugRuleProof, 384) }),
 });
 export type DebugItem = Infer<typeof DebugItem>;
 

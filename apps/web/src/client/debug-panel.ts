@@ -36,6 +36,8 @@ export interface DebugData {
   jobs: Item<"job">[];
   ledger: Item<"ledger">[];
   head: CoreBundle | null;
+  /** `core/rules` and its proof checks (brief 018 task B11); null before the first open. */
+  rules: Item<"rules"> | null;
   /** The current Session's audience and parses, from the turns section (voice-control R13.5). */
   session: DebugSessionView | null;
   /** Sections with more pages than were loaded. */
@@ -52,7 +54,7 @@ export interface DebugState {
   loading: boolean;
 }
 
-const SECTIONS: DebugSection[] = ["turns", "evidence", "memories", "jobs", "ledger", "head"];
+const SECTIONS: DebugSection[] = ["turns", "evidence", "memories", "jobs", "ledger", "head", "rules"];
 
 // ---------------------------------------------------------------------------------------------
 // Pure helpers
@@ -110,6 +112,43 @@ export function decisionsByTurn(items: readonly Item<"ledger">[]): { turnId: str
     }
   }
   return groups;
+}
+
+/** One row of the rules section (brief 018 task B11): a rule, or one an open proposal would install. */
+export interface RuleRow {
+  id: string;
+  from: "rule" | "proposal";
+  /** "You", the owner's word for the subject, the subject's ID, or "anyone" for an anonymous rule. */
+  subject: string;
+  code: string;
+  state: "active" | "pending";
+  quote: string | null;
+  span: string | null;
+  proof: Item<"rules">["proofs"][number]["state"];
+  /** The proposal's origin, for a proposed rule. */
+  origin: "repair" | "backstop" | null;
+}
+
+/** The rules section's rows, rules first, then each open proposal's, with the proof check the route made. */
+export function ruleRows(item: Item<"rules">): RuleRow[] {
+  const r = item.record;
+  const label = (rule: (typeof r.allergies)[number]) =>
+    rule.anonymous || rule.subjectId === null ? "anyone" : rule.subjectId === "self" ? "You" : (r.subjectLabels.find((l) => l.subjectId === rule.subjectId)?.label ?? rule.subjectId);
+  const listed = [
+    ...r.allergies.map((rule) => ({ rule, from: "rule" as const, origin: null })),
+    ...r.proposals.flatMap((p) => p.install.map((rule) => ({ rule, from: "proposal" as const, origin: p.origin }))),
+  ];
+  return listed.map(({ rule, from, origin }, i) => ({
+    id: rule.id,
+    from,
+    subject: label(rule),
+    code: rule.code,
+    state: rule.state,
+    quote: rule.proof?.quote ?? null,
+    span: rule.proof === null ? null : `${rule.proof.eid} [${rule.proof.start}, ${rule.proof.end})`,
+    proof: item.proofs[i]?.ruleId === rule.id ? item.proofs[i]!.state : "none",
+    origin,
+  }));
 }
 
 /** The issuer as the panel names it (R13.4). */
@@ -180,6 +219,7 @@ export class DebugPanelModel {
       jobs: (out.jobs ?? []).filter((i): i is Item<"job"> => i.kind === "job"),
       ledger: (out.ledger ?? []).filter((i): i is Item<"ledger"> => i.kind === "ledger"),
       head: headItem?.record ?? null,
+      rules: (out.rules ?? []).find((i): i is Item<"rules"> => i.kind === "rules") ?? null,
       session,
       truncated,
     };
