@@ -348,7 +348,8 @@ async function runStep(script: Script, step: Step, w: World, checked: boolean): 
   if (!checked) return;
   const mine = step.do === "check" ? w.outputs.filter((o) => o.step === step.of) : w.outputs.slice(outputsBefore);
   if (res !== null && !(step.expect ?? []).some((e) => "status" in e) && res.status !== 200) {
-    fail(script, step, "HTTP 200", `${res.status} ${canonicalJSON(res.body)}`);
+    const sent = w.vars.get(`request:${step.label}`);
+    fail(script, step, "HTTP 200", `${res.status} ${canonicalJSON(res.body)}${sent === undefined ? "" : ` for ${canonicalJSON(sent)}`}`);
   }
   for (const e of step.expect ?? []) await assertOne(script, step, w, mine, res, e);
 }
@@ -405,7 +406,9 @@ async function act(step: Step, w: World): Promise<Res> {
       return turn(step, w);
     case "tool": {
       if (w.stamp === null || w.lastTurn === null) throw new Error("tool: no turn");
-      const res = await callRoute(rig, toolRoute, { requestId: nextId(w, "tool"), stamp: { ...w.stamp, turnId: w.lastTurn.turnId }, callId: "call_1", tool: step.tool(w) });
+      const body = { requestId: nextId(w, "tool"), stamp: { ...w.stamp, turnId: w.lastTurn.turnId }, callId: "call_1", tool: step.tool(w) };
+      w.vars.set(`request:${step.label}`, body);
+      const res = await callRoute(rig, toolRoute, body);
       if (res.status === 200) {
         push(w, step.label, "tool", res.body.result ?? null);
         for (const n of res.body.notes ?? []) push(w, step.label, "note", n, n.text);
@@ -486,6 +489,7 @@ async function turn(step: Step & { do: "type" | "chip" | "say" | "tap" }, w: Wor
   // A chip's text counts as the owner's words and goes down the typed path (spec §15; brief 020 task 5).
   if (step.do === "say") body = { ...base, source: "asr", judge: "timeout", items: [{ itemId: `item_${seq}_${w.counter}`, commitSeq: seq, final: true, audioEndOpsAt: "2026-11-03T12:00:00.000Z", audioDurationMs: 800 }] };
   if (step.do === "tap") body = { ...base, source: "trustedTap", judge: "typed", transcriptState: "final", transcript: step.control, uiControl: step.control };
+  w.vars.set(`request:${step.label}`, body);
   const res = await callRoute(w.rig, turnRoute, body);
   if (res.status === 200 && res.body.status !== "stale" && res.body.status !== "hold") {
     w.nextSeq = seq + 1;

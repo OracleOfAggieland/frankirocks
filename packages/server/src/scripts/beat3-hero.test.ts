@@ -23,6 +23,8 @@ const SIGN_WAITS =
   "a fit between briefs 019 and 022: the seed writes a purchase as a negative amountCents (seed/build.ts buildBank) and the detector counts only positive ones (core/patterns/spend.ts spendRows), so the seeded pattern is `insufficient` with 0 orders";
 const HERO_WAITS = "brief 023 (the offer's moment, due after the bolt, and delivery) and 024 (the Gate); nothing calls heroOffer today";
 const COMPARE_WAITS = "brief 023 (the comparison moment at checkAt, delivery) and 024; nothing calls compareLoop or markCelebrated today";
+const LINEAGE_WAITS =
+  "a fit between brief 022 and the lineage check: the loop Memory's root Slices are the rows' typed Slices (routes/tool-food.ts loopMemory prefers bank.amount and calendar.time), and W-LINEAGE (core/lineage.ts) fails every Slice with a null range as sliceHashMismatch, so the yes's write is refused and the route answers 400 PARSE";
 const WINDOW_WAITS =
   "a fit between briefs 019 and 022: heroWindow ends the day before the world's today, so after the bolt to Thursday the window is no longer the seeded 21 dates";
 
@@ -214,6 +216,39 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
   return { name: `beat 3: the hero, ${variant}`, scores: "spec §15 0:50–1:30, spec §10, Friend Test 20", steps };
 }
 
+/**
+ * A third variant, to map past the window misfit: the yes on the clone's Friday, before any bolt, so the offer's
+ * window is the seeded one. The comparison window is then days 1 to 21, and three weeks on is day 22.
+ */
+function beat3YesOnFriday(): Script {
+  const full = beat3("past the seed mismatches").steps;
+  const pick = (label: string) => full.find((s) => s.label === label)!;
+  const shifted = AFTER.map((l) => ({ ...l, at: { day: l.at.day - 6, minute: l.at.minute } }));
+  const steps: Step[] = [
+    pick("load the seed for a visit"),
+    pick("setup: the seeded bank rows the way the detector reads them"),
+    ...biscuitSteps,
+    pick("probe: the offer on the clone's Friday says $186"),
+    { label: "open on Friday", do: "open" },
+    { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
+    {
+      ...pick("Franki writes the list and the loop"),
+      tool: (w: World) => ({ name: "answer", args: { pendingId: offerOf(w)?.pendingId ?? "none", choiceId: offerOf(w)?.yesId ?? "none" } }),
+      waits: LINEAGE_WAITS,
+    },
+    { ...pick("the strip after the yes"), waits: LINEAGE_WAITS },
+    { label: "three weeks of rows arrive", do: "bank", lines: shifted },
+    asDetectorReads("setup: the new bank rows the way the detector reads them"),
+    { label: "three weeks on", do: "advance", to: at(22, "08:00"), called: "three weeks on (simulated)" },
+    pick("run the worker until idle, three weeks on"),
+    { ...pick("probe: the comparison three weeks on"), waits: LINEAGE_WAITS },
+    pick("open three weeks on"),
+    { ...pick("Franki speaks first: $71, down from $186"), waits: LINEAGE_WAITS },
+    { ...pick("the strip fills: $115 less"), waits: LINEAGE_WAITS },
+  ];
+  return { name: "beat 3: the hero, yes on the clone's Friday (past the seed mismatches)", scores: "spec §15 0:50–1:30, spec §10", steps };
+}
+
 /** Memory off: no seed. The same turns; no offer, no comparison, nothing about takeout. */
 const BEAT3_MEMORY_OFF: Script = {
   name: "beat 3, memory-off control",
@@ -233,4 +268,5 @@ const BEAT3_MEMORY_OFF: Script = {
 
 scriptSuite(beat3("as merged"));
 scriptSuite(beat3("past the seed mismatches"));
+scriptSuite(beat3YesOnFriday());
 scriptSuite(BEAT3_MEMORY_OFF);
