@@ -8,7 +8,9 @@
  * compare-and-set commits nothing and is handled again against the new `nextClientSeq` (R19.11).
  */
 import {
+  type Au,
   type CoreEpoch,
+  type CoreRules,
   DECISIONS_DEADLINE_MS,
   type Evidence,
   type ID,
@@ -21,9 +23,13 @@ import {
   type Turn,
   TurnRequest,
   type TurnResponse,
+  type TurnWrite,
+  type W,
+  ROUTE_NOTE_TTL_MS,
   changesWhatIsSaid,
   idParts,
   msFromTs,
+  routeNote,
   tsFromMs,
   turnRef,
 } from "@franki/core";
@@ -45,6 +51,12 @@ import { extractJobId, extractJobRecord } from "../worker/extract-jobs";
 import { barrierError, parseError, scopeError, staleError } from "./errors";
 import { Unrecorded, mutation } from "./mutation";
 import { typedReplyNote } from "./typed-reply";
+import { type HardRuleResult, type HardRuleRun, executeHardRule } from "../onturn/execute";
+import { type TypedPlan, planTypedReply, readPreRoute, runHardRuleSlots, typedRouteNote } from "../onturn/route";
+import { askedHere, candidateOpens, regexOpens, routeEligible, speakerCertain } from "../onturn/trigger";
+import { planKey } from "../onturn/typed";
+import { storeReader } from "../head-build";
+import { turnEvidenceId } from "../turns";
 import { finishTypedPhoneCall } from "../phone/typed";
 import { phoneId } from "../phone/outbound";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
@@ -147,10 +159,50 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
   await ensureCoreDocs(uid, deps);
   const result = await mutation<TurnRes>(ctx, "turn", req.requestId, req, async (key) => {
     if (req.supersedesRequestId !== null) return postSupersede(ctx, req, req.supersedesRequestId, key);
-    const [slow, reply] = await Promise.all([
-      slowP,
-      typedReplyNote(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx), cls.cls === "U" && req.source === "typed"),
-    ]);
+    // The on-turn hardRule route (brief 012 design 3.0): RX4 or an asked question at arrival, else a parse candidate.
+    const startedAt = deps.clock.read().opsClock.now;
+    const arrival = { text: typedText, cls: cls.cls, transcriptState: req.transcriptState, supersedes: false };
+    const pre = routeEligible(arrival) ? await readPreRoute(ctx) : null;
+    const askedAtArrival = pre === null ? null : askedHere(pre.rules, req.sessionId);
+    const regex = regexOpens(arrival);
+    const typedNoCall = req.source !== "asr" && cls.cls === "U" && (await noCallOpen(ctx, req.sessionId));
+    // G17: with a trigger known at arrival the first typed reply isn't started; a parse-opened route abandons it.
+    const replyP =
+      typedNoCall && (regex || askedAtArrival !== null)
+        ? Promise.resolve(null)
+        : typedReplyNote(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx), cls.cls === "U" && req.source === "typed");
+    replyP.catch(() => {});
+    const eid = turnEvidenceId(req.turnId as ID, deps.hasher);
+    const routeP =
+      pre === null
+        ? Promise.resolve(null)
+        : runHardRuleSlots(ctx, { eid, text: typedText, typed: req.source !== "asr", regex, askedRuleId: askedAtArrival?.ruleId ?? null, asked: askedAtArrival !== null, pre, generation: req.generation, slowP });
+    const [slow, route] = await Promise.all([slowP, routeP]);
+    const reply = route === null ? await replyP : null;
+    const routeSource = req.source === "asr" ? ("asr" as const) : ("typed" as const);
+    const hardRuleRun = (evidence: { eid: string; record: Evidence }, audience: Au): Omit<HardRuleRun, "rules" | "epoch" | "bundle" | "clock"> => ({
+      uid,
+      sessionId: req.sessionId,
+      turnId: req.turnId,
+      clientSeq: req.clientSeq,
+      generation: req.generation,
+      source: routeSource,
+      evidence,
+      slots: route!.slots,
+      trigger: { regex, candidate: candidateOpens(slow), asked: askedAtArrival !== null },
+      askedAtArrival,
+      speakerCertain: speakerCertain(routeSource, slow),
+      context: route!.context,
+      audience,
+      hasher: deps.hasher,
+    });
+    let typedPlan: TypedPlan | null = null;
+    if (route !== null && typedNoCall && pre !== null) {
+      const pair0 = ownerClock(pre.state, deps.clock);
+      const rec = userTurnRecords({ uid, sessionId: req.sessionId, req, text: typedText, cls, clock: pair0, core: { epoch: pre.epoch.epoch, policyRev: pre.epoch.policyRev }, hasher: deps.hasher }).evidence;
+      const turns = await earlierSafeTurns(storeReader(deps.store, uid), uid, req.sessionId, req.clientSeq, ctx);
+      if (rec !== null) typedPlan = await planTypedReply(ctx, hardRuleRun(rec, "private"), pre, turns, startedAt);
+    }
     for (let attempt = 1; ; attempt++) {
       try {
         const outcome = await deps.store.transaction(uid, async (tx) => {
@@ -204,9 +256,30 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           // With no call open the typed reply is kept on a hit too: the rule decides its notes, and a Fixed_Line
           // replaces it (review of wave A, item 17). With a call, typedReplyNote makes no reply. A pasted (T) turn
           // never carries an S1+ note.
-          const candidateNotes = reply === null || reply === "make_phone_call" ? [] : [reply];
+          let candidateNotes: W[] = reply === null || reply === "make_phone_call" ? [] : [reply];
           const coreVals = { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev };
           const { turn: turn0, evidence } = userTurnRecords({ uid, sessionId: req.sessionId, req, text, cls, clock: pair, core: coreVals, hasher: deps.hasher });
+
+          // The executor (design 3.0): on the rules this transaction read, before anything is admitted.
+          const audienceNow = effectiveAudience(s0, ops);
+          let hr: HardRuleResult | null = null;
+          let write: TurnWrite = { kind: "none" };
+          let note: W | null = null;
+          if (route !== null && evidence !== null) {
+            hr = executeHardRule({ ...hardRuleRun(evidence, audienceNow), rules: core.rules.data as CoreRules, epoch: core.epoch.data, bundle: core.bundle.data, clock: pair });
+            tx.update(paths.core(uid, "rules"), hr.rules);
+            if (hr.bundle !== null) tx.update(paths.core(uid, "bundle"), hr.bundle);
+            if (typedPlan !== null) {
+              // G17: no route note in `notes`; one Franki line, the reply only if its plan is the committed one.
+              const line = typedRouteNote(ctx, typedPlan, { key: planKey(hr.entry, hr.kinds), kinds: hr.kinds }, { sessionId: req.sessionId, turnId: req.turnId, opsNow: ops });
+              candidateNotes = line === null ? [] : [line];
+            } else {
+              note = routeNote(hr.kinds, { noteId: deps.hasher.id(["routeNote", req.sessionId, req.turnId]), expiresAt: tsFromMs(ops + ROUTE_NOTE_TTL_MS), privateAudience: audienceNow === "private" });
+            }
+            write = hr.write.kind === "none" ? hr.write : { ...hr.write, note };
+          }
+          const stampOut = hr?.rulesChanged ? { ...currentStamp(req.sessionId, s0.generation, { epoch: core.epoch.data, rules: hr.rules, bundle: hr.bundle ?? core.bundle.data }), turnId: req.turnId } : stamp;
+          const headOut = hr?.bundle?.head ?? head;
 
           // The parse and the verdict go on the Turn (R13.2; question 57); its Slice says its Sensitivity (question 61).
           const parsed = slow !== null && slow.parse.kind !== "failed";
@@ -256,7 +329,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             updatedAt: now,
           });
 
-          const deck = head === null ? null : issueDeck(stamp, head, ops, safe);
+          const deck = headOut === null ? null : issueDeck(stampOut, headOut, ops, safe);
           const transcriptState = req.transcriptState;
           const rule: RuleInput = {
             source: req.source === "asr" ? "asr" : cls.cls === "T" ? "pasted" : "typed",
@@ -288,20 +361,22 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
               turnRef: turnRef(req.turnId, req.sessionId, 1),
               core: coreVals,
               opsNow: ops,
-              stamp,
+              stamp: stampOut,
               head: deck?.head ?? null,
               notes: candidateNotes,
               turns: deck?.turns ?? [],
               audioIds: turn.itemIds,
               toolOutput: null,
               rule,
+              write,
+              routeNote: note,
             },
             deps,
           );
           const status = statusOf(admitted.outcome);
-          const response: TurnRes = admitted.kind === "permit" ? { ...base, status, deck, notes: admitted.notes, permit: admitted.permit } : { ...base, status, deck, permit: null };
+          const response: TurnRes = admitted.kind === "permit" ? { ...base, stamp: stampOut, status, deck, notes: admitted.notes, permit: admitted.permit } : { ...base, stamp: stampOut, status, deck, permit: null };
           if (reply === "make_phone_call" && admitted.kind === "permit" && admitted.permit.scope === "reply" && admitted.permit.kind !== "recoveryOnly") {
-            response.pendingId = phoneId(ctx, stamp);
+            response.pendingId = phoneId(ctx, stampOut);
           }
           await completeRequest(tx, key, response, ops);
           return { kind: "committed" as const, response, jobId, repair };
