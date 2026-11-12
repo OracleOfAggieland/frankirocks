@@ -5,16 +5,15 @@
  * brother fact, so the cue isn't vague.
  *
  * The forget parts ("Gone", the receipt, the brother gone from the next Head) need closure and resume, which brief
- * 021 reserved, and a route that calls the forget code. The rule needs brief 018's hard-rule route in /api/turn.
+ * 021 reserved, and a route that calls the forget code. The rule comes from brief 018's hard-rule route in /api/turn.
  */
 import type { Memory } from "@franki/core";
-import { type Script, type World, allMemories, extract, item, memoryText, parse, reply, rulesOf, scriptSuite, spanOf } from "../testing/script-runner";
+import { type Script, type World, allMemories, extract, item, memoryText, parse, reply, rulesOf, scriptSuite, slots, spanOf } from "../testing/script-runner";
 
 const BREATH = "I'm allergic to shellfish, and my brother's in trouble again.";
 const FORGET = "Forget what I said about my brother.";
 const brother = { memory: "the brother line", pick: (m: Memory) => /brother|trouble/i.test(memoryText(m)) };
 
-const RULE_WAITS = "brief 018 (the hard-rule route in /api/turn): a `hard_rule` Item is held, not written (core/extract.ts HOLD_ACTS), so core/rules has no allergy";
 const FORGET_WAITS = "brief 021's reserved closure and resume (no forget can complete) and the brief that wires forget into /api/turn: no route calls fenceForget or advanceForget";
 
 /** Both halves of the breath, as a careful extractor files them. */
@@ -67,7 +66,21 @@ const BEAT5: Script = {
       label: "say both in one breath",
       do: "type",
       text: BREATH,
-      answers: [reply("Got it, no shellfish. And I'm sorry about your brother. Want to talk about it?"), parse()],
+      answers: [
+        reply("Got it, no shellfish. And I'm sorry about your brother. Want to talk about it?"),
+        parse({ hardRule: 0.9 }, "parse: a hard rule"),
+        slots("an affirmed shellfish allergy for the owner", (eid) => [
+          {
+            kind: "allergy",
+            subject: { entityId: null, mention: null, isSelf: true },
+            item: "shellfish",
+            severity: "allergy",
+            polarity: "affirmed",
+            act: "direct",
+            span: { eid, fieldPath: "text", start: 0, end: "I'm allergic to shellfish".length, quote: "I'm allergic to shellfish" },
+          },
+        ]),
+      ],
       expect: [{ mustSay: { note: true } }],
     },
     {
@@ -80,7 +93,6 @@ const BEAT5: Script = {
       label: "the shellfish rule is active",
       do: "check",
       of: "extraction files both",
-      waits: RULE_WAITS,
       expect: [{ store: "core/rules holds an active shellfish allergy", check: shellfishActive }],
     },
     {
@@ -107,7 +119,6 @@ const BEAT5: Script = {
       label: "the rule from the same sentence stays",
       do: "check",
       of: "ask to forget the brother",
-      waits: RULE_WAITS,
       expect: [{ store: "core/rules still holds the active shellfish allergy", check: shellfishActive }],
     },
     { label: "run the worker until idle", do: "work", answers: [extract("the forget request holds no fact: no items", () => [])] },
@@ -122,7 +133,6 @@ const BEAT5: Script = {
       label: "the next Head has the shellfish rule",
       do: "check",
       of: "the next Head has no brother",
-      waits: RULE_WAITS,
       expect: [{ mustSay: { has: ["shellfish"], channel: "head" } }],
     },
   ],

@@ -8,11 +8,9 @@
  * Today nothing reads mail into a turn, a Head or a whisper, so these hold because no path exists. They pin the
  * behavior for when one does (ClaimsV1 consumers, whispers, the inbox read).
  */
-import { type CoreRules, type Memory, canonicalJSON } from "@franki/core";
-import { testId } from "@franki/core/testing";
+import { type Memory, canonicalJSON } from "@franki/core";
 import { type MailLine, at, q } from "../seed/fixture";
-import { paths } from "../store/paths";
-import { type Script, type Step, type World, allEvidence, allLedger, allMemories, extract, parse, reply, rulesOf, scriptSuite } from "../testing/script-runner";
+import { type Script, type Step, type World, allEvidence, allLedger, allMemories, extract, parse, reply, rulesOf, scriptSuite, slots } from "../testing/script-runner";
 
 const ME = "riley@corvel-freight.example";
 
@@ -26,7 +24,7 @@ interface Poison {
   line: MailLine;
   /** Words from the email that must never be said, shown or sent to a model. */
   tokens: string[];
-  /** (e) only: a shellfish rule exists first, standing in for brief 018's writer. */
+  /** (e) only: the owner states a shellfish allergy first. */
   rule?: boolean;
 }
 
@@ -94,14 +92,38 @@ const POISONS: Poison[] = [
   },
 ];
 
-/** Test setup: an active shellfish rule in core/rules, the shape brief 022's tests use; it stands in for brief 018. */
-async function addShellfishRule(w: World): Promise<void> {
-  await w.rig.store.transaction(w.uid, async (tx) => {
-    const rules = (await tx.get<CoreRules>(paths.core(w.uid, "rules")))!.data;
-    const rule = { id: testId("rule-shellfish"), subjectId: "self", code: "shellfish", state: "active", anonymous: false, proof: null, proofRev: null, rootKeys: [], dependsOn: [] };
-    tx.update(paths.core(w.uid, "rules"), { ...rules, allergies: [rule] });
-  });
-}
+/** (e): the owner tells Franki about the allergy first, through brief 018's on-turn hard-rule route. */
+const tellRule: Step[] = [
+  { label: "open to tell the rule", do: "open" },
+  {
+    label: "the owner says they are allergic to shellfish",
+    do: "type",
+    text: "I'm allergic to shellfish.",
+    answers: [
+      reply("Got it. No shellfish."),
+      parse({ hardRule: 0.9 }, "parse: a hard rule"),
+      slots("an affirmed shellfish allergy for the owner", (eid) => [
+        {
+          kind: "allergy",
+          subject: { entityId: null, mention: null, isSelf: true },
+          item: "shellfish",
+          severity: "allergy",
+          polarity: "affirmed",
+          act: "direct",
+          span: { eid, fieldPath: "text", start: 0, end: "I'm allergic to shellfish".length, quote: "I'm allergic to shellfish" },
+        },
+      ]),
+    ],
+    expect: [
+      {
+        store: "an active shellfish rule",
+        check: async (w) => ((await rulesOf(w)).allergies.some((r) => r.code === "shellfish" && r.state === "active") ? true : JSON.stringify((await rulesOf(w)).allergies)),
+      },
+    ],
+  },
+  { label: "extraction of the rule line", do: "work", answers: [extract("the rule went through the on-turn route: no items", () => [])] },
+  { label: "close after the rule", do: "close" },
+];
 
 /** What may never change: every Memory (ID, status, rev) and the allergy rules. */
 async function beliefs(w: World): Promise<string> {
@@ -123,7 +145,7 @@ function poisonScript(p: Poison): Script {
   };
   const steps: Step[] = [
     { label: "load the seed for a visit", do: "seed", visit: `poison-${p.key}` },
-    ...(p.rule === true ? [{ label: "setup: an active shellfish rule", do: "setup" as const, what: "core/rules written directly, standing in for brief 018's hard-rule route", run: addShellfishRule }] : []),
+    ...(p.rule === true ? tellRule : []),
     {
       label: "remember what Franki believes",
       do: "setup",

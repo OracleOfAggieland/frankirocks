@@ -46,6 +46,7 @@ import { runDueJobs } from "../worker/tick";
 import { drainExtractJobs } from "../worker/drain";
 import { decisionAnswer } from "./decisions";
 import { extractOutput } from "./extract-fixtures";
+import type { FakeSlotsScript } from "./fake-fast-slots";
 import { type TestRig, callRoute, runScheduled, settle, testRig } from "./fakes";
 
 export const SCRIPT_UID = "owner-1";
@@ -93,12 +94,28 @@ export interface World {
 // ---------------------------------------------------------------------------------------------
 // Model answers, declared per step.
 
-export interface Answer {
+export interface ModelAnswer {
   endpoint: OpenAIEndpoint;
   /** What the model is assumed to say, in plain words, for the reader of the script. */
   why: string;
   result: ScriptedResult | ((w: World) => ScriptedResult);
 }
+
+/** The FastSlots port's answer (brief 012 A4; the on-turn hard-rule route). A model call too, through its own port. */
+export interface SlotsAnswer {
+  endpoint: "fastSlots";
+  why: string;
+  slots: FakeSlotsScript;
+}
+
+export type Answer = ModelAnswer | SlotsAnswer;
+
+/** FastSlots finds these allergy items in the turn: `items(eid)` builds them against the turn's Evidence. */
+export const slots = (why: string, items: (eid: string) => unknown[]): SlotsAnswer => ({
+  endpoint: "fastSlots",
+  why: `fastSlots: ${why}`,
+  slots: (input) => ({ kind: "valid", out: { items: items(input.turn.eid) as never, need: "none" }, ms: 50 }),
+});
 
 /** The typed reply's Responses answer. */
 export const reply = (text: string): Answer => ({ endpoint: "responses.create", why: `reply: "${text}"`, result: ok(completed(text)) });
@@ -312,11 +329,13 @@ export async function runScript(script: Script, opts: RunOptions = {}): Promise<
 
 async function runStep(script: Script, step: Step, w: World, checked: boolean): Promise<void> {
   const before = w.rig.openai.requests.length;
-  const declared = new Map<OpenAIEndpoint, number>();
+  const slotsBefore = w.rig.fastSlots.calls.length;
+  const declared = new Map<Answer["endpoint"], number>();
   const endpoints: OpenAIEndpoint[] = ["responses.create", "decisions.create", "realtime.calls.create", "realtime.calls.hangup"];
   for (const e of endpoints) w.rig.openai.drain(e);
   for (const a of step.answers ?? []) {
-    w.rig.openai.script(a.endpoint, typeof a.result === "function" ? a.result(w) : a.result);
+    if (a.endpoint === "fastSlots") w.rig.fastSlots.script(a.slots);
+    else w.rig.openai.script(a.endpoint, typeof a.result === "function" ? a.result(w) : a.result);
     declared.set(a.endpoint, (declared.get(a.endpoint) ?? 0) + 1);
   }
   const outputsBefore = w.outputs.length;
@@ -337,8 +356,9 @@ async function runStep(script: Script, step: Step, w: World, checked: boolean): 
 
   // Model calls: exactly the declared ones, in this step. Checked in every run, waiting or not, because an
   // undeclared answer would make the script lie about what the model said.
-  for (const e of endpoints) {
-    const n = made.filter((r) => r.endpoint === e).length;
+  const slotCalls = w.rig.fastSlots.calls.length - slotsBefore;
+  for (const e of [...endpoints, "fastSlots" as const]) {
+    const n = e === "fastSlots" ? slotCalls : made.filter((r) => r.endpoint === e).length;
     const d = declared.get(e) ?? 0;
     if (n !== d) {
       const why = (step.answers ?? []).filter((a) => a.endpoint === e).map((a) => a.why);
