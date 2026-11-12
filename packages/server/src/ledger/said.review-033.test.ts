@@ -32,6 +32,6 @@ describe("finding 11: every Gate row has a scope, and a bad row is an error", ()
     const at = { uid: UID, now: tsFromMs(rig.clock.read().opsClock.now), epoch: 1, policyRev: 1 };
     const bad = { ...hold, reasons: ["notAReason" as never] };
     await expect(rig.store.transaction(UID, (tx) => writeGateDecision(tx, rig.deps.hasher, at, bad, row({ turnId: testId("t") })))).rejects.toThrow();
-    await expect(rig.store.transaction(UID, (tx) => writeSaid(tx, rig.deps.hasher, at, { ...say, reasons: ["notAReason" as never] }, row({ turnId: testId("at") }), "idTagged"))).rejects.toThrow();
+    await expect(rig.store.transaction(UID, (tx) => writeSaid(tx, rig.deps.hasher, at, { ...say, reasons: ["notAReason" as never] }, row({ turnId: testId("at") }), { receipt: { kind: "transcript", responseId: "resp_1", momentIds: [], noteIds: [testId("note")], text: "Pip." }, note: { noteId: testId("note"), text: "Pip.", momentId: null } }))).rejects.toThrow();
   });
 });
