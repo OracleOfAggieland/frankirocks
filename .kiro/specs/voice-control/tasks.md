@@ -506,9 +506,9 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
 
 ### Group B4
 
-- [ ] 53. Wave B checks and report
+- [x] 53. Wave B checks and report
   - Requirements: R24.1, R24.3
-  - Depends on: 45–52 · Estimate: 1.5 h · Actual:
+  - Depends on: 45–52 · Estimate: 1.5 h · Actual: about 0.3 h. Built by Claude Code (brief 026). Four of the five checks exit 0; `npm run test:emulator` was not run (no network, shared emulator port), and the live-check steps are written, not run
   - Files: `docs/briefs/011-report.md`
   - Witness: the five checks of task 44; the report's wave B section with the same headings, and live-check steps for "my cousin just sat down" (swap, company line, narrow Head in the Debug_Panel), "keep that between us" (quiet as company), "okay, it's just us now" (alone line, full Head), and a crisis line said with someone present (care reply, then the swap, no company line).
   - Commit: `docs: brief 011 report, wave B`
