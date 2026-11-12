@@ -93,7 +93,11 @@ describe("gate: the spec's examples", () => {
   it("speaks third-party mail by sender only when the owner has mailed them, otherwise a card", () => {
     expect(gate(cand({ sourceClass: "T", sender: { mailedByOwner: true } }), ctx())).toMatchObject({ verdict: "say", render: "attributed" });
     expect(gate(cand({ sourceClass: "T", sender: { mailedByOwner: false } }), ctx()).verdict).toBe("card");
-    expect(gate(cand({ sourceClass: "T", sens: "S1", purpose: "ask" }), ctx({ counts: { proactive: 0, heavy: 0, senderAsks: 1, notesThisReply: 0 } }))).toMatchObject({ verdict: "card", reasons: ["senderCap"] });
+    const ask = cand({ sourceClass: "T", sens: "S1", purpose: "ask", sender: { mailedByOwner: true } });
+    expect(gate(ask, ctx())).toMatchObject({ verdict: "say", render: "attributed" });
+    expect(gate(ask, ctx({ counts: { proactive: 0, heavy: 0, senderAsks: 1, notesThisReply: 0 } }))).toMatchObject({ verdict: "card", reasons: ["senderCap"] });
+    // A sender the owner never mailed gets a card, even for logistics.
+    expect(gate(cand({ sourceClass: "T", sens: "S1", purpose: "logistics", sender: { mailedByOwner: false } }), ctx()).verdict).toBe("card");
   });
 
   it("makes one offer from two attested premises, and stays silent on a guess otherwise", () => {
@@ -151,6 +155,20 @@ describe("gate: the spec's examples", () => {
     const answered = ctx({ recentTurns: [{ role: "user", checkInAnswer: true, transitionOrCrisis: false }] });
     expect(gate(cand({ purpose: "insight" }), answered)).toMatchObject({ verdict: "hold", reasons: ["afterCheckIn"] });
     expect(gate(cand({ purpose: "item" }), answered).verdict).toBe("say");
+  });
+
+  it("lets a floor skip the caps only, never a crisis or the hold after a check-in answer", () => {
+    const due = cand({ purpose: "ask", mustSay: "commitmentDue", dueAt: "2026-11-13T09:00:00.000Z" });
+    expect(gate(due, ctx({ modifiers: { rushed: false, crisis: true } })).verdict).toBe("hold");
+    expect(gate(due, ctx({ recentTurns: [{ role: "user", checkInAnswer: false, transitionOrCrisis: true }] })).verdict).toBe("hold");
+    // A floor is proven by code: a third party's commitment or a non-food hard-rule claim is not one.
+    expect(gate(cand({ ...due, sourceClass: "T", sender: { mailedByOwner: true }, sens: "S1" }), ctx()).mustSay).toBeNull();
+    expect(gate(cand({ mustSay: "hardRuleConflict" }), ctx()).mustSay).toBeNull();
+  });
+
+  it("does not let a function word ask, or an earlier opened topic raise a guess", () => {
+    expect(gate(cand({ sens: "S1", queryTerms: ["is mom ok"] }), ctx({ trigger: "recall", ownerTurn: said("It is late") })).verdict).toBe("silent");
+    expect(gate(cand({ sourceClass: "M", sens: "S1", topic: dadTopic }), ctx({ openedTopics: [DAD] })).verdict).toBe("silent");
   });
 
   it("holds suggesting and celebrating in a crisis, and a second note when rushed", () => {

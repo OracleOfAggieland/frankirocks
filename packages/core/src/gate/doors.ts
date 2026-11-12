@@ -3,12 +3,14 @@
  * U or C, speaker certain. The voice model's words never open anything.
  */
 import { tokenize } from "../text";
+import { FUNCTION_WORDS } from "../whisper/added-facts";
 import type { GateCandidate, GateContext, GateTopic } from "./types";
 
 /** Shortest token that counts, as in `recallTerms`: a lone "s" from "dog's" must not match. */
 export const MIN_TERM_CHARS = 2;
 
-const terms = (words: readonly string[]) => words.flatMap((w) => tokenize(w)).filter((t) => t.length >= MIN_TERM_CHARS);
+/** Function words never count as a query term or door term ("It is late" does not ask `recall("is mom ok")`). */
+const terms = (words: readonly string[]) => words.flatMap((w) => tokenize(w)).filter((t) => t.length >= MIN_TERM_CHARS && !FUNCTION_WORDS.has(t));
 
 /** The owner's tokens this turn, or null when the words can't open or ask anything. */
 export function ownerTokens(x: Pick<GateContext, "ownerTurn">): Set<string> | null {

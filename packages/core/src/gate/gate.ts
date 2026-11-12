@@ -10,7 +10,7 @@
 import { isPlainObject } from "../schema/v";
 import { msFromTs } from "../schema/primitives";
 import { CEILING, PLUS200_PATHS, type CeilingPath, classGroup } from "./ceiling";
-import { askedByOwner, topicOpen } from "./doors";
+import { askedByOwner, doorOpens, topicOpen } from "./doors";
 import { inQuietHours } from "./quiet-hours";
 import { GATE_VERDICTS, type GateReason, type GateVerdict, type MustSayKind } from "./reasons";
 import type { GateCandidate, GateContext, GateResult } from "./types";
@@ -55,11 +55,13 @@ const ts = (t: unknown): number | null => {
 /** The floor kind, only when code can prove it (spec §6 "Floors"). */
 function provenMustSay(c: GateCandidate, now: number): MustSayKind | null {
   if (c.mustSay === null) return null;
-  if (c.mustSay === "hardRuleConflict") return "hardRuleConflict";
+  // A hard-rule conflict is flagged by the food filter, so only a food candidate carries one.
+  if (c.mustSay === "hardRuleConflict") return c.food === true ? "hardRuleConflict" : null;
   const due = ts(c.dueAt);
   if (due === null || due < now || due - now > MUST_SAY_WINDOW_MS) return null;
-  if (c.mustSay === "commitmentDue") return "commitmentDue";
-  if (c.mustSay === "criticalLogistics" && c.purpose === "logistics") return "criticalLogistics";
+  // A commitment is the owner's own; critical logistics are a third party's arrival, departure or cancellation.
+  if (c.mustSay === "commitmentDue" && (c.sourceClass === "U" || c.sourceClass === "C")) return "commitmentDue";
+  if (c.mustSay === "criticalLogistics" && c.purpose === "logistics" && c.sourceClass === "T") return "criticalLogistics";
   return null;
 }
 
@@ -72,9 +74,11 @@ function tryPath(p: CeilingPath, c: GateCandidate, x: GateContext, now: number):
     case "attributedMailed":
       return c.sender?.mailedByOwner === true ? result("say", ["ok"], { form: "item", render: "attributed" }) : null;
     case "attributedLogistics":
-      return c.purpose === "logistics" ? result("say", ["ok"], { form: "item", render: "attributed" }) : null;
+      // "T unprompted=mailed sender/type only, else card" (contracts §2).
+      return c.purpose === "logistics" && c.sender?.mailedByOwner === true ? result("say", ["ok"], { form: "item", render: "attributed" }) : null;
     case "cappedAsk":
-      if (c.purpose !== "ask") return null;
+      // Q: an ask only to a known sender, at most one a day.
+      if (c.purpose !== "ask" || c.sender?.mailedByOwner !== true) return null;
       return x.counts.senderAsks < T_ASKS_PER_SENDER_PER_DAY ? result("say", ["ok"], { form: "item", render: "attributed" }) : result("card", ["senderCap"], { form: "item" });
     case "card":
       return result("card", ["ceiling"], { form: "item" });
@@ -163,7 +167,9 @@ export function gate(c: GateCandidate, x: GateContext): GateResult {
   const mustSay = provenMustSay(c, now);
   const sens = c.allergy && c.sens === "S2" ? "S1" : c.sens;
   const opened = topicOpen(c, x);
-  const raised = asked || opened;
+  // A guess is raised only by this turn's own words (contracts §2 M "R": a user query term or alias), never by a
+  // topic opened earlier in the Session.
+  const raised = asked || (c.sourceClass === "M" ? c.topic !== null && doorOpens(c.topic, x) : opened);
   const cell = CEILING[sens][classGroup(c.sourceClass)];
 
   // The cell's answer.
@@ -212,14 +218,18 @@ export function gate(c: GateCandidate, x: GateContext): GateResult {
     if (x.counts.notesThisReply >= 1 || r.form === "door" || c.purpose === "insight") r = lower(r, "hold", "rushed");
   }
   if (x.modifiers.crisis === true) {
-    if (c.purpose === "suggest" || c.purpose === "celebrate" || (x.trigger === "unprompted" && mustSay === null)) r = lower(r, "hold", "crisis");
+    // Crisis holds every unprompted line, floors included: a floor bypasses caps, nothing else (spec §6 "Floors").
+    if (c.purpose === "suggest" || c.purpose === "celebrate" || x.trigger === "unprompted") r = lower(r, "hold", "crisis");
   }
 
-  // Delivery limits on unprompted saying; a proven floor skips them (contracts §2 "mustSay skips both").
-  if (x.trigger === "unprompted" && mustSay === null) {
-    if (inQuietHours(now, x.zone)) r = lower(r, "hold", "quietHours");
-    if (x.counts.proactive >= PROACTIVE_PER_DAY) r = lower(r, "hold", "cap");
-    if (c.gravity >= HEAVY_GRAVITY && x.counts.heavy >= HEAVY_PER_DAY) r = lower(r, "hold", "heavyCap");
+  // Delivery limits on unprompted saying. A proven floor skips the caps and quiet hours only (contracts §2 "mustSay
+  // skips both"); the transition and check-in holds still apply.
+  if (x.trigger === "unprompted") {
+    if (mustSay === null) {
+      if (inQuietHours(now, x.zone)) r = lower(r, "hold", "quietHours");
+      if (x.counts.proactive >= PROACTIVE_PER_DAY) r = lower(r, "hold", "cap");
+      if (c.gravity >= HEAVY_GRAVITY && x.counts.heavy >= HEAVY_PER_DAY) r = lower(r, "hold", "heavyCap");
+    }
     if (c.purpose === "insight" || c.purpose === "celebrate" || c.purpose === "ask") {
       if (x.recentTurns.some((t) => t.transitionOrCrisis)) r = lower(r, "hold", "transition");
       if (x.recentTurns.slice(-CHECK_IN_QUIET_TURNS).some((t) => t.checkInAnswer)) r = lower(r, "hold", "afterCheckIn");
