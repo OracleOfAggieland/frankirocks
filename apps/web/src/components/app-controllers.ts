@@ -63,6 +63,8 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
           getMicrophone: deps.getMicrophone,
           onStreams: deps.onStreams,
           ...(deps.inputLevel === undefined ? {} : { inputLevel: deps.inputLevel }),
+          // Brief 030 P1-7: a spoken false "gone" shows the same ask as a typed one.
+          onControlCheck: () => memory.askGone(),
         });
   const phone = new PhoneWatch({ api, now: () => clock.mono() });
   const memory = new MemoryModel({ api });

@@ -114,6 +114,11 @@ export interface VoiceClientDeps {
    * (voice-control R18.5). Never changes call behavior.
    */
   inputLevel?: () => number;
+  /**
+   * Brief 030 P1-7: told when a receipt answers `controlCheck: "pending"` (Franki's spoken line claimed something
+   * was gone with no forget receipt), so the screen asks "Did you want that deleted?". Never changes call behavior.
+   */
+  onControlCheck?: () => void;
 }
 
 const liveTimers: TimerApi = { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
@@ -341,7 +346,12 @@ export class VoiceClient {
     const start = this.deps.clock.mono();
     for (let attempt = 0; ; attempt++) {
       const r = await this.deps.api.call<unknown>("/api/receipt", { body, timeoutMs: RECEIPT_TIMEOUT_MS });
-      if (parsed(ReceiptResponse, r) !== null) return; // accepted:true or accepted:false; neither is retried
+      const answer = parsed(ReceiptResponse, r);
+      if (answer !== null) {
+        // accepted:true or accepted:false; neither is retried.
+        if (answer.controlCheck === "pending") this.deps.onControlCheck?.();
+        return;
+      }
       if (r.ok || (r.kind === "http" && r.retryAfterMs === 0) || r.kind === "signedOut") return;
       const wait = r.kind === "http" ? Math.min(5_000, r.retryAfterMs) : (RECEIPT_RETRY_MS[attempt] ?? RECEIPT_RETRY_MS[RECEIPT_RETRY_MS.length - 1]!);
       if (this.deps.clock.mono() - start + wait >= RECEIPT_RETRY_WINDOW_MS) return;
