@@ -167,7 +167,8 @@ export function testRig(env: Record<string, string> = TEST_ENV): TestRig {
   const logs: TestRig["logs"] = [];
   const log: Log = (event, fields) => logs.push({ event, fields });
   return {
-    deps: { store, clock, hasher, openai, fastSlots, env, timers, tokens, log },
+    // No test reaches Twilio: a test that needs a call's status sets `deps.callStatus`.
+    deps: { store, clock, hasher, openai, fastSlots, env, timers, tokens, log, callStatus: async () => { throw new Error("no call status in tests"); } },
     store,
     clock,
     timers,

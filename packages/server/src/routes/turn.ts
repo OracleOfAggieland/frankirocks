@@ -64,6 +64,7 @@ import { storeReader } from "../head-build";
 import { turnEvidenceId } from "../turns";
 import { finishTypedPhoneCall } from "../phone/typed";
 import { phoneId } from "../phone/outbound";
+import { phoneCallLineSafe, phoneNote } from "../phone/aware";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 026: company, quiet and alone (voice-control tasks 48, 49).
 import { audienceEffect, narrowedHere, precompileAudienceHead } from "../audience-swap";
@@ -173,6 +174,8 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
     : Promise.resolve(null);
   // A request that fails before it awaits the parse must not leave an unhandled rejection behind.
   slowP.catch(() => {});
+  // The Owner's latest phone call, read beside the parse so the reply can say where it stands (phone/aware.ts).
+  const phoneLineP = req.supersedesRequestId === null && req.transcriptState === "final" && cls.cls === "U" ? phoneCallLineSafe(ctx) : Promise.resolve(null);
   await ensureCoreDocs(uid, deps);
   const result = await mutation<TurnRes>(ctx, "turn", req.requestId, req, async (key) => {
     if (req.supersedesRequestId !== null) return postSupersede(ctx, req, req.supersedesRequestId, key);
@@ -187,7 +190,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
     const replyP =
       typedNoCall && (regex || anyMemoryRoute(memoryRegexOpens(arrival)) || askedAtArrival !== null)
         ? Promise.resolve(null)
-        : typedReplyNote(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx), cls.cls === "U" && req.source === "typed");
+        : typedReplyNote(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx), cls.cls === "U" && req.source === "typed", phoneLineP);
     replyP.catch(() => {});
     const eid = turnEvidenceId(req.turnId as ID, deps.hasher);
     const routeP =
@@ -199,6 +202,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
     const proposalContext =
       route === null && pre !== null && pre.rules.proposals.length > 0 ? await readSnapshot(deps.store, uid, (reader) => readOnTurnContext(reader, uid, pre.epoch, req.generation)) : null;
     const reply = route === null ? await replyP : null;
+    const phoneLine = await phoneLineP;
     // Brief 026: a parse that may narrow or widen the audience compiles that Head before the transaction (design "Alone").
     const audienceHead = await precompileAudienceHead(ctx, slow, req.generation);
     const routeSource = req.source === "asr" ? ("asr" as const) : ("typed" as const);
@@ -311,6 +315,9 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           // replaces it (review of wave A, item 17). With a call, typedReplyNote makes no reply. A pasted (T) turn
           // never carries an S1+ note.
           let candidateNotes: W[] = reply === null || reply === "make_phone_call" ? [] : [reply];
+          // With a call open the reply is spoken from the Head and these notes, so the phone line travels as an S0
+          // note. With no call the typed reply already read it, and a note here would be shown as text.
+          if (phoneLine !== null && (req.source === "asr" || s0.callId !== null)) candidateNotes.push(phoneNote(ctx, req.sessionId, req.turnId, phoneLine, ops));
           const coreVals = { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev };
           const { turn: turn0, evidence } = userTurnRecords({ uid, sessionId: req.sessionId, req, text, cls, clock: pair, core: coreVals, hasher: deps.hasher });
 

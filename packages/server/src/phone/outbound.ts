@@ -84,7 +84,7 @@ export async function placePhoneCall(ctx: RouteContext, stamp: Stamp): Promise<s
     const current = await currentPhoneTurn(tx, uid, stamp);
     if (!current) return { message: "The call request is no longer current." };
     const to = destination(current.text, config.from);
-    if (!to) return { message: "Please ask me to call one phone number, including its country code." };
+    if (!to) return { message: "I need one phone number to call, like 415 555 0123." };
     const now = deps.clock.read().opsClock.now;
     if (now - msFromTs(current.turn.committedAt) > SIP_WINDOW_MS) return { message: "That call request has expired." };
     const at = tsFromMs(now);

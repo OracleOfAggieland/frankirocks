@@ -11,6 +11,7 @@ import type { Timers } from "../clock/timers";
 import type { Env } from "../config/env";
 import type { FastSlotsPort } from "../onturn/fast-slots-port";
 import type { OpenAIPort } from "../openai/fake";
+import type { CallStatus } from "../phone/status";
 import type { Dial } from "../phone/twilio";
 import type { StorePort } from "../store/port";
 import { type RouteError, dependencyLogFields, parseError, toRouteError } from "./errors";
@@ -26,6 +27,8 @@ export type Log = (event: string, fields: Record<string, string | number | boole
 
 export interface RouteDeps {
   dial?: Dial;
+  /** Twilio's status for one call, read for the phone line in a reply's notes. Fake in tests. */
+  callStatus?: CallStatus;
   store: StorePort;
   clock: ClockPort;
   hasher: Hasher;

@@ -69,6 +69,7 @@ export async function typedReplyNote(
   text: string,
   safeTurns: (reader: Reader) => Promise<SafeTurn[]>,
   allowPhone: boolean,
+  phoneLine: Promise<string | null> = Promise.resolve(null),
 ): Promise<W | "make_phone_call" | null> {
   const { uid, deps } = ctx;
   if (req.source === "asr") return null;
@@ -84,7 +85,13 @@ export async function typedReplyNote(
 
   let result: ResponsesResult;
   try {
-    const body = typedReplyRequest(requireModel("brain", deps.env), head.text, turns, said, allowPhone && said === text);
+    // The Owner's latest phone call, worded by code (phone/aware.ts), so a question about it has a true answer.
+    const line = await phoneLine;
+    const instructions = line === null ? head.text : `${head.text}
+
+Notes:
+- ${line}`;
+    const body = typedReplyRequest(requireModel("brain", deps.env), instructions, turns, said, allowPhone && said === text);
     result = (await withDeadline(deps.openai.call("responses.create", body), TYPED_REPLY_DEADLINE_MS, deps.timers)) as ResponsesResult;
   } catch {
     return null;
