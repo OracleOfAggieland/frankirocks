@@ -106,3 +106,102 @@ Where a fix changes a ruling of brief 026 or a line of the voice-control design,
 ## Done
 
 The fixes with their red-first tests, the four properties green, the checks of brief 016 with `npm run build`, and a section "Outcome" at the end of this file: per finding, the test, the commit, and the ruling it changed; per property, the seed and the counterexample it found before the fix.
+
+## Outcome
+
+Built on `lane/fix4` from `2d58f65`, with `build/plan-stages` merged before finding 10 (`dbd185a`). Every fix had its route test fail first, in `packages/server/src/routes/audience-review.test.ts`, one `describe` per finding. No live call, paid model call, emulator, deploy or push.
+
+### Findings
+
+| # | Fixed | Commit | Test that failed first | What it changed |
+|---|---|---|---|---|
+| 1 | yes | `79def0b` | A late company hit through the Parse_Repair left the Session private, and the next Deck's Head held the S1 line | `lateNarrowing` in the repair transaction: company, the raise, the narrow Head, and the hang-up when a call is live |
+| 2 | yes | `e7c818b` | A Superseding_Post with a company line answered `ordinary` and narrowed nothing | The same effects in `postSupersede` |
+| 3 | yes | `e45d612` | A typed crisis line with company and no call admitted an S1 note and stayed private | Row 7 with company in wave B: S0 notes, company, the raise, the crisis modifier, no hang-up |
+| 4 | yes | `c1837fd` | A company candidate kept under a chosen `forget` narrowed nothing | Rows 8 and 9 test whether company or quiet fires among the candidates. The raise moved into `audienceEffect`, behind `audienceRow` |
+| 5 | yes | `a3fdf2b` | After a typed company line, an open naming that Session got a private Head | Inheritance needs no `waitDeadline`. A `user` close marks a non-private Session private |
+| 6 | yes | `738c39d` | An open 11 s after a company hit started private | `SWAP_WAIT_MS = SWAP_LIMIT_MS + OPEN_LIMIT_MS` (17 s), imported from the voice machine. An expired wait yields `unknown` |
+| 7 | yes | `9540227` | A turn on a narrowed Session stored no Turn, so an allergy said in the swap window was lost | The turn is kept: Turn, Evidence, Extract_Job, the hard-rule executor, and the crisis modifier. The answer is still `blocked` with no Permit |
+| 8 | yes | `a451158` | A company turn that committed after an open replaced its Session narrowed nothing | `carryNarrowing` narrows the open's Session B, with the hang-up when it is live |
+| 9 | yes | `a79f333` | `/api/session/state` on a crisis-deferred Session issued a StateAck and a private Deck | No StateAck and no Deck while `narrowedHere` |
+| 10 | yes | `474d8c3` | A company line and an allergy in one typed turn left the S1 line in `core/bundle` | `turnEndAudience`: the executor compiles with company when company or quiet fires. `onturn/execute.ts` is unchanged |
+| 11 | yes | `bb5c965` | The row 8 `blocked` answer carried a Deck with the S1 line (row 6's answer too, found by property 1) | `narrowsHere`: no Deck on an answer that hangs up or sets the swap wait |
+| 12 | yes | `f80776b` | With no Memory in the Head and an S1 earlier turn, the typed reply's note was S0 | The note's sens is the highest of the Head's Memories and the safe turns |
+| 13 | yes | `d55f979` | After row 6, the inheriting Session had no crisis modifier | `inheritedSession` copies it |
+| 14 | no change | | | Contract question V-180 |
+| 15 | yes | `449b159` | Reproduced with seed `1176707969` and the brief's path | See below |
+
+Notes on two rows:
+- Finding 11: property 1 found the same Deck on row 6's care answer, so the fix covers both.
+- Finding 12: commit `c87fcde` fixes a field name in its test. Typecheck caught it after the merge.
+
+**Finding 15.** At step 18 of the counterexample, the `blocked` answer is for Session 1. The call is on Session 8 (phase `HELD`) and had already swapped away from Session 1 (`swappedFrom`). The machine sends no commands for it, as its design says, so the fault was in the property, not in `machine.ts`.
+- What changed: the property now counts a `blocked` answer only when it is for the Session of the call open at that step (`step.before.session`).
+- Kept: 1,000 runs.
+- Result: green on that seed and on 40 runs with random seeds.
+
+**After the merge** (`803e703`), brief 034's twelve exposures needed two changes:
+- Their "the blocked answer's Deck holds no S1+ fact" step had been expected-fail, waiting on findings 11 and 9. It now passes, so it is green.
+- The reconnect step declares a third extraction call, because finding 7 keeps the follow-up turn.
+
+### Properties
+
+All four run 1,000 times on the in-memory store with no model. Each was written red first.
+
+| Property | File | Seed and path | Shrunk counterexample, and the finding |
+|---|---|---|---|
+| 1, a narrowing through any door | `routes/audience-doors.property.test.ts` (`4684b8f`) | at the base: `-1851743552`, `0:0:0:0:0` | `[{"kind":"onTurn","cls":"company","p":0.3,"judge":"H"},["turnHere"]]`: the row 8 answer's Deck held the S1 line (finding 11) |
+| | | with only row 8 fixed: `-525200571`, `2:1:1:1` | `[{"kind":"crisisLive","cls":"company","p":0.3,"judge":"H"},["turnHere"]]`: row 6's answer, the same |
+| 2, the audience survives the swap | `routes/audience-swap-chain.property.test.ts` (`aa101d6`) | at the base: `202569653`, `6:0:2:1:2:5:5:9:8:1:5:6:3:3` | `["onTurn",[{"kind":"open","pick":0},{"kind":"open","pick":1},{"kind":"clock","ms":1000}]]`: the inheriting Session, dropped with no close, gave a private Head (finding 5) |
+| | | after finding 5: `-641064201`, `14:0:2:2:3:3` | `["onTurn",[{"kind":"clock","ms":61000},{"kind":"open","pick":0},{"kind":"drop"}]]`: an expired wait gave a private Head (finding 6) |
+| 3, nothing said in the swap window is lost | `routes/audience-swap-window.property.test.ts` (`9540227`) | at the base: `-667950442`, `0:0:0:0:0:0:0`; the final file against the code before finding 7: `1515754680` | `["company",[{"what":"allergy","a":"shellfish","source":"asr","stamp":"before","judge":"O"}]]`: no Turn stored (finding 7) |
+| 4, every hard rule in every Head | `routes/audience-rules-every-head.property.test.ts` (`9540227`) | at the base: `824413065`, `7:1:1`; the final file against the code before finding 7: `-533705916`, `3:1:1:3` | `[{"kind":"crisisLive","cls":"company","p":0.3,"judge":"H"},"sesame",["turnHere"]]`: the allergy said in the swap window was never stored (finding 7) |
+
+The door harness is `packages/server/src/testing/audience-doors.ts`. It doesn't check the answer of the open in the "replaced" door, because that answer comes before the hit commits.
+
+Not probed by property 1:
+- `/api/tool`: it still runs wave A with `narrowedHere` false (wait `NARROW_TOOL`). V-181.
+- Proactive whispers: none reach an open yet (wait `GATE_WIRE`).
+
+### Rulings changed
+
+These rulings of brief 026, and lines of the voice-control design, changed:
+- V-167 (later turns on a narrowed Session store no Turn) is reversed by finding 7. See V-171.
+- Q81's 10 s swap wait is now 17 s, set from the browser's limits. An expired wait yields `unknown` (finding 6). See V-173.
+- V-166's "an inherited Session starts with a null deadline, so its own turns are admitted" still holds. Inheritance no longer needs a deadline (finding 5). See V-172.
+- "A guard test changed": the wave B raise moved from `postTurn` into `audienceEffect`, behind the rule's audience row (finding 4). See V-174.
+- "Rulings needed", item 5: the hard rule's own bundle now compiles with the audience the turn ends with (finding 10). The Deck carries no Head when the narrow Head can't be compiled (findings 1 to 4). See V-177.
+- Design "Wave B" and "Audience effects in the transaction":
+  - row 7 with company records company (finding 3);
+  - a row 8 or row 6 answer carries no Deck (finding 11);
+  - the state route issues nothing on a Session narrowed here (finding 9).
+
+### Existing assertions changed
+
+- `packages/server/src/routes/turn-audience.test.ts`, "every later turn on the narrowed Session answers blocked": the later Turn is now stored, and `nextClientSeq` is 3 (was null and 2). Reason: finding 7 reverses V-167.
+- `packages/server/src/routes/open-audience.test.ts`, "past waitDeadline it starts private": it now expects `unknown`, and no S1 line in the Head. Reason: finding 6.
+- `scripts/policy-rev-raises.test.ts`: rewritten as the brief asks. It names five raise sites by function, each behind its own check, and adds a behavioral test of the wave B site.
+- `packages/server/src/scripts/gate-exposure.ts` and `gates.summary.test.ts`:
+  - the expected-fail Deck step is now green, and the summary counts 12 green, 0 waiting (findings 11 and 9);
+  - the reconnect declares the follow-up's extraction (finding 7).
+- `packages/core/src/voice/narrowing.property.test.ts`: how it reads a `blocked` answer (finding 15).
+
+### Hot files touched
+
+Production code:
+- `packages/server/src/audience-swap.ts`: most of the logic.
+- `packages/core/src/admission.ts`: rows 7 to 9, plus the `narrowsAudience` and `crisisFires` exports.
+- `packages/server/src/intents/repair.ts`.
+- `packages/server/src/routes/turn.ts`: `postTurn` and `postSupersede`.
+- `routes/state.ts`: one condition.
+- `routes/open.ts`: one import and one line.
+- `routes/close.ts`: one line.
+- `routes/typed-reply.ts`: one line.
+
+Tests:
+- `scripts/policy-rev-raises.test.ts`.
+- `narrowing.property.test.ts`, for finding 15.
+- New test files, and `testing/audience-doors.ts`.
+- Outside the list: `scripts/gate-exposure.ts` and `gates.summary.test.ts`. The merge brought them in, and findings 7, 9 and 11 changed what they pin.
+
+Not touched: `machine.ts`, `onturn/**`, `sessions.ts` and `core/writes/**`. Forget is still unbuilt: no route calls the forget code.

@@ -19,6 +19,8 @@ import { barrierError, scopeError, staleError } from "./errors";
 import { safeTurnsOf } from "./turn";
 import { idleProactive } from "./delivery-wire";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
+// Brief 035: no ack and no Deck on a Session narrowed here (finding 9).
+import { narrowedHere } from "../audience-swap";
 
 type StateReq = Infer<typeof StateRequest>;
 type StateRes = Infer<typeof StateResponse>;
@@ -75,7 +77,8 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
       // R4.2: no ack while the audience is unknown, a parse gap exists, or an S2 user Turn is among the last four.
       const recent = await recentTurns(tx, uid, req.sessionId, next);
       // Brief 012 CQ 126: none while an allergy question is asked, so the answer is held rather than passed as `O`.
-      const ack = effectiveAudience(next, ops) === "unknown" || hasParseGap(next) || hasRecentS2(recent) || askOpen(core.rules.data, req.sessionId) ? null : stateAck(stamp, ops);
+      // Brief 035 (finding 9): none on a Session narrowed here, whose call is being swapped, and no Deck either.
+      const ack = narrowedHere(next) || effectiveAudience(next, ops) === "unknown" || hasParseGap(next) || hasRecentS2(recent) || askOpen(core.rules.data, req.sessionId) ? null : stateAck(stamp, ops);
       // The Deck carries the Session's current safe turns, as the next turn's would (review of wave A, item 2).
       const safe = await safeTurnsOf(tx, uid, recent, next.nextClientSeq, ctx);
       // Question 84: polled once a second, the Session is written only when something it shows would change.
@@ -92,7 +95,7 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
           updatedAt: tsFromMs(ops),
         });
       }
-      return { stamp, state: "LISTENING", deck: issueDeck(stamp, head, ops, safe), ack, barrierReceiptId: null, proactive: null } satisfies StateRes;
+      return { stamp, state: "LISTENING", deck: narrowedHere(next) ? null : issueDeck(stamp, head, ops, safe), ack, barrierReceiptId: null, proactive: null } satisfies StateRes;
     }),
   );
   // Brief 030 part A: an idle whisper, gated inside `chooseNow`, only where the ack checks passed.

@@ -57,7 +57,9 @@ Two fix lanes are still editing `packages/core/src/voice/**`, the hero's yes bin
 
 **Part A, now: what the server says.** Delivery's choice as the `Proactive` on open and state and as an idle whisper, through the gated `chooseNow`; the hero offer and `celebrate` said; the Gate in front of every tool result and every whisper built outside delivery; the ledger rows, with the Lab's counts reading them; `writeSaid` computing its own match; showing a `Proactive` that an open returns.
 
-**Part B, when the lead sends you on: what the voice machine sends.** `suggest` and `answer` in the call's tool list, the pasted line in a call, and the visit ID in the voice open. Leave `packages/core/src/voice/**` and the golden corpus alone until then.
+**Part B: what the voice machine sends.** `suggest` and `answer` in the call's tool list, the pasted line in a call, and the visit ID in the voice open. This moved to its own lane and brief, `docs/briefs/040-voice-sends.md`, once the audience fixes had merged. This lane leaves `packages/core/src/voice/**`, the golden corpus, `answerTool` and the `answer` wire shapes alone. The seam between the two lanes is the `pendingRendered` row part A writes when the hero offer is shown or said.
+
+Part A also takes question V-181 of `docs/briefs/026-report.md`: the tool route narrows on a company or quiet hit exactly as the turn route does, with its own new property file.
 
 Read the "Outcome" sections of briefs 033 and 036 before part A. Brief 036's has the table of changed signatures (`chooseNow`, `admitMoments`, `recordPlayback`, `isMustSay`, `proactiveOf`); brief 033's has the Gate's caller contract.
 

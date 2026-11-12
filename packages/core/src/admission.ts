@@ -119,9 +119,12 @@ export function serverRule(i: RuleInput): RuleOutcome {
     if (crisis && i.wave === "B" && narrows && i.callLive) return permit("postCommitControl", "ack", "none", true, { swap: "afterReply", reasons: ["audience", ...quietReason] });
     // 7. Crisis always takes the reply (R12.1). A typed line with no call open has no spoken care reply: its typed
     // reply, which the Head's crisis instruction governs, travels as an S0 note, still with scope ack (item 17).
-    if (crisis) return permit("postCommitControl", "ack", i.source === "typed" && !i.callLive ? typedPrivate : "none", true);
-    if (i.wave === "B" && (p.chosen === "company" || p.chosen === "quiet") && fires(p.chosen)) {
-      const reasons: ReasonCode[] = p.chosen === "quiet" ? ["audience", "quiet"] : ["audience"];
+    // Brief 035 (finding 3): with company or quiet too, the audience is recorded (R14.7) and the typed reply is S0.
+    const careNarrows = i.wave === "B" && narrows;
+    if (crisis) return permit("postCommitControl", "ack", i.source === "typed" && !i.callLive ? (careNarrows ? "S0" : typedPrivate) : "none", true, careNarrows ? { reasons: ["audience", ...quietReason] } : {});
+    // Brief 035 (finding 4): a company or quiet candidate that fires narrows whatever was chosen, forget included.
+    if (i.wave === "B" && narrows) {
+      const reasons: ReasonCode[] = fires("company") ? ["audience"] : ["audience", "quiet"];
       // 8. Narrow with a live call: hang up and swap (R14.1).
       if (i.callLive) return hold(reasons, true, "now");
       // 9. Narrow with no call: the company line (typed).
@@ -142,6 +145,17 @@ export function serverRule(i: RuleInput): RuleOutcome {
   const full = (i.judge === "O" || i.judge === "typed") && (typed || (i.wordsPer2s && i.allFinal)) && !i.parseGap && i.audience === "private";
   return permit("slowOrdinary", "reply", full ? "all" : "S0", false);
 }
+
+// Brief 035 (findings 1, 2, 4): whether a parsed hit narrows the audience, for the routes that run the rule late
+// (the Parse_Repair, the Superseding_Post) and for the rule's own rows 8 and 9.
+type FiringParse = Pick<Extract<RuleParse, { kind: "hit" }>, "candidates" | "candidateP">;
+const firesIn = (p: FiringParse, c: ControlClass, judge: RuleInput["judge"]) => p.candidates.includes(c) && routeFires(c, p.candidateP[c] ?? 0, judge);
+
+/** A company or quiet candidate that fires narrows, whatever class was chosen (finding 4, as a retained crisis always gets care). */
+export const narrowsAudience = (p: FiringParse, judge: RuleInput["judge"]): boolean => firesIn(p, "company", judge) || firesIn(p, "quiet", judge);
+
+/** A retained crisis candidate fires (crisis is exempt from the judge; `routeFires`). */
+export const crisisFires = (p: FiringParse, judge: RuleInput["judge"]): boolean => firesIn(p, "crisis", judge);
 
 export interface PayloadInput {
   stamp: Stamp;

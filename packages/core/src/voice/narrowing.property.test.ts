@@ -17,6 +17,9 @@ describe("Property 10: narrowing needs a closed call", () => {
         const createdOn = new Map(trace.responses.map((r) => [r.id, calls[r.createdAt] ?? 0]));
         trace.steps.forEach((b, i) => {
           if (b.event.type !== "turnOk" || b.event.response.status !== "blocked") return;
+          // Brief 035 (finding 15): a narrowing only when the answer is for the Session of the call open at that step. A
+          // `blocked` for a Session the call already swapped away from does nothing, by design, so it opens no window.
+          if (b.event.response.stamp.sessionId !== b.before.session?.sessionId) return;
           const care = b.event.response.permit?.permitId ?? null;
           for (const later of trace.steps.slice(i + 1)) {
             const r = audibleResponse(later);

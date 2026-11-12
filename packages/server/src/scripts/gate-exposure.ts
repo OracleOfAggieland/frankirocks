@@ -120,15 +120,19 @@ function exposureScript(e: Exposure): GateScript {
       label: "the blocked answer's Deck holds no S1+ fact",
       do: "check",
       of: line,
-      waits: W.DECK_AFTER_NARROW,
       expect: [{ neverSay: TOKENS, channels: ["head"] }],
     },
     { label: "a spoken follow-up that would draw on the facts", do: "say", text: e.followUp, judge: "O", answers: [parse({}, "parse: ordinary (the route still parses a turn on a narrowed session)")], expect: [statusIs("a spoken follow-up that would draw on the facts", "blocked")] },
     {
       label: reconnect,
       do: "open",
-      // The open drains the company line's extraction: once, then again after the policyRev raise.
-      answers: [extract("the company line holds no fact: no items", () => []), extract("the same job after the policyRev raise: no items", () => [])],
+      // The open drains the company line's extraction: once, then again after the policyRev raise. Brief 035 (finding
+      // 7): the follow-up on the narrowed Session is kept too, so its extraction runs once (it came after the raise).
+      answers: [
+        extract("the company line holds no fact: no items", () => []),
+        extract("the same job after the policyRev raise: no items", () => []),
+        extract("the follow-up holds no new fact: no items", () => []),
+      ],
       expect: [
         { neverSay: TOKENS, channels: ["head"] },
         headFilters(reconnect, [{ subjects: ["You"], allergen: "shellfish" }]),
