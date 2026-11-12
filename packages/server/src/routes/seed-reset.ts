@@ -3,7 +3,7 @@
  * `{fixtureNamespace, worldClock, sessionId?}`. Clones the seeded persona into the caller's own tenant: fence, close
  * calls, clear, reseed, unblock. The work is `resetVisit` in ../seed/reset.ts.
  */
-import { SeedResetRequest } from "@franki/core";
+import { ResetRequest } from "@franki/core";
 import { ensureCoreDocs } from "../core-docs";
 import { type ResetReq, type ResetRes, resetVisit } from "../seed/reset";
 import { mutation } from "./mutation";
@@ -16,6 +16,6 @@ export async function seedReset(ctx: RouteContext, req: ResetReq): Promise<Reset
 
 export const seedResetRoute: RouteSpec<ResetReq> = {
   name: "reset",
-  parse: ({ body }) => parseWith(SeedResetRequest, body),
+  parse: ({ body }) => parseWith(ResetRequest, body),
   run: (ctx, req) => seedReset(ctx, req),
 };
