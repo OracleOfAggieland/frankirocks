@@ -43,6 +43,12 @@ const AFTER: BankLine[] = [
 
 const offerOf = (w: World, name = "offer") => (w.vars.get(name) as HeroOffer | null | undefined) ?? null;
 const loopIdOf = (w: World) => (w.vars.get("loopId") as string | undefined) ?? "";
+/** The hero loop Memory's state, as stored. */
+const loopState = (want: string) => async (w: World): Promise<true | string> => {
+  const loop = (await allMemories(w)).find((m) => m.data.kind === "loop");
+  const got = loop?.data.loop?.state ?? "no loop";
+  return got === want ? true : `loop state ${got}`;
+};
 
 async function probeOffer(w: World): Promise<unknown> {
   const offer = await heroOffer(w.ctx, w.stamp?.generation ?? 1);
@@ -236,6 +242,12 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
         { mustSay: { has: ["$115 less"], channel: "read" } },
       ],
     },
+    {
+      label: "the comparison plays, and the loop is celebrated",
+      do: "play",
+      of: "open three weeks on",
+      expect: [{ store: "the loop Memory's state is celebrated", check: loopState("celebrated") }],
+    },
   ];
   return { name: `beat 3: the hero, ${variant}`, scores: "spec §15 0:50–1:30, spec §10, Friend Test 20", steps };
 }
@@ -274,6 +286,7 @@ function beat3YesOnFriday(): Script {
     pick("open three weeks on"),
     pick("Franki speaks first: $71, down from $186"),
     pick("the strip fills: $115 less"),
+    pick("the comparison plays, and the loop is celebrated"),
   ];
   return { name: "beat 3: the hero, yes on the clone's Friday (past the seed mismatches)", scores: "spec §15 0:50–1:30, spec §10", steps };
 }
