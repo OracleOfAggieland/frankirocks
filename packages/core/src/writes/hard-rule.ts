@@ -152,12 +152,13 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
   };
 
   /**
-   * Whether a denial for (subject, code) reaches a rule: only then does it carry the code past coverage and count as
-   * something done (brief 032 H1). A wrong polarity from the model on an affirmed allergy lands on an absent slot, so
-   * coverage and the fallback still file it. Fails closed; at worst a true denial of an allergen nobody has is filed
-   * as a pending rule and asked about.
+   * Whether a denial for (subject, code) reaches a rule stored before this turn: only then does it carry the code past
+   * coverage, count as something done, or move the slot (brief 032 H1). A wrong polarity from the model on an
+   * affirmed allergy lands on an absent slot, so coverage and the fallback still file it; and a denial never undoes
+   * a rule this same turn wrote ("I'm allergic to eggs. I'm not allergic to eggs."). Fails closed; at worst a true
+   * denial of an allergen nobody has is filed as a pending rule and asked about.
    */
-  const denialReaches = (subject: EID | null, code: string): boolean => slotAt(slotIndex(subject, code)).kind !== "absent";
+  const denialReaches = (subject: EID | null, code: string): boolean => rules.allergies.some((r) => (r.anonymous ? null : r.subjectId) === subject && r.code === code);
 
   /** Whether the item at `index` denies any allergy at all ("any allergies", "anything"), naming no item to file. */
   const namesOnlyNone = (index: number): boolean => {
@@ -266,11 +267,13 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
           break;
         }
         const S = a.subject;
-        const named = a.scope === "global" ? list.filter((r) => !r.anonymous && r.subjectId === S).map((r) => r.code) : a.codes;
+        // A global denial reaches the subject's rules stored before this turn, never one this turn wrote (brief 032 H1).
+        const named = a.scope === "global" ? rules.allergies.filter((r) => !r.anonymous && r.subjectId === S).map((r) => r.code) : a.codes;
         let reached = a.scope === "global";
         for (const code of new Set(named)) {
           // Brief 032 H1: a denial that lands on an absent slot carries nothing, so coverage still files the code.
-          if (a.scope === "specific" && denialReaches(S, code)) {
+          if (a.scope === "specific") {
+            if (!denialReaches(S, code)) continue;
             carried.add(code);
             reached = true;
           }

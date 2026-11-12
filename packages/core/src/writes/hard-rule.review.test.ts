@@ -155,3 +155,17 @@ describe("M2: each unlabeled subject is its own line", () => {
     }
   });
 });
+
+describe("H1, found by the property: a denial reaches only a rule stored before the turn", () => {
+  it("\"I'm allergic to eggs. I'm not allergic to eggs.\" keeps the rule the first sentence wrote", () => {
+    const t = "I'm allergic to eggs. I'm not allergic to eggs.";
+    const p = plan(t, [item(t, "I'm allergic to eggs", "eggs", "affirmed"), item(t, "I'm not allergic to eggs", "eggs", "denied")], emptyRules(), { need: "subject" });
+    expect(filtered(p.rules, "self", "egg")).toBe(true);
+  });
+
+  it("\"I'm allergic to eggs. I don't have any allergies.\" keeps it too", () => {
+    const t = "I'm allergic to eggs. I don't have any allergies.";
+    const p = plan(t, [item(t, "I'm allergic to eggs", "eggs", "affirmed"), item(t, "I don't have any allergies", "any allergies", "denied")], emptyRules(), { need: "subject" });
+    expect(filtered(p.rules, "self", "egg")).toBe(true);
+  });
+});
