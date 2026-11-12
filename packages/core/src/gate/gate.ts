@@ -168,8 +168,9 @@ export function gate(c: GateCandidate, x: GateContext): GateResult {
   const sens = c.allergy && c.sens === "S2" ? "S1" : c.sens;
   const opened = topicOpen(c, x);
   // A guess is raised only by this turn's own words (contracts §2 M "R": a user query term or alias), never by a
-  // topic opened earlier in the Session.
-  const raised = asked || (c.sourceClass === "M" ? c.topic !== null && doorOpens(c.topic, x) : opened);
+  // topic opened earlier in the Session. Mail is raised only by an asked recall (brief 033 finding 1): the T cells
+  // have no "until raised" clause, so an opened topic lifts nothing unprompted.
+  const raised = asked || (c.sourceClass === "T" ? false : c.sourceClass === "M" ? c.topic !== null && doorOpens(c.topic, x) : opened);
   const cell = CEILING[sens][classGroup(c.sourceClass)];
 
   // The cell's answer.
@@ -187,7 +188,8 @@ export function gate(c: GateCandidate, x: GateContext): GateResult {
         break;
       }
     }
-    if (r.verdict !== "say" && raised) {
+    // A sender-cap card is never overridden (brief 033 finding 1).
+    if (r.verdict !== "say" && raised && !r.reasons.includes("senderCap")) {
       // Reply-only: full help once the owner opens the topic. S2 crosses only as an opened-topic owner recall.
       const carve = sens === "S2" && x.trigger === "recall" && asked && opened ? "openedTopicRecall" : null;
       r = result("say", ["ok", asked ? "asked" : "topicOpen", ...(carve !== null ? (["carveOut"] as const) : [])], {
