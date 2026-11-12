@@ -125,7 +125,7 @@ export function executeHardRule(run: HardRuleRun): HardRuleResult {
 
   const ev = turnEvidence(run.evidence.record, run.evidence.eid, H);
   const out = run.slots.kind === "valid" ? run.slots.out : null;
-  const known = subjectIndex(run.context.memories, rules0);
+  const known = subjectIndex(run.context.memories, rules0, H);
   const verdicts: ItemVerdict[] =
     out === null
       ? []

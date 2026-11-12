@@ -52,6 +52,7 @@ import { civilDateAt, looksLikeTime, resolveSpoken, spokenOnLabel, timeRow } fro
 import { MEMORY_TEXT_CHARS, claimText } from "./memory-text";
 import { checkRange, tokenize, utf8 } from "./text";
 import { lookupAllergen } from "./writes/gazetteer";
+import { mentionName } from "./writes/subject";
 
 // ---------------------------------------------------------------------------------------------
 // Literal prompts (contracts §5). Schema prompt = PREFIX + job literal.
@@ -720,7 +721,8 @@ export function resolveMention(token: string, item: ExtractItem, hasher: Hasher)
   if (token === "self") return "self";
   const mention = item.mentions.find((m) => m.localId === token);
   if (mention?.existingId === "self") return "self";
-  const name = (mention?.observedName ?? token).normalize("NFKC").trim().toLowerCase();
+  // Task C2: the one function that turns words into a name ("my dad" and "Dad" are one name).
+  const name = mentionName(mention?.observedName ?? token);
   return hasher.id(["mention", mention?.type ?? "topic", name]);
 }
 

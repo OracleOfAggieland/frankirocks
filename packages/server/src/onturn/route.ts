@@ -77,7 +77,7 @@ export async function runHardRuleSlots(
   const input = {
     turn: { eid: a.eid, text: a.text, ownerConfirmed: a.typed },
     lastTurns: [],
-    entities: entitiesFor(subjectIndex(context.memories, a.pre.rules), a.text),
+    entities: entitiesFor(subjectIndex(context.memories, a.pre.rules, deps.hasher), a.text),
     targets: [],
     pendingId: a.askedRuleId,
   };
