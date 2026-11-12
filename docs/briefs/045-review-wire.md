@@ -205,7 +205,18 @@ Left at two scans per delivery pass: the choice reads the verdict on the store's
 
 ## Outcome, part S
 
-Lane `fix9`, cut from `build/plan-stages` at `a974866`, merged with it at `11236b5` before the last item and at `27936b1` before the final checks. Part V had not landed on `build/plan-stages` by then, so `testing/voice-call.ts` is not on this branch and the voice-call test of an inherited company call is not written. The rulings are V-183 to V-191 in `026-report.md`.
+Lane `fix9`, cut from `build/plan-stages` at `a974866`, merged with it at `11236b5` before the last item, at `27936b1`, and at `03ea738` (part V) before the final checks (`83bba8b`). The rulings are V-183 to V-192 in `026-report.md`.
+
+**Merging part V.**
+- `open.ts`: the opener now needs both a Deck (part V, finding 3) and no inherited audience (finding 4). Part V's Deck parameter into delivery and the deadlines from `1d1618c` are kept.
+- `state.ts` and `delivery-wire.ts` merged cleanly. The poll passes its Deck, and its answer carries the audience.
+- Part V's `testing/arb-proactive.ts` fixtures gain `audience: null`.
+- The script runner's `call` step now names the world's visit (`visitSet` before the press): otherwise a clone's call open is STALE (finding 11).
+
+**Through part V's call steps:** `routes/audience-call-again.test.ts` (`61e1fa6`).
+- A typed company line on a live call on the clone, then a second call. Its open is company, and nothing plays but the swap line (`COMPANY_LINE`). The S1 wish that the first call said is never heard.
+- After the Owner's own hang-up, the next call is private (V-172).
+- `ScriptCall` numbers its request IDs from 1, so a second call in one rig replays the first call's open from the request ledger. The test starts the second call's numbering higher (V-192).
 
 **Finding 2: an open inherits the narrowest of three Sessions.** Commit `30771d9`. Test: `routes/open-audience-any.test.ts`, "finding 2" (four cases: active company, a typed company line, a company hit that hung up the call, and the owner's own hang-up still widening). An open now reads the Session it names, the owner's active Session and the latest closing or closed Session (`inheritCandidates` in `audience-swap.ts`), and takes the narrowest (`narrowestInherited`). Rulings V-183, V-184.
 - Reads added: the open's one get of the named Session becomes three reads in one parallel round trip inside its transaction: the named get, the active get (skipped when it is the named one) and a query of the last three Sessions by `lastTurnAt` (new index shape Q45 in `store/indexes.ts`, a single-field index). Run in parallel, they still cost one round trip, about 75 ms, as the single get did. The query is the read added. Transaction reads have no deadline of their own (V-185). At 75 ms a store call, the open-budget test still answers inside 3,500 ms.
@@ -222,7 +233,7 @@ Rulings V-187, V-188.
 **Finding 11: an open with no visit on a fixture-clock account is STALE.** Commit `9b14765`. Tests: "finding 11" in the same file, and `open-visit.test.ts`. Callers checked:
 - The typed bar and the voice open: unchanged. Both send the visit once its reset has answered, and send none only on a live account, which still opens with none. A tab that opens before its reset answers gets STALE, and the controller's gate already reloads the visit on STALE.
 - The script runner's `open` step: now sends the visit its last seed step made (`World.visitId`).
-- Tests: `openTestSession` names the tenant's current visit (`currentVisit`). These also name it: `seed-reset.test.ts`, `receipt-moments.test.ts`, the input step of the brief 038 live-or-clone property (by the visit model's own rule), and, after the merge, `open-budget.test.ts` (`5949d0c`). Setup only.
+- Tests: `openTestSession` names the tenant's current visit (`currentVisit`). These also name it: `seed-reset.test.ts`, `receipt-moments.test.ts`, the input step of the brief 038 live-or-clone property (by the visit model's own rule), and, after the merges, `open-budget.test.ts` (`5949d0c`) and brief 042's `time/held-reminder.test.ts`. Setup only.
 
 Ruling V-189.
 

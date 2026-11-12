@@ -185,3 +185,5 @@ Brief 045's "Outcome, part S" names the commits.
   - Equal stamps go by arrival. So a poll sent before a tap, with the same stamp and answered after it, shows its audience until the next poll.
   - An answer for a new Session moves on. Later answers of a Session left behind move nothing.
   - Question: should the server bump a revision when the audience changes, so equal stamps cannot disagree?
+- **V-192.** On a second call after a company call, the swap line ("Got it. I'll keep things general for now.") is heard at the open, as V-186 allows. Nothing else plays. Question: does the swap line count as unprompted on a call the owner just started, or should an inherited open say nothing?
+  - Separately, `testing/voice-call.ts`'s `ScriptCall` numbers request IDs from 1 per call. Two `call` steps in one script would replay the first open from the request ledger. Proposal: part V's lane seeds the numbering per call.
