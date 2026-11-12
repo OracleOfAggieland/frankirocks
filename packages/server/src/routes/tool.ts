@@ -164,10 +164,13 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
     if (check.kind === "stale") throw new Unrecorded<ToolRes>({ ...empty, status: "stale" });
     if (check.kind === "wait") throw new Unrecorded<ToolRes>({ ...empty, status: "hold" });
 
+    // Brief 037, finding 1: the food tools answer here and write nothing; their check and write run in the admission.
+    const answered =
+      req.tool.name === "suggest" ? await suggestTool(ctx, req.stamp, req.tool.args) : req.tool.name === "answer" ? await answerTool(ctx, req.stamp, req.tool.args, check.turn) : null;
     const result: Result = req.tool.name === "make_phone_call"
       ? { name: "make_phone_call", requestId: req.requestId, message: await placePhoneCall(ctx, req.stamp) }
-      : req.tool.name === "suggest" ? await suggestTool(ctx, req.stamp, req.tool.args)
-      : req.tool.name === "answer" ? await answerTool(ctx, req.stamp, req.tool.args, check.turn)
+      : req.tool.name === "suggest" ? answered!.result
+      : req.tool.name === "answer" ? answered!.result
       : await readRecall(ctx, req, req.tool.args, check.turn, start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS);
 
     return deps.store.transaction(uid, async (tx) => {
@@ -180,6 +183,10 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       if (!sameStamp(req.stamp, current) || (s.status !== "minting" && s.status !== "active")) {
         throw new Unrecorded<ToolRes>({ ...empty, status: "stale" });
       }
+      // Brief 037, finding 1: the food tools' dinners are checked against the rules read here, and the hero list is
+      // written in this transaction, after the Permit.
+      const heroWrite = answered?.write == null ? null : await answered.write(tx, core.rules.data);
+      if (answered?.write != null && heroWrite === null) throw new Unrecorded<ToolRes>({ ...empty, status: "stale" });
       const head = core.bundle.data.head;
       const turn = check.turn;
       const safe = await earlierSafeTurns(tx, uid, req.stamp.sessionId, turn.seq, ctx);
@@ -225,6 +232,7 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
         },
         deps,
       );
+      if (admitted.kind === "permit") heroWrite?.();
       const response: ToolRes =
         admitted.kind === "permit"
           ? { stamp: req.stamp, callId: req.callId, status: "ready", result: output, deck, permit: admitted.permit }

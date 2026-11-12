@@ -13,7 +13,8 @@
  *
  * The memory-off control (spec §13 line 358): the same steps with an empty store; nothing about takeout is said.
  */
-import { type CoreState, type Evidence, type Ledger, type Memory, tsFromMs } from "@franki/core";
+import { type CoreState, type Evidence, type ID, type Ledger, type Memory, tsFromMs } from "@franki/core";
+import { recordPendingRendered } from "../time/reminder";
 import { relInstant } from "../seed/clock";
 import { type BankLine, type RelTime, at } from "../seed/fixture";
 import { paths } from "../store/paths";
@@ -105,6 +106,24 @@ function coveredThrough(label: string, to: RelTime): Step {
   };
 }
 
+/**
+ * Test setup (brief 037, finding 4): a yes acts only on an offer recorded as shown just before it. Nothing sends the
+ * hero offer's `pendingRendered` receipt yet (the offer reaches no call until brief 030's second phase), so the
+ * script records it, as the receipt route would, right before the owner's yes.
+ */
+function showOffer(name: string): Step {
+  return {
+    label: `setup: the offer (${name}) is shown`,
+    do: "setup",
+    what: "the pendingRendered receipt for the hero offer, recorded as routes/receipt-moments.ts records it; no client sends it for the hero yet",
+    run: async (w) => {
+      const o = offerOf(w, name);
+      if (o === null) return;
+      await w.ctx.deps.store.transaction(w.ctx.uid, (tx) => recordPendingRendered(tx, w.ctx.uid, o.pendingId as ID, w.ctx.deps.clock.read().opsClock.now, w.ctx.deps.hasher));
+    },
+  };
+}
+
 const biscuitSteps: Step[] = [
   { label: "open a session", do: "open", expect: [{ neverSay: ["$186"] }] },
   { label: "type the Biscuit line", do: "type", text: BISCUIT_LINE, answers: [reply("Oh no, poor Biscuit."), parse()], expect: [{ neverSay: ["$186"] }] },
@@ -172,6 +191,7 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
       ...needsOffer(HERO_WAITS),
       expect: [{ mustSay: { card: "Takeout and late meetings" } }],
     },
+    showOffer("offerAfterBolt"),
     { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
     {
       label: "Franki writes the list and the loop",
@@ -253,6 +273,7 @@ function beat3YesOnFriday(): Script {
     ...biscuitSteps,
     pick("probe: the offer on the clone's Friday says $186"),
     { label: "open on Friday", do: "open" },
+    showOffer("offer"),
     { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
     {
       label: "Franki writes the list and the loop",

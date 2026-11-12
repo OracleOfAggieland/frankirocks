@@ -50,6 +50,32 @@ export function lessOnTakeoutLine(deltaCents: number): string | null {
 }
 
 /**
+ * The card line for the sources a card can't hold (brief 037, finding 10): a card cites every counted row, or says
+ * how many more there are. Null for none.
+ */
+export function moreSourcesLine(more: number): string | null {
+  if (!Number.isSafeInteger(more) || more <= 0) return null;
+  return guard(more === 1 ? "1 more source in your records, not shown here" : `${more} more sources in your records, not shown here`);
+}
+
+/**
+ * The lines of the offer's source card, worded by code from the same numbers as the offer. Every line passes the
+ * guard, or the card has no lines (null) and the offer isn't made.
+ */
+export function heroOfferCardLines(p: PatternResult): string[] | null {
+  if (heroOfferLine(p) === null) return null;
+  const unit = p.associationUnit === "night" ? "nights" : "days";
+  const lines = [
+    `${formatDollars(p.totalCents)} on takeout, ${p.orderCount} orders, ${p.window.fromCivil} to ${p.window.toCivil}`,
+    `${formatDollars(p.lateCents)} of it in ${p.lateOrderCount} orders on ${unit} with meetings after 6`,
+    // Brief 037, finding 10: the old line, "A pattern in your own records, not a cause", held a causal word.
+    "Seen together in your own records, and nothing more",
+  ];
+  const checked = lines.map(guard);
+  return checked.every((x): x is string => x !== null) ? checked : null;
+}
+
+/**
  * The comparison, only for an eligible result with a fall: "Takeout's $71, down from $186 over the same three
  * weeks." and "$115 less on takeout." A scoped total-food result gives its own one line.
  */
