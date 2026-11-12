@@ -24,6 +24,8 @@ describe("memory screen view-model (brief 020)", () => {
     expect(motes.filter((m) => m.kind === "told")).toHaveLength(4);
     expect(motes.filter((m) => m.kind === "guessed")).toHaveLength(3);
     expect(motes.filter((m) => m.kind === "private")).toHaveLength(1);
+    expect(motes.filter((m) => m.kind === "rule")).toHaveLength(0);
+    expect(jarMotes(FIXTURE_SNAPSHOT, 2).filter((m) => m.kind === "rule").map((m) => m.id)).toEqual(["rule-0", "rule-1"]);
     expect(new Set(motes.map((m) => m.id)).size).toBe(motes.length);
   });
 

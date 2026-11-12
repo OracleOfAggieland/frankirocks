@@ -418,6 +418,8 @@ const MemoryResponse = obj({
   strip: nullable(StripView),
   nextCursor: nullable(ID),
   coverage: Cov,
+  // Brief 030 P1-11: how many hard rules core/rules holds, as a count only (the jar's rule motes).
+  hardRules: nat(),
 });
 const ResetResponse = obj({ fixtureNamespace: ID, worldClock: TS, sessionId: nullable(ID) });
 // Brief 019: POST /api/seed/reset (contracts §6 Routes). Its response is the stored shape above; its request is
