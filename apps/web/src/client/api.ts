@@ -5,6 +5,8 @@
  *
  * The browser sets `Origin` itself on same-origin POSTs, which the Route_Guard checks (R10.3).
  */
+import { MemoryResponse, type MemoryView, validate } from "@franki/core";
+
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 export const HEALTH_PATH = "/api/health";
@@ -98,4 +100,20 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
       }
     },
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// GET /api/memory (brief 020): what the screen may show about memory.
+
+/** The route's budget is 3 s (contracts §6); the client waits a little longer. */
+export const MEMORY_TIMEOUT_MS = 4_000;
+
+export type MemoryRead = { ok: true; body: MemoryResponse } | { ok: false; why: "signedOut" | "failed" };
+
+/** One read of a view, validated against the closed response. Anything else is a failure, shown as nothing. */
+export async function readMemory(api: ApiClient, view: MemoryView, opts: { id?: string | null; cursor?: string | null } = {}): Promise<MemoryRead> {
+  const r = await api.call<unknown>("/api/memory", { method: "GET", query: { view, id: opts.id ?? null, cursor: opts.cursor ?? null }, timeoutMs: MEMORY_TIMEOUT_MS });
+  if (!r.ok) return { ok: false, why: r.kind === "signedOut" ? "signedOut" : "failed" };
+  const parsed = validate(MemoryResponse, r.body);
+  return parsed.ok ? { ok: true, body: parsed.value as MemoryResponse } : { ok: false, why: "failed" };
 }
