@@ -43,7 +43,7 @@ At most once per ops minute per Owner, three steps:
 
 | Step | Does | On a lost race |
 |---|---|---|
-| Q13 `expireSessions` | Closes live Sessions past `expiresAt`, at most `EXPIRY_BATCH` (100) a run, through `beginCloseInTx`; the hangups and `finishCloseInTx` run as scheduled work with a 1.5 s budget | throws |
+| Q13 `expireSessions` | Closes live Sessions past `expiresAt`, at most `EXPIRY_BATCH` (100) a run, through `beginCloseInTx`; the hangups and `finishCloseInTx` run as scheduled work with a 1.5 s budget | logged as `tick.lostRace` (step `expiry`), next Session runs, so a session open never fails on it; any other error throws |
 | Q18 `requeueExpiredLeases` | Moves `leased` Jobs whose lease ended back to `retry` | logged as `tick.lostRace`, next step runs |
 | Q17 `runDueJobs` | Runs due `hangup` Jobs one by one, then the extract drain | logged per Job, next Job runs |
 

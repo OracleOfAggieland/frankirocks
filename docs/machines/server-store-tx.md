@@ -43,6 +43,7 @@ Every server write goes through the Store_Port (`packages/server/src/store/port.
 |---|---|
 | `claimJob` (`packages/server/src/worker/jobs.ts`) | returns null, the same as a Job that is not claimable |
 | The tick's Q18 and each Q17 hangup Job (`packages/server/src/worker/tick.ts`) | logs `tick.lostRace` and goes on to the next step |
+| Each Session's begin-close in the tick's Q13 (`packages/server/src/worker/tick.ts`) | logs `tick.lostRace` (step `expiry`) and goes on to the next Session; the next tick closes it |
 | The drain's requeue and each extract attempt (`packages/server/src/worker/drain.ts`) | swallowed; the next pass looks again |
 | `ensureCoreDocs` (`packages/server/src/core-docs.ts`) | up to 3 attempts; the next one finds the documents the other transaction wrote |
 | The state and receipt routes (`retryStale`, `packages/server/src/routes/state.ts`) | up to 3 attempts |

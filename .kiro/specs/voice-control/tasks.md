@@ -451,18 +451,18 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `head.test.ts` › with audience `company` no line with `sens ≠ S0` appears, the rules section is unchanged, the Now line says `Audience: company.`; private is byte-identical to today. `head.property.test.ts` still passes untouched.
   - Commit: `feat(head): compile by audience`
 
-- [ ] 46. **[property]** P10 Narrowing needs a closed call, with its generators
+- [x] 46. **[property]** P10 Narrowing needs a closed call, with its generators
   - Requirements: R20.1.10; R14.1, R14.5, R14.7
-  - Depends on: 44 · Estimate: 1.5 h · Actual:
+  - Depends on: 44 · Estimate: 1.5 h · Actual: about 0.2 h by commit times. Built by Claude Code (brief 017). Red first: seeds -1912302561 and 2093769423; reach floors in `voice/testing/arb-swap.test.ts`
   - Files: `packages/core/src/voice/testing/arb-swap.ts` (new), `packages/core/src/voice/narrowing.property.test.ts` (new)
   - Witness: the property file, 1,000 runs. Expected red until task 47; record the seed and counterexample.
   - Commit: `test(voice): property 10, narrowing needs a closed call`
 
 ### Group B2 (parallel)
 
-- [ ] 47. Voice_Machine: SWAPPING
+- [x] 47. Voice_Machine: SWAPPING
   - Requirements: R14.3–R14.7, R6.4; Q81, Q86
-  - Depends on: 46 · Estimate: 3 h · Actual:
+  - Depends on: 46 · Estimate: 3 h · Actual: about 0.2 h by commit times. Built by Claude Code (brief 017). Witnesses in `voice/voice-swap.transitions.test.ts`, not `machine.test.ts`. A lost connection with an Outstanding_Turn does not wait muted: recovery proceeds, and a `blocked` answer for the lost Session turns it into the swap (question V-163 in `docs/briefs/017-report.md`)
   - Files: `packages/core/src/voice/machine.ts`, `packages/core/src/voice/machine.test.ts`
   - Witness: `machine.test.ts` › `blocked` with no Permit tears down, opens with `previousSessionId`, posts no close, stays `thinking`; `blocked` with a care Permit plays it, then swaps after it ends or a barge-in; the swap line plays from `proactive` once the ack matches; a swap failure goes to connection recovery; a lost connection with an Outstanding_Turn waits for its response or deadline. Property 10 green; properties 1–7 and 12 still green.
   - Commit: `feat(voice): call swap for company and quiet`
@@ -497,9 +497,9 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `close.test.ts` › `reason:"error"` on a non-private Session sets `waitDeadline` +60 s; `reason:"user"` leaves it null.
   - Commit: `feat(close): keep a narrowed audience across a reconnect`
 
-- [ ] 52. Voice_Client: the swap
+- [x] 52. Voice_Client: the swap
   - Requirements: R14.3, R14.4, R14.6
-  - Depends on: 47 · Estimate: 2 h · Actual:
+  - Depends on: 47 · Estimate: 2 h · Actual: about 0.1 h by commit times. Built by Claude Code (brief 017). Tests only: `voice-client.ts` needed no change; the `blocked` answer and the open's `proactive` are faked over the real routes until tasks 48 and 50
   - Files: `apps/web/src/client/voice-client.ts`, `apps/web/src/client/voice-client.test.ts`
   - Witness: `voice-client.test.ts` › a company line ends in a fresh call whose first audio is the COMPANY line, with no `/api/session/close` from the browser, the call button in its hang-up form and the avatar `thinking` throughout; a failed swap shows recovery.
   - Commit: `feat(web): voice client swap`

@@ -103,7 +103,7 @@ describe("voice Turn transitions", () => {
     expect(d.st).toMatchObject({ phase: "HELD", active: null, admittedTurnId: turnId });
   });
 
-  it.fails("HELD + timer permit -> RECOVERY (an admitted Turn cut by a higher Deck before its transcript is still posted once)", () => {
+  it("HELD + timer permit -> RECOVERY (an admitted Turn cut by a higher Deck before its transcript is still posted once)", () => {
     const d = fastOSpeaking();
     const turnId = d.st.turn!.turnId;
     play(d, { k: "higherDeck" });
@@ -115,7 +115,7 @@ describe("voice Turn transitions", () => {
     expect(postSeqs(drainedCommands(d.trace), turnId).size, "posts of the admitted Turn").toBe(1);
   });
 
-  it.fails("RECOVERY + timer lineDone -> LISTENING (an error naming the admitted create keeps its unposted Turn until posted)", () => {
+  it("RECOVERY + timer lineDone -> LISTENING (an error naming the admitted create keeps its unposted Turn until posted)", () => {
     const d = fastOSpeaking();
     const turnId = d.st.turn!.turnId;
     play(d, { k: "errorActive" }, 100);
@@ -145,7 +145,7 @@ describe("voice Turn transitions", () => {
     { action: { k: "commit" }, dt: 200 },
   ];
 
-  it.fails("HELD + commit, then timer permit -> RECOVERY (a once-admitted Turn grown after a cut is still posted once; seed 42)", () => {
+  it("HELD + commit, then timer permit -> RECOVERY (a once-admitted Turn grown after a cut is still posted once; seed 42)", () => {
     const trace = runCall(SEED_42).trace;
     const admitted = [...admittedTurns(trace)];
     expect(admitted).toHaveLength(1);
@@ -167,7 +167,7 @@ describe("voice Turn transitions", () => {
     { action: { k: "commit" }, dt: 200 },
   ];
 
-  it.fails("RECOVERY + commit -> WAIT_ITEM (a commit after an error on the admitted create still posts the admitted Turn; seed 99)", () => {
+  it("RECOVERY + commit -> WAIT_ITEM (a commit after an error on the admitted create still posts the admitted Turn; seed 99)", () => {
     const trace = runCall(SEED_99).trace;
     const admitted = [...admittedTurns(trace)];
     expect(admitted).toHaveLength(1);

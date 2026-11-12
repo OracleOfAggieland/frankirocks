@@ -98,7 +98,7 @@ describe("post transitions", () => {
     expect(resend[0]!.body).toMatchObject({ clientSeq: first.body.clientSeq, policyRev: first.body.policyRev + 1 });
   });
 
-  it.fails("HELD + turnOk stale (higher Deck) -> HELD (the resend gets the full answer wait)", () => {
+  it("HELD + turnOk stale (higher Deck) -> HELD (the resend gets the full answer wait)", () => {
     const d = live();
     posted(d);
     play(d, { k: "higherDeck" });
@@ -109,7 +109,7 @@ describe("post transitions", () => {
     expect(cmds.some((c) => c.kind === "verifyPermit"), "the resend's Permit is sent for checking").toBe(true);
   });
 
-  it.fails("HELD + turnOk stale (after a poll's higher Deck) -> HELD (a higher Deck never shortens the resend's answer wait)", () => {
+  it("HELD + turnOk stale (after a poll's higher Deck) -> HELD (a higher Deck never shortens the resend's answer wait)", () => {
     const d = live();
     posted(d);
     play(d, { k: "higherDeck" });
@@ -120,7 +120,7 @@ describe("post transitions", () => {
     expect(cmds.some((c) => c.kind === "verifyPermit"), "the resend's Permit is sent for checking").toBe(true);
   });
 
-  it.fails("HELD + timer permit during the Permit's hash check -> HELD (a Permit inside the answer wait plays)", () => {
+  it("HELD + timer permit during the Permit's hash check -> HELD (a Permit inside the answer wait plays)", () => {
     const d = live();
     const turnId = posted(d);
     // The answer at 4.95 s, inside the wait; the wait ends at 5 s; the hash comes back at 5.05 s.
@@ -132,7 +132,7 @@ describe("post transitions", () => {
     expect(creates(cmds)).toHaveLength(1);
   });
 
-  it.fails("SPEAKING + turnOk hold with a retry hint -> SPEAKING (an admitted Turn's post is resent after the hint)", () => {
+  it("SPEAKING + turnOk hold with a retry hint -> SPEAKING (an admitted Turn's post is resent after the hint)", () => {
     const d = live();
     const turnId = fastOSpeaking(d);
     const sent = turnPosts(play(d, { k: "transcript", pick: 0, fail: false, empty: false }, 300));
@@ -164,7 +164,7 @@ describe("post transitions", () => {
     return { turnId, cmds };
   }
 
-  it.fails("LISTENING + turnOk stale for a Superseding_Post -> LISTENING (resent once as a Superseding_Post, no reconnect)", () => {
+  it("LISTENING + turnOk stale for a Superseding_Post -> LISTENING (resent once as a Superseding_Post, no reconnect)", () => {
     const d = live();
     const { turnId, cmds } = superseding(d, true);
     expect(cmds.some((c) => c.kind === "teardown"), "the call is not torn down").toBe(false);
@@ -173,7 +173,7 @@ describe("post transitions", () => {
     expect(resend[0]).toMatchObject({ supersedesTurnId: turnId, body: { transcriptState: "final", policyRev: d.serverDeck.policyRev } });
   });
 
-  it.fails("RECOVERY + turnOk stale for a Superseding_Post -> RECOVERY (the resend is the Superseding_Post, never the missing post)", () => {
+  it("RECOVERY + turnOk stale for a Superseding_Post -> RECOVERY (the resend is the Superseding_Post, never the missing post)", () => {
     const d = live();
     const { turnId, cmds } = superseding(d, false);
     expect(cmds.some((c) => c.kind === "teardown"), "the call is not torn down").toBe(false);

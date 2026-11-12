@@ -106,7 +106,7 @@ describe("connection recovery transitions", () => {
     expect(d.st).toMatchObject({ phase: "RECOVERY", recovery: { kind: "connection" }, outputMuted: true, judge: null, spec: null, pending: null, active: null });
   });
 
-  it.fails("RECOVERY + timer reconnect -> CONNECTING (a muted mic stays muted across the reconnect)", () => {
+  it("RECOVERY + timer reconnect -> CONNECTING (a muted mic stays muted across the reconnect)", () => {
     const d = live();
     play(d, { k: "mutePressed" }, 300);
     expect(d.st.micMuted).toBe(true);
@@ -120,7 +120,7 @@ describe("connection recovery transitions", () => {
     expect(d.st).toMatchObject({ phase: "LISTENING", micMuted: true });
   });
 
-  it.fails("LISTENING + connectionLost -> RECOVERY (no Try again shows that a press can't act on)", () => {
+  it("LISTENING + connectionLost -> RECOVERY (no Try again shows that a press can't act on)", () => {
     const d = stateOutage();
     play(d, { k: "connectionLost" }, 400);
     expect(d.st.phase).toBe("RECOVERY");
@@ -133,7 +133,7 @@ describe("connection recovery transitions", () => {
     }
   });
 
-  it.fails("HELD + turnFailed -> RECOVERY (connection recovery clears the state-retry control)", () => {
+  it("HELD + turnFailed -> RECOVERY (connection recovery clears the state-retry control)", () => {
     const d = stateOutage();
     play(d, { k: "typed" }, 200);
     play(d, { k: "turnFailed", pick: 0 }, 300);

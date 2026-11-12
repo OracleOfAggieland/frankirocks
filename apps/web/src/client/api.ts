@@ -60,7 +60,13 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
       const route = path.split("?")[0];
       const headers: Record<string, string> = {};
       if (route !== HEALTH_PATH) {
-        const token = await deps.getToken();
+        let token: string | null;
+        try {
+          token = await deps.getToken();
+        } catch {
+          // A token step that rejects (a failed refresh) is a network failure, never a thrown call (B1).
+          return { ok: false, kind: "network" };
+        }
         if (token === null || token === "") return { ok: false, kind: "signedOut" };
         headers.authorization = `Bearer ${token}`;
       }

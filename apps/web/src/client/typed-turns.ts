@@ -8,7 +8,9 @@
  * stays in the box with an error and no reply.
  *
  * Retrying a failed line: the same text reuses the same requestId, turnId and clientSeq, so a request the server
- * did commit is replayed rather than written twice (R19.3). Changed text reuses the clientSeq with new IDs.
+ * did commit is replayed rather than written twice (R19.3). The line's `utteredWorldAt` is read once, when it is first
+ * sent, so a retry on a clock that moved on is byte-identical. Changed text reuses the clientSeq with new IDs and a new
+ * `utteredWorldAt`.
  */
 import {
   OpenResponse,
@@ -48,6 +50,8 @@ interface Pending {
   requestId: string;
   turnId: string;
   transcript: string;
+  /** Read once, when the line is first sent: every retry of the line sends the same body (B4, R19.3). */
+  utteredWorldAt: string;
 }
 
 export interface TypedDeps {
@@ -185,7 +189,8 @@ export class TypedTurns {
     if (this.pending !== null && this.pending.transcript === transcript) return this.pending;
     // The clientSeq stays the one assigned to the unsent line; a new line gets last + 1 (R18.1).
     const clientSeq = this.pending?.clientSeq ?? this.state.lastClientSeq + 1;
-    this.pending = { clientSeq, requestId: this.newId(), turnId: this.newId(), transcript };
+    const utteredWorldAt = tsFromMs(this.deps.clock.read().worldClock.now);
+    this.pending = { clientSeq, requestId: this.newId(), turnId: this.newId(), transcript, utteredWorldAt };
     if (clientSeq !== this.state.lastClientSeq) this.set({ lastClientSeq: clientSeq });
     return this.pending;
   }
@@ -210,7 +215,7 @@ export class TypedTurns {
   }
 
   private async sendTurn(stamp: SS, pending: Pending): Promise<Infer<typeof TurnResponse> | string> {
-    const { api, clock } = this.deps;
+    const { api } = this.deps;
     let current = stamp;
     for (let attempt = 0; ; attempt++) {
       const body: Infer<typeof TurnRequest> = {
@@ -220,7 +225,7 @@ export class TypedTurns {
         clientSeq: pending.clientSeq,
         source: "typed",
         items: [],
-        utteredWorldAt: tsFromMs(clock.read().worldClock.now),
+        utteredWorldAt: pending.utteredWorldAt,
         transcript: pending.transcript,
         transcriptState: "final",
         judge: "typed",
