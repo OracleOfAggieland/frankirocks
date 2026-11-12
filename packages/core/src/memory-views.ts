@@ -256,21 +256,11 @@ export function itemView(rows: readonly ViewRow[], id: ID, ctx: ViewContext): In
   return r === undefined || !shown(r, ctx) ? [] : [itemOf(r)];
 }
 
-/** Evidence kinds as the `why` view's labels (shown under "Sources"). */
-const EVIDENCE_LABEL: Record<Evidence["kind"], string> = {
-  turn: "You said",
-  message: "An email",
-  calendar: "Your calendar",
-  transaction: "Your bank",
-  receipt: "A receipt",
-  note: "A note",
-  task: "A task",
-  food: "A food log",
-};
-
 /**
  * The `why` view ("How do you know?" walks the roots, spec §6): the shown row, then each root's quoted words, only
- * where the root's Slice is at or under the audience's ceiling and its Evidence is retained and current.
+ * where the root's Slice is at or under the audience's ceiling and its Evidence is retained and current. A root's
+ * `label` is its Evidence kind code (`turn`, `message`, ...); the browser words it from `ui/copy.ts` (review 028
+ * finding 9).
  */
 export function whyView(rows: readonly ViewRow[], evidence: ReadonlyMap<string, Evidence>, id: ID, ctx: ViewContext): InspectItem[] {
   const r = rows.find((x) => x.id === id);
@@ -287,7 +277,7 @@ export function whyView(rows: readonly ViewRow[], evidence: ReadonlyMap<string, 
     if (text === null || s.end > text.length) continue;
     const quote = text.slice(s.start, s.end);
     if (quote === "" || out.some((o) => o.id === s.eid)) continue;
-    out.push({ id: s.eid, kind: "evidence", label: EVIDENCE_LABEL[ev.kind], body: quote.slice(0, 2048), status: "active", refs: [{ type: "evidence", id: s.eid, rev: ev.rev }] });
+    out.push({ id: s.eid, kind: "evidence", label: ev.kind, body: quote.slice(0, 2048), status: "active", refs: [{ type: "evidence", id: s.eid, rev: ev.rev }] });
   }
   return out;
 }
