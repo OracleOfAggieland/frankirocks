@@ -5,6 +5,7 @@ import { HERO_ZONE, instantAt, sampleEvidence, sampleMemory, testId } from "@fra
 import { describe, expect, it } from "vitest";
 import { ensureCoreDocs } from "../core-docs";
 import { toolRoute } from "../routes/tool";
+import { heroCardTitle } from "../routes/tool-food";
 import { turnRoute } from "../routes/turn";
 import { paths } from "../store/paths";
 import { callRoute, testRig } from "../testing/fakes";
@@ -192,5 +193,13 @@ describe("whose diet: another person's applies only when the owner's words name 
     const m = sampleMemory({ kind: "fact", predicate: "person.relation", value: { kind: "enum", code: "sister" }, args: { otherRef: SISTER, label: "sister", employerRef: null } });
     expect([...namedPeople([{ id: "r", memory: m }], "dinner with my sister")]).toEqual([SISTER]);
     expect([...namedPeople([{ id: "r", memory: m }], "dinner with my sisters-in-law's dog")]).toEqual([]);
+  });
+});
+
+describe("the hero's card says how many dinners it holds", () => {
+  it("three, two or one", () => {
+    expect(heroCardTitle(3)).toBe("Three quick dinners for those nights");
+    expect(heroCardTitle(2)).toBe("Two quick dinners for those nights");
+    expect(heroCardTitle(1)).toBe("One quick dinner for those nights");
   });
 });

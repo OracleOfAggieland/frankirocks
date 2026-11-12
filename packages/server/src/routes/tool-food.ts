@@ -517,6 +517,9 @@ async function yesFollowsOffer(ctx: RouteContext, pendingId: string, turnId: str
 }
 
 
+/** "Three quick dinners for those nights", or two, or one. */
+export const heroCardTitle = (n: number): string => (n === 1 ? "One quick dinner for those nights" : `${n === 2 ? "Two" : "Three"} quick dinners for those nights`);
+
 /**
  * The answer to "Still vegetarian, or was November it?" (brief 039, change 3). Code reads the owner's own words in
  * this committed turn from a closed list (core `readDietAnswer`), never the model's choice: "yes, still" extends the
@@ -574,7 +577,8 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerAr
   if (loop === null) return only("stale");
   const cited = loopCited(offer.pattern, rows.evidence);
   if (cited.length > LOOP_CITED_MAX || cited.some((eid) => loopRootSlice(rows.evidence.get(eid)!) === null)) return only("stale");
-  const card = foodCard(ctx, planned.candidates, "Three quick dinners for those nights");
+  // Brief 039: a diet or a dislike can leave fewer than three; the title says how many.
+  const card = foodCard(ctx, planned.candidates, heroCardTitle(planned.candidates.length));
   const pickedIds = planned.candidates.map((c) => c.id).join("|");
 
   const write: FoodWrite = async (tx, rules) => {
