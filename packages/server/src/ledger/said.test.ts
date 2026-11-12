@@ -56,10 +56,12 @@ describe("deck whispers", () => {
   const deck = (): Deck => issueDeck({ sessionId: testId("s"), epoch: 1, policyRev: 1, bundleRev: 1, rulesRev: 1, generation: 1 }, sampleHead(), OPS);
 
   it("carries S0 notes only, and flags a waiting S1+ note without carrying it", () => {
-    const d = withWhispers(deck(), [note("a", "S0"), note("b", "S1"), note("c", "S2"), note("a", "S0"), note("x", "S0", -1)], OPS);
+    // Brief 033 finding 6: notes arrive with their template, and the audience is passed.
+    const item = (w: W) => ({ w, template: "item" as const });
+    const d = withWhispers(deck(), [note("a", "S0"), note("b", "S1"), note("c", "S2"), note("a", "S0"), note("x", "S0", -1)].map(item), OPS, "private");
     expect(d.whispers.map((w) => w.noteId)).toEqual([testId("a")]);
     expect(d.noteWaiting).toBe(true);
-    expect(withWhispers(deck(), [note("a", "S0")], OPS).noteWaiting).toBe(false);
+    expect(withWhispers(deck(), [item(note("a", "S0"))], OPS, "private").noteWaiting).toBe(false);
   });
 });
 

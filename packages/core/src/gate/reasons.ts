@@ -14,6 +14,11 @@ export type GateForm = (typeof GATE_FORMS)[number];
 /** How a `say` is rendered: free words, attributed to its sender, one offer, hedged, or a code template. */
 export const GATE_RENDERS = ["free", "attributed", "offer", "hedged", "template"] as const;
 export type GateRender = (typeof GATE_RENDERS)[number];
+/**
+ * Renders from the freest to the most bound (brief 033 property 5): free words; hedged and offer, still the model's
+ * words; attributed, by sender and type; template, typed code slots only. A narrower context never moves left.
+ */
+export const GATE_RENDER_FREEDOM = ["free", "hedged", "offer", "attributed", "template"] as const satisfies readonly GateRender[];
 
 /** Spec §3 line 120 (logged enabled carve-outs) and the +200 code forms of the `proactive` row. */
 export const GATE_CARVE_OUTS = ["openedTopicRecall", "jarTap", "checkIn", "door", "oLogistics", "authorization"] as const;

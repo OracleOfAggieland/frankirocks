@@ -3,6 +3,8 @@ import type { CoreBundle, CoreEpoch, CoreRules, Deck, Head, ID, SafeTurn, SS } f
 import { tsFromMs } from "@franki/core";
 // Brief 024: whispers on the Deck.
 import { type W, msFromTs } from "@franki/core";
+// Brief 033: the Deck re-gates its whispers by audience.
+import { type Au, type GatedWhisper, audienceMayHear } from "@franki/core";
 import { DECK_TTL_MS } from "./sessions";
 
 /** The current SS from the stored core values. */
@@ -48,9 +50,16 @@ export const sameStamp = (a: SS, b: SS) =>
 // Brief 024: whispers on the Deck (spec §3 "How it works on the wire": "S1+ notes never sit on the deck. The deck
 // carries S0 whispers and a noteWaiting flag"). A later brief calls this where the Deck is issued.
 
-/** The Deck with these notes: unexpired S0 notes ride on it (up to 4, first kept); any live S1+ note sets `noteWaiting`. */
-export function withWhispers(deck: Deck, notes: readonly W[], opsNow: number): Deck {
-  const live = [...deck.whispers, ...notes].filter((w) => msFromTs(w.expiresAt) > opsNow);
+/**
+ * The Deck with these notes: unexpired S0 notes ride on it (up to 4, first kept); any live S1+ note sets `noteWaiting`.
+ * Brief 033 finding 6: the audience is re-checked. A new note rides only if `audienceMayHear` allows it, and a
+ * whisper the Deck already holds (its template unknown) stays only while the audience is private: "a narrower deck
+ * issued". The caller gates and builds again for the narrower room.
+ */
+export function withWhispers(deck: Deck, notes: readonly GatedWhisper[], opsNow: number, audience: Au): Deck {
+  const kept = audience === "private" ? deck.whispers : [];
+  const heard = notes.filter((g) => audienceMayHear(g, audience)).map((g) => g.w);
+  const live = [...kept, ...heard].filter((w) => msFromTs(w.expiresAt) > opsNow);
   const seen = new Set<string>();
   const whispers: W[] = [];
   let waiting = deck.noteWaiting;
