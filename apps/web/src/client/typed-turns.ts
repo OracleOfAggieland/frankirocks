@@ -199,6 +199,19 @@ export class TypedTurns {
     this.set({ entries: [], text: "", pasted: false });
   }
 
+  /**
+   * Brief 044, item 3: the typed Session's Stamp for a company tap, opening a Session if none is open. A tap takes no
+   * clientSeq, so nothing pending changes. A string says why there is none.
+   */
+  async stampForTap(): Promise<SS | string> {
+    return this.stamp ?? (await this.openSession());
+  }
+
+  /** Brief 044, item 3: a tap's answer on the typed Session moved its revisions; the next line uses them. */
+  adoptStamp(stamp: SS): void {
+    if (this.stamp !== null && this.stamp.sessionId === stamp.sessionId && this.stamp.generation === stamp.generation) this.stamp = stamp;
+  }
+
   /** Forgets the typed Session without a request: a call open closes it on the server (KV09). */
   dropSession(): void {
     if (this.stamp === null) return;

@@ -85,6 +85,17 @@ describe("Specimens_Page (R20.1, R20.2)", () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
+  it("shows a call on the screen: the tool answer's cards, escaped, and the toggle's states (brief 044)", () => {
+    for (const sp of ["call-cards", "call-cards-markup", "company-tap", "company-gated"]) expect(html).toContain(`data-specimen="${sp}"`);
+    expect(html).toContain("Three quick dinners");
+    // The second card shows only its edge behind the first, as the Card_Dock stacks every card.
+    const callTile = html.slice(html.indexOf('data-specimen="call-cards"'), html.indexOf('data-specimen="call-cards-markup"'));
+    expect(callTile.match(/data-depth="/g)).toHaveLength(2);
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(html).toContain("This visit has ended.");
+  });
+
   it("calls no /api/ route and exports the sentinel", () => {
     expect(html).not.toContain("/api/");
     expect(SPECIMENS_SENTINEL_9c41).toBe("SPECIMENS_SENTINEL_9c41");

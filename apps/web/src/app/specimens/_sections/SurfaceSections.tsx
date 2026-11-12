@@ -46,6 +46,8 @@ const CALL_FORMS: { label: string; voice: VoiceState; enabled: boolean }[] = [
   { label: "recovery with retry", voice: voice({ phase: "RECOVERY", recovery: { kind: "connection", since: 0, attempts: 3 }, retryVisible: true }), enabled: true },
   { label: "open failed", voice: voice({ error: "open" }), enabled: true },
   { label: "hang-up not confirmed", voice: voice({ error: "close" }), enabled: true },
+  // Brief 044, item 2: the server said this visit is over; the call ended and the visit reloads.
+  { label: "visit gone", voice: voice({ error: "visit" }), enabled: true },
 ];
 
 export function SurfaceSections() {

@@ -107,7 +107,15 @@ export const COPY = {
     notSetUp: "Calls aren't set up here yet.",
   },
   cursor: { toggle: "Lab spider" },
-  company: { name: "Company mode", walkedIn: "Someone walked in", alone: "We're alone" },
+  company: {
+    name: "Company mode",
+    walkedIn: "Someone walked in",
+    alone: "We're alone",
+    // Brief 044, item 3: why a tap did not change the mode. The toggle keeps showing what the server last said.
+    noAnswer: "Not changed: the server did not answer.",
+    movedOn: "Not changed: the session moved on. Try again.",
+    betweenCalls: "Not changed: the call is reconnecting. Try again in a moment.",
+  },
   forgetLast: "Forget last thing",
   forgetLastPending: "Forgetting",
   /** The backdrop's fig label words, after "FIG. n ·". */

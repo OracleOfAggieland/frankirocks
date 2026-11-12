@@ -5,6 +5,7 @@ import type { Proactive } from "@franki/core";
 import type { ApiClient } from "../client/api";
 import type { BrowserClock } from "../client/clock";
 import { CallCardShelf } from "../client/call-cards";
+import { CompanyTap } from "../client/company-tap";
 import { DebugPanelModel } from "../client/debug-panel";
 import { MemoryModel } from "../client/memory-model";
 import { PhoneWatch } from "../client/phone-watch";
@@ -18,6 +19,7 @@ import { type AudioLike, type PeerLike, type StreamLike, VoiceClient } from "../
 import type { TurnCopies } from "../ui/surface-props";
 import { clearTurnCopies } from "../ui/turn-copies";
 import { type StoredVisit, inputAllowed } from "../ui/visit/visit-machine";
+import { COPY } from "../ui/copy";
 
 export interface ControllerDeps {
   api: ApiClient;
@@ -53,6 +55,8 @@ export interface SignedInControllers {
   proactive: ProactiveShelf;
   /** Brief 044, item 1: the cards the last tool answer of a call brought. */
   callCards: CallCardShelf;
+  /** Brief 044, item 3: the company toggle's tap, and the audience the server last confirmed. */
+  company: CompanyTap;
 }
 
 /**
@@ -120,6 +124,24 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     },
   });
   const sheet = new SheetModel({ api });
+  // Brief 044, item 3: a tap goes on the call's Session while a call is open, else on the typed one. Through the
+  // input gate, so no tap reaches a fresh account before its clone.
+  const company = new CompanyTap({
+    api: talk,
+    newId: () => randomId(),
+    worldNow: () => clock.read().worldClock.now,
+    stampFor: async () => {
+      const v = voice?.getSnapshot() ?? null;
+      if (v === null || v.phase === "CLOSED") {
+        const s = await typed.stampForTap();
+        return typeof s === "string" ? s : { stamp: s, typed: true };
+      }
+      if (v.session === null || v.deck === null) return COPY.company.betweenCalls;
+      const d = v.deck;
+      return { stamp: { sessionId: v.session.sessionId, generation: v.session.generation, epoch: d.epoch, policyRev: d.policyRev, bundleRev: d.bundleRev, rulesRev: d.rulesRev }, typed: false };
+    },
+    adoptTypedStamp: (s) => typed.adoptStamp(s),
+  });
   const proactive = new ProactiveShelf();
   const visit = new VisitModel({
     api,
@@ -136,6 +158,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
       typed.dropTurnCopies();
       proactive.clear();
       callCards.clear();
+      company.clear();
       sheet.clear();
       memory.clear();
       void memory.refresh();
@@ -162,6 +185,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     sheet,
     proactive,
     callCards,
+    company,
   };
 }
 
