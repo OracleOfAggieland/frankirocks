@@ -544,3 +544,10 @@ export type SnapshotView = Infer<typeof SnapshotView>;
 export type LabView = Infer<typeof LabView>;
 export type StripView = Infer<typeof StripView>;
 export type MemoryResponse = Infer<typeof MemoryResponse>;
+
+// ---------------------------------------------------------------------------------------------
+// Brief 023: POST /api/seed/advance (contracts §6 Routes). Its response is the stored shape above.
+
+export const SeedAdvanceRequest = obj({ requestId: ID, fixtureNamespace: ID, to: TS });
+export const SeedAdvanceResponse = AdvanceResponse;
+export type Proactive = Infer<typeof Proactive>;
