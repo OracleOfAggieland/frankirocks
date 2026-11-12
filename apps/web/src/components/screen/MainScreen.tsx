@@ -54,6 +54,13 @@ export interface MainScreenProps {
   jar?: ReactNode;
   /** The Lab, with its receipt slip. */
   lab?: ReactNode;
+  // Brief 027: the visit's controls, the simulated-time badge and the What I know sheet.
+  /** The VisitBar: the time bolt and Start over, beside the Lab. */
+  visit?: ReactNode;
+  /** The Time_Badge, in the header's slot, while the shown clock is simulated. */
+  timeBadge?: ReactNode;
+  /** The What I know sheet's modal layer, inside an AnimatePresence. */
+  sheet?: ReactNode;
 }
 
 export const GRID_AREAS = ["header", "strip", "stage", "dock", "chips", "controls", "reply", "corners"] as const;
@@ -93,7 +100,7 @@ function Glide({ name, reduced, className, children }: { name: "stage" | "contro
   );
 }
 
-export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed, reply, debug, live, reduced, paused, cards = [], strip, chips, jar, lab }: MainScreenProps) {
+export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed, reply, debug, live, reduced, paused, cards = [], strip, chips, jar, lab, visit, timeBadge, sheet }: MainScreenProps) {
   // The dock column stays from the first card until the last one has dematerialized (ui.dockLayout). The
   // cards event runs during render, so the column is there on the very render that brings the first card.
   const present = cards.some(cardHasContent);
@@ -114,8 +121,8 @@ export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed
       <div data-layout={docked ? "dock" : "center"} className={docked ? GRID_WITH_DOCK : GRID_CENTER}>
         <header data-area="header" className={HEADER}>
           {signedIn ? <Wordmark variant="header" /> : <span />}
-          {/* Time_Badge slot: no simulated-time source yet (contract question 8). */}
-          <div data-slot="time-badge" />
+          {/* Time_Badge slot: the visit's world clock, labeled whenever it differs from the real one (brief 027). */}
+          <div data-slot="time-badge">{timeBadge}</div>
           <div className="flex min-w-0 shrink items-center gap-3">
             {soundToggle}
             {signedIn ? auth : null}
@@ -157,10 +164,13 @@ export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed
         {/* Jar and Lab slots: from GET /api/memory (brief 020); empty until there is something true to show. */}
         <div data-area="corners" className="flex flex-col items-center gap-3 sm:flex-row sm:items-end sm:justify-between [grid-area:corners]">
           <div data-slot="jar">{jar}</div>
+          {/* Visit slot: the time bolt and Start over, beside the Lab (brief 027). */}
+          <div data-slot="visit">{visit}</div>
           <div data-slot="lab">{lab}</div>
         </div>
       </div>
       {debug ? <div className="w-full max-w-6xl px-4 pb-4">{debug}</div> : null}
+      {sheet}
     </main>
   );
 }
