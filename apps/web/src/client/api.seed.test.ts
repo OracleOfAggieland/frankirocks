@@ -13,7 +13,7 @@ function fake(respond: () => Response | Promise<Response>) {
   return { api: createApiClient({ getToken: async () => "tok", fetch }), seen };
 }
 
-const RESET = { requestId: vid("r"), sessionId: null, fixtureId: PERSONA_FIXTURE_ID, visitId: vid("v") };
+const RESET = { requestId: vid("r"), sessionId: null, fixtureId: PERSONA_FIXTURE_ID, visitId: vid("v"), clientZone: "America/Chicago" };
 const ADVANCE = { requestId: vid("r2"), fixtureNamespace: vid("ns"), to: THURSDAY_WORLD };
 
 describe("seed fixtures", () => {
@@ -38,6 +38,16 @@ describe("resetVisit", () => {
   it("answers barrier on 423, with the retry hint", async () => {
     const { api } = fake(() => Response.json({ error: "BARRIER", retryAfterMs: 1500 }, { status: 423 }));
     expect(await resetVisit(api, RESET)).toEqual({ ok: false, why: "barrier", retryAfterMs: 1500 });
+  });
+
+  it("answers live on the LIVE code: a real account, never reset (brief 038 finding 1)", async () => {
+    const { api } = fake(() => Response.json({ error: "LIVE", retryAfterMs: 0 }, { status: 409 }));
+    expect(await resetVisit(api, RESET)).toEqual({ ok: false, why: "live" });
+  });
+
+  it("answers stale on the STALE code (brief 038 finding 4)", async () => {
+    const { api } = fake(() => Response.json({ error: "STALE", retryAfterMs: 0 }, { status: 409 }));
+    expect(await resetVisit(api, RESET)).toEqual({ ok: false, why: "stale" });
   });
 
   it("answers barrier on a BARRIER code under another status", async () => {

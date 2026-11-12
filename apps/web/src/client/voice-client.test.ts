@@ -231,7 +231,7 @@ describe("Voice_Client", () => {
     expect(updates[0].session).not.toHaveProperty("model");
     expect(updates[0].session).not.toHaveProperty("voice");
     expect(updates[0].session).toMatchObject({ type: "realtime", tracing: null, audio: { input: { transcription: { model: "test-transcribe-model" } } } });
-    expect(updates[0].session.tools.map((t: { name: string }) => t.name)).toEqual(["recall", "make_phone_call"]);
+    expect(updates[0].session.tools.map((t: { name: string }) => t.name)).toEqual(["recall", "make_phone_call", "suggest", "answer"]);
     expect(routeCalls("/api/session/sdp")).toHaveLength(1);
     expect(routeCalls("/api/session/sdp")[0]!.body).toMatchObject({ offerSdp: "v=0 offer", generation: 1 });
     expect(peer().tracks).toEqual([track]);
@@ -382,6 +382,15 @@ describe("Voice_Client", () => {
     expect(vc.getSnapshot().phase).toBe("RECOVERY");
     expect(audio.muted).toBe(true);
     expect(peer().closed).toBe(true);
+  });
+
+  // Brief 040, item 3: a pasted line in a call goes to /api/turn as pasted, as a pasted line with no call open does.
+  it("a pasted line in a call is posted with source pasted", async () => {
+    const { vc, connect, routeCalls } = await setup();
+    await connect();
+    expect(vc.sendTyped("I'm allergic to sesame", "pasted")).toBe(true);
+    await until(() => routeCalls("/api/turn").length === 1, "the pasted line's post");
+    expect(routeCalls("/api/turn")[0]!.body).toMatchObject({ source: "pasted", transcript: "I'm allergic to sesame", judge: "typed" });
   });
 });
 
@@ -680,7 +689,7 @@ describe("Voice_Client call swap (voice-control R14.3, R14.4, R14.6)", () => {
     const first = peer();
     const narrowed = vc.getSnapshot().session!.sessionId;
     const seen = watch(vc);
-    expect(vc.sendTyped("my cousin just sat down")).toBe(true);
+    expect(vc.sendTyped("my cousin just sat down", "typed")).toBe(true);
     await until(() => vc.getSnapshot().phase === "SWAPPING", "SWAPPING");
     const from = seen.findIndex((x) => x.phase === "SWAPPING");
     // The old call is torn down here, in the browser, and no close is posted (R14.3).
@@ -716,7 +725,7 @@ describe("Voice_Client call swap (voice-control R14.3, R14.4, R14.6)", () => {
     const { vc, routeCalls, connect, timers } = ctx;
     await connect();
     const narrowed = vc.getSnapshot().session!.sessionId;
-    vc.sendTyped("my cousin just sat down");
+    vc.sendTyped("my cousin just sat down", "typed");
     await until(() => vc.getSnapshot().phase === "RECOVERY", "RECOVERY");
     expect(vc.getSnapshot().recovery?.kind).toBe("connection");
     expect(avatarState(vc.getSnapshot())).toBe("recovery");

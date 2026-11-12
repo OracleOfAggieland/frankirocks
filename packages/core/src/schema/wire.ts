@@ -215,7 +215,9 @@ export const SuggestCall = obj({
     contextId: nullable(ID),
   }),
 });
-export const AnswerCall = obj({ name: literal("answer"), args: obj({ pendingId: ID, choiceId: ID }) });
+// Brief 040, item 2: a card's tap sends both IDs; a call sends both null, and code resolves the offer bound to the
+// turn and reads the choice from the owner's own words (routes/tool-food.ts, answerTool). Contract question H-186.
+export const AnswerCall = obj({ name: literal("answer"), args: obj({ pendingId: nullable(ID), choiceId: nullable(ID) }) });
 
 export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall, suggest: SuggestCall, answer: AnswerCall });
 export type ToolCall = Infer<typeof ToolCall>;
@@ -307,7 +309,7 @@ export const RECALL_TOOL = {
 
 /**
  * Brief 022 (lane hero): the Realtime definitions for `suggest` and `answer`, strict JSON Schema like RECALL_TOOL.
- * Not yet in the voice machine's tool list; adding them there is the voice lane's.
+ * In the voice machine's tool list since brief 040 (`CALL_TOOLS` in voice/machine.ts).
  */
 export const SUGGEST_TOOL = {
   type: "function",
@@ -327,16 +329,15 @@ export const SUGGEST_TOOL = {
   },
 } as const;
 
+/**
+ * Brief 040, item 2 (H-186): no parameters, as `make_phone_call` has none. The model never sees a pending ID or a
+ * choice ID and is never asked for one; the call sends both null and code decides.
+ */
 export const ANSWER_TOOL = {
   type: "function",
   name: "answer",
   description: "answer",
-  parameters: {
-    type: "object",
-    additionalProperties: false,
-    required: ["pendingId", "choiceId"],
-    properties: { pendingId: { type: "string", maxLength: 43 }, choiceId: { type: "string", maxLength: 43 } },
-  },
+  parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
 } as const;
 
 // ---------------------------------------------------------------------------------------------
@@ -564,7 +565,9 @@ export type MemoryResponse = Infer<typeof MemoryResponse>;
 // POST /api/seed/reset and /api/seed/advance (contracts §6 Routes; brief 027). The requests, and the responses
 // declared above for the request ledger, exported for the browser's half.
 
-export const ResetRequest = obj({ requestId: ID, sessionId: nullable(ID), fixtureId: ID, visitId: ID });
+// Brief 038 finding 3: the browser's zone travels with the reset, so a first clone (no open before it) is laid out in
+// the visitor's zone. A missing or unknown zone is refused, never defaulted.
+export const ResetRequest = obj({ requestId: ID, sessionId: nullable(ID), fixtureId: ID, visitId: ID, clientZone: Zone });
 export type ResetRequest = Infer<typeof ResetRequest>;
 export const AdvanceRequest = obj({ requestId: ID, fixtureNamespace: ID, to: TS });
 export type AdvanceRequest = Infer<typeof AdvanceRequest>;

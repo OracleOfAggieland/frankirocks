@@ -45,7 +45,7 @@ import { TimeBadge } from "./surfaces/TimeBadge";
 import { VisitBar } from "./surfaces/VisitBar";
 import { WhatIKnowSheet } from "./surfaces/WhatIKnowSheet";
 import { CLOSED_SHEET, type SheetState } from "../client/sheet-model";
-import { INITIAL_VISIT, type VisitState, boltEnabled, visitBadge } from "../ui/visit/visit-machine";
+import { INITIAL_VISIT, type VisitState, badgeFor, boltEnabled, inputAllowed } from "../ui/visit/visit-machine";
 import { boltTargets } from "../ui/visit/bolt-targets";
 import { proactiveCards, replyEntries, type ShownProactive } from "../ui/visit/proactive-view";
 
@@ -285,6 +285,8 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
 
   const stage = <StageFor snap={snap} phone={phone} />;
   const live = <LiveRegion message={snap.live.message} seq={snap.live.seq} />;
+  // Brief 038 finding 1, the input gate: no chip, typed line or new call until the server has said which account this is.
+  const takesInput = inputAllowed(vis);
 
   if (controllers === null || typed === null || t === null) {
     return (
@@ -309,16 +311,15 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
   };
   const submit = () => {
     if (!inCall || voice === null) return void typed.submit();
-    // Brief 012 G34 (task B10): the call's typed line can't carry `pasted`, so pasted text waits for the call to end.
-    if (t.pasted) return typed.refuse(COPY.typed.pastedInCall);
-    if (voice.sendTyped(t.text)) typed.setText("");
+    // Brief 040, item 3 (replaces the hold of W-179): a pasted line goes into the call as pasted text.
+    if (voice.sendTyped(t.text, t.pasted ? "pasted" : "typed")) typed.setText("");
   };
 
   // Brief 020: a chip's words go down the typed path as the owner's own; in a call, over the call's typed line.
   const memory = controllers.memory;
   const chip = (text: string) => {
     if (text === MAIN_CHIPS[0]) void memory.openReadout();
-    if (inCall && voice !== null) voice.sendTyped(text);
+    if (inCall && voice !== null) voice.sendTyped(text, "typed");
     else void typed.sendLine(text);
   };
   const memoryCards = [
@@ -329,7 +330,8 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
   // Brief 027: the proactive line's cards join the dock; the badge reads the real clock through the clock port.
   const allCards = [...memoryCards, ...proactiveCards(shown)];
   const pair = clock.read();
-  const badge = visitBadge(vis, pair.opsClock.now, pair.worldClock.zone);
+  // Brief 038 finding 5: no clock until the server has said which one the account runs on.
+  const badge = badgeFor(vis, pair.opsClock.now, pair.worldClock.zone);
   const visitControls = controllers.visit;
   const sheetModel = controllers.sheet;
   const visitBar = (
@@ -381,7 +383,7 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
         <CallScreen
           key="call-signed-in"
           voice={v}
-          enabled={voice !== null}
+          enabled={voice !== null && (takesInput || inCall)}
           configMissing={voice === null ? TRANSCRIBE_VAR : null}
           onCall={call}
           onHangUp={() => voice?.hangUp()}
@@ -393,9 +395,9 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
         <TypedLine
           key="typed-signed-in"
           text={t.text}
-          enabled
+          enabled={takesInput}
           sending={t.sending}
-          canSend={typed.canSend() && (!inCall || v.phase === "LISTENING")}
+          canSend={takesInput && typed.canSend() && (!inCall || v.phase === "LISTENING")}
           error={t.error}
           onChange={(text) => typed.setText(text)}
           onPaste={() => typed.markPasted()}
@@ -405,7 +407,7 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
       reply={inCall ? null : <ReplyLine entries={replyEntries(t.entries, shown)} />}
       cards={allCards}
       strip={mem.surfaces.strip === null ? null : <Strip {...mem.surfaces.strip} />}
-      chips={<Chips chips={MAIN_CHIPS} disabled={t.sending || (inCall && v.phase !== "LISTENING")} onChip={chip} />}
+      chips={<Chips chips={MAIN_CHIPS} disabled={!takesInput || t.sending || (inCall && v.phase !== "LISTENING")} onChip={chip} />}
       jar={<Jar motes={mem.surfaces.jar} onOpen={() => (sheetState.open ? sheetModel.close() : void sheetModel.open())} />}
       lab={<Lab counters={mem.surfaces.lab?.counters ?? []} limits={mem.surfaces.lab?.limits ?? []} receipt={receipt} />}
       visit={
@@ -418,7 +420,7 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
           )}
         </div>
       }
-      timeBadge={<TimeBadge {...badge} />}
+      timeBadge={badge === null ? null : <TimeBadge {...badge} />}
       sheet={sheetLayer}
       debug={debug === null ? null : <DebugArea debug={debug} typed={typed} voice={v} />}
       live={live}

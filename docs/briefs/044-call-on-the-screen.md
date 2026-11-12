@@ -1,0 +1,54 @@
+# Brief 044: what a call puts on the screen, and the walked-in tap (lane `screen-b`)
+
+Read `docs/briefs/016-plan-stages.md` first. Its rules apply here. Three things the wiring lanes left for the screen, in this order.
+
+## 1. Cards from a tool result are shown
+
+Finding 2 of `docs/briefs/040-voice-sends.md`'s Outcome: `apps/web/src/client/voice-client.ts` (near line 252) hands the whole `/api/tool` answer to the voice machine, and nothing reads `result.cards`. So in a call the hero's three dinners and the grocery list are talked about and never appear, and a recall the Gate sent to a card (a private detail asked for with company present) is neither spoken nor shown.
+
+Spec §1 and the product rule: text appears only for something to read or approve, as a card, and this is not a chat window.
+
+Build:
+- A tool answer's cards go to the screen's card surface, the same one a typed turn's cards use (`apps/web/src/ui/**`, `components/surfaces/**`; find how `TypedTurns` or the `ProactiveShelf` shows a card today and reuse it). The voice machine stays pure and does not carry card content: the client passes the cards to the screen and the tool output to the machine.
+- A card is shown only if its stamp still fits: the same Session and generation as the call's current one. A card from a tool answer that arrives after a swap, a narrowing or a hang-up is dropped, not shown late. With company or an unknown audience the server already decides what a card may hold; the client adds no content and removes none.
+- All card text is escaped as today; a card never renders markup from a source.
+- Cards from a call leave the screen as a typed turn's do (find the rule in the surface's machine and use it; do not invent a second one).
+
+Test first: a client test where `/api/tool` answers `answer` with two cards and the screen's model holds them; one where the answer arrives after the Session changed and nothing is shown.
+
+## 2. A call that names an old visit ends, and the visit reloads
+
+Finding 1 of brief 040's Outcome, now that brief 038 has merged: each reset has a new visit ID and the server answers STALE (409) to an open, turn or bolt that names an old one. `apps/web/src/client/voice-client.ts` `postOpen` (near line 309, `if (res === null) return this.dispatch({ type: "openFailed" })`) reads STALE as a plain failure and retries.
+
+Build: a STALE answer to the call's open ends the call (no retry with the same visit ID) and tells `components/app-controllers.ts` to reload the visit, as a typed turn's STALE already does (brief 038, finding 4; read the "Outcome" of `docs/briefs/038-review-seed-visit.md`). If the voice machine needs a new event for "the visit is gone", add it with its transitions test and re-record the golden corpus in that commit, saying how many traces moved. Property, red first, 1,000 runs: **an old visit never talks.** For any sequence of resets, opens, retries and swaps, after the server has answered STALE no further open carries that visit ID, and the call is not left waiting.
+
+## 3. The walked-in tap (spec §14, addition 4; demo beat 4)
+
+Spec line 211: company is set by the owner's words **or a tap**. The screen has `apps/web/src/components/surfaces/CompanyToggle.tsx`; `/api/turn` refuses every `trustedTap` and `uiControl` turn (`packages/server/src/routes/turn.ts` `checkTurnRequest`), so the tap does nothing. The demo's beat 4 ends with it: tap "Someone walked in", ask the same question, get the narrower answer. The script step is `tap: someone walked in` in `packages/server/src/scripts/beat4-leave-job.test.ts`, waiting.
+
+Build, and keep it narrow:
+- `/api/turn` accepts a `trustedTap` turn whose `uiControl.verb` is `company` or `alone`, with no target IDs and no text. Every other verb stays refused exactly as today.
+- A `company` tap narrows exactly as a company line does, through the same code (`packages/server/src/audience-swap.ts`; read the "Outcome" of `docs/briefs/035-review-audience.md`): the Session narrows, `policyRev` rises, a call in progress hangs up and swaps to a narrow Head, the answer carries no Deck. An `alone` tap widens as the owner's own "it's just us" does. No model is called, no Evidence of words is written (there are none), and one ledger row records the tap as an ID and a reason code.
+- It works with a call open and with none, and twice in a row is one change.
+- The toggle shows the audience the server last confirmed, never its own guess, and is unavailable while the visit is cloning or failed (brief 038's input gate).
+- The turn route is shared with two other lanes right now. Keep your change there to the one check and one call into a module of your own (`packages/server/src/routes/turn-tap.ts` or similar).
+
+Properties, red first, 1,000 runs:
+- **A tap narrows like the words do.** For any session state and any sequence of turns, a `company` tap and the line "my boss just walked in" leave the same audience, the same `policyRev` step and the same next Head.
+- **Only two taps exist.** For any `uiControl` verb other than `company` and `alone`, and any `trustedTap` carrying text or targets, the turn is refused and nothing is written.
+
+The beat 4 step turns green with its wait removed in that commit, and the next step ("same question, narrower answer") too if it then passes.
+
+## Hot files this lane may edit
+
+`apps/web/src/client/**`, `apps/web/src/ui/**`, `apps/web/src/components/**` (the surfaces, `app-controllers.ts`, `App.tsx`), `apps/web/src/app/specimens/**` (a specimen for cards in a call and for the toggle's states), `packages/core/src/voice/**` only for item 2's event (never a committed `*.property.test.ts`), the golden corpus if item 2 moves it, `packages/core/src/schema/wire.ts` (additions only), `packages/server/src/routes/turn.ts` (the one check and call), a new module for the tap, `docs/machines/*.md` for any machine that changes, and the beat 4 script's waiting steps.
+
+Leave alone: `packages/server/src/onturn/**`, `packages/core/src/writes/**`, `moments/**`, `time/**`, `gate/**`, `whisper/**`, `routes/open.ts`, `state.ts`, `receipt*.ts`, `tool*.ts`, `delivery-wire.ts`, `seed/**`. If a seam needs a line there, write it as a finding for the lead with the file and line.
+
+## Looking at it
+
+A dev server on port 3210 only, the `/specimens` page only, no sign-in, stopped when you finish. Never port 3000. Look at the cards and the toggle there in a narrow and a wide window, and say what you saw. No live call and no microphone.
+
+## Done
+
+The three items with their tests, the three properties with seeds and counterexamples recorded, the checks of brief 016 with `npm run build` and the repo's copy-check, token-check, ui-boundaries and import-boundaries scripts, and a section "Outcome" at the end of this file: each item with its commit, each ruling as a numbered question, each finding left for the lead, every existing assertion changed and why, and what only a live call or a signed-in browser can show. Merge `build/plan-stages` before the final checks and run the full suite after it.

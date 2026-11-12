@@ -3,9 +3,11 @@
  * subcollections too), reseeds before unblock; namespace salts synthetic IDs only"; §6 POST /api/seed/reset).
  * It clones the persona into the caller's own tenant, in this order:
  *
- *   1. Fence: `core/epoch.barrier` goes up (phase `fence`), so open answers blocked and state, turn and tool refuse
- *      with BARRIER; `core/state.fixtureNamespace` names the new namespace, so a crashed reset can be recognised
- *      as this tenant's own and taken over by the next one.
+ *   1. Fence: `core/epoch.barrier` goes up (phase `fence`), so open answers blocked and state, turn, tool and
+ *      receipt refuse with BARRIER; the epoch rises in the same transaction, as the forget fence's does (contracts
+ *      §8 step 2), so every Stamp and every captured epoch from before the reset fails its check from here on
+ *      (brief 038 finding 2); `core/state.fixtureNamespace` names the new namespace, so a crashed reset can be
+ *      recognised as this tenant's own and taken over by the next one. policyRev is not raised.
  *   2. Close (phase `close`): every live Session moves to closing and its calls are hung up. A hangup that fails
  *      leaves the Session's hangup Job and fails the reset retryably; the barrier stays, so nothing can speak.
  *   3. Clear (phase `install`): every row but the core documents and this request's own ledger entry.
@@ -18,7 +20,7 @@
 import { type CoreDocs, type ID, type Infer, type ResetRequest, type SeedResetResponse, type Session, msFromTs, tsFromMs } from "@franki/core";
 import { readCoreDocs } from "../core-docs";
 import { type RequestKey, completeRequest } from "../ledger/request";
-import { RouteError, barrierError, configError, dependencyError, scopeError, staleError } from "../routes/errors";
+import { barrierError, configError, dependencyError, scopeError, staleError } from "../routes/errors";
 import type { RouteContext } from "../routes/runtime";
 import { LIVE_STATUSES, beginCloseInTx } from "../sessions";
 import { paths } from "../store/paths";
@@ -27,6 +29,7 @@ import { ensureHangupJob, hangupAll } from "../worker/hangup";
 import { SeedLoadError } from "./build";
 import { CLEAR_PAGE, clearTenant } from "./clear";
 import { cloneWorldStart } from "./clock";
+import { isRealAccount, liveAccountError, readLiveData } from "./live";
 import { loadSeed, seedCoreDocs } from "./load";
 import { FIXTURES } from "./persona";
 
@@ -42,15 +45,6 @@ export const RESET_HANGUP_BUDGET_MS = 3_000;
 export const namespaceFor = (ctx: RouteContext, req: ResetReq): ID => ctx.deps.hasher.id(["seed-ns", ctx.uid, req.visitId, req.requestId]);
 const opIdFor = (ctx: RouteContext, namespace: ID): ID => ctx.deps.hasher.id(["seed-reset", namespace]);
 
-/**
- * Who may reset (contracts §6 "seedrole/namespace", which no contract defines): a tenant already holding a clone,
- * or one with no Evidence yet. An account with data of its own is never wiped.
- */
-export function mayReset(state: CoreDocs["state"], hasEvidence: boolean): boolean {
-  return state.clockMode === "fixture" || !hasEvidence;
-}
-
-const notAllowed = () => new RouteError("AUTH", 403, 0, "seedReset");
 
 async function setPhase(ctx: RouteContext, opId: ID, phase: "close" | "install"): Promise<void> {
   const { uid, deps } = ctx;
@@ -62,8 +56,8 @@ async function setPhase(ctx: RouteContext, opId: ID, phase: "close" | "install")
   });
 }
 
-/** Steps 1: raises the barrier. Returns the visitor's zone. */
-async function fence(ctx: RouteContext, namespace: ID, opId: ID): Promise<string> {
+/** Step 1: raises the barrier and the epoch. */
+async function fence(ctx: RouteContext, namespace: ID, opId: ID): Promise<void> {
   const { uid, deps } = ctx;
   return deps.store.transaction(uid, async (tx) => {
     const core = await readCoreDocs(tx, uid);
@@ -76,18 +70,18 @@ async function fence(ctx: RouteContext, namespace: ID, opId: ID): Promise<string
       // Another control operation (a forget) holds the tenant, or a reset of ours is still inside its deadline.
       if (!ownCrashed || msFromTs(barrier.deadline) > ops) throw barrierError();
     }
-    if (barrier === null) {
-      const anyEvidence = await tx.query({ collection: paths.collection(uid, "evidence"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: 1 });
-      if (!mayReset(core.state.data, anyEvidence.length > 0)) throw notAllowed();
-    }
+    // Who may reset (contracts §6 "seedrole/namespace", which no contract defines; brief 038 finding 1): a clone,
+    // or an account with no data of its own. A real account is answered LIVE and loses nothing.
+    if (barrier === null && isRealAccount(core.state.data, await readLiveData(tx, uid, core.rules.data))) throw liveAccountError();
     const now = tsFromMs(ops);
     tx.update(paths.core(uid, "epoch"), {
       ...core.epoch.data,
+      // Brief 038 finding 2: the fence raises the epoch, so a writer of the old visit fails STALE during the reset.
+      epoch: core.epoch.data.epoch + 1,
       barrier: { opId, phase: "fence", startedAt: now, deadline: tsFromMs(ops + RESET_BARRIER_MS), queuedOps: barrier?.queuedOps ?? [] },
       updatedAt: now,
     });
     tx.update(paths.core(uid, "state"), { ...core.state.data, fixtureNamespace: namespace, updatedAt: now });
-    return core.state.data.currentZone;
   });
 }
 
@@ -128,18 +122,20 @@ export async function resetVisit(ctx: RouteContext, req: ResetReq, key: RequestK
   const namespace = namespaceFor(ctx, req);
   const opId = opIdFor(ctx, namespace);
 
-  const zone = await fence(ctx, namespace, opId);
+  // Brief 038 finding 3: the clone is laid out in the zone the browser sends now, never the one stored before.
+  const zone = req.clientZone;
+  await fence(ctx, namespace, opId);
   await setPhase(ctx, opId, "close");
   await closeCalls(ctx);
   await setPhase(ctx, opId, "install");
-  await clearTenant(deps.store, uid, new Set([key.path]));
+  await clearTenant(deps.store, uid, new Set([key.path]), opId);
 
   const ops = deps.clock.read().opsClock.now;
   const worldStart = cloneWorldStart(ops, zone);
   const prior = await deps.store.transaction(uid, async (tx) => readCoreDocs(tx, uid));
   let rows;
   try {
-    rows = await loadSeed(deps, uid, { fixture, namespace, zone, worldStart, core: { epoch: prior.epoch.data.epoch + 1, policyRev: prior.epoch.data.policyRev } });
+    rows = await loadSeed(deps, uid, { fixture, namespace, zone, worldStart, core: { epoch: prior.epoch.data.epoch, policyRev: prior.epoch.data.policyRev }, opId });
   } catch (error) {
     if (error instanceof SeedLoadError) {
       deps.log("seed.loadFailed", { check: error.check, line: error.lineId });

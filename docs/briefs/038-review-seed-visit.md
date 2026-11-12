@@ -74,3 +74,73 @@ A dev server on port 3210 only, the `/specimens` page only, no sign-in, stopped 
 ## Done
 
 The fixes with their red-first tests, the six properties green, the checks of brief 016 with `npm run build` and the repo's copy-check, token-check and ui-boundaries scripts, and a section "Outcome" at the end of this file: per finding, the test, the commit and the ruling it changed; per property, the seed and counterexample.
+
+## Outcome
+
+Built on `lane/fix7` from a38036c. Findings 6, 7 and 9 change behavior that a committed property asserts, so they are on `lane/fix7-held` (on top of `lane/fix7`), and `lane/fix7` is green without them.
+
+### Findings
+
+| # | State | Commit | Failing test first | Ruling changed |
+|---|---|---|---|---|
+| 2 | Fixed | 2f4657b | `packages/server/src/seed/reset-race.test.ts` (the reviewer's receipt at the first `/memories` query) | 019: the fence raises the epoch; it no longer rises at unblock |
+| 3 | Fixed | 7c7d969 (and 1393da8, one comment's encoding) | `packages/server/src/seed/first-clone.test.ts` | 019 S-163: `ResetRequest` carries `clientZone`, required |
+| 1 | Fixed | 58c4055 | `packages/server/src/seed/live-account.test.ts` (open, typed turn, then reset: 403 AUTH for ever) | 019 `mayReset`: a real account answers 409 `{"error":"LIVE","retryAfterMs":0}`, not 403 AUTH; 027: a `live` phase, and no input before the visit is known |
+| 9 | Held | `lane/fix7-held` | `packages/server/src/seed/live-account.test.ts` (Session, ledger row and hard rule cases) | 019 `mayReset` widened to Sessions, ledger rows and hard rules |
+| 4 | Fixed | 7ea13b0 | `packages/server/src/seed/old-visit.test.ts` | 027: Try again and Start over each make a new visit ID |
+| 5 | Fixed | 7fee511 | `apps/web/src/ui/visit/shown-clock.property.test.ts` | 027 `visitBadge`: the screen shows `badgeFor`, with no clock until the server has said |
+| 6 | Held | `lane/fix7-held` | `packages/server/src/seed/advance-limit.test.ts`, `reset-limit.test.ts` | new limits |
+| 7 | Held | `lane/fix7-held` | `packages/server/src/seed/advance-cap.test.ts` | new cap |
+| 8 | Fixed | 0eb884e | `packages/server/src/seed/reset-overlap.test.ts` (18 Evidence rows where one clone holds 9) | none |
+| 10 | Fixed (phone part) | f825528 | `packages/server/src/seed/reset-phone.test.ts` | 019 S-165 stands for forget, which is not wired |
+
+Held, and why. Each fails a committed property or test, so each waits for a ruling:
+- **Finding 9** fails `packages/server/src/seed/isolation.property.test.ts`: seed -147677403, path "3:3:4:4", counterexample `[[{"who":"visitor-b","kind":"stray","visit":1},{"who":"visitor-b","kind":"reset","visit":1}]]`. The property opens a Session on a fresh account before its first reset and asserts that the reset clones (200). Under the ruling, that account is live (409).
+- **Finding 6, advances,** fails `packages/server/src/routes/seed-advance.property.test.ts`, which makes 1,000 advances on one clone: seed -1718828831, path "98:0", counterexample `[0,true]` ("expected 429 to be 423").
+- **Finding 6, resets.** One reset per 30 s fails every committed test and property that resets twice on one clock (14 files on the held branch), all with "expected 429 to be 200". Among them:
+  - `reset-total.property.test.ts`: seed -491860003, path "0:0:0:0:0";
+  - `isolation.property.test.ts`: seed -191445944, path "6:2:1:1:2:2:2:2:0:1:1".
+- **Finding 7** fails `packages/server/src/routes/seed-advance.property.test.ts`, whose walk takes the world clock far past 60 days: seed 272192698, counterexample `[1,false]` ("expected 400 to be 200").
+- **Where the held reset counts live.** On `lane/fix7-held` they are kept in the reset request entries of the last 24 hours, which the reset keeps through its clear. The ruling says "with the owner's counters" (`core/counters`), but that schema is in `packages/core/src/schema/records.ts`, outside this lane's files.
+
+### Properties
+
+| # | File | Branch | Runs | Time alone | Red first: seed, path, counterexample |
+|---|---|---|---|---|---|
+| 1 | `packages/server/src/seed/reset-writers.property.test.ts` | fix7 | 500 | about 25 s (1,000 took about 50 s) | -100769549, "8:1:0:2:1:3:3:3", `[[{"kind":"receipt","at":4},{"kind":"receipt","at":0}]]` |
+| 2 | `packages/server/src/seed/first-clone.property.test.ts` | fix7 | 1,000 | about 18 s | 1963480184, "0:0:0", `["America/Chicago",0]` |
+| 3 | `packages/server/src/seed/live-or-clone.property.test.ts` (Evidence) | fix7 | 1,000 | about 12 s | 1559437220, "2:2:1", `[[],[{"a":"input"}]]` |
+| 3 | `packages/server/src/seed/live-data.property.test.ts` (all four kinds) | held | 1,000 | about 20 s | -1573128171, "0:0:0", `[["rule"],[]]` |
+| 4 | `packages/server/src/seed/old-visit.property.test.ts` | fix7 | 500 | about 26 s (1,000 took about 52 s) | -2086579902, "0:2:2:3:2:3", `[[{"kind":"newVisit"},{"kind":"turn","pick":0},{"kind":"newVisit"}]]` |
+| 5 | `apps/web/src/ui/visit/shown-clock.property.test.ts` | fix7 | 1,000 | under 1 s | -746298679, "0:0:0", `[[],1700000000000]` |
+| 6 | `packages/server/src/seed/limits.property.test.ts` | held | 1,000 (the decision), 200 (the routes) | about 37 s | 1212084352, "0:0:0", `[195,[{"kind":"reset"}]]` (the routes part; the decision part tests a new function, so it had no earlier version to fail against) |
+
+### Assertions changed in existing tests
+
+- `packages/server/src/routes/seed-reset.test.ts`:
+  - the real-account reset expects 409 LIVE, not 403 AUTH (finding 1);
+  - the unknown-fixture body gains `clientZone` (finding 3).
+- `apps/web/src/ui/visit/visit-machine.test.ts`: three tests expect the new visit ID (finding 4):
+  - "a reload during a clone shows try again";
+  - "start over needs one confirmation";
+  - "a start over during a call ends the call first".
+- `apps/web/src/client/visit-model.test.ts`:
+  - "try again resets the same visit" is now "with a new visit ID" and expects `[id1, id3]` (finding 4);
+  - request bodies gain `clientZone`, as they do in `api.seed.test.ts` (finding 3).
+- On held, `packages/server/src/seed/advance-limit.test.ts` (new in this brief) waits 30 s before its second reset.
+
+### Answers
+
+- **Clone:** reset 200 `{fixtureNamespace, worldClock, sessionId: null}`.
+- **Real account:** reset 409 `{"error":"LIVE","retryAfterMs":0}`. Nothing is written except the reset's own failed request entry.
+- **Refused:**
+  - BARRIER 423 under a barrier, or while a phone call is out (`retryAfterMs` 5000 for the phone);
+  - STALE 409 for an old visit's open, turn or bolt;
+  - PARSE 400 for an unknown zone;
+  - on held only: LIMIT 429 (`retryAfterMs` 0 for advances, and for resets the wait, capped at 5000), and PARSE 400 past the cap.
+
+### Not done, not verified
+
+- **No emulator, and no signed-in browser.** The owner's real account was checked only through tests: LIVE, input as today, the real clock, no start over and no bolt.
+- **The turn's supersede path still answers SCOPE** for a missing Session. The turn has no `visitId`, so a STALE turn is found through its Session.
+- **A call placed between the phone check and the fence is not seen,** because the reset's phone check runs before the fence. Placing a call needs an admitted turn, and the fence's epoch rise refuses those.
