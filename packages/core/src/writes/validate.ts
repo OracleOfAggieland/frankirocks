@@ -21,6 +21,7 @@ import { hasFirstPerson, knownNameWords, mentionEid, mentionName, namesSomeone, 
 import { GENERIC_WORDS, REFERENCE_WORDS, itemNamesNothing } from "./names-own";
 import { ownerWordsSettle } from "./life-subject";
 import { selfIsLifeSubject } from "./self-life";
+import { renameRefuted } from "./rename-words";
 import { spanClass, verifyTurnSpan } from "./spans";
 import type { AllergyVerdict, ArgPair, CorrectionVerdict, EntityKind, FastItem, FastSlotsOut, ItemVerdict, Need, QuestionKind, Route, Subject, TransitionKind, TransitionVerdict, ValidateContext } from "./types";
 
@@ -283,6 +284,8 @@ function correctionVerdict(item: Extract<FastItem, { kind: "correction" }>, inde
     if (at === null) return defer("value");
     const to = span.quote.slice(at.start, at.end);
     if (mentionName(to) === mentionName(currentWords)) return v({ kind: "same", targets: [target.logicalId] });
+    // Brief 043, finding 4: never against the owner's words ("her name is Mara, not Maya" never renames to Maya).
+    if (renameRefuted(span.quote, currentWords, to)) return defer("value");
     return spend({ kind: "rename", target: target.logicalId, entity: entity!, from: currentWords, to });
   }
   if (item.replacementValue === null) {

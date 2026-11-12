@@ -1,5 +1,5 @@
 // Brief 043: the review of corrections and life changes. Each block runs the reviewer's own sequence on `/api/turn`.
-import { mentionEid } from "@franki/core";
+import { ROUTE_NOTE_TEXT, mentionEid } from "@franki/core";
 import { describe, expect, it } from "vitest";
 import { seedPrior } from "../testing/arb-corrections";
 import { SELF, at, byId, byMention, correction, rowsAbout, seed, setup, post, transition } from "../testing/review-043";
@@ -89,5 +89,23 @@ describe("finding 6: isSelf plus any \"I\" never records the owner ill", () => {
     const r = await post(a, t, [transition(t, { transition: "illness", subject: SELF })]);
     expect(rowsAbout(r.after, "self").filter(([p]) => p === "person.life" || p === "care")).toEqual([]);
     expect(r.changed).toEqual([]);
+  });
+});
+
+describe("finding 4: a rename goes the way the owner said", () => {
+  it("stored Mara; \"No, that's wrong, her name is Mara, not Maya.\" with the model's rename to Maya: nothing changes", async () => {
+    const a = await setup({ reply: "All right.", decision: { correct: 0.9 } });
+    const seeded = await seedPrior(a.rig, "Mara");
+    const t = "No, that's wrong, her name is Mara, not Maya.";
+    const r = await post(a, t, [correction(t, { targetIds: [seeded.relId], replacementValue: { kind: "text", text: "Maya" } })]);
+    expect(r.changed).toEqual([]);
+    expect(r.notes).not.toContain(ROUTE_NOTE_TEXT.renamed);
+  });
+  it("stored Maya; the same words with the rename to Mara still rename", async () => {
+    const a = await setup({ reply: "All right.", decision: { correct: 0.9 } });
+    const seeded = await seedPrior(a.rig, "Maya");
+    const t = "No, that's wrong, her name is Mara, not Maya.";
+    const r = await post(a, t, [correction(t, { targetIds: [seeded.relId], replacementValue: { kind: "text", text: "Mara" } })]);
+    expect(r.notes).toContain(ROUTE_NOTE_TEXT.renamed);
   });
 });
