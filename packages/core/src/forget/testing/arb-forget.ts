@@ -14,7 +14,7 @@ import type { InstallInput } from "../install";
 import type { AllergyRule, RosterEntry } from "../reanchor";
 
 function fnv(bytes: Uint8Array, seed: number): string {
-  let h = 0x811c9dc5 ^ seed;
+  let h = (0x811c9dc5 ^ seed) >>> 0;
   for (const b of bytes) h = Math.imul(h ^ b, 0x01000193) >>> 0;
   return h.toString(16).padStart(8, "0");
 }
