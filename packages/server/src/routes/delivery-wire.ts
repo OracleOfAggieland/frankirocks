@@ -7,7 +7,10 @@
  * which `chooseNow` reads as `unknown` (the lead's ruling).
  *
  *   - `openingProactive`: the session's first line, `{ kind: "opening" }`. The open first runs `memoryTick` within
- *     what is left of its budget, so a moment that came due since the last tick can open.
+ *     what is left of its budget, so a moment that came due since the last tick can open. Coordinator ruling on
+ *     brief 042: the open's budget is the contract and the line is optional. The whole of delivery (the tick, the
+ *     choice, its reads and the render) runs under one deadline set from what is left when it starts, on the ops
+ *     clock; past it the open answers with no `Proactive`, and the line waits for the idle whisper or the next open.
  *   - `idleProactive`: an idle whisper in an open session, `{ kind: "session", listening, silentMs }`. It runs only
  *     once the session has been silent for `IDLE_SILENCE_MS`, so the state route's one-a-second poll costs no scan
  *     while someone is talking.
@@ -26,6 +29,15 @@ import type { RouteContext } from "./runtime";
 
 /** Kept back from the open's tick for the choice and the render (two reads and one small transaction). */
 export const OPEN_DELIVERY_RESERVE_MS = 600;
+/** Kept back from delivery's deadline for the open's own answer after it (the request ledger is already written). */
+export const OPEN_ANSWER_MARGIN_MS = 150;
+/**
+ * The state route's own budget, from its start on the ops clock: the browser gives a poll 1,500 ms
+ * (`STATE_TIMEOUT_MS`), and 300 ms is left for the network. A silent poll's idle read costs 8 store calls with
+ * nothing due (the session, the moment scan for check-ins, then the choice's core reads and scan) and more with
+ * candidates, so at 75 ms a round trip it can pass the poll's own limit; it runs under what is left of this.
+ */
+export const STATE_BUDGET_MS = 1_200;
 /** The most user Turns read to count turns since a check-in answer. Past it, the count is taken as 0 (fails closed). */
 export const CHECKIN_TURNS_READ_MAX = 50;
 
@@ -66,16 +78,16 @@ export async function turnsSinceCheckInAnswer(ctx: RouteContext, s: Session, ses
  * A failed choice or render says nothing (fails closed) and never fails the route that already committed: the moment
  * stays leased and is offered again. Logged by name only.
  */
-async function deliver(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals): Promise<Proactive | null> {
+async function deliver(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals, deadline = Infinity): Promise<Proactive | null> {
   try {
-    return await deliverOnce(ctx, mode, stamp, signals);
+    return await deliverOnce(ctx, mode, stamp, signals, deadline);
   } catch (e) {
     ctx.deps.log("delivery.failed", { mode: mode.kind, error: e instanceof Error ? e.name : "unknown" });
     return null;
   }
 }
 
-async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals): Promise<Proactive | null> {
+async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals, deadline: number): Promise<Proactive | null> {
   const { choice, moments } = await chooseNow(ctx, mode, signals);
   if (choice.spoken === null) return null;
   const id = choice.spoken.momentId as ID;
@@ -85,17 +97,52 @@ async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>
   // sent twice (the state route is polled once a second). Past the Permit's life an unadmitted line is offered again.
   // An open is a new session, whose browser holds no earlier Permit, so it renders afresh.
   if (mode.kind === "session" && m.rendered !== null && ctx.deps.clock.read().opsClock.now - msFromTs(m.rendered.at) < PERMIT_TTL_MS) return null;
+  // Past the deadline nothing is rendered: the route has answered, or is about to, without this line.
+  if (ctx.deps.clock.read().opsClock.now >= deadline) return null;
   const turnId = ctx.deps.hasher.id(["proactiveTurn", stamp.sessionId, id, m.generation]) as ID;
   return proactiveOf(ctx, id, m, { ...stamp, turnId });
 }
 
-/** The opening line of a fresh session, or null. `budgetMs` is what is left of the open's budget. */
-export async function openingProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, budgetMs: number): Promise<Proactive | null> {
-  const doc = await ctx.deps.store.get<Session>(ctx.uid, paths.session(ctx.uid, stamp.sessionId));
-  if (doc === null) return null;
-  await raceLimit(memoryTick(ctx), Math.max(0, budgetMs - OPEN_DELIVERY_RESERVE_MS), ctx.deps.timers);
-  const ops = ctx.deps.clock.read().opsClock.now;
-  return deliver(ctx, { kind: "opening" }, stamp, signalsOf(doc.data, ops, null));
+/**
+ * The opening line of a fresh session, or null. `budgetMs` is what is left of the open's budget; the open passes
+ * the Session it just wrote, so no read is spent on it. Never answers after the deadline (fails closed: no line).
+ */
+export async function openingProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, budgetMs: number, session?: Session): Promise<Proactive | null> {
+  const { deps } = ctx;
+  const start = deps.clock.read().opsClock.now;
+  const left = budgetMs - OPEN_ANSWER_MARGIN_MS;
+  if (!(left > 0)) return null;
+  const deadline = start + left;
+  const work = (async (): Promise<Proactive | null> => {
+    const s = session ?? (await deps.store.get<Session>(ctx.uid, paths.session(ctx.uid, stamp.sessionId)))?.data ?? null;
+    if (s === null) return null;
+    const tickLimit = deadline - OPEN_DELIVERY_RESERVE_MS - deps.clock.read().opsClock.now;
+    if (tickLimit > 0) await raceLimit(memoryTick(ctx), tickLimit, deps.timers);
+    const ops = deps.clock.read().opsClock.now;
+    if (ops >= deadline) return null;
+    return deliver(ctx, { kind: "opening" }, stamp, signalsOf(s, ops, null), deadline);
+  })();
+  return withinDeadline(work, deadline - start, deps.timers);
+}
+
+/** Logs a failed delivery read by name only, and says nothing. */
+function logged(ctx: RouteContext, mode: string): null {
+  ctx.deps.log("delivery.failed", { mode, error: "read" });
+  return null;
+}
+
+/**
+ * The work's answer, or null once `ms` pass first (brief 045 finding 9: its failure is caught here too, so a read
+ * outside `deliver`'s own try never fails the route). The work keeps running.
+ */
+async function withinDeadline<T>(work: Promise<T | null>, ms: number, timers: Parameters<typeof raceLimit>[2]): Promise<T | null> {
+  const stop = new AbortController();
+  const caught = work.catch(() => null);
+  try {
+    return await Promise.race([caught, timers.sleep(ms, stop.signal).then(() => null)]);
+  } finally {
+    stop.abort();
+  }
 }
 
 /**
@@ -103,7 +150,15 @@ export async function openingProactive(ctx: RouteContext, stamp: Omit<Stamp, "tu
  * and nothing else is read until it has been silent for `IDLE_SILENCE_MS` (its last turn or receipt, and the last
  * speech start the browser reported).
  */
-export async function idleProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">): Promise<Proactive | null> {
+export async function idleProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, budgetMs = Infinity): Promise<Proactive | null> {
+  if (!(budgetMs > 0)) return null;
+  // Brief 045 finding 9: every read delivery makes is inside the catch; a store blip never fails the route.
+  if (budgetMs === Infinity) return idleOnce(ctx, stamp, Infinity).catch(() => logged(ctx, "session"));
+  const start = ctx.deps.clock.read().opsClock.now;
+  return withinDeadline(idleOnce(ctx, stamp, start + budgetMs), budgetMs, ctx.deps.timers);
+}
+
+async function idleOnce(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, deadline: number): Promise<Proactive | null> {
   const doc = await ctx.deps.store.get<Session>(ctx.uid, paths.session(ctx.uid, stamp.sessionId));
   if (doc === null || (doc.data.status !== "active" && doc.data.status !== "minting")) return null;
   const s = doc.data;
@@ -112,5 +167,5 @@ export async function idleProactive(ctx: RouteContext, stamp: Omit<Stamp, "turnI
   const silentMs = ops - lastSound;
   if (!(silentMs >= IDLE_SILENCE_MS)) return null;
   const turns = await turnsSinceCheckInAnswer(ctx, s, stamp.sessionId);
-  return deliver(ctx, { kind: "session", listening: true, silentMs }, stamp, signalsOf(s, ops, turns));
+  return deliver(ctx, { kind: "session", listening: true, silentMs }, stamp, signalsOf(s, ops, turns), deadline);
 }
