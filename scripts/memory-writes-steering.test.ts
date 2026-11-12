@@ -54,6 +54,7 @@ describe("memory-writes steering file", () => {
       "A denial needs a certain speaker",
       "Extraction skips only what",
       "An earlier turn never closes a later one",
+      "the extraction backstop raises `policyRev`",
     ]) {
       expect(STEERING, phrase).toContain(phrase);
     }

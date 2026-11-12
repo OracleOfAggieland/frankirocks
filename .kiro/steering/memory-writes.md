@@ -39,7 +39,7 @@ These files decide what the owner's words write: allergies and hard rules, corre
 - Nothing is called saved, corrected or changed before its write has committed (spec §3 step 6; design P9).
 - A route note is an S0 pointer: a closed template with no owner words, no allergen, no name and no roots (contracts §6; design 2.7, CQ 97).
 - A committed write that raises the Deck answers `ready`, and the reply is created from the new Head (KV05; design G1, CQ 96).
-- No on-turn write, proposal, repair route or backstop raises `policyRev`: a write raises `rulesRev` or `bundleRev`, `policyRev` stays the counter that cancels speech and Decks, and a stored Memory is never compared against it (KV05; design G39, CQ 162).
+- No on-turn write, proposal, the repair's hardRule route or the extraction backstop raises `policyRev` (only a late control hit that changes what is said does): a write raises `rulesRev` or `bundleRev`, `policyRev` stays the counter that cancels speech and Decks, and a stored Memory is never compared against it (KV05; design G39, CQ 162).
 
 ## Extraction and the route
 
