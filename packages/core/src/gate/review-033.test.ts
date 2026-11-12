@@ -26,3 +26,11 @@ describe("finding 1: an opened topic never lifts unprompted mail", () => {
     expect(gate(gateCand({ sourceClass: "T", sens: "S1", purpose: "insight", sender: null, topic: work }), opened).verdict).toBe("card");
   });
 });
+
+describe("finding 14: one T ask per sender per day, at any sensitivity", () => {
+  it("cards a T S0 ask from a mailed sender over the cap", () => {
+    const c = gateCand({ sourceClass: "T", purpose: "ask", sender: { mailedByOwner: true } });
+    expect(gate(c, gateCtx({ counts: counts({ senderAsks: 9 }) }))).toMatchObject({ verdict: "card", reasons: ["senderCap"] });
+    expect(gate(c, gateCtx())).toMatchObject({ verdict: "say", render: "attributed" });
+  });
+});
