@@ -13,8 +13,10 @@
  *
  * The memory-off control (spec §13 line 358): the same steps with an empty store; nothing about takeout is said.
  */
-import type { Evidence, Ledger, Memory } from "@franki/core";
-import { type BankLine, at } from "../seed/fixture";
+import { type CoreState, type Evidence, type Ledger, type Memory, tsFromMs } from "@franki/core";
+import { relInstant } from "../seed/clock";
+import { type BankLine, type RelTime, at } from "../seed/fixture";
+import { paths } from "../store/paths";
 import { type HeroOffer, type LoopComparison, compareLoop, heroOffer } from "../routes/tool-food";
 import { type Script, type Step, type World, allLedger, allMemories, extract, parse, rewriteEvidence, reply, scriptSuite } from "../testing/script-runner";
 import { BISCUIT_LINE } from "./lines";
@@ -23,6 +25,7 @@ const SIGN_WAITS =
   "a fit between briefs 019 and 022: the seed writes a purchase as a negative amountCents (seed/build.ts buildBank) and the detector counts only positive ones (core/patterns/spend.ts spendRows), so the seeded pattern is `insufficient` with 0 orders";
 const HERO_WAITS = "brief 023 (the offer's moment, due after the bolt, and delivery) and a route calling brief 024's Gate; nothing calls heroOffer today";
 const COMPARE_WAITS = "brief 023 (the comparison moment at checkAt, delivery) and a route calling brief 024's Gate; nothing calls compareLoop or markCelebrated today";
+// LINEAGE_WAITS and WINDOW_WAITS were fixed by brief 030 (P1-2 and P1-1); no step waits for them now.
 const LINEAGE_WAITS =
   "a fit between brief 022 and the lineage check: the loop Memory's root Slices are the rows' typed Slices (routes/tool-food.ts loopMemory prefers bank.amount and calendar.time), and W-LINEAGE (core/lineage.ts) fails every Slice with a null range as sliceHashMismatch, so the yes's write is refused and the route answers 400 PARSE";
 const WINDOW_WAITS =
@@ -77,6 +80,27 @@ function asDetectorReads(label: string): Step {
           return b.observation.pending ? null : ({ ...b, observation: { ...b.observation, amountCents: -b.observation.amountCents } } as Evidence);
         },
       );
+    },
+  };
+}
+
+/**
+ * Test setup (brief 030): the bank rows of the three weeks after the yes arrive with the coverage a bank sync would
+ * bring, through `to`. Nothing in the build writes those rows or that coverage yet: the seed's only event is the
+ * interview move (contracts §6 `seed/event`), so this stands in for a missing writer, as the limb event itself does.
+ */
+function coveredThrough(label: string, to: RelTime): Step {
+  return {
+    label,
+    do: "setup",
+    what: "core/state.coverage runs through the comparison window, as the bank sync that brought the rows would say",
+    run: async (w) => {
+      const path = paths.core(w.uid, "state");
+      await w.rig.store.transaction(w.uid, async (tx) => {
+        const doc = (await tx.get<CoreState>(path))!;
+        const cov = doc.data.coverage;
+        tx.update(path, { ...doc.data, coverage: { ...cov, to: tsFromMs(relInstant(w.friday!, to, w.zone)), generation: cov.generation + 1 } });
+      });
     },
   };
 }
@@ -157,7 +181,6 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
         const o = offerOf(w, "offerAfterBolt");
         return { name: "answer", args: { pendingId: o?.pendingId ?? "none", choiceId: o?.yesId ?? "none" } };
       },
-      ...needsOffer(WINDOW_WAITS),
       expect: [
         { mustSay: { card: "Three quick dinners for those nights" } },
         { store: "one makeList action and one waiting loop with a $186 baseline", check: listAndLoop },
@@ -167,7 +190,6 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
       label: "the strip after the yes",
       do: "read",
       view: "strip",
-      ...needsOffer(WINDOW_WAITS),
       expect: [
         {
           store: "Noticed, Connected, Suggested, You said yes complete; the comparison pending",
@@ -176,6 +198,7 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
       ],
     },
     { label: "three weeks of rows arrive", do: "bank", lines: AFTER },
+    coveredThrough("setup: the rows' coverage, through three weeks on", at(28, "08:00")),
     ...(merged ? [] : [asDetectorReads("setup: the new bank rows the way the detector reads them")]),
     { label: "three weeks on", do: "advance", to: at(28, "08:00"), called: "three weeks on (simulated)" },
     { label: "run the worker until idle, three weeks on", do: "work", answers: [extract("the yes holds no fact: no items", () => [])] },
@@ -187,7 +210,6 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
         const c: LoopComparison | null = await compareLoop(w.ctx, loopIdOf(w), w.stamp?.generation ?? 1);
         return { text: (c?.lines ?? []).join(" "), takeout: c?.takeout ?? null };
       },
-      ...needsOffer(WINDOW_WAITS),
       expect: [
         { mustSay: { template: "hero.comparison", has: ["$71", "$186", "three weeks"], channel: "probe" } },
         { mustSay: { template: "hero.less", has: ["$115"], channel: "probe" } },
@@ -237,18 +259,18 @@ function beat3YesOnFriday(): Script {
       label: "Franki writes the list and the loop",
       do: "tool",
       tool: (w: World) => ({ name: "answer", args: { pendingId: offerOf(w)?.pendingId ?? "none", choiceId: offerOf(w)?.yesId ?? "none" } }),
-      waits: LINEAGE_WAITS,
       expect: pick("Franki writes the list and the loop").expect!,
     },
-    { ...pick("the strip after the yes"), waits: LINEAGE_WAITS },
+    pick("the strip after the yes"),
     { label: "three weeks of rows arrive", do: "bank", lines: shifted },
+    coveredThrough("setup: the rows' coverage, through three weeks on", at(22, "08:00")),
     asDetectorReads("setup: the new bank rows the way the detector reads them"),
     { label: "three weeks on", do: "advance", to: at(22, "08:00"), called: "three weeks on (simulated)" },
     pick("run the worker until idle, three weeks on"),
-    { ...pick("probe: the comparison three weeks on"), waits: LINEAGE_WAITS },
+    pick("probe: the comparison three weeks on"),
     pick("open three weeks on"),
-    { ...pick("Franki speaks first: $71, down from $186"), waits: LINEAGE_WAITS },
-    { ...pick("the strip fills: $115 less"), waits: LINEAGE_WAITS },
+    pick("Franki speaks first: $71, down from $186"),
+    pick("the strip fills: $115 less"),
   ];
   return { name: "beat 3: the hero, yes on the clone's Friday (past the seed mismatches)", scores: "spec §15 0:50–1:30, spec §10", steps };
 }

@@ -256,13 +256,24 @@ export async function suggestTool(ctx: RouteContext, _stamp: Stamp, args: Sugges
 
 type ActionEntry = Extract<Ledger, { kind: "action" }>;
 
+/**
+ * Brief 030 P1-2 (brief 029 finding 4; question X-166). Ruling, fails closed: a cited row's root Slice is its first
+ * Slice with a text range. W-LINEAGE checks a root Slice's hash over its range, and a typed Slice (`bank.amount`,
+ * `calendar.time`) has none, so it could never pass; the check itself stays as it is. Null when a cited row has no
+ * such Slice: the yes is then stale, and nothing is written.
+ */
+export function loopRootSlice(e: Evidence): Evidence["fieldSlices"][number] | null {
+  return e.fieldSlices.find((x) => x.start !== null && x.end !== null && x.start < x.end) ?? null;
+}
+
+function loopCited(pattern: PatternResult, evidence: Map<string, Evidence>): string[] {
+  return [...pattern.window.purchaseIds, ...pattern.meetingIds, ...pattern.receiptIds].filter((eid) => evidence.has(eid)).slice(0, 128);
+}
+
 function loopMemory(ctx: RouteContext, at: string, epoch: number, policyRev: number, id: string, loop: LoopRecord, pattern: PatternResult, evidence: Map<string, Evidence>): Memory {
-  const cited = [...pattern.window.purchaseIds, ...pattern.meetingIds, ...pattern.receiptIds].filter((eid) => evidence.has(eid)).slice(0, 128);
-  // Lineage (KC03): one root Slice per cited row: the amount of a purchase, the time of a meeting, else its first.
-  const rootSlices = cited.map((eid) => {
-    const slices = evidence.get(eid)!.fieldSlices;
-    return slices.find((x) => x.fieldPath === "bank.amount" || x.fieldPath === "calendar.time") ?? slices[0]!;
-  });
+  const cited = loopCited(pattern, evidence);
+  // Lineage (KC03): one root Slice per cited row, the row's first Slice with a range (checked by the caller).
+  const rootSlices = cited.map((eid) => loopRootSlice(evidence.get(eid)!)!);
   return {
     ...cFields(ctx.uid, at, epoch, policyRev),
     rootSlices,
@@ -331,6 +342,7 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerAr
   const loopId = deps.hasher.id(["heroLoop", offer.pendingId]);
   const loop = planHeroLoop(offer.pattern, rows.clock.worldClock.now, actionId);
   if (loop === null) return answer("stale");
+  if (loopCited(offer.pattern, rows.evidence).some((eid) => loopRootSlice(rows.evidence.get(eid)!) === null)) return answer("stale");
   const card = foodCard(ctx, dinners.candidates, "Three quick dinners for those nights");
 
   await deps.store.transaction(uid, async (tx) => {

@@ -25,12 +25,14 @@ const SUGGEST = { domain: "food", query: "quick dinner", attendeeIds: [], when: 
 
 type Row = { id: string; rootKey: string; bank?: unknown; calendar?: unknown };
 
-async function insertRows(rig: ReturnType<typeof testRig>, rows: readonly Row[]) {
+async function insertRows(rig: ReturnType<typeof testRig>, rows: readonly Row[], typedOnly = false) {
   await rig.store.transaction(UID, async (tx) => {
     for (const r of rows) {
       const kind = r.bank !== undefined ? "transaction" : "calendar";
       const text = `${kind} ${r.id}`;
-      const slice = buildSlice({ eid: r.id, fieldPath: "text", fieldText: text, start: 0, end: text.length, class: "O", sens: "S1" }, rig.deps.hasher);
+      const slice = typedOnly
+        ? { eid: r.id, fieldPath: kind === "transaction" ? ("bank.amount" as const) : ("calendar.time" as const), start: null, end: null, contentHash: rig.deps.hasher.sha256(new TextEncoder().encode(r.id)), class: "O" as const, sens: "S1" as const }
+        : buildSlice({ eid: r.id, fieldPath: "text", fieldText: text, start: 0, end: text.length, class: "O", sens: "S1" }, rig.deps.hasher);
       tx.create(
         paths.evidence(UID, r.id),
         sampleEvidence({ logicalId: r.id, kind, source: kind === "transaction" ? "plaid" : "calendar", observation: (r.bank ?? r.calendar) as never, rootKeys: [r.rootKey], text: { kind: "inline", text }, fieldSlices: [slice] }),
@@ -39,7 +41,7 @@ async function insertRows(rig: ReturnType<typeof testRig>, rows: readonly Row[])
   });
 }
 
-async function setup(opts: { turnText: string; shellfish?: boolean; rows?: boolean } = { turnText: "What should I make for dinner" }) {
+async function setup(opts: { turnText: string; shellfish?: boolean; rows?: boolean; typedOnly?: boolean } = { turnText: "What should I make for dinner" }) {
   const rig = testRig();
   rig.clock.setWorld(instantAt("2026-10-26", 12 * 60, HERO_ZONE));
   await ensureCoreDocs(UID, rig.deps);
@@ -52,7 +54,7 @@ async function setup(opts: { turnText: string; shellfish?: boolean; rows?: boole
       tx.update(paths.core(UID, "rules"), { ...rules!.data, allergies: [rule] });
     }
   });
-  if (opts.rows !== false) await insertRows(rig, [...HERO_ORDERS, ...HERO_BASELINE_GROCERIES, ...HERO_MEETINGS]);
+  if (opts.rows !== false) await insertRows(rig, [...HERO_ORDERS, ...HERO_BASELINE_GROCERIES, ...HERO_MEETINGS], opts.typedOnly === true);
   const s = await openTestSession(rig);
   // The open sets the zone from the client; the fixture lives in Chicago.
   await rig.store.transaction(UID, async (tx) => {
@@ -142,6 +144,23 @@ describe("the hero offer and its yes", () => {
     const later = await compareLoop(ctx, payload.loopId, stamp.generation);
     expect(later?.takeout).toMatchObject({ status: "eligible", beforeCents: 18600, afterCents: 7100, deltaCents: 11500 });
     expect(later?.lines).toEqual(["Takeout's $71, down from $186 over the same three weeks.", "$115 less on takeout.", "All food spending was $231, down from $306 over the same three weeks."]);
+  });
+
+  it("the loop's root Slices are the rows' text Slices, and a row with only typed Slices makes the yes stale (brief 030 P1-2)", async () => {
+    const typed = await setup({ turnText: "Yes, let's do it", typedOnly: true });
+    const offer = (await heroOffer(typed.ctx, typed.stamp.generation))!;
+    const res = await typed.tool({ name: "answer", args: { pendingId: offer.pendingId, choiceId: offer.yesId } });
+    expect(res.status).toBe(200);
+    expect(res.body.result).toMatchObject({ state: "stale", receiptId: null });
+    expect(await typed.rig.store.get(UID, paths.ledger(UID, typed.rig.deps.hasher.id(["heroAction", offer.pendingId])))).toBeNull();
+
+    const text = await setup({ turnText: "Yes, let's do it" });
+    const o2 = (await heroOffer(text.ctx, text.stamp.generation))!;
+    const yes = await text.tool({ name: "answer", args: { pendingId: o2.pendingId, choiceId: o2.yesId } });
+    const loopId = text.rig.deps.hasher.id(["heroLoop", o2.pendingId]);
+    expect(yes.body.result.state).toBe("applied");
+    const loop = (await text.rig.store.get<Memory>(UID, paths.memory(UID, loopId)))!.data;
+    expect(loop.rootSlices.every((x) => x.start !== null && x.end !== null)).toBe(true);
   });
 
   it("words that aren't a plain yes write nothing", async () => {
