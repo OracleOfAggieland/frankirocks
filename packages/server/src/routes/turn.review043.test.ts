@@ -109,3 +109,14 @@ describe("finding 4: a rename goes the way the owner said", () => {
     expect(r.notes).toContain(ROUTE_NOTE_TEXT.renamed);
   });
 });
+
+describe("finding 5: a null replacement retracts only on the owner's negation", () => {
+  it("\"That's wrong, I meant my sister Maya is coming Saturday.\" with a null person.relation correction: the sister stays", async () => {
+    const a = await setup({ reply: "All right.", decision: { correct: 0.9 } });
+    const seeded = await seedPrior(a.rig, "Maya");
+    const t = "That's wrong, I meant my sister Maya is coming Saturday.";
+    const r = await post(a, t, [correction(t, { targetIds: [seeded.relId], predicate: "person.relation", replacementValue: null })]);
+    expect(r.after.get(seeded.relId)!.status).toBe("active");
+    expect(r.notes).not.toContain(ROUTE_NOTE_TEXT.retracted);
+  });
+});

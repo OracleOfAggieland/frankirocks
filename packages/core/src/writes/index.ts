@@ -25,3 +25,4 @@ export * from "./renames";
 export * from "./life-subject";
 export * from "./self-life";
 export * from "./rename-words";
+export * from "./retract-words";

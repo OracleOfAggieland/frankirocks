@@ -22,6 +22,7 @@ import { GENERIC_WORDS, REFERENCE_WORDS, itemNamesNothing } from "./names-own";
 import { ownerWordsSettle } from "./life-subject";
 import { selfIsLifeSubject } from "./self-life";
 import { renameRefuted } from "./rename-words";
+import { retractionSaid } from "./retract-words";
 import { spanClass, verifyTurnSpan } from "./spans";
 import type { AllergyVerdict, ArgPair, CorrectionVerdict, EntityKind, FastItem, FastSlotsOut, ItemVerdict, Need, QuestionKind, Route, Subject, TransitionKind, TransitionVerdict, ValidateContext } from "./types";
 
@@ -289,7 +290,9 @@ function correctionVerdict(item: Extract<FastItem, { kind: "correction" }>, inde
     return spend({ kind: "rename", target: target.logicalId, entity: entity!, from: currentWords, to });
   }
   if (item.replacementValue === null) {
-    if (item.args === null && named) return spend({ kind: "retract", targets: targets.map((t) => t.logicalId) }); // C6
+    // Brief 043, finding 5: only on a negation tied to the target's value or its entity's name.
+    const retractWords = [currentWords, ...(otherEntity(target) === null ? [] : [currentNameOf(otherEntity(target)!, line, ctx)])].filter((w): w is string => w !== null);
+    if (item.args === null && named && retractionSaid(span.quote, retractWords)) return spend({ kind: "retract", targets: targets.map((t) => t.logicalId) }); // C6
     return defer("value"); // C6a
   }
   const value = item.replacementValue;
