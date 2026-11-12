@@ -3,8 +3,10 @@
 // then the five areas in order. Each item shows its text, where it came from, and Wrong, Forget and
 // Don't bring it up. Guesses are labelled "Guessed" with a dashed outline. Renders nothing when empty.
 // Brief 015: each group has a line glyph and a seam; each item is a specimen tag; a hard rule's Forget
-// needs a second tap (the first turns it into "Tap again to remove this rule", announced, until it
-// loses focus or a press lands elsewhere); items leave by dematerializing and the rest glide up on
+// needs a second tap (the first turns its label into "Tap again" at the same size, shows and announces
+// "Tap again to remove this rule" under the row, until it loses focus or a press lands elsewhere). The
+// sheet is a container (`@container/sheet`, with a set width inline so it never sizes to its contents),
+// and its action row tightens below 400 px of sheet width; items leave by dematerializing and the rest glide up on
 // spring.settle. `presentation="sheet"` makes it modal: focus moves to the heading on
 // open and back on close, stays inside, and Escape closes. From 1024 px a drawer on the right (at most
 // 420 px), below that a bottom sheet (at most 80svh, scrolling inside). Enter and leave it inside an
@@ -86,7 +88,17 @@ export const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled])
 
 // ---- Drawing ----
 
-const ACTION_BODY = `${TARGET} ${FOCUS} rounded-control border px-3 text-sm transition-colors duration-(--dur-quick) hover:bg-night-2`;
+/**
+ * The three actions fit one row from a 335 px sheet. Below 400 px of sheet width (a container query on
+ * the sheet, which can be narrow inside a wide page) the labels drop to 12 px with tighter padding and
+ * gap; from 400 px they take 14 px. Worst row at 335 px: a modal sheet's body is 335 - 40 (px-5) = 295,
+ * an item's inside is 295 - 32 (pl-8) - 12 (pr-3) - 2 (border) = 249. Narrow buttons are their text
+ * plus 14 (px-1.5 and border): Wrong about 50, a rule's Forget held at "Tap again" about 71, Don't bring
+ * it up about 101, two 6 px gaps: about 234, 15 to spare. Each stays at least 44 px tall and wide.
+ */
+const ACTION_BODY = `${TARGET} ${FOCUS} rounded-control border px-1.5 text-xs @min-[25rem]/sheet:px-3 @min-[25rem]/sheet:text-sm transition-colors duration-(--dur-quick) hover:bg-night-2`;
+/** The action row: one row from a 335 px sheet; it still wraps if a sheet is ever narrower. */
+const ACTION_ROW = "mt-1 flex flex-wrap gap-1.5 @min-[25rem]/sheet:gap-2";
 const ACTION = `inline-flex items-center justify-center ${ACTION_BODY}`;
 /** A hard rule's Forget: both labels share one grid cell, so arming never changes the row's layout. */
 const ACTION_FIXED = `inline-grid place-items-center text-center ${ACTION_BODY}`;
@@ -165,7 +177,7 @@ function itemTag(item: KnownItem, armed: string | null, reduced: boolean, a: Ite
       <p className="font-mono text-xs text-ink-dim">
         {COPY.sheet.from} {item.from}
       </p>
-      <div className="mt-1 flex flex-wrap gap-2">
+      <div data-actions="" className={ACTION_ROW}>
         <button type="button" data-action="wrong" className={`${ACTION} border-ink-dim/70 text-ink`} onClick={() => a.onWrong(item.id)}>
           {COPY.sheet.wrong}
         </button>
@@ -173,15 +185,16 @@ function itemTag(item: KnownItem, armed: string | null, reduced: boolean, a: Ite
           type="button"
           data-action="forget"
           data-armed={item.hardRule ? (isArmed ? "true" : "false") : undefined}
-          className={`${item.hardRule ? ACTION_FIXED : ACTION} ${isArmed ? "border-ember text-ink" : "border-ink-dim/70 text-ink"}`}
+          // Armed: a doubled ember edge (an inset ring, so no size change) and a new label, not colour alone.
+          className={`${item.hardRule ? ACTION_FIXED : ACTION} ${isArmed ? "border-ember text-ink ring-1 ring-inset ring-ember" : "border-ink-dim/70 text-ink"}`}
           onClick={(e) => a.forget(item, e?.currentTarget ?? null)}
           onBlur={item.hardRule ? () => a.onRuleBlur(item.id) : undefined}
         >
           {item.hardRule ? (
             <>
-              <span className="col-start-1 row-start-1">{isArmed ? COPY.sheet.confirmRule : COPY.sheet.forget}</span>
+              <span className="col-start-1 row-start-1">{isArmed ? COPY.sheet.armedRule : COPY.sheet.forget}</span>
               {/* The other label, unseen, holds the button at the wider of the two widths. */}
-              <span aria-hidden="true" data-label={isArmed ? COPY.sheet.forget : COPY.sheet.confirmRule} className="franki-sheet-label-spacer col-start-1 row-start-1" />
+              <span aria-hidden="true" data-label={isArmed ? COPY.sheet.forget : COPY.sheet.armedRule} className="franki-sheet-label-spacer col-start-1 row-start-1" />
             </>
           ) : (
             COPY.sheet.forget
@@ -191,6 +204,14 @@ function itemTag(item: KnownItem, armed: string | null, reduced: boolean, a: Ite
           {COPY.sheet.quiet}
         </button>
       </div>
+      {/* The whole warning, in words, while the rule waits for its second tap. The sheet's status
+          region announces it, so this visible copy is hidden from assistive tech to avoid a double read. */}
+      {isArmed ? (
+        <p aria-hidden="true" data-rule-confirm="" className="franki-sheet-confirm flex items-center gap-1.5 text-xs whitespace-nowrap text-ink">
+          <span className="size-1.5 shrink-0 rounded-full bg-ember" />
+          {COPY.sheet.confirmRule}
+        </p>
+      ) : null}
     </motion.li>
   );
 }
@@ -304,7 +325,7 @@ export function WhatIKnowView({ headingRef, panelRef, onKeyDown, onClose, ...p }
   );
   if (!sheet) {
     return (
-      <section role="dialog" aria-label={COPY.sheet.title} data-sheet="" className="mat-glass flex w-full max-w-[343px] flex-col gap-4 rounded-card p-4 text-left sm:max-w-md">
+      <section role="dialog" aria-label={COPY.sheet.title} data-sheet="" className="mat-glass @container/sheet flex w-[343px] max-w-full flex-col gap-4 rounded-card p-4 text-left sm:w-md">
         {head}
         {status}
         {body}
@@ -322,7 +343,7 @@ export function WhatIKnowView({ headingRef, panelRef, onKeyDown, onClose, ...p }
       // Focusable by script and by a click inside, so focus never falls out to the page from within.
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="mat-glass absolute outline-none inset-x-0 bottom-0 flex max-h-[80svh] flex-col rounded-t-card text-left lg:inset-y-0 lg:right-0 lg:left-auto lg:max-h-none lg:w-full lg:max-w-[420px] lg:rounded-none lg:rounded-l-card"
+      className="mat-glass @container/sheet absolute outline-none inset-x-0 bottom-0 flex max-h-[80svh] flex-col rounded-t-card text-left lg:inset-y-0 lg:right-0 lg:left-auto lg:max-h-none lg:w-full lg:max-w-[420px] lg:rounded-none lg:rounded-l-card"
       initial={reduced ? { opacity: 0 } : { opacity: 0, y: 24 }}
       animate={reduced ? { opacity: 1 } : { opacity: 1, y: 0 }}
       exit={reduced ? { opacity: 0 } : { opacity: 0, y: 24 }}

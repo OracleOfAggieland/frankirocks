@@ -50,6 +50,8 @@ export const COPY = {
     forget: "Forget",
     quiet: "Don't bring it up",
     close: "Close",
+    /** A hard rule's Forget, once armed: kept short so the button never changes size. */
+    armedRule: "Tap again",
     confirmRule: "Tap again to remove this rule",
   },
   lab: { title: "The Lab", none: "—", limits: "What I can't do yet", on: "Counting", off: "No counts yet" },

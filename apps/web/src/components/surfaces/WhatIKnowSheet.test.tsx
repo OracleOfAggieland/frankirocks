@@ -278,9 +278,11 @@ describe("What I know, brief 015 review", () => {
   it("gives a hard rule's Forget one footprint: the other label sits unseen in the same cell", () => {
     const rest = renderToStaticMarkup(<WhatIKnowView {...view()} />);
     const armed = renderToStaticMarkup(<WhatIKnowView {...view({ armed: "r1" })} />);
-    expect(rest).toContain(`aria-hidden="true" data-label="${COPY.sheet.confirmRule}"`);
+    // Fix pass: the two labels are both short ("Forget" and "Tap again"), so the button is never wide.
+    expect(rest).toContain(`aria-hidden="true" data-label="${COPY.sheet.armedRule}"`);
     expect(armed).toContain(`aria-hidden="true" data-label="${COPY.sheet.forget}"`);
     for (const html of [rest, armed]) expect(html).toMatch(/data-item="r1"[\s\S]*?data-action="forget"[^>]*class="inline-grid/);
+    for (const html of [rest, armed]) expect(html).not.toContain(`data-label="${COPY.sheet.confirmRule}"`);
   });
 
   it("announces the second-tap warning while a rule is armed", () => {
@@ -293,6 +295,44 @@ describe("What I know, brief 015 review", () => {
   it("makes the sheet panel focusable by script, so a click inside keeps focus in it", () => {
     const panel = /<section ([^>]*)>/.exec(render({ presentation: "sheet" }))![1];
     expect(panel).toContain('tabindex="-1"');
+  });
+
+  it("arms a rule with a short label and spells the warning out in one line under the row", () => {
+    const rest = renderToStaticMarkup(<WhatIKnowView {...view()} />);
+    const armed = renderToStaticMarkup(<WhatIKnowView {...view({ armed: "r1" })} />);
+    const rule = (html: string) => /data-item="r1"[\s\S]*?<\/li>/.exec(html)![0];
+    // The armed button reads "Tap again"; the whole sentence sits under the action row.
+    expect(rule(armed)).toMatch(/data-action="forget"[^>]*>[\s\S]*?<span class="col-start-1 row-start-1">Tap again<\/span>/);
+    expect(rule(armed)).toMatch(new RegExp(`data-actions=""[\\s\\S]*?</div><p aria-hidden="true" data-rule-confirm="" class="[^"]*whitespace-nowrap[^"]*">[\\s\\S]*?${COPY.sheet.confirmRule}</p>`));
+    expect(rest).not.toContain("data-rule-confirm");
+    // Not colour alone: the armed button also gains a doubled edge (an inset ring, so no size change).
+    expect(rule(armed)).toMatch(/data-action="forget" data-armed="true" class="[^"]*ring-inset ring-ember/);
+    expect(rule(rest)).not.toContain("ring-ember");
+    // Only one rule's line shows; the others stay at rest.
+    expect(armed.match(/data-rule-confirm/g)).toHaveLength(1);
+  });
+
+  it("fits the three actions on one row from a 335 px sheet, by a container query on the sheet", () => {
+    const inline = render();
+    const modal = render({ presentation: "sheet" });
+    // Both presentations are the container; the inline one has a set width, so it never sizes to its contents.
+    expect(/<section ([^>]*)>/.exec(inline)![1]).toMatch(/class="[^"]*@container\/sheet[^"]*w-\[343px\] max-w-full[^"]*sm:w-md/);
+    expect(/<section ([^>]*)>/.exec(modal)![1]).toContain("@container/sheet");
+    for (const html of [inline, modal]) {
+      const rows = html.match(/<div data-actions="" class="([^"]*)"/g)!;
+      expect(rows).toHaveLength(4);
+      for (const r of rows) expect(r).toContain("gap-1.5 @min-[25rem]/sheet:gap-2");
+      // Narrow: 12 px labels with 6 px padding; from 400 px of sheet: 14 px with 12 px padding. Always a 44 px target.
+      const buttons = html.match(/<button type="button" data-action="(wrong|forget|quiet)"[^>]*class="[^"]*"/g)!;
+      expect(buttons).toHaveLength(12);
+      for (const b of buttons) {
+        expect(b).toContain("min-h-11 min-w-11");
+        expect(b).toContain("px-1.5 text-xs @min-[25rem]/sheet:px-3 @min-[25rem]/sheet:text-sm");
+        expect(b).not.toMatch(/ (px-3|text-sm) /);
+      }
+    }
+    // The words themselves never change.
+    expect([COPY.sheet.wrong, COPY.sheet.forget, COPY.sheet.quiet]).toEqual(["Wrong", "Forget", "Don't bring it up"]);
   });
 
   it("closes the sheet when its last item is forgotten, and not before", () => {

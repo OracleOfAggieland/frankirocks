@@ -111,3 +111,13 @@
   content: attr(data-label);
   visibility: hidden;
 }
+
+/* The armed rule's warning line fades in under the action row, once. Reduced motion: it just appears. */
+@keyframes franki-sheet-confirm {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .franki-sheet-confirm { animation: franki-sheet-confirm var(--dur-quick) var(--ease-ecto) 1 both; }
+}
+[data-reduced="true"] .franki-sheet-confirm { animation: none; }

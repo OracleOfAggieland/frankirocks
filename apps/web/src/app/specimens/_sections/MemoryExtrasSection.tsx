@@ -18,6 +18,7 @@ const LABELS = {
   sheet: "Sheet: a drawer from 1024 px, a bottom sheet below",
   twoTap: "A hard rule's Forget needs a second tap; forgotten items dematerialize",
   reset: "Put them back",
+  narrow: (px: number) => `What I know at a ${px} px sheet: one row of actions`,
   jar: "Motes arriving and leaving",
   add: "Add a memory",
   forget: "Forget the newest",
@@ -51,6 +52,20 @@ function TwoTapTile() {
       <button type="button" className={`${QUIET_BUTTON} text-sm`} onClick={() => setItems(KNOWN_ITEMS)}>
         {LABELS.reset}
       </button>
+    </Tile>
+  );
+}
+
+/**
+ * The sheet held at a set width, so its container query can be checked: 335 px (a phone, the front
+ * door's stage) takes the tight action row, 400 px the full one. Its hard rule can be armed here.
+ */
+function NarrowSheetTile({ px }: { px: 335 | 400 }) {
+  return (
+    <Tile label={LABELS.narrow(px)} data-specimen={`sheet-${px}`}>
+      <div className={px === 335 ? "w-[335px]" : "w-[400px]"}>
+        <WhatIKnowSheet items={KNOWN_ITEMS} onWrong={noop} onForget={noop} onQuiet={noop} onClose={noop} />
+      </div>
     </Tile>
   );
 }
@@ -121,6 +136,8 @@ export function MemoryExtrasSection() {
       <Section id="memory-extras" title={LABELS.section}>
         <SheetTile />
         <TwoTapTile />
+        <NarrowSheetTile px={335} />
+        <NarrowSheetTile px={400} />
         <JarTile />
         <StripTile reduced={false} />
         <StripTile reduced />
