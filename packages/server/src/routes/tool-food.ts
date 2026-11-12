@@ -27,6 +27,7 @@ import {
   type Memory,
   type PatternResult,
   type Ref,
+  type Session,
   type Snapshot,
   type Stamp,
   type ToolCall,
@@ -64,6 +65,7 @@ import { forgetRowsFor } from "../forget/snapshot-rows";
 import { foregroundEC, storeReader } from "../head-build";
 import { cFields } from "../records";
 import type { Reader } from "../store/port";
+import { renderedEntryId } from "../time/reminder";
 import { paths } from "../store/paths";
 import type { RouteContext } from "./runtime";
 
@@ -436,6 +438,29 @@ function loopMemory(ctx: RouteContext, at: string, epoch: number, policyRev: num
   };
 }
 
+/**
+ * Brief 037, finding 4 (the binding). A yes acts only on the offer just presented: the offer was recorded as shown
+ * (the `pendingRendered` receipt's ledger row for its pending ID) during this session, and the yes is the owner's
+ * next turn after that record. Anything else is not a yes, and Franki may ask again. Fails closed.
+ */
+export const YES_LOOKBACK_TURNS = 32;
+
+async function yesFollowsOffer(ctx: RouteContext, pendingId: string, turnId: string, turn: Turn): Promise<boolean> {
+  const { uid, deps } = ctx;
+  const shown = await deps.store.get<Ledger>(uid, paths.ledger(uid, renderedEntryId(deps.hasher, pendingId)));
+  if (shown === null || shown.data.kind !== "decision") return false;
+  const shownAt = Date.parse(shown.data.at);
+  const session = await deps.store.get<Session>(uid, paths.session(uid, turn.sessionId));
+  if (session === null || Date.parse(session.data.startedAt) > shownAt || Date.parse(turn.committedAt) < shownAt) return false;
+  const rows = await deps.store.query<Turn>(uid, {
+    collection: paths.turns(uid, turn.sessionId),
+    where: [{ field: "seq", op: ">=", value: Math.max(0, turn.seq - YES_LOOKBACK_TURNS) }],
+    orderBy: { field: "seq", dir: "asc" },
+    limit: 100,
+  });
+  return !rows.some((r) => r.id !== turnId && r.data.role === "user" && r.data.seq <= turn.seq && Date.parse(r.data.committedAt) >= shownAt);
+}
+
 export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerArgs, turn: Turn): Promise<Result> {
   const { uid, deps } = ctx;
   const answer = (state: "applied" | "declined" | "clarify" | "stale", receiptId: string | null = null, cards: Card[] = []): Result => ({ name: "answer", state, receiptId, pendingId: args.pendingId, cards });
@@ -443,8 +468,10 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerAr
   const offer = rows === null ? null : offerFrom(ctx, rows);
   if (rows === null || offer === null || args.pendingId !== offer.pendingId) return answer("stale");
   if (args.choiceId === offer.noId) return answer("declined");
-  // Code decides the owner said yes: the choice must be "yes" and the owner's own words a plain yes.
+  // Code decides the owner said yes: the choice must be "yes", the owner's own words a plain yes, and the yes the
+  // owner's next turn after the offer was shown.
   if (args.choiceId !== offer.yesId || turn.role !== "user" || turn.sourceClass !== "U" || !turn.final || !isPlainYes(turn.text)) return answer("clarify");
+  if (!(await yesFollowsOffer(ctx, offer.pendingId, stamp.turnId, turn))) return answer("clarify");
 
   const dinners = dinnersFor(await readRules(ctx));
   if (dinners.candidates.length === 0) return answer("clarify");

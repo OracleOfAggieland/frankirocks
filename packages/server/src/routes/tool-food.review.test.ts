@@ -117,6 +117,27 @@ describe("finding 2: the food paths filter by every stored rule of every subject
   });
 });
 
+describe("finding 4: a yes binds to the offer just presented", () => {
+  it("with the offer never shown, the yes writes nothing", async () => {
+    const t = await setup({ turns: ["Yes, let's do it"], present: null });
+    const res = await t.tool(yes(t.offer));
+    expect(res.body.result?.state ?? res.body.status).not.toBe("applied");
+    expect(await t.actions()).toEqual([]);
+  });
+
+  it("a yes that isn't the owner's next turn after the offer was shown writes nothing", async () => {
+    const t = await setup({ turns: ["What's on tomorrow", "Yes, let's do it"], present: 0 });
+    const res = await t.tool(yes(t.offer));
+    expect(res.body.result?.state ?? res.body.status).not.toBe("applied");
+    expect(await t.actions()).toEqual([]);
+  });
+
+  it("shown, then the yes as the next turn: applied", async () => {
+    const t = await setup({ turns: ["What's on tomorrow", "Yes, let's do it"], present: 1 });
+    expect((await t.tool(yes(t.offer))).body.result.state).toBe("applied");
+  });
+});
+
 describe("finding 6: the caps apply after filtering to the window and the category", () => {
   it("130 older bank rows don't silence the offer", async () => {
     const old = Array.from({ length: 130 }, (_, i) => bankRow(`old${i}`, "2026-06-10", 19 * 60, 1500));

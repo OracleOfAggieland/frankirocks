@@ -21,6 +21,7 @@ import { toolRoute } from "./tool";
 import { answerTool, compareLoop, heroOffer } from "./tool-food";
 import { turnRoute } from "./turn";
 import { memoryTick } from "../time/tick";
+import { recordPendingRendered } from "../time/reminder";
 
 const UID = "owner-1";
 const SUGGEST = { domain: "food", query: "quick dinner", attendeeIds: [], when: null, contextId: null };
@@ -63,6 +64,11 @@ async function setup(opts: { turnText: string; shellfish?: boolean; rows?: boole
     const state = await tx.get<CoreState>(paths.core(UID, "state"));
     tx.update(paths.core(UID, "state"), { ...state!.data, currentZone: HERO_ZONE });
   });
+  // Brief 037, finding 4: a yes acts only on an offer shown just before it, so the offer (if any) is shown first.
+  const ctx0 = { uid: UID, deps: rig.deps, schedule: rig.sched.schedule };
+  const shown = await heroOffer(ctx0, s.stamp.generation);
+  if (shown !== null) await rig.store.transaction(UID, (tx) => recordPendingRendered(tx, UID, shown.pendingId as never, rig.deps.clock.read().opsClock.now, rig.deps.hasher));
+  rig.clock.advance(10);
   const turnRes = await callRoute(rig, turnRoute, asrTurn(s.stamp, 1, opts.turnText, [{ itemId: "item_1", commitSeq: 1 }]));
   if (turnRes.status !== 200) throw new Error(JSON.stringify(turnRes.body));
   const stamp = { ...s.stamp, turnId: testId("turn-1") };
