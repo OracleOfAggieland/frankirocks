@@ -9,6 +9,7 @@ import { liveTimers } from "../clock/timers";
 import { adminFirestore } from "../config/admin";
 import type { Env } from "../config/env";
 import { hasherFromEnv } from "../crypto";
+import { fastSlotsPort } from "../onturn/fast-slots-port";
 import { liveOpenAI } from "../openai/live";
 import { FirestoreStore } from "../store/firestore-store";
 import { toRouteError } from "./errors";
@@ -24,11 +25,13 @@ export const consoleLog: Log = (event, fields) => {
 export function liveRouteDeps(env: Env = process.env): RouteDeps {
   if (cached !== null) return cached;
   const hasher = hasherFromEnv(env);
+  const openai = liveOpenAI(env);
   cached = {
     store: new FirestoreStore(adminFirestore(env), hasher),
     clock: liveClockPort,
     hasher,
-    openai: liveOpenAI(env),
+    openai,
+    fastSlots: fastSlotsPort({ openai, timers: liveTimers, clock: liveClockPort, env }),
     env,
     timers: liveTimers,
     tokens: adminTokenVerifier(env),

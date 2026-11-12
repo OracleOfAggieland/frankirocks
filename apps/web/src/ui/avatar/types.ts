@@ -32,6 +32,8 @@ export interface AvatarInput {
   /** True only while the Visit's wake ritual runs. */
   firstConnecting: boolean;
   reducedMotion: boolean;
+  /** Where Franki looks while listening: at the camera (the default when absent) or at the pointer. */
+  attend?: "camera" | "pointer";
 }
 
 export type Eyes = "closed" | "wide" | "half" | "open" | "glance-up" | "squint" | "glance-card" | "expectant" | "happy";
@@ -83,7 +85,7 @@ export interface AvatarLook {
   label: string;
 }
 
-/** The Avatar_Contract (R4.1). Every renderer implements it; the Rive renderer will too. */
+/** The Avatar_Contract (R4.1). Every renderer implements it: the three.js ghost (the default) and the SVG ghost. */
 export interface AvatarRendererProps {
   look: AvatarLook;
   input: AvatarInput;

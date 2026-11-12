@@ -8,7 +8,7 @@ import { type AuthClient, type AuthState, createAuthClient } from "../client/aut
 import { createBrowserClock } from "../client/clock";
 import { DEBUG_POLL_MS, type DebugPanelModel } from "../client/debug-panel";
 import { publicEnv, readFirebaseConfig } from "../client/firebase-config";
-import type { TypedTurns } from "../client/typed-turns";
+import type { TypedState, TypedTurns } from "../client/typed-turns";
 import { type AudioLike, type PeerLike, SIGN_OUT_LIMIT_MS } from "../client/voice-client";
 import { TRANSCRIBE_VAR, transcribeModel } from "../client/voice-config";
 import { sharedAudio } from "../ui/audio/context";
@@ -16,16 +16,19 @@ import { debugVisible } from "../ui/debug-flag";
 import { browserScheduler } from "../ui/hooks/frame-loop";
 import { browserVisibility } from "../ui/hooks/page-visible";
 import { browserWatcher } from "../ui/hooks/reduced-motion";
+import { ABSENT_PHONE, type PhoneView } from "../ui/phone/phone-call";
 import { ScreenController, type ScreenSnapshot } from "../ui/hooks/screen-controller";
 import { createLevelMeter } from "../ui/levels/level-meter";
 import { createSoundEngine } from "../ui/sound/engine";
 import { EMPTY_COPIES, type SignedInControllers, createSignedInControllers, onForgetComplete } from "./app-controllers";
 import { AuthPanel } from "./AuthPanel";
 import { Avatar } from "./avatar/Avatar";
+import { AvatarAudioContext } from "./avatar/avatar-audio";
 import { Stage } from "./avatar/Stage";
 import { CALL_ERRORS, CallScreen } from "./CallScreen";
 import { DebugPanel } from "./DebugPanel";
 import { LiveRegion } from "./LiveRegion";
+import { PhoneOnStage } from "./phone/RetroPhone";
 import { ReplyLine } from "./ReplyLine";
 import { MainScreen } from "./screen/MainScreen";
 import { SoundToggle, soundPreference } from "./SoundToggle";
@@ -34,6 +37,11 @@ import { TypedLine } from "./TypedLine";
 const SIGNED_OUT_VOICE = initialVoiceState({ transcribeModel: "" });
 const noop = () => {};
 const noSubscribe = () => noop;
+const signedOutVoice = () => SIGNED_OUT_VOICE;
+/** The typed snapshot while signed out: there is no typed Session to read. */
+const noTyped = (): TypedState | null => null;
+/** The phone while signed out: nothing hangs on the wall. */
+const noPhone = (): PhoneView => ABSENT_PHONE;
 
 /** The output audio element: muted until a verified Permit unmutes it (KV02). */
 function outputAudio(): AudioLike {
@@ -108,12 +116,25 @@ export function App() {
       createPeer: () => new RTCPeerConnection() as unknown as PeerLike,
       getMicrophone: () => navigator.mediaDevices.getUserMedia({ audio: true }),
       onStreams: (s) => meter.setStreams({ mic: s.mic as unknown as MediaStream | null, output: s.output as MediaStream | null }),
+      inputLevel: () => meter.rawInput(),
     });
   }, [tokens, debugOn, meter]);
 
   useEffect(() => {
     screen.setSources(signedIn !== null, signedIn?.voice ?? null);
   }, [screen, signedIn]);
+
+  // The phone follows the voice reducer's tool calls; it stops reading when the user signs out.
+  useEffect(() => {
+    if (signedIn === null) return;
+    const { voice, phone } = signedIn;
+    phone.start();
+    const off = voice === null ? noop : voice.subscribe(() => phone.onVoice(voice.getSnapshot()));
+    return () => {
+      off();
+      phone.stop();
+    };
+  }, [signedIn]);
 
   const snap = useSyncExternalStore(screen.subscribe, screen.getSnapshot, screen.getSnapshot);
   const forget = () => setCopies((c) => onForgetComplete(signedIn?.typed ?? null, c));
@@ -147,44 +168,67 @@ export function App() {
   return (
     <MotionConfig reducedMotion={snap.input.reducedMotion ? "always" : "never"}>
       <ForgetCompleteContext.Provider value={forget}>
-        {signedIn === null ? <SignedOutScreen snap={snap} auth={auth} /> : <SignedInScreen snap={snap} auth={auth} controllers={signedIn} />}
+        {/* The three.js ghost reads Franki's voice and the mic through the Level_Meter's second analysers (brief 013, D-1). */}
+        <AvatarAudioContext.Provider value={meter.audio}>
+          <Screen snap={snap} auth={auth} controllers={signedIn} />
+        </AvatarAudioContext.Provider>
       </ForgetCompleteContext.Provider>
     </MotionConfig>
   );
 }
 
-function StageFor({ snap }: { snap: ScreenSnapshot }) {
+function StageFor({ snap, phone }: { snap: ScreenSnapshot; phone: PhoneView }) {
   return (
-    <Stage reduced={snap.input.reducedMotion}>
+    <Stage reduced={snap.input.reducedMotion} aside={<PhoneOnStage view={phone} />}>
       <Avatar look={snap.look} input={snap.input} frameTime={snap.frameTime} />
     </Stage>
   );
 }
 
-/** Signed out or loading: Dormant, FRANKIROCKS, the sign-in button, and disabled call and typed controls (R13). */
-function SignedOutScreen({ snap, auth }: { snap: ScreenSnapshot; auth: React.ReactNode }) {
-  return (
-    <MainScreen
-      signedIn={false}
-      reduced={snap.input.reducedMotion}
-      paused={snap.paused}
-      auth={auth}
-      soundToggle={<SoundToggle />}
-      stage={<StageFor snap={snap} />}
-      controls={<CallScreen voice={SIGNED_OUT_VOICE} enabled={false} onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />}
-      typed={<TypedLine text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />}
-      live={<LiveRegion message={snap.live.message} seq={snap.live.seq} />}
-    />
-  );
-}
-
-function SignedInScreen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React.ReactNode; controllers: SignedInControllers }) {
-  const { typed, voice, debug } = controllers;
+/**
+ * One screen component for both auth states, so `StageFor` keeps its place in the tree and the stage
+ * (with its avatar engine) stays mounted across sign-in: it glides to its signed-in place instead of
+ * being replaced. The hooks run in both states through the `noSubscribe` and `SIGNED_OUT_VOICE`
+ * fallbacks; each state renders the same markup it did as its own component. Only the stage is shared: the
+ * call and typed controls carry a per-state key, so they remount on an auth change as they did when each state
+ * was its own component (a typed line opened before sign-out comes back collapsed).
+ *
+ * Signed out or loading (`controllers` null): Dormant, FRANKIROCKS, the sign-in button, and disabled
+ * call and typed controls (R13).
+ */
+function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React.ReactNode; controllers: SignedInControllers | null }) {
+  const typed = controllers?.typed ?? null;
+  const voice = controllers?.voice ?? null;
+  const debug = controllers?.debug ?? null;
   const subscribeVoice = voice?.subscribe ?? noSubscribe;
-  const getVoice = voice?.getSnapshot ?? (() => SIGNED_OUT_VOICE);
+  const getVoice = voice?.getSnapshot ?? signedOutVoice;
   const v = useSyncExternalStore(subscribeVoice, getVoice, getVoice);
-  const t = useSyncExternalStore(typed.subscribe, typed.getSnapshot, typed.getSnapshot);
+  const subscribeTyped = typed?.subscribe ?? noSubscribe;
+  const getTyped = typed?.getSnapshot ?? noTyped;
+  const t = useSyncExternalStore(subscribeTyped, getTyped, getTyped);
   const inCall = v.phase !== "CLOSED";
+  const subscribePhone = controllers?.phone.subscribe ?? noSubscribe;
+  const getPhone = controllers?.phone.getSnapshot ?? noPhone;
+  const phone = useSyncExternalStore(subscribePhone, getPhone, getPhone);
+
+  const stage = <StageFor snap={snap} phone={phone} />;
+  const live = <LiveRegion message={snap.live.message} seq={snap.live.seq} />;
+
+  if (typed === null || t === null) {
+    return (
+      <MainScreen
+        signedIn={false}
+        reduced={snap.input.reducedMotion}
+        paused={snap.paused}
+        auth={auth}
+        soundToggle={<SoundToggle />}
+        stage={stage}
+        controls={<CallScreen key="call-signed-out" voice={SIGNED_OUT_VOICE} enabled={false} onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />}
+        typed={<TypedLine key="typed-signed-out" text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />}
+        live={live}
+      />
+    );
+  }
 
   const call = () => {
     // A call open closes the typed Session on the server (KV09); the next typed line outside a call opens a new one.
@@ -203,9 +247,10 @@ function SignedInScreen({ snap, auth, controllers }: { snap: ScreenSnapshot; aut
       paused={snap.paused}
       auth={auth}
       soundToggle={<SoundToggle />}
-      stage={<StageFor snap={snap} />}
+      stage={stage}
       controls={
         <CallScreen
+          key="call-signed-in"
           voice={v}
           enabled={voice !== null}
           configMissing={voice === null ? TRANSCRIBE_VAR : null}
@@ -217,6 +262,7 @@ function SignedInScreen({ snap, auth, controllers }: { snap: ScreenSnapshot; aut
       }
       typed={
         <TypedLine
+          key="typed-signed-in"
           text={t.text}
           enabled
           sending={t.sending}
@@ -228,7 +274,7 @@ function SignedInScreen({ snap, auth, controllers }: { snap: ScreenSnapshot; aut
       }
       reply={inCall ? null : <ReplyLine entries={t.entries} />}
       debug={debug === null ? null : <DebugArea debug={debug} typed={typed} voice={v} />}
-      live={<LiveRegion message={snap.live.message} seq={snap.live.seq} />}
+      live={live}
     />
   );
 }
@@ -252,5 +298,5 @@ function DebugArea({ debug, typed, voice }: { debug: DebugPanelModel; typed: Typ
     return () => clearInterval(timer);
   }, [debug, live]);
 
-  return <DebugPanel state={d} selectedMemoryId={selected} onSelectMemory={setSelected} onRefresh={() => void debug.refresh()} />;
+  return <DebugPanel state={d} selectedMemoryId={selected} onSelectMemory={setSelected} onRefresh={() => void debug.refresh()} latency={voice.latency.rows} realtimeErrors={voice.realtimeErrors} />;
 }

@@ -1,11 +1,16 @@
 import fc from "fast-check";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { contrastRatio } from "../../ui/contrast";
-import { COLOR } from "../../ui/motion";
+import { COLOR, DUR, SPRING } from "../../ui/motion";
 import type { CardProps } from "../../ui/surface-props";
-import { Card, sourceTagPlan } from "./Card";
+import { Card, KindGlyph, nextOpenSource, rowsElementId, sourceTagPlan, tagTapHandler } from "./Card";
+import type { SourceRow } from "./SourceRows";
 
+const cardsCss = readFileSync(join(import.meta.dirname, "cards.css"), "utf8");
+const ROWS: SourceRow[] = ["$30", "$28", "$34", "$34", "$24", "$36"].map((amount, i) => ({ id: `r${i}`, when: `Oct ${2 + i}`, what: "Takeout", amount }));
 const noop = () => {};
 const sources = [{ id: "bank", label: "Bank · 6 purchases" }];
 const SOURCE: CardProps = {
@@ -133,6 +138,137 @@ describe("Card", () => {
     const onAnswer = vi.fn();
     click(Card({ ...(ASK as Extract<CardProps, { kind: "ask" }>), onAnswer }), (p) => p["data-action"] === "answer-b");
     expect(onAnswer).toHaveBeenCalledWith("b");
+  });
+
+  it("is glass with the seam at the top and a line glyph for its kind beside the title", () => {
+    for (const p of [SOURCE, APPROVAL, FOOD, ASK, READ]) {
+      const out = html(p);
+      expect(out).toMatch(/^<article data-card="[a-z]+" aria-label="[^"]*" class="franki-card mat-glass /);
+      expect(out.indexOf("data-seam")).toBeLessThan(out.indexOf('data-section="title"'));
+      const title = /<h2 data-section="title"[^>]*>(.*?)<\/h2>/.exec(out)?.[1] ?? "";
+      expect(title).toMatch(new RegExp(`^<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false" data-glyph="${p.kind}"`));
+      expect(title).toContain(`>${p.title}</span>`);
+    }
+    // Five different drawings.
+    const drawings = (["source", "approval", "food", "ask", "read"] as const).map((k) => renderToStaticMarkup(<KindGlyph kind={k} />).replace(/data-glyph="[a-z]+"/, ""));
+    expect(new Set(drawings).size).toBe(5);
+  });
+
+  it("an approval card is riveted at its four corners and its Yes is brass", () => {
+    const out = html(APPROVAL);
+    expect(out.match(/data-rivet=""/g)).toHaveLength(4);
+    const yes = /<button type="button" data-action="yes" class="([^"]*)"/.exec(out)?.[1] ?? "";
+    for (const k of ["mat-brass", "franki-card-press", "min-h-11", "focus-visible:outline-2"]) expect(yes.split(" ")).toContain(k);
+    for (const p of [SOURCE, FOOD, ASK, READ]) expect(html(p)).not.toContain("data-rivet");
+  });
+
+  it("a figure is a mono 12 ink-dim label over a mono 28 value", () => {
+    const out = html(SOURCE);
+    expect(out).toMatch(/<dt class="font-mono text-xs [^"]*text-ink-dim">This month<\/dt>/);
+    expect(out).toMatch(/<span class="font-mono text-2xl [^"]*">\$115 less<\/span>/);
+  });
+
+  it("lifts 2 px on hover on spring.press, and not under reduced motion", () => {
+    expect(cardsCss).toMatch(/@media \(prefers-reduced-motion: no-preference\) and \(hover: hover\) \{\s*\.franki-card:hover \{ transform: translateY\(-2px\); \}/);
+    expect(cardsCss).toMatch(/\.franki-card \{\s*transition: transform var\(--dur-base\) var\(--franki-spring-press\);/);
+    expect(cardsCss).toContain('[data-reduced="true"] .franki-card:hover { transform: none; }');
+  });
+
+  it("the CSS press curve is spring.press sampled over dur.base", () => {
+    const points = (/--franki-spring-press: linear\(([^)]*)\)/.exec(cardsCss)?.[1] ?? "").split(",").map(Number);
+    const { stiffness: k, damping: c } = SPRING.press;
+    const w0 = Math.sqrt(k);
+    const z = c / (2 * w0);
+    const wd = w0 * Math.sqrt(1 - z * z);
+    const x = (t: number) => 1 - Math.exp(-z * w0 * t) * (Math.cos(wd * t) + ((z * w0) / wd) * Math.sin(wd * t));
+    const n = points.length - 1;
+    expect(n).toBeGreaterThanOrEqual(12);
+    points.forEach((v, i) => expect(v).toBeCloseTo(i === n ? 1 : x((DUR.base / 1000) * (i / n)), 2));
+    // Settled by the end: the last sampled step is within 2% of rest.
+    expect(Math.abs(x(DUR.base / 1000) - 1)).toBeLessThan(0.02);
+  });
+
+  it("with source rows, a tag opens its rows inside the card and says so", () => {
+    const out = renderToStaticMarkup(<Card {...SOURCE} sourceRows={{ bank: ROWS }} defaultOpenSource="bank" />);
+    expect(out).toContain('aria-expanded="true"');
+    expect(out).toContain(`aria-controls="${rowsElementId("c1", "bank")}"`);
+    expect(out).toContain(`id="${rowsElementId("c1", "bank")}"`);
+    expect(out).toContain('data-section="rows"');
+    expect(out).toContain("Rows behind this number: Bank · 6 purchases");
+    expect(out).toMatch(/>\$186<\/td>/);
+    // The rows sit inside the card, right under the figure that cites them.
+    expect(out.indexOf("data-source-rows")).toBeGreaterThan(out.indexOf('data-figure-source="bank"'));
+    expect(out.indexOf("data-source-rows")).toBeLessThan(out.indexOf("</article>"));
+    const closed = renderToStaticMarkup(<Card {...SOURCE} sourceRows={{ bank: ROWS }} />);
+    expect(closed).toContain('aria-expanded="false"');
+    expect(closed).not.toContain("data-source-rows");
+  });
+
+  it("a sources-row tag opens its rows below the sources row", () => {
+    const p = { ...SOURCE, sources: [...sources, { id: "cal", label: "Calendar · 4 meetings" }] } as CardProps;
+    const out = renderToStaticMarkup(<Card {...p} sourceRows={{ cal: ROWS }} defaultOpenSource="cal" />);
+    expect(out.indexOf("data-source-rows")).toBeGreaterThan(out.indexOf('data-source="cal"'));
+    expect(out).toContain("Rows behind this number: Calendar · 4 meetings");
+    // A tag whose source has no rows says nothing about opening.
+    expect(/<button[^>]*data-figure-source="bank"[^>]*>/.exec(out)?.[0]).not.toContain("aria-expanded");
+  });
+
+  it("a tap opens a source's rows, a second tap closes them, and a tag without rows changes nothing", () => {
+    const rows = { bank: ROWS, empty: [] };
+    expect(nextOpenSource(null, "bank", rows)).toBe("bank");
+    expect(nextOpenSource("bank", "bank", rows)).toBeNull();
+    expect(nextOpenSource("bank", "cal", rows)).toBe("bank");
+    expect(nextOpenSource(null, "empty", rows)).toBeNull();
+    expect(nextOpenSource(null, "bank", undefined)).toBeNull();
+    fc.assert(
+      fc.property(fc.option(fc.constantFrom("a", "b", "c"), { nil: null }), fc.constantFrom("a", "b", "c"), fc.subarray(["a", "b", "c"]), (open, tapped, withRows) => {
+        const r = Object.fromEntries(withRows.map((id) => [id, ROWS]));
+        const next = nextOpenSource(open, tapped, r);
+        // The open source, when there is one, always has rows or was already open.
+        if (next !== null && next !== open) expect(withRows).toContain(next);
+        // Two taps on a tag with rows come back to where they started, unless that tag was open already.
+        if (withRows.includes(tapped) && open !== tapped) expect(nextOpenSource(next, tapped, r)).toBeNull();
+      }),
+    );
+  });
+
+  it("a tap on a tag with rows opens them and still calls onOpenSource, once", () => {
+    const onOpenSource = vi.fn();
+    let open: string | null = null;
+    const onTag = tagTapHandler((f) => (open = f(open)), { bank: ROWS }, onOpenSource);
+    onTag("bank");
+    expect(open).toBe("bank");
+    expect(onOpenSource).toHaveBeenCalledWith("bank");
+    onTag("bank");
+    expect(open).toBeNull();
+    onTag("cal");
+    expect(open).toBeNull();
+    expect(onOpenSource.mock.calls).toEqual([["bank"], ["bank"], ["cal"]]);
+  });
+
+  it("with openSource, the host holds which rows are open and a tap only reports it", () => {
+    const rows = { bank: ROWS };
+    const open = renderToStaticMarkup(<Card {...SOURCE} sourceRows={rows} openSource="bank" />);
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).toContain("data-source-rows");
+    // A held null wins over defaultOpenSource; a held source without rows shows nothing.
+    for (const held of [null, "cal"]) {
+      const out = renderToStaticMarkup(<Card {...SOURCE} sourceRows={rows} openSource={held} defaultOpenSource="bank" />);
+      expect(out).toContain('aria-expanded="false"');
+      expect(out).not.toContain("data-source-rows");
+    }
+    // A tap calls onOpenSource and nothing else; the host moves the open source on with nextOpenSource.
+    const onOpenSource = vi.fn();
+    let held: string | null = null;
+    const tap = () => {
+      onOpenSource.mockImplementationOnce((id: string) => (held = nextOpenSource(held, id, rows)));
+      expect(click(Card({ ...SOURCE, onOpenSource, sourceRows: rows, openSource: held }), (p) => p["data-figure-source"] === "bank")).toBe(true);
+    };
+    tap();
+    expect(held).toBe("bank");
+    tap();
+    expect(held).toBeNull();
+    expect(onOpenSource.mock.calls).toEqual([["bank"], ["bank"]]);
   });
 
   it("renders nothing for empty props", () => {

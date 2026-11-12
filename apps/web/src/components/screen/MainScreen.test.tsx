@@ -1,6 +1,8 @@
 import { type VoiceState, avatarState, initialVoiceState } from "@franki/core";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { lookFor } from "../../ui/avatar/look";
 import type { AvatarInput } from "../../ui/avatar/types";
 import type { CardProps } from "../../ui/surface-props";
@@ -11,8 +13,22 @@ import { ReplyLine } from "../ReplyLine";
 import { SoundPreference, SoundToggle } from "../SoundToggle";
 import { TypedLine } from "../TypedLine";
 import { Avatar } from "../avatar/Avatar";
-import { Stage } from "../avatar/Stage";
+import { STAGE_WIDTH, Stage } from "../avatar/Stage";
+import { CANVAS_FRAME } from "../avatar/canvas-frame";
 import { GRID_AREAS, HEADER, MainScreen } from "./MainScreen";
+
+/** The props each CardDock render receives; the real CardDock still draws. */
+const dockCalls = vi.hoisted(() => [] as Record<string, unknown>[]);
+vi.mock("../surfaces/CardDock", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../surfaces/CardDock")>();
+  return {
+    ...real,
+    CardDock: (p: Parameters<typeof real.CardDock>[0]) => {
+      dockCalls.push(p as unknown as Record<string, unknown>);
+      return real.CardDock(p);
+    },
+  };
+});
 
 const noop = () => {};
 const storage = () => {
@@ -125,6 +141,21 @@ describe("MainScreen", () => {
     expect(render(true, undefined, [{ ...card, lines: [] }])).toContain('data-layout="center"');
   });
 
+  it("the Card_Dock is always mounted and tells the screen when its last card has left (ui.dockLayout)", () => {
+    const card: CardProps = { kind: "read", id: "r", title: "Your list", sources: [], onOpenSource: noop, lines: ["Milk"] };
+    for (const cards of [undefined, [], [{ ...card, lines: [] }], [card]]) {
+      dockCalls.length = 0;
+      const html = render(true, undefined, cards);
+      // Mounted with or without a card, so a leaving card can finish its exit before the column goes.
+      expect(dockCalls).toHaveLength(1);
+      expect(typeof dockCalls[0].onExitComplete).toBe("function");
+      expect(dockCalls[0].cards).toEqual(cards ?? []);
+      // With nothing to show, the dock draws nothing inside its area.
+      if (cards?.[0]?.kind === "read" && cards[0].lines.length > 0) expect(html).toContain("data-dock=");
+      else expect(html).not.toContain("data-dock=");
+    }
+  });
+
   it("the stage, controls and reply each sit in a glide wrapper in both motion settings", () => {
     for (const reduced of [true, false]) {
       const html = render(true, undefined, undefined, reduced);
@@ -186,4 +217,79 @@ describe("MainScreen", () => {
     expect(order.every((i) => i >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
+});
+
+const GLOBALS = readFileSync(join(__dirname, "../../app/globals.css"), "utf8");
+
+describe("the lab's shell (brief 015)", () => {
+  it("the stage is clamp(240px, 34vh, 340px) wide, never wider than its column, and the floor scales with it", () => {
+    const html = render(true);
+    expect(html).toMatch(/data-stage=""[^>]*class="[^"]*w-\[clamp\(240px,34vh,340px\)\][^"]*max-w-\[min\(100%,/);
+    expect(html).not.toContain("max-w-[240px]");
+    expect(html).toMatch(/data-part="floor"[^>]*class="[^"]*aspect-\[12\/1\][^"]*w-3\/5/);
+    expect(html).toMatch(/data-part="halo"[^>]*class="[^"]*inset-\[-20%\]/);
+  });
+
+  it("the header is a rail: wordmark and bolt, the time-badge slot, sound, email in mono 12, Sign out, over a fading seam", () => {
+    const html = render(true);
+    const header = /<header[\s\S]*?<\/header>/.exec(html)?.[0] ?? "";
+    const order = ["data-wordmark-bolt", ">Franki<", 'data-slot="time-badge"', "data-sound-toggle", 'data-testid="signed-in-email"', ">Sign out<", "data-rail-seam"].map((m) => header.indexOf(m));
+    expect(order.every((i) => i >= 0), String(order)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(header).toMatch(/data-testid="signed-in-email" class="[^"]*font-mono text-xs/);
+    expect(header).toMatch(/data-rail-seam=""[^>]*class="[^"]*mask-image:linear-gradient\(to_right,transparent,/);
+    expect(header).toMatch(/data-rail-seam[^>]*>[\s\S]*data-seam=""/);
+    expect(header).toMatch(/aria-hidden="true" data-rail-seam/);
+  });
+
+  it("the stage never grows past the width at which the canvas fits the viewport", () => {
+    const html = render(true);
+    expect(html).toMatch(/data-stage=""[^>]*class="[^"]*max-w-\[min\(100%,calc\(100vw\/1\.48\)\)\]/);
+    // The canvas spills CANVAS_FRAME.left of the box and is CANVAS_FRAME.width wide; centred, its wider half is
+    // 0.5 - left stage widths from the axis. At 100vw / 1.48 that half fits in half the viewport.
+    const half = Math.max(0.5 - CANVAS_FRAME.left, CANVAS_FRAME.left + CANVAS_FRAME.width - 0.5);
+    expect(half / 1.48).toBeLessThanOrEqual(0.5 + 1e-9);
+    // At 375 px the cap is about 253 px, still above the 240 px floor of the clamp.
+    expect(375 / 1.48).toBeGreaterThan(240);
+  });
+
+  // The sweep runs over the stage's own clamp range, read from Stage.tsx.
+  const clamp = /clamp\((\d+)px,[^,]+,(\d+)px\)/.exec(STAGE_WIDTH);
+  const STAGE_RANGE = { min: Number(clamp?.[1]), max: Number(clamp?.[2]) };
+  it("the stage's clamp range reads as 240 to 340 px", () => {
+    expect(STAGE_RANGE).toEqual({ min: 240, max: 340 });
+  });
+
+  // A stage W wide has a canvas CANVAS_FRAME.height * W tall, starting -CANVAS_FRAME.top * W above the box.
+  const SCREENS = [
+    // Signed out, the Wordmark's box ends 24 px (gap-6) above the avatar box.
+    { screen: "signed-out", px: 24, layout: /data-area="stage"[^>]*class="[^"]*\bgap-6\b/ },
+    // Signed in, the stage section's top padding (py-4) is the 16 px above the box; the rail and strip are above it.
+    { screen: "signed-in", px: 16, layout: /data-area="stage"[^>]*class="[^"]*\bpy-4\b/ },
+  ] as const;
+
+  for (const { screen, px: edge, layout } of SCREENS) {
+    it(`${screen}: the canvas mask keeps everything above the stage clear and Franki's hair whole at every stage width`, () => {
+      expect(render(screen === "signed-in")).toMatch(layout);
+      const rule = new RegExp(`\\[data-screen="${screen}"\\] \\[data-three-layer="canvas"\\] \\{([^}]*)\\}`).exec(GLOBALS)?.[1] ?? "";
+      expect(rule).toContain("radial-gradient(closest-side, black 72%, transparent)");
+      expect(rule).toMatch(/mask-composite: intersect/);
+      const m = /linear-gradient\(to bottom, transparent calc\(([\d.]+)% - (\d+)px\), black ([\d.]+)%\)/.exec(rule);
+      expect(m, rule).not.toBeNull();
+      const [pct, px, opaque] = [Number(m![1]), Number(m![2]), Number(m![3])];
+      expect(px).toBe(edge);
+      // The rule's percentage is the canvas frame's top spill over its height, so a recalibrated frame turns this red.
+      expect(pct / 100).toBeCloseTo(-CANVAS_FRAME.top / CANVAS_FRAME.height, 3);
+      // The hair starts at about 19% of the canvas.
+      const HAIR = 0.19;
+      for (let w = STAGE_RANGE.min; w <= STAGE_RANGE.max; w += 4) {
+        const canvas = CANVAS_FRAME.height * w;
+        const clearPx = (pct / 100) * canvas - px;
+        const aboveEdge = -CANVAS_FRAME.top * w - edge;
+        expect(Math.abs(clearPx - aboveEdge), `w=${w}`).toBeLessThan(0.05);
+        expect(clearPx / canvas, `w=${w}`).toBeLessThan(opaque / 100);
+        expect(opaque / 100, `w=${w}`).toBeLessThan(HAIR);
+      }
+    });
+  }
 });

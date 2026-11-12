@@ -75,6 +75,19 @@ describe("Level_Meter", () => {
     for (const s of nodes.filter((n) => n.kind === "source")) expect(s.connected).toHaveLength(1);
   });
 
+  it("rawInput reads the mic's unsmoothed level and leaves the smoothed one alone (voice-control R18.5)", () => {
+    const { ctx } = fakeContext(255);
+    const meter = createLevelMeter(() => ctx);
+    expect(meter.rawInput()).toBe(0);
+    meter.setStreams({ mic: stream("m"), output: null });
+    expect(meter.rawInput()).toBe(1);
+    expect(meter.rawInput()).toBe(1);
+    // The first smoothed sample still starts from 0 (attack 0.5), so rawInput didn't move it.
+    expect(meter.sample().input).toBe(0.5);
+    meter.pause();
+    expect(meter.rawInput()).toBe(0);
+  });
+
   it("disconnects old nodes when the streams go away", () => {
     const { ctx, nodes } = fakeContext();
     const meter = createLevelMeter(() => ctx);

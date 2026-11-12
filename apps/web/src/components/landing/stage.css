@@ -1,0 +1,484 @@
+/* The front door's stage (brief 015, package H2): layout by container query on the stage box, its chrome, and
+   its loops. Colours come from the tokens, times from the --dur-* variables. Only transform and opacity animate.
+   Loops run only under prefers-reduced-motion: no-preference, stop under [data-reduced="true"] and pause under
+   [data-paused="true"]. Nothing here clips Franki: the canvas spills past Franki's box on every side.
+
+   Sizes. --fw is Franki's box width (the box is 1.1 times as tall), --fl and --ft its left and top. Alone,
+   Franki's box is clamp(200px, 46cqw, 420px), capped by the stage's height. With equipment, Franki settles
+   left and smaller from 440 px of stage width, and moves up below it. Franki's canvas reaches 0.24 box widths
+   past the left edge, so a left-hand Franki sits that far in. */
+
+.demo-stage {
+  container: demo-stage / size;
+}
+
+.demo-layer {
+  --band: 44px;
+  --fw: min(clamp(200px, 46cqw, 420px), 62cqh);
+  --fl: calc(50cqw - var(--fw) / 2);
+  --ft: calc(50cqh - var(--fw) * 0.55);
+}
+
+/* ---- The state toy: Franki above, the chips under Franki's floor. Two rows of chips below 440 px. ---- */
+.demo-layer[data-layout="toy"] {
+  --toy-gap: 20px;
+  --toy-h: calc(var(--toy-gap) + 96px);
+  --fw: min(clamp(180px, 46cqw, 420px), calc((100cqh - var(--toy-h)) * 0.7));
+  --ft: calc((100cqh - var(--fw) * 1.1 - var(--toy-h)) / 2);
+}
+
+/* ---- Equipment, narrow: Franki up and smaller, centred; beside the strip, on the right. ---- */
+.demo-layer[data-layout="equip"] {
+  --fw: min(clamp(130px, 40cqw, 190px), 40cqh);
+  --fl: calc(50cqw - var(--fw) / 2);
+  --ft: calc(var(--band) - 8px);
+}
+/* Narrow, with the Lab: Franki moves into the jar's column, left of the Lab and above the jar (136 px tall,
+   8 px in), smaller so the two clear each other. */
+@container demo-stage (width < 440px) {
+  .demo-layer[data-layout="equip"][data-panel="none"][data-strip="true"] {
+    --fl: calc(100cqw - var(--fw) * 1.24 - 4px);
+    --ft: var(--band);
+  }
+  .demo-layer[data-layout="equip"][data-lab="true"] {
+    --fw: min(clamp(64px, 28cqw, 120px), max(64px, calc((100cqh - var(--band) - 152px) / 1.1)));
+    --fl: 12px;
+  }
+}
+
+@container demo-stage (min-width: 440px) {
+  .demo-layer {
+    --band: 52px;
+  }
+  .demo-layer[data-layout="toy"] {
+    --toy-gap: 28px;
+    --toy-h: calc(var(--toy-gap) + 44px);
+  }
+  /* Equipment, from 440 px: Franki left, centred in the room between the strip and whatever sits below. */
+  .demo-layer[data-layout="equip"] {
+    --fw: min(clamp(160px, 32cqw, 300px), 46cqh);
+    --fl: calc(var(--fw) * 0.24 + 8px);
+    --top: var(--band);
+    --bottom: 16px;
+    --panel-w: min(343px, 56cqw);
+    --panel-top: var(--band);
+    --ft: calc(var(--top) + (100cqh - var(--top) - var(--bottom) - var(--fw) * 1.1) / 2);
+  }
+  /* Nothing docked: Franki is larger and nearer the middle, with room on the right for the source tags. */
+  .demo-layer[data-layout="equip"][data-panel="none"] {
+    --fw: min(clamp(180px, 40cqw, 340px), 46cqh);
+    --fl: max(calc(var(--fw) * 0.24 + 8px), calc(50cqw - var(--fw) * 0.8));
+  }
+  /* The strip as a column down the left, above Franki. */
+  .demo-layer[data-layout="equip"][data-strip="true"] {
+    --top: calc(var(--band) + 148px);
+  }
+  .demo-layer[data-layout="equip"][data-jar="true"] {
+    --bottom: 164px;
+  }
+  /* The Lab panel is taller than the jar beside it. */
+  .demo-layer[data-layout="equip"][data-lab="true"] {
+    --bottom: 212px;
+  }
+  /* Room for the line Franki says, under Franki, for the whole step. */
+  .demo-layer[data-layout="equip"][data-line="true"] {
+    --bottom: 176px;
+  }
+}
+
+/* From 576 px of stage the strip runs across the top, once the viewport lets the Strip grow past its 343 px
+   column (the Strip's own sm: width). */
+@media (min-width: 40rem) {
+  @container demo-stage (min-width: 576px) {
+    .demo-layer[data-layout="equip"][data-strip="true"] {
+      --top: calc(var(--band) + 72px);
+      --panel-top: calc(var(--band) + 72px);
+    }
+  }
+}
+
+/* ---- Franki ---- */
+.demo-franki {
+  z-index: 1;
+  width: var(--fw);
+  left: var(--fl);
+  top: var(--ft);
+}
+
+.demo-halo {
+  opacity: 0.6;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--color-ecto) 22%, transparent), transparent);
+}
+.demo-floor {
+  opacity: 0.4;
+  background: radial-gradient(closest-side, var(--color-night-2), transparent);
+}
+/* The three.js canvas draws its own light; the halo and floor return while the SVG ghost shows. */
+[data-demo-avatar]:has([data-three-phase="three"]) > .demo-halo,
+[data-demo-avatar]:has([data-three-phase="three"]) > .demo-floor {
+  visibility: hidden;
+}
+
+/* ---- Slots. Decoration and inert equipment take no pointer events; Yes and the toy do. ---- */
+.demo-layer [data-demo-slot] {
+  pointer-events: none;
+}
+.demo-layer [data-demo-slot="toy"],
+.demo-layer [data-demo-slot="dock"]:not([inert]) [data-dock] {
+  pointer-events: auto;
+}
+
+.demo-slot-line {
+  z-index: 2;
+  display: none;
+}
+.demo-slot-strip {
+  z-index: 3;
+  left: 16px;
+  top: var(--band);
+  /* The strip's column: a 14 px post, the gap and a 6rem label. The strip measures its own container. */
+  width: 132px;
+  transition: opacity var(--dur-base) var(--ease-ecto);
+}
+.demo-slot-tags {
+  z-index: 3;
+  left: 16px;
+  top: calc(var(--band) + 148px);
+}
+.demo-slot-jar {
+  z-index: 4;
+  left: 8px;
+  bottom: 8px;
+  transition: opacity var(--dur-base) var(--ease-ecto);
+}
+/* The Lab and its slip, bottom right, scaled to fit the room under the band when taller. */
+.demo-slot-lab {
+  z-index: 5;
+  right: 8px;
+  top: var(--band);
+  bottom: 8px;
+  width: calc(100cqw - 128px);
+  display: flex;
+  justify-content: flex-end;
+}
+.demo-slot-panel {
+  z-index: 6;
+  left: 8px;
+  right: 8px;
+  top: calc(var(--ft) + var(--fw) * 0.62);
+  bottom: 8px;
+}
+.demo-slot-toy {
+  z-index: 7;
+  left: 8px;
+  right: 8px;
+  top: calc(var(--ft) + var(--fw) * 1.1 + var(--toy-gap));
+  display: flex;
+  justify-content: center;
+}
+
+/* Narrow: a panel over the lower half hides the strip, and the open sheet hides the jar it came from. */
+.demo-layer[data-panel="cards"] .demo-slot-strip,
+.demo-layer[data-panel="sheet"] .demo-slot-strip,
+.demo-layer[data-panel="sheet"] .demo-slot-jar {
+  opacity: 0;
+}
+
+@container demo-stage (min-width: 440px) {
+  .demo-slot-line {
+    display: block;
+    left: 16px;
+    top: calc(var(--ft) + var(--fw) * 1.1 + 32px);
+    width: min(26rem, calc(100cqw - var(--panel-w, 0px) - 40px));
+  }
+  /* Beside Franki, but never past the frame: the longer tag, indented, is about 240 px wide. */
+  .demo-slot-tags {
+    left: min(calc(var(--fl) + var(--fw) + 20px), calc(100cqw - 252px));
+    top: calc(var(--ft) + var(--fw) * 0.28);
+  }
+  .demo-slot-jar {
+    left: 12px;
+    bottom: 12px;
+  }
+  .demo-slot-lab {
+    right: 12px;
+    bottom: 12px;
+    width: min(18rem, calc(100cqw - 140px));
+  }
+  .demo-slot-panel {
+    left: auto;
+    right: 12px;
+    top: var(--panel-top, var(--band));
+    bottom: 16px;
+    width: var(--panel-w, 343px);
+  }
+  .demo-layer[data-panel="cards"] .demo-slot-strip,
+  .demo-layer[data-panel="sheet"] .demo-slot-strip,
+  .demo-layer[data-panel="sheet"] .demo-slot-jar {
+    opacity: 1;
+  }
+}
+@media (min-width: 40rem) {
+  @container demo-stage (min-width: 576px) {
+    .demo-slot-strip {
+      width: auto;
+      right: 16px;
+    }
+  }
+}
+
+/* The card dock is the stage's own here: in the panel's flow, not fixed to the viewport. */
+.demo-slot-dock [data-dock] {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  padding: 0;
+  justify-content: center;
+}
+@container demo-stage (min-width: 440px) {
+  .demo-slot-dock [data-dock] {
+    justify-content: flex-end;
+  }
+}
+
+/* A panel taller than its room is scaled to fit: from the bottom up when narrow, from the top right from 440 px.
+   The sheet is anchored at the bottom at every width: its last group holds the item that is forgotten, so what
+   still overflows is cut at the top. */
+.demo-fit {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.demo-fit-inner {
+  transform: scale(var(--fit, 1));
+  transform-origin: 50% 100%;
+}
+@container demo-stage (min-width: 440px) {
+  .demo-fit {
+    justify-content: flex-start;
+  }
+  .demo-fit-inner {
+    transform-origin: 100% 0;
+  }
+  .demo-slot-sheet .demo-fit,
+  .demo-slot-lab .demo-fit {
+    justify-content: flex-end;
+  }
+  .demo-slot-sheet .demo-fit-inner,
+  .demo-slot-lab .demo-fit-inner {
+    transform-origin: 100% 100%;
+  }
+}
+/* The Lab sits on the right: narrow too, it scales toward its bottom right corner. */
+.demo-slot-lab .demo-fit-inner {
+  transform-origin: 100% 100%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .demo-fit-inner {
+    transition: transform var(--dur-base) var(--ease-ecto);
+  }
+}
+[data-reduced="true"] .demo-fit-inner {
+  transition: none;
+}
+
+/* The sheet's window: whatever still overflows fades out at the top edge. */
+.demo-window {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to top, black calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to top, black calc(100% - 28px), transparent);
+}
+
+/* ---- The source tags and their thread ---- */
+.demo-tag-second {
+  margin-left: 24px;
+}
+.demo-eyelet {
+  border: 1px solid color-mix(in srgb, var(--color-ink-dim) 70%, transparent);
+  background: var(--color-night-0);
+}
+.demo-wire {
+  color: color-mix(in srgb, var(--color-ink-dim) 70%, transparent);
+}
+.demo-wire-window {
+  overflow: hidden;
+}
+
+/* ---- The line Franki says, with a stitched left edge ---- */
+.demo-line {
+  position: relative;
+  padding-left: 16px;
+}
+.demo-line::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-ink-dim) 45%, transparent);
+}
+.demo-word {
+  opacity: 0.6;
+  transition: opacity var(--dur-base) var(--ease-ecto);
+}
+.demo-word[data-said="true"] {
+  opacity: 1;
+}
+
+/* ---- The state toy ---- */
+.demo-toy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, auto));
+  justify-content: center;
+  gap: 8px;
+}
+@container demo-stage (min-width: 440px) {
+  .demo-toy-grid {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}
+.demo-toy-chip {
+  transition:
+    transform var(--dur-quick) var(--ease-ecto),
+    color var(--dur-quick) var(--ease-ecto);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .demo-toy-chip:active {
+    transform: translateY(2px);
+  }
+}
+[data-reduced="true"] .demo-toy-chip:active {
+  transform: none;
+}
+
+/* ---- The chrome: edge, registration ticks, quarter marks, fig label and plate ---- */
+.demo-frame {
+  z-index: 8;
+}
+.demo-frame-edge {
+  border: 1px solid var(--color-stitch);
+  opacity: 0;
+  transition: opacity var(--dur-ritual) var(--ease-ecto);
+}
+.demo-frame[data-on="true"] .demo-frame-edge {
+  opacity: 1;
+}
+/* Registration ticks just outside the frame's corners. */
+.demo-tick {
+  width: 12px;
+  height: 12px;
+  border-color: var(--color-stitch);
+  border-style: solid;
+  border-width: 0;
+}
+.demo-tick-tl { top: -7px; left: -7px; border-top-width: 1px; border-left-width: 1px; }
+.demo-tick-tr { top: -7px; right: -7px; border-top-width: 1px; border-right-width: 1px; }
+.demo-tick-bl { bottom: -7px; left: -7px; border-bottom-width: 1px; border-left-width: 1px; }
+.demo-tick-br { bottom: -7px; right: -7px; border-bottom-width: 1px; border-right-width: 1px; }
+/* Quarter marks across the top and bottom edges. */
+.demo-mark {
+  width: 1px;
+  height: 7px;
+  margin-left: -0.5px;
+  background: var(--color-stitch);
+}
+.demo-mark.top-0 { top: -4px; }
+.demo-mark.bottom-0 { bottom: -4px; }
+
+.demo-fig {
+  top: 16px;
+  left: 18px;
+}
+/* Alone, the fig label sits under Franki's floor, on the centre line. */
+.demo-layer[data-layout="solo"] .demo-fig {
+  left: 0;
+  right: 0;
+  top: calc(var(--ft) + var(--fw) * 1.1 + 28px);
+  display: flex;
+  justify-content: center;
+}
+/* Narrow, the band holds the plate alone. */
+.demo-layer[data-plate="true"] .demo-fig {
+  display: none;
+}
+@container demo-stage (min-width: 440px) {
+  .demo-layer[data-plate="true"] .demo-fig {
+    display: block;
+  }
+}
+.demo-plate {
+  top: 12px;
+  right: 14px;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-ecto);
+}
+.demo-plate[data-on="true"] {
+  opacity: 1;
+}
+
+/* ---- Loops and one-shots ---- */
+@keyframes demo-drift {
+  0%, 100% { transform: translateY(-2px); }
+  50% { transform: translateY(2px); }
+}
+@keyframes demo-window-down {
+  from { transform: translateY(-101%); }
+  to { transform: translateY(0); }
+}
+@keyframes demo-window-up {
+  from { transform: translateY(101%); }
+  to { transform: translateY(0); }
+}
+@keyframes demo-chip-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes demo-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* The fig label fades in where it appears; under reduced motion that fade is quicker and plain. */
+.demo-fig {
+  animation: demo-fade-in var(--dur-ritual) var(--ease-ecto) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .demo-fig {
+    animation: demo-fade-in var(--dur-base) linear both;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* The tags float together, so the thread between them never stretches. */
+  [data-demo-tags] {
+    animation: demo-drift var(--dur-float) ease-in-out infinite;
+  }
+  /* The thread draws itself down from the first eyelet: its window opens while the thread inside holds still. */
+  .demo-wire-window {
+    animation: demo-window-down var(--dur-ritual) var(--ease-ecto) both;
+  }
+  .demo-wire-thread {
+    animation: demo-window-up var(--dur-ritual) var(--ease-ecto) both;
+  }
+  .demo-toy-chip {
+    animation: demo-chip-rise calc(var(--dur-base) * 2) var(--ease-ecto) backwards;
+    animation-delay: calc(var(--stagger) * var(--i, 0));
+  }
+}
+[data-reduced="true"] [data-demo-tags],
+[data-reduced="true"] .demo-wire-window,
+[data-reduced="true"] .demo-wire-thread,
+[data-reduced="true"] .demo-toy-chip {
+  animation: none;
+}
+[data-reduced="true"] .demo-fig {
+  animation: demo-fade-in var(--dur-base) linear both;
+}
+[data-paused="true"] [data-demo-tags],
+[data-paused="true"] .demo-wire-window,
+[data-paused="true"] .demo-wire-thread {
+  animation-play-state: paused;
+}

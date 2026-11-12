@@ -9,7 +9,7 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** SHA-256 hex of canonicalJSON(admissionPayload(p)), the same bytes the server's devAdmit hashes. */
+/** SHA-256 hex of canonicalJSON(admissionPayload(p)), the same bytes the server's Admission_Seam hashes. */
 export function permitPayloadHash(p: PayloadInput): Promise<string> {
   return sha256Hex(canonicalBytes(admissionPayload(p)));
 }

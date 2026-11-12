@@ -773,9 +773,11 @@ const norm = (s: unknown): string | null => (typeof s === "string" && fold(s) !=
 /**
  * scopeId by the contract's Scope column (contracts §3), from resolved args, never from the model's free `scope`
  * string where the contract names the scope. Without this, every `person.relation` of the Owner shared the global
- * key, so naming a second person would have moved the first to history.
+ * key, so naming a second person would have moved the first to history. The one scope function: extraction, the
+ * on-turn planners (`writes/keys.ts`) and correction validation all call it, so their keys can't drift apart.
  */
-function scopeFor(item: ExtractItem, args: Record<string, unknown>, value: Value, hasher: Hasher, occasionDay: string | null = null): string {
+export function scopeIdOf(predicate: Pred, scope: string | null, args: Record<string, unknown>, value: Value, hasher: Hasher, occasionDay: string | null = null): string {
+  const item = { predicate, scope };
   const h = (...parts: unknown[]) => hasher.id(["scope", ...parts]);
   switch (item.predicate) {
     case "identity.name":
@@ -908,7 +910,7 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
   const resolved = timeWords === null || item.predicate === "episode" ? null : resolveSpoken(timeWords, spokenAtMs, zone);
   const occasionDay = resolved !== null ? resolved.civilStart.slice(0, 10) : timeWords !== null ? `${norm(timeWords)}@${civilDateAt(spokenAtMs, zone)}` : null;
 
-  const scopeId = scopeFor(item, args, value, ctx.hasher, occasionDay);
+  const scopeId = scopeIdOf(item.predicate, item.scope, args, value, ctx.hasher, occasionDay);
   const key = ctx.hasher.id(idParts.memoryKey(subjectId, item.predicate, scopeId));
   const id = ctx.hasher.id(idParts.memory(ctx.jobId, index));
 

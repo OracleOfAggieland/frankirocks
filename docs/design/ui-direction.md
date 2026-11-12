@@ -1,6 +1,6 @@
 # Franki interface: design direction
 
-Status: design direction for the web app's interface. Read-only for build work. Behavior and contracts still come from `memory-spec-v3.md` and `memory-contracts-v2.md`; where this file and those disagree, they win, and the conflict goes under "Contract questions" in the spec's `design.md`.
+Status: design direction for the web app's interface. Read-only for build work. Amended by brief 015 (the front door, the lab scenery, materials, the cursor, display type). Behavior and contracts still come from `memory-spec-v3.md` and `memory-contracts-v2.md`; where this file and those disagree, they win, and the conflict goes under "Contract questions" in the spec's `design.md`.
 
 ## The idea in one line
 
@@ -22,10 +22,11 @@ The screen is Franki's lab at night. Franki floats in the middle. Everything els
 8. **Quiet by default.** No toasts, no badges, no "coming soon", no empty panels. A surface with nothing true to show is not rendered.
 9. **Motion is ghost physics.** Things float, rise and settle. Nothing slides in on a straight line. Nothing bounces like a toy.
 10. **Calm for everyone.** Reduced motion keeps every state readable without movement. Contrast meets WCAG AA. Every control works by keyboard and has a 44 px target.
+11. **Blueprint until it's true.** Anything inert is drawn as blueprint linework in `stitch`: scenery, diagrams, equipment at rest. Material (glass, brass, paper, glow) appears only on things that are live or that you can touch. The lab is a drawing that comes to life where something is real.
 
 ## The screen
 
-One screen, no navigation. Desktop first, down to 375 px wide.
+The lab is one screen with no navigation, served at `/lab`. Desktop first, down to 375 px wide. The only other page is the front door at `/` (see "The front door").
 
 ```
 ┌───────────────────────────────────────────────────────────┐
@@ -48,7 +49,7 @@ One screen, no navigation. Desktop first, down to 375 px wide.
 
 | Surface | What it is | Shows when |
 |---|---|---|
-| **Stage** | Franki, a soft halo, and a faint floor shadow that tracks the float | Always |
+| **Stage** | Franki, a soft halo, and a faint floor shadow that tracks the float. Franki is the largest thing on the screen: the stage is `clamp(240px, 34vh, 340px)` wide | Always |
 | **Call button** | One round brass-ringed button. Start form: a round power glyph with a green core. Hang-up form: a squared ember-red form. They differ in shape and colour, not just text. Labels stay "Call Franki" and "Hang up" | Always (disabled while signed out) |
 | **Mute** | A small brass toggle beside the call button. Muted puts Franki in ghost mode | Listening, thinking, speaking |
 | **Chips** | Glass capsules with a stitched outline. A tap counts as the user's words. Chips are code constants | When the server offers them |
@@ -63,6 +64,11 @@ One screen, no navigation. Desktop first, down to 375 px wide.
 | **Wordmark** | "Franki" in the header. On the signed-out screen, `FRANKIROCKS` with the letters K-I-R-O lighting gold once | Header; signed-out screen |
 | **Footer** | "Built with Kiro", small | Every page |
 | **Debug panel** | The existing Debug_Panel | Development only, behind `?debug=1` |
+| **Lab scenery** | Blueprint linework of the lab at night, behind everything (see "The lab scenery") | Always |
+| **Source rows** | The rows behind a source tag, opened inside its card: date, what, amount, in mono | When a tag is tapped |
+| **Company toggle** | A brass toggle, "Someone walked in". On, it shows a drawn curtain glyph and reads "We're alone" to turn it back | Signed in, when the server supports it |
+| **Forget last** | A quiet control, "Forget last thing" | Signed in, after a turn |
+| **Sample plate** | A brass plate reading "Sample data" | On the front door's demonstration only, never in the lab |
 
 ### Cards
 
@@ -78,9 +84,77 @@ One screen, no navigation. Desktop first, down to 375 px wide.
 
 "What I know", grouped by area: Time and work, Food and health, Money, People, Goals. Each item shows its text, where it came from, and three actions: **Wrong**, **Forget**, **Don't bring it up**. Hard rules sit at the top under their seal. Guesses are labeled "Guessed" with a dashed outline. Motes inside the jar use the same coding: solid for told, dashed for guessed, brass for hard rules, frosted for private.
 
+## Materials
+
+Five materials, each defined once as a CSS utility and used everywhere. A surface picks one; it never mixes its own.
+
+| Material | Utility | Look | Means |
+|---|---|---|---|
+| Blueprint | `mat-blueprint` | 1 px `stitch` linework, no fill, mono annotations such as "FIG. 2" | Inert: scenery, diagrams |
+| Glass | `mat-glass` | `night-2` at about 80% with a faint top-left sheen, a 1 px light edge, a soft blur behind, `shadow-glass` | Something to read |
+| Brass | `mat-brass` | A lit metal gradient from `brass-hi` to `brass`, a bright top edge, a dark lower edge, `night-0` text | Something you can touch |
+| Paper | `mat-paper` | `spark` with `night-0` mono text and a perforated edge | A printed record: the receipt |
+| Gold | `mat-gold` | `gold` with a soft gold glow | A win, and nothing else |
+
+Small parts shared by every surface: a **rivet** (a 6 px brass dome), a **plate** (a small brass label with engraved `night-0` text), a **lamp** (an 8 px indicator: off in `stitch`, on in `ecto`), a **fig label** (mono 12 px blueprint annotation with a leader line), and the stitched **seam**.
+
+## The lab scenery
+
+The backdrop keeps its three textures (grid, grain, vignette) and gains one layer of blueprint linework, drawn in code as SVG:
+
+- **Left:** a shelf with three specimen jars and a flask.
+- **Right:** a Jacob's ladder and a coil on a bench.
+- **Top:** two hanging cables with glass insulators, and a quarter cobweb in the top right corner.
+- **Floor:** a horizon line, and under Franki a round slab drawn as two ellipses.
+- Three or four fig labels in mono, such as "FIG. 1  the slab".
+
+Rules: linework is `stitch` at no more than 55% opacity, never filled, never glowing, and it never moves by itself. It shifts by up to 6 px against the pointer on `spring.float`, and not at all under reduced motion. It is `aria-hidden`, takes no pointer events, and thins out below 1024 px (floor and slab only below 640 px). It never draws a surface that could be mistaken for a real one: no jar where the jar goes, no panel where the Lab goes. Franki's halo stays the only bright area on an empty screen.
+
+## The cursor
+
+On a fine pointer, with motion allowed, the pointer is a small lab spider: Franki's pet, pale `ghost` green with a stitch across its back.
+
+- **Precise first.** The spider's body sits exactly on the pointer with no lag. The click lands under its head.
+- **It walks.** Eight two-segment legs plant and step in two alternating groups as the pointer moves, so the feet stay put while the body travels. Legs are solved in code; nothing is a looped sprite.
+- **It reacts.** Over something you can touch, a brass ring draws around it and the front legs lift. On press the legs pull in. On release it leaves a small six-spoke web at the click point that dematerializes over `dur.ritual`. At most three webs at once.
+- **It rests.** After about 2 s still, it lowers itself a few pixels on a silk thread and sways. It climbs back on the next move.
+- **It gets out of the way.** Over a text field the native text cursor returns and the spider tucks beside it. It fades when the pointer leaves the window.
+- **Calm for everyone.** Touch devices, reduced motion, and anyone who turns off the "Lab spider" toggle in the footer get the native cursor. The choice is remembered. Keyboard focus rings are unaffected.
+- Transform and opacity only, one frame loop, paused when the tab is hidden. The spider never glows: it is not a signal.
+
+## The front door
+
+The page at `/`. It is the walk up to the lab: it shows the real surfaces playing a sample month, then hands you the switch. It is the only place sample data may appear, and it always sits under a "Sample data" plate. Nothing in the lab at `/lab` may import from it.
+
+**Layout.** A slim top bar (wordmark, four section links, a brass "Wake Franki"). On the left edge from 1024 px, the **rail**: a vertical wire with six terminals, one per section. Current fills the wire as you scroll, each terminal lights `ecto` as you reach it, and the last one turns `gold`. The terminals are links.
+
+**The stage.** From the top of the page through the memory section, the right column holds one sticky stage with one Franki. The story scrolls past on the left and the stage acts it out. Below 1024 px the stage pins to the top of the viewport and the story scrolls under it.
+
+| Step | Franki | On the stage |
+|---|---|---|
+| Asleep, then awake | Dormant, then the wake ritual once the engine is ready, then listening with the eyes following the spider | Nothing. One fig label: "It's alive!" |
+| Talk, don't type | Whichever state the visitor picks | Four state chips: Listening, Thinking, Muted, Celebrate |
+| Noticed | Glances at the tag | The strip, first terminal. One source tag |
+| Connected | Thinking, electricity between the bolts | Second terminal. A second tag, joined to the first by a stitched wire |
+| Suggested | Speaking | Third terminal. The source card, and the line Franki is saying |
+| Your OK | Awaiting approval | The approval card. Yes works |
+| You said yes | Listening | Fourth terminal. The grocery list card |
+| The win | Celebrate | Fifth terminal in gold. The result card |
+| The jar | Glances at the jar | The jar and the Lab panel |
+| What I know | Listening | The sheet, open |
+| Forget | Thinking, then listening | One item dematerializes. The receipt prints from the Lab |
+
+The step is a pure function of scroll position, so scrolling back rewinds it. One-shot events fire on entering a step.
+
+**Below the stage.** Three full-width sections: **House rules** (six brass-riveted plaques), **The build** (a blueprint anatomy of Franki with four labelled parts, under `FRANKIROCKS` with K-I-R-O lighting gold as it enters view), and **the switch** (a brass knife switch; throwing it sparks the contacts, turns the last rail terminal gold and opens the lab).
+
+**Copy** lives in `apps/web/src/ui/copy-landing.ts` and follows every copy rule here. It claims only what the product does, and it names life areas, never other companies' products.
+
+**Motion.** Scroll-linked motion uses `motion`'s scroll hooks. Headline words materialize in sequence on `stagger`. Nothing is pinned in a way that traps scroll, and nothing hijacks the wheel. Under reduced motion the stage still changes with the step, by plain fades, and the rail fills without glow.
+
 ## Franki: the avatar
 
-The avatar is a contract with more than one renderer. This foundation builds an **SVG ghost** drawn in code. A Rive rig replaces it later behind the same contract, and the SVG ghost stays as the reduced-motion and fallback renderer.
+The avatar is a contract with more than one renderer. This foundation builds an **SVG ghost** drawn in code. A **three.js ghost** (brief 013), ported from the three.js prototype, replaces it as the default behind the same contract, and the SVG ghost stays as the reduced-motion and fallback renderer.
 
 **Look** (drawn fresh in code; `reference/mascot-reference.png` is concept art for proportions only, never shipped):
 - A glossy, soft-green ghost body, wider at the top, with a wavy three-lobe hem.
@@ -146,7 +220,8 @@ Check every text pairing against WCAG AA before use. Glows are layered `box-shad
 ### Type
 
 - **Geist** for interface text. **Geist Mono** with tabular figures for numbers, counters, times and sources.
-- Sizes: 12, 14, 16, 20, 28, 44. Body 16. Card titles 20. One weight change per element at most.
+- **Fraunces** (soft, variable) for display only: front-door headlines and the titles of the 404 and error pages. Never in the lab, never for numbers. One italic word per headline at most.
+- Sizes: 12, 14, 16, 20, 28, 44. Body 16. Card titles 20. One weight change per element at most. Display adds two fluid sizes: `title` `clamp(32px, 4.6vw, 64px)` and `hero` `clamp(44px, 7.4vw, 104px)`.
 - Copy is short, second person, warm and plain. Sentence case everywhere except the `FRANKIROCKS` wordmark.
 
 ## Motion
@@ -161,6 +236,8 @@ Motion uses the `motion` library (motion.dev) for springs, layout and presence, 
 | `dur.quick` | 160 ms | Hover, focus |
 | `dur.base` | 320 ms | Most transitions |
 | `dur.ritual` | 1200 ms | The wake, the receipt print |
+| `dur.current` | 1600 ms | A pulse travelling a wire |
+| `dur.drift` | 9000 ms | Slow ambient loops: motes, a thread swaying |
 | `ease.ecto` | `cubic-bezier(.22, 1, .36, 1)` | Non-spring easing |
 | `stagger` | 40 ms | Lists, strip terminals |
 
@@ -191,6 +268,6 @@ Sound starts only after the first user gesture, never plays over Franki's voice,
 
 The room is dark. Franki is dormant, eyes closed, barely glowing. `FRANKIROCKS` sits above with K-I-R-O lighting gold once on load. One brass button: "Sign in to wake Franki". The call button shows, disabled. No chips while signed out.
 
-## Out of scope for the foundation
+## Out of scope for the foundation (brief 003, kept for the record)
 
-The Rive rig, server data for the strip, jar, Lab, receipt and chips, company mode ("Someone walked in"), and any new API route. The foundation builds these surfaces as components that render props, shows them with fixture props on a development-only specimens page, and wires to the main screen only what the client already has today: auth, voice state, mic and output state, levels, and typed turns.
+The three.js renderer (brief 013 builds it), server data for the strip, jar, Lab, receipt and chips, company mode ("Someone walked in"), and any new API route. The foundation builds these surfaces as components that render props, shows them with fixture props on a development-only specimens page, and wires to the main screen only what the client already has today: auth, voice state, mic and output state, levels, and typed turns.

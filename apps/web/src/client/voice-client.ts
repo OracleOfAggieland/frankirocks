@@ -8,11 +8,14 @@
  * (`/api/session/sdp`) and hangups. The browser never holds an OpenAI credential (R12.6).
  */
 import {
+  LATENCY_SAMPLE_MS,
+  LOUD_LEVEL,
   OpenResponse,
   type RealtimeServerEvent,
   ReceiptResponse,
   SdpResponse,
   TOOL_LIMIT_MS,
+  TURN_RESPONSE_LIMIT_MS,
   StateResponse,
   ToolResponse,
   TurnResponse,
@@ -34,7 +37,8 @@ import { randomId } from "./ids";
 export const OPEN_TIMEOUT_MS = 5_000;
 export const SDP_TIMEOUT_MS = 5_000;
 export const STATE_TIMEOUT_MS = 1_500;
-export const TURN_TIMEOUT_MS = 10_000;
+/** The whole /api/turn budget, retries included: the machine's TURN_RESPONSE_LIMIT_MS (voice-control R7.5). */
+export const TURN_TIMEOUT_MS = TURN_RESPONSE_LIMIT_MS;
 export const TOOL_TIMEOUT_MS = TOOL_LIMIT_MS;
 export const CLOSE_TIMEOUT_MS = 1_500;
 export const RECEIPT_TIMEOUT_MS = 1_500;
@@ -72,6 +76,16 @@ export interface PeerLike {
   onconnectionstatechange: ((ev: unknown) => void) | null;
   ontrack: ((ev: { streams: readonly unknown[] }) => void) | null;
 }
+/**
+ * The output audio element. `muted` is the only gate on what the Owner hears, written only by the reducer's
+ * `muteOutput` and `unmuteOutput` commands; `srcObject` follows the remote track. Nothing reads the element back:
+ * there is no `play()`, `paused` or playback event here. So two things are taken, not observed:
+ *   - heard: the reducer unmutes when the Realtime server reports `output_audio_buffer.started` for an admitted
+ *     reply, and while unmuted the audio is taken as heard; a paused or blocked element, the volume and the speakers
+ *     are never checked;
+ *   - said: the text of a transcript receipt is the response's output audio transcript from the Realtime server,
+ *     not a reading of the audio that played, so it can hold more than was heard before a barge-in.
+ */
 export interface AudioLike {
   muted: boolean;
   srcObject: unknown;
@@ -94,6 +108,12 @@ export interface VoiceClientDeps {
   hash?: typeof permitPayloadHash;
   /** Told when the mic or remote stream appears or goes away. For the Level_Meter only; never changes call behavior. */
   onStreams?: (s: { mic: StreamLike | null; output: unknown | null }) => void;
+  /**
+   * The microphone's unsmoothed level (0..1, the Level_Meter's `rawLevel`), read every LATENCY_SAMPLE_MS while a
+   * call is connected. The last opsClock time it reached LOUD_LEVEL goes with each commit to the Latency_Clock
+   * (voice-control R18.5). Never changes call behavior.
+   */
+  inputLevel?: () => number;
 }
 
 const liveTimers: TimerApi = { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
@@ -121,6 +141,8 @@ export class VoiceClient {
   private pendingClose: Promise<void> | null = null;
   /** Last remote stream reported to `onStreams`. */
   private remoteStream: unknown | null = null;
+  /** The last opsClock time the mic level reached LOUD_LEVEL (R18.5). */
+  private lastLoudAt: number | null = null;
 
   constructor(private readonly deps: VoiceClientDeps) {
     this.state = initialVoiceState({ transcribeModel: deps.transcribeModel }, deps.clock.read().worldClock.zone);
@@ -210,13 +232,16 @@ export class VoiceClient {
       case "open":
         void this.postOpen(c.body);
         return;
-      case "state":
+      case "state": {
+        // `sentAt` dates the StateAck: one requested before the last turn answer can't grant fastO (R4.4).
+        const sentAt = this.deps.clock.read().opsClock.now;
         void this.post("/api/session/state", c.body, STATE_TIMEOUT_MS, StateResponse).then((res) =>
-          this.dispatch(res === null ? { type: "stateFailed" } : { type: "stateOk", response: res }),
+          this.dispatch(res === null ? { type: "stateFailed" } : { type: "stateOk", response: res, sentAt }),
         );
         return;
+      }
       case "turn":
-        void this.postTurn(c.body);
+        void this.postTurn(c.body, c.supersedesTurnId ?? null);
         return;
       case "tool":
         void this.post("/api/tool", { requestId: this.newId(), ...c.body }, TOOL_TIMEOUT_MS, ToolResponse).then((res) =>
@@ -240,6 +265,13 @@ export class VoiceClient {
         void this.hash(c.payload).then(
           (hash) => this.dispatch({ type: "permitChecked", permitId: c.permitId, hash }),
           () => this.dispatch({ type: "permitChecked", permitId: c.permitId, hash: "" }),
+        );
+        return;
+      case "hashPayload":
+        // The speculative reply's payload hash, checked against the server's at a fastO or slowOrdinary admission.
+        void this.hash(c.payload).then(
+          (hash) => this.dispatch({ type: "specHashed", eventId: c.eventId, hash }),
+          () => this.dispatch({ type: "specHashed", eventId: c.eventId, hash: "" }),
         );
         return;
       case "armTimer": {
@@ -273,20 +305,34 @@ export class VoiceClient {
     this.dispatch({ type: "openOk", response: res });
   }
 
-  private async postTurn(body: Extract<VoiceCommand, { kind: "turn" }>["body"]): Promise<void> {
-    let requestId = this.turnRequestIds.get(body.turnId);
+  private async postTurn(body: Extract<VoiceCommand, { kind: "turn" }>["body"], supersedesTurnId: string | null): Promise<void> {
+    // A Superseding_Post is a new request for the same Turn, naming the request that posted it `missing` (R7.8).
+    const key = supersedesTurnId === null ? body.turnId : `supersede:${supersedesTurnId}`;
+    let requestId = this.turnRequestIds.get(key);
     if (requestId === undefined) {
       requestId = this.newId();
-      this.turnRequestIds.set(body.turnId, requestId);
+      this.turnRequestIds.set(key, requestId);
     }
+    const supersedesRequestId = supersedesTurnId === null ? body.supersedesRequestId : (this.turnRequestIds.get(supersedesTurnId) ?? null);
+    if (supersedesTurnId !== null && supersedesRequestId === null) return this.dispatch({ type: "turnFailed", turnId: body.turnId });
+    // Every attempt and every wait fits inside one TURN_TIMEOUT_MS from the first send (R7.5).
+    const start = this.deps.clock.mono();
+    const left = () => TURN_TIMEOUT_MS - (this.deps.clock.mono() - start);
     for (let attempt = 0; ; attempt++) {
-      const r = await this.deps.api.call<unknown>("/api/turn", { body: { ...body, requestId }, timeoutMs: TURN_TIMEOUT_MS });
+      const r = await this.deps.api.call<unknown>("/api/turn", { body: { ...body, requestId, supersedesRequestId }, timeoutMs: Math.max(1, left()) });
       const res = parsed(TurnResponse, r);
+      // A Superseding_Post that arrived before its `missing` post completed answers a retryable hold: resend it
+      // inside the same budget. The machine sees only the final answer (review of wave A, item 19).
+      if (res !== null && supersedesTurnId !== null && res.status === "hold" && res.permit === null && res.retryAfterMs > 0 && left() - res.retryAfterMs > 0) {
+        await this.sleep(res.retryAfterMs);
+        continue;
+      }
       if (res !== null) return this.dispatch({ type: "turnOk", turnId: body.turnId, response: res });
       // Same requestId on a transient failure: a request the server did commit is replayed, not written twice.
       const transient = !r.ok && (r.kind === "timeout" || r.kind === "network" || (r.kind === "http" && r.retryAfterMs > 0));
-      if (!transient || attempt >= TURN_TRANSIENT_RETRIES) return this.dispatch({ type: "turnFailed", turnId: body.turnId });
-      await this.sleep(!r.ok && r.kind === "http" ? Math.min(5_000, r.retryAfterMs) : 250);
+      const wait = !r.ok && r.kind === "http" ? Math.min(5_000, r.retryAfterMs) : 250;
+      if (!transient || attempt >= TURN_TRANSIENT_RETRIES || left() - wait <= 0) return this.dispatch({ type: "turnFailed", turnId: body.turnId });
+      await this.sleep(wait);
     }
   }
 
@@ -317,6 +363,7 @@ export class VoiceClient {
       if (!live()) return mic.getAudioTracks().forEach((t) => t.stop());
       this.mic = mic;
       this.reportStreams();
+      this.sampleLevels(live);
       for (const t of mic.getAudioTracks()) t.enabled = !this.state.micMuted;
       const pc = this.deps.createPeer();
       this.peer = pc;
@@ -347,7 +394,10 @@ export class VoiceClient {
         } catch {
           return;
         }
-        if (typeof event?.type === "string") this.dispatch({ type: "realtime", event, freshId: this.newId() });
+        if (typeof event?.type !== "string") return;
+        // Every server event reaches the machine, `error` included, so a refused judge or speculative reply is seen (R2.8).
+        if (event.type === "input_audio_buffer.committed") this.dispatch({ type: "realtime", event, freshId: this.newId(), lastLoudAt: this.lastLoudAt });
+        else this.dispatch({ type: "realtime", event, freshId: this.newId() });
       };
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -365,6 +415,7 @@ export class VoiceClient {
   /** Stop the microphone track, close the data channel, close the peer connection (R14.1). */
   private teardown(): void {
     this.connection++;
+    this.lastLoudAt = null;
     for (const t of this.mic?.getAudioTracks() ?? []) t.stop();
     this.mic = null;
     const dc = this.channel;
@@ -384,6 +435,24 @@ export class VoiceClient {
     this.deps.audio.srcObject = null;
     this.remoteStream = null;
     this.reportStreams();
+  }
+
+  /** Reads the mic level every LATENCY_SAMPLE_MS while this connection lives, keeping the last loud time (R18.5). */
+  private sampleLevels(live: () => boolean): void {
+    const read = this.deps.inputLevel;
+    if (read === undefined) return;
+    const tick = () => {
+      if (!live()) return;
+      let level = 0;
+      try {
+        level = read();
+      } catch {
+        // the meter's problem, not the call's
+      }
+      if (level >= LOUD_LEVEL) this.lastLoudAt = this.deps.clock.read().opsClock.now;
+      this.timers.setTimeout(tick, LATENCY_SAMPLE_MS);
+    };
+    this.timers.setTimeout(tick, LATENCY_SAMPLE_MS);
   }
 
   /** Tells the Level_Meter the current streams. A throwing callback never reaches the call. */

@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+/* The shared materials (brief 015), then one file per part of the interface for its keyframes and loops. */
+@import "../components/lab/materials.css";
+@import "../components/cursor/cursor.css";
+@import "../components/scenery/scenery.css";
+@import "../components/surfaces/cards.css";
+@import "../components/surfaces/memory.css";
+@import "../components/surfaces/instruments.css";
+@import "../components/surfaces/controls.css";
+@import "../components/screen/screen.css";
+@import "../components/phone/phone.css";
+@import "../components/landing/landing.css";
+@import "../components/landing/stage.css";
+@import "../components/landing/lower.css";
+@import "../components/system/system.css";
+
 /*
  * Token_Source (lab-ui-foundation R2). These custom properties are the authoritative token values.
  * apps/web/src/ui/motion.ts mirrors them by hand for JavaScript; scripts/token-sync.test.ts keeps the
@@ -26,17 +41,26 @@
   /* Type */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* Display type: the front door and the 404 and error pages only, never in the lab, never for numbers. */
+  --font-display: var(--font-fraunces);
   --text-xs: 12px;
   --text-sm: 14px;
   --text-base: 16px;
   --text-lg: 20px;
   --text-2xl: 28px;
   --text-display: 44px;
+  /* Fluid display sizes, for font-display only. */
+  --text-title: clamp(32px, 4.6vw, 64px);
+  --text-title--line-height: 1.08;
+  --text-hero: clamp(44px, 7.4vw, 104px);
+  --text-hero--line-height: 1;
 
   /* Radius */
   --radius-card: 18px;
   --radius-chip: 999px;
   --radius-control: 12px;
+  /* The edge of a framed stage or drawing. */
+  --radius-frame: 28px;
 
   /* Shadow: layered low-opacity glows built from the colour tokens */
   --shadow-ecto-glow:
@@ -48,6 +72,13 @@
   --shadow-card:
     0 1px 0 color-mix(in srgb, var(--color-ink) 6%, transparent) inset,
     0 12px 32px color-mix(in srgb, var(--color-night-0) 70%, transparent);
+  --shadow-gold-glow:
+    0 0 8px color-mix(in srgb, var(--color-gold) 32%, transparent),
+    0 0 24px color-mix(in srgb, var(--color-gold) 14%, transparent);
+  /* mat-glass: a lit top edge and a deep, soft drop. */
+  --shadow-glass:
+    0 1px 0 color-mix(in srgb, var(--color-ink) 8%, transparent) inset,
+    0 18px 48px color-mix(in srgb, var(--color-night-0) 70%, transparent);
 
   /* Easing */
   --ease-ecto: cubic-bezier(.22, 1, .36, 1);
@@ -65,12 +96,76 @@
   --stagger: 40ms;
   /* The idle float period (UI direction "Motion": ±6 px on a 4 s sine). CSS-only. */
   --dur-float: 4000ms;
+  /* Slow ambient loops (scenery, motes). */
+  --dur-drift: 9000ms;
+  /* One pulse travelling a wire. */
+  --dur-current: 1600ms;
+}
+
+html {
+  color-scheme: dark;
+  /* Anchor jumps land below the front door's fixed bar (64 px, 56 px below 768 px). */
+  scroll-padding-top: 80px;
+  scrollbar-color: var(--color-brass) var(--color-stitch);
+}
+/* scrollbar-width does not inherit, so inner scrollers need it too. */
+html,
+html * {
+  scrollbar-width: thin;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-ecto) 28%, transparent);
+  color: var(--color-ink);
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--color-stitch); }
+::-webkit-scrollbar-thumb { background: var(--color-brass); border-radius: var(--radius-chip); }
+
+/* Fraunces at its softest, without the wonky forms; the optical size follows the font size. */
+.font-display {
+  font-variation-settings: "SOFT" 100, "WONK" 0;
+  font-optical-sizing: auto;
 }
 
 body {
   background: var(--color-night-0);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  /* The three.js ghost's canvas layer is wider than the stage; it never adds horizontal scroll (brief 013). */
+  overflow-x: clip;
+}
+
+/* While the three.js ghost shows, its canvas covers the stage's CSS halo and floor, whose float it does not share.
+   visibility, because their keyframes animate opacity. They return at the start of the fade back to the SVG ghost,
+   while the canvas still covers them (brief 013, design note 4.3 item 7). */
+[data-stage]:has([data-three-phase="three"]) > [data-part="halo"],
+[data-stage]:has([data-three-phase="three"]) > [data-part="floor"] {
+  visibility: hidden;
+}
+
+/* Signed out, the Wordmark's box ends 24 px above the avatar box (the stage section's gap-6), inside the canvas
+   layer's top spill. The radial mask is intersected with a vertical one that is clear down to the Wordmark's bottom
+   edge and opaque by 17% of the canvas, above the ghost's hair (about 19%). From CANVAS_FRAME, for a stage W wide the
+   canvas is 1.47W tall and starts 0.23W above the box, so the Wordmark's edge is (0.23W - 24px) / 1.47W down the
+   canvas: calc(15.646% - 24px), since a stop's percentage is of the canvas height. That is 8.8% at the 240 px stage
+   and 10.8% at 340 px, always under 17%. Computed, not yet measured. */
+[data-screen="signed-out"] [data-three-layer="canvas"] {
+  mask-image: radial-gradient(closest-side, black 72%, transparent), linear-gradient(to bottom, transparent calc(15.646% - 24px), black 17%);
+  mask-composite: intersect;
+}
+
+/* Signed in, the header rail and the empty strip slot sit above the stage section, whose top padding (py-4) is the
+   16 px above the avatar box. The same vertical mask, clear down to the section's top edge, keeps the opaque canvas
+   off the rail, its seam and the slots: (0.23W - 16px) / 1.47W, so calc(15.646% - 16px). That is 11.1% at the
+   240 px stage and 12.4% at 340 px, always under 17%. Computed, not yet measured. */
+[data-screen="signed-in"] [data-three-layer="canvas"] {
+  mask-image: radial-gradient(closest-side, black 72%, transparent), linear-gradient(to bottom, transparent calc(15.646% - 16px), black 17%);
+  mask-composite: intersect;
 }
 
 .font-mono {

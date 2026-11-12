@@ -9,7 +9,9 @@ import { validate } from "@franki/core";
 import { BODY_CAP_BYTES, type TokenVerifier, guardRequest } from "../auth/guard";
 import type { Timers } from "../clock/timers";
 import type { Env } from "../config/env";
+import type { FastSlotsPort } from "../onturn/fast-slots-port";
 import type { OpenAIPort } from "../openai/fake";
+import type { Dial } from "../phone/twilio";
 import type { StorePort } from "../store/port";
 import { type RouteError, dependencyLogFields, parseError, toRouteError } from "./errors";
 
@@ -23,10 +25,13 @@ export type Schedule = (work: () => Promise<unknown>) => void;
 export type Log = (event: string, fields: Record<string, string | number | boolean | string[]>) => void;
 
 export interface RouteDeps {
+  dial?: Dial;
   store: StorePort;
   clock: ClockPort;
   hasher: Hasher;
   openai: OpenAIPort;
+  /** FastSlotsV1 (brief 012): the only way a route calls it. Fake in tests. */
+  fastSlots: FastSlotsPort;
   env: Env;
   timers: Timers;
   tokens: TokenVerifier;

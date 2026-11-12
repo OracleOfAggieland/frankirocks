@@ -71,6 +71,20 @@ describe("Specimens_Page (R20.1, R20.2)", () => {
     expect(html).toContain('data-layout="dock"');
   });
 
+  it("shows the materials, parts and brief 015 extras", () => {
+    for (const m of ["blueprint", "blueprint-box", "glass", "brass", "paper", "gold"]) expect(html).toContain(`data-material="${m}"`);
+    for (const p of ["rivet", "plate", "lamp", "fig"]) expect(html).toContain(`data-part-name="${p}"`);
+    for (const s of ["card-rows", "card-rows-closed", "source-rows", "kind-glyphs", "seal", "chips-motion"]) expect(html).toContain(`data-specimen="${s}"`);
+    for (const s of ["sheet-modal", "sheet-two-tap", "jar-motes", "strip-stepper"]) expect(html).toContain(`data-specimen="${s}"`);
+    for (const s of ["lab-receipt", "odometer-steps", "odometer-reduced", "lab-receipt-reduced"]) expect(html).toContain(`data-specimen="${s}"`);
+    for (const c of ["company-off", "company-on", "company-disabled", "forget-ready", "forget-pending", "forget-none", "company-live", "forget-live", "reduced"]) {
+      expect(html).toContain(`data-control="${c}"`);
+    }
+    const order = ["materials", "card-extras", "memory-extras", "instrument-extras", "controls"].map((id) => html.indexOf(`data-section-id="${id}"`));
+    for (const at of order) expect(at).toBeGreaterThan(-1);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
   it("calls no /api/ route and exports the sentinel", () => {
     expect(html).not.toContain("/api/");
     expect(SPECIMENS_SENTINEL_9c41).toBe("SPECIMENS_SENTINEL_9c41");

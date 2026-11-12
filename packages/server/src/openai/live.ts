@@ -2,7 +2,7 @@
  * The live OpenAIPort. Server-only; never constructed in tests (tests/setup/setup.ts blocks the network anyway).
  * `responses.create` takes Responses API params and returns the normalized ResponsesResult.
  * `realtime.calls.create` posts the SDP offer to `/v1/realtime/calls` and returns the answer and `Location`;
- * `realtime.calls.hangup` posts to `/v1/realtime/calls/{id}/hangup`.
+ * `realtime.calls.hangup` posts to `/v1/realtime/calls/{id}/hangup`. `decisions.create` posts to `/v1/decisions`.
  */
 import OpenAI from "openai";
 import { type Env, openaiApiKey } from "../config/env";
@@ -13,7 +13,7 @@ import type { ResponsesResult } from "./responses";
 interface SdkResponse {
   status?: string | null;
   output_text?: string | null;
-  output?: { type: string; content?: { type: string; text?: string; refusal?: string }[] }[];
+  output?: { type: string; name?: string; arguments?: string; status?: string; content?: { type: string; text?: string; refusal?: string }[] }[];
   usage?: { input_tokens?: number; output_tokens?: number } | null;
 }
 
@@ -25,6 +25,10 @@ export function normalizeResponse(r: SdkResponse): ResponsesResult {
   const status = r.status === "completed" ? "completed" : r.status === "incomplete" ? "incomplete" : "failed";
   const text = typeof r.output_text === "string" && r.output_text.length > 0 ? r.output_text : null;
   return {
+    ...(r.output?.some((item) =>
+      item.type === "function_call" && item.name === "make_phone_call" &&
+      (item.status === undefined || item.status === "completed") && /^\s*\{\s*\}\s*$/.test(item.arguments ?? "")
+    ) ? { phoneCallRequested: true } : {}),
     status,
     outputText: refusal === null ? text : null,
     refusal,
@@ -48,6 +52,9 @@ export function liveOpenAI(env: Env = process.env): OpenAIPort {
           await sdk().post(`/realtime/calls/${encodeURIComponent(callId)}/hangup`, { maxRetries: 0, timeout: HANGUP_CALL_DEADLINE_MS });
           return null;
         }
+        case "decisions.create":
+          // POST /v1/decisions (TurnIntents, voice-control R11.2). The caller owns the 350 ms deadline, so no SDK retries.
+          return sdk().decisions.create(body as never, { maxRetries: 0 });
         case "realtime.calls.create": {
           // Multipart `sdp` + `session` (the SDK encodes it); the answer is the SDP body, the call ID is in Location.
           const { offerSdp, session } = body as CreateCallBody;

@@ -1,5 +1,5 @@
-import { HEAD_SECTIONS, type CoreBundle, type Evidence, type Ledger } from "@franki/core";
-import { type DebugData, type DebugState, highlight, jobSource, ledgerTurnId } from "../client/debug-panel";
+import { HEAD_SECTIONS, type CoreBundle, type DebugSessionView, type Evidence, type LatencyRow, type Ledger, summarize } from "@franki/core";
+import { type DebugData, type DebugState, decisionsByTurn, highlight, issuerLabel, jobSource, ledgerTurnId } from "../client/debug-panel";
 
 /**
  * The Debug_Panel (R21.9, R29.3–R29.8, R29.10). Presentational: data comes from `DebugPanelModel`. Every stored
@@ -10,13 +10,17 @@ export interface DebugPanelProps {
   selectedMemoryId: string | null;
   onSelectMemory: (id: string | null) => void;
   onRefresh: () => void;
+  /** The Voice_Client's LatencyRows for the current call, oldest first (voice-control R18.2). */
+  latency?: readonly LatencyRow[];
+  /** Realtime `error` events this visit (review of wave A, item 15). */
+  realtimeErrors?: { n: number; judge: number; spec: number; speech: number; other: number; lastCode: string | null };
 }
 
 const HEAD_CAP = 3500;
 const box = "rounded border border-stitch p-3 text-left";
 const mono = "font-mono text-xs break-all";
 
-export function DebugPanel({ state, selectedMemoryId, onSelectMemory, onRefresh }: DebugPanelProps) {
+export function DebugPanel({ state, selectedMemoryId, onSelectMemory, onRefresh, latency = [], realtimeErrors }: DebugPanelProps) {
   const { data } = state;
   return (
     <section aria-label="Debug panel" className="flex w-full max-w-5xl flex-col gap-4 text-left text-sm text-ink">
@@ -32,8 +36,75 @@ export function DebugPanel({ state, selectedMemoryId, onSelectMemory, onRefresh 
           </span>
         ) : null}
       </header>
+      <LatencyView rows={latency} />
+      <p data-testid="realtime-errors" className="text-xs">
+        Realtime errors {realtimeErrors?.n ?? 0}
+        {realtimeErrors !== undefined && realtimeErrors.n > 0
+          ? `: judge ${realtimeErrors.judge}, spec ${realtimeErrors.spec}, reply ${realtimeErrors.speech}, other ${realtimeErrors.other} · last ${realtimeErrors.lastCode ?? "—"}`
+          : ""}
+      </p>
       {data === null ? <p className="text-ink-dim">{state.stale ? "Nothing loaded yet." : "Loading…"}</p> : <Sections data={data} selectedMemoryId={selectedMemoryId} onSelectMemory={onSelectMemory} />}
     </section>
+  );
+}
+
+const msText = (v: number | null) => (v === null ? "—" : `${Math.round(v)} ms`);
+
+/** The last LatencyRow, the per-path p50 and p95, refusals and late turns (voice-control R18.2, R18.6, R18.7). */
+function LatencyView({ rows }: { rows: readonly LatencyRow[] }) {
+  if (rows.length === 0) return null;
+  const last = rows[rows.length - 1]!;
+  const s = summarize(rows);
+  return (
+    <div className={box} data-testid="latency">
+      <h3 className="mb-2 font-semibold">Latency</h3>
+      <p data-testid="latency-last" className="text-xs">
+        Last turn <span className={mono}>{last.turnId}</span> · path {last.path ?? "—"} · refused {last.refused ?? "—"} · verdict {last.verdict ?? "—"} · end of speech to audible {msText(last.endToAudibleMs)} · commit delay{" "}
+        {msText(last.commitDelayMs)}
+        {last.late ? " · late" : ""}
+      </p>
+      <table className="my-2 text-xs">
+        <thead>
+          <tr className="text-ink-dim">
+            <th className="pr-3 text-left">path</th>
+            <th className="pr-3 text-left">n</th>
+            <th className="pr-3 text-left">p50</th>
+            <th className="text-left">p95</th>
+          </tr>
+        </thead>
+        <tbody>
+          {s.byPath.map((p) => (
+            <tr key={p.path} data-testid="latency-path">
+              <td className="pr-3">{p.path}</td>
+              <td className="pr-3">{p.n}</td>
+              <td className="pr-3">{msText(p.p50)}</td>
+              <td>{msText(p.p95)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p data-testid="latency-refused" className="text-xs">
+        fastO refused: {s.refused.map((r) => `${r.reason} ${r.n}`).join(", ")} · late turns {s.late}
+      </p>
+    </div>
+  );
+}
+
+/** The Session's audience and parses (voice-control R13.5). */
+function AudienceView({ session }: { session: DebugSessionView | null }) {
+  if (session === null) return null;
+  return (
+    <div className={box} data-testid="audience">
+      <h3 className="mb-2 font-semibold">Audience</h3>
+      <p className="text-xs">
+        Audience {session.repairPending ? "unknown (repair pending)" : session.audience} · failed parses {session.failedParses}
+      </p>
+      {session.parseGapTurnId !== null ? (
+        <p data-testid="parse-gap" className="text-xs text-brass">
+          fastO off: parse gap at turn <span className={mono}>{session.parseGapTurnId}</span>
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -43,6 +114,7 @@ function Sections({ data, selectedMemoryId, onSelectMemory }: { data: DebugData;
   const more = (s: string) => (data.truncated.includes(s as never) ? <p className="text-xs text-brass">More {s} exist than were loaded.</p> : null);
   return (
     <>
+      <AudienceView session={data.session} />
       <div className={box}>
         <h3 className="mb-2 font-semibold">Turns</h3>
         {data.turns.length === 0 ? (
@@ -132,17 +204,31 @@ function Sections({ data, selectedMemoryId, onSelectMemory }: { data: DebugData;
       <div className={box}>
         <h3 className="mb-2 font-semibold">Admission and extraction decisions</h3>
         {data.ledger.length === 0 ? <p className="text-ink-dim">No decisions.</p> : null}
-        <ul className="flex flex-col gap-1 text-xs">
-          {data.ledger.map(({ id, record, issuer, permitKind }) => {
-            // The validated record matches the Ledger union; its schema type keeps `payload` open.
-            const l = record as unknown as Ledger;
-            return (
-              <li key={id} data-testid="ledger-row">
-                {l.at} · {l.kind === "decision" ? l.payload.purpose : l.kind} · {l.state} · turn <span className={mono}>{ledgerTurnId(l) ?? "none"}</span> · permit {permitKind ?? "—"} · issuer {issuer ?? "—"}
-                {l.kind === "decision" && l.payload.reasonCodes.length > 0 ? <span> · reasons {l.payload.reasonCodes.join(", ")}</span> : null}
-              </li>
-            );
-          })}
+        <ul className="flex flex-col gap-2 text-xs">
+          {decisionsByTurn(data.ledger).map((group, gi) => (
+            <li key={group.turnId ?? `none-${gi}`} data-testid="decision-group">
+              <p className="text-ink-dim">
+                turn <span className={mono}>{group.turnId ?? "none"}</span>
+              </p>
+              <ul className="ml-3 flex flex-col gap-1">
+                {group.items.map(({ id, record, issuer, permitKind, falseHold, played }) => {
+                  // The validated record matches the Ledger union; its schema type keeps `payload` open.
+                  const l = record as unknown as Ledger;
+                  return (
+                    <li key={id} data-testid="ledger-row" data-played={played ? "true" : "false"}>
+                      {played ? <span className="mr-1 text-ecto">▶ played</span> : null}
+                      {l.at} · {l.kind === "decision" ? l.payload.purpose : l.kind} · {l.state} · turn <span className={mono}>{ledgerTurnId(l) ?? "none"}</span> · permit{" "}
+                      {permitKind ?? (l.state === "blocked" ? "hold" : "—")} · issuer {issuerLabel(issuer)}
+                      {l.kind === "decision" ? <span> · audience {l.payload.audience}</span> : null}
+                      {falseHold ? <span className="ml-1 text-brass">false hold</span> : null}
+                      {permitKind === "postCommitControl" ? <span> · class: not recorded</span> : null}
+                      {l.kind === "decision" && l.payload.reasonCodes.length > 0 ? <span> · reasons {l.payload.reasonCodes.join(", ")}</span> : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          ))}
         </ul>
         {more("ledger")}
       </div>

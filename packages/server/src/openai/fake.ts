@@ -3,7 +3,7 @@
  * This is the skeleton from task 6. Later tasks put the real Responses and Realtime clients behind the same
  * `OpenAIPort` shape, so routes and workers take either one.
  */
-export type OpenAIEndpoint = "responses.create" | "realtime.calls.create" | "realtime.calls.hangup";
+export type OpenAIEndpoint = "responses.create" | "realtime.calls.create" | "realtime.calls.hangup" | "decisions.create";
 
 export interface RecordedRequest {
   endpoint: OpenAIEndpoint;

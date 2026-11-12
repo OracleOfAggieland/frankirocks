@@ -58,6 +58,7 @@ import {
   relevantOpen,
   renderedMemory,
   sameClaim,
+  statusTransition,
   tsFromMs,
   wantsOpen,
 } from "@franki/core";
@@ -293,6 +294,12 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
     // Lost the lease (Q18 requeued it and another worker claimed it): commit nothing (R22.9).
     if (leased === null) return "requeued";
     const epoch = await tx.get<CoreEpoch>(paths.core(uid, "epoch"));
+    if (epoch !== null && epoch.data.epoch === job.epoch && epoch.data.policyRev > job.policyRev) {
+      // A policyRev rise (a late control hit, wave B's audience changes) must never lose an extraction: the job
+      // runs again at the new policyRev, with nothing written from this call (review of wave A, item 16; Q93).
+      tx.update(leased.path, { ...leased.job, status: "queued", policyRev: epoch.data.policyRev, error: null, leaseToken: null, leaseUntil: null, updatedAt: now });
+      return "requeued";
+    }
     if (epoch === null || epoch.data.epoch !== job.epoch || epoch.data.policyRev !== job.policyRev) {
       // The captured epoch or policyRev changed: mark failed with an ErrorCode, write no Memory (KS06).
       tx.update(leased.path, { ...leased.job, status: "failed", error: "STALE", leaseToken: null, leaseUntil: null, updatedAt: now });
@@ -374,14 +381,24 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
         }
       }
       // A correction says the old value was an error (`wrong`); anything else says it stopped being true (`history`).
-      const status = plan.change === "correct" ? "wrong" : "history";
+      // `statusTransition` (design 6.5) is the one function that decides it; a row it refuses is left as it is.
+      const event = plan.change === "correct" ? "correct" : "transition";
       for (const [id, old] of replaced) {
+        const status = statusTransition(old.data.status, event);
+        if (status === "refuse") {
+          // Not closed, so not replaced: `replacesIds` names only the rows this Memory closed.
+          replaced.delete(id);
+          continue;
+        }
         closed.add(id);
         tx.update(old.path, { ...old.data, status, validTo: m.validFrom, updatedAt: now });
       }
       // An earlier Item of this same output with the same single-valued key is closed the same way.
       if (plan.single) {
-        for (const w of written) if (w.memory.key === m.key && w.memory.status === "active") w.memory = { ...w.memory, status, validTo: m.validFrom };
+        for (const w of written) {
+          const status = statusTransition(w.memory.status, event);
+          if (w.memory.key === m.key && w.memory.status === "active" && status !== "refuse") w.memory = { ...w.memory, status, validTo: m.validFrom };
+        }
       }
       written.push({ id: plan.id, memory: { ...m, replacesIds: [...new Set([...m.replacesIds, ...replaced.keys()])].slice(0, 16) } });
     }

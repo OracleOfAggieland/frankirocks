@@ -3,6 +3,7 @@
  * Wire TS is RFC3339 UTC. All objects are closed and every key is required (nullable keys hold null).
  */
 import {
+  Au,
   BrowserState,
   Cov,
   ErrorCode,
@@ -196,10 +197,11 @@ const StripView = obj({
 });
 
 // ---------------------------------------------------------------------------------------------
-// Tools (only `recall` is built in this slice)
+// Agent tools
 
 export const RecallCall = obj({ name: literal("recall"), args: RecallArgs });
-export const ToolCall = tagged("name", { recall: RecallCall });
+export const PhoneCall = obj({ name: literal("make_phone_call"), args: obj({}) });
+export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall });
 export type ToolCall = Infer<typeof ToolCall>;
 
 export const RecallResult = obj({
@@ -212,8 +214,17 @@ export const RecallResult = obj({
   snapshot: nullable(SnapshotView),
   cards: arr(Card, 2),
 });
-export const ToolResult = tagged("name", { recall: RecallResult });
+export const PhoneResult = obj({ name: literal("make_phone_call"), requestId: ID, message: str(512) });
+export const ToolResult = tagged("name", { recall: RecallResult, make_phone_call: PhoneResult });
 export type ToolResult = Infer<typeof ToolResult>;
+
+// The server reads the destination and assignment from the owner's turn.
+export const PHONE_TOOL = {
+  type: "function",
+  name: "make_phone_call",
+  description: "Place one outbound phone call for the signed-in user. Use only when the user explicitly asks you to dial now and gives one phone number in their current message. If the number is missing, ask for it with its country code. Never guess a number or call for a hypothetical, future, quoted or negated request. Report the tool's actual result.",
+  parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
+} as const;
 
 const nullableJson = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: "null" }] });
 const EID_JSON = { type: "string", maxLength: 43 };
@@ -410,18 +421,42 @@ export const DebugItem = tagged("kind", {
     kind: literal("ledger"),
     id: ID,
     record: Ledger,
-    issuer: nullable(literal("devAdmit")),
+    /** "seam" for a server decision, "browser" for a recorded fastO (voice-control R13.4). */
+    issuer: nullable(oneOf(["seam", "browser"])),
+    /** From the cited request entry's response, or `fastO` from the decision's key; null for a hold. */
     permitKind: nullable(PermitKind),
+    /** A slowOrdinary decision on a voice Turn whose stored judge is not O (R13.3). */
+    falseHold: bool,
+    /** The decision's turn Ref, for grouping by Turn (R13.4). */
+    turnId: nullable(ID),
+    /** The decision whose reply played: the fastO one when its Turn has one on this page. */
+    played: bool,
   }),
   session: obj({ kind: literal("session"), id: ID, record: Session }),
   head: obj({ kind: literal("head"), id: literal("bundle"), record: CoreBundle }),
 });
 export type DebugItem = Infer<typeof DebugItem>;
 
+/** The turns section's Session view (voice-control R13.5; design "Debug_Panel"). */
+export const DebugSessionView = obj({
+  sessionId: ID,
+  /** The stored audience. */
+  audience: Au,
+  /** A `parseLease` holds: shown as "unknown (repair pending)". */
+  repairPending: bool,
+  /** User Turns of the Session with `parseState:"failed"`. */
+  failedParses: nat(),
+  /** While `committedParseSeq < lastClientSeq`: the user Turn at `committedParseSeq + 1` ("fastO off: parse gap"). */
+  parseGapTurnId: nullable(ID),
+});
+export type DebugSessionView = Infer<typeof DebugSessionView>;
+
 export const DebugPage = obj({
   section: DebugSection,
   items: arr(DebugItem, 50),
   nextCursor: nullable(str(128, { min: 1 })),
   coverage: Cov,
+  /** Set on the turns section of a Session; null otherwise. */
+  session: nullable(DebugSessionView),
 });
 export type DebugPage = Infer<typeof DebugPage>;

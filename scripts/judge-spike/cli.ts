@@ -4,21 +4,25 @@
  *
  *   synth [--live] [--lines id,id]    synthetic audio through text-to-speech
  *   harness [--source synthetic|owner] [--live] [--lines id,id] [--max-tokens n|inf] [--effort value] [--seed n]
- *           [--mode sequential|parallel] [--stagger-ms n]
+ *           [--mode sequential|parallel] [--stagger-ms n] [--judge judge_v1|judge_v2] [--predicates contract]
  *                                     the judge measurement; without --live it runs the whole flow against the
  *                                     fake transport. The judge defaults to no output cap and effort minimal; the
  *                                     lines run in a fixed seeded order (default seed 7), up to 30 per session.
  *                                     Each take's trailing silence is trimmed before it is streamed (trim.ts);
  *                                     a take with no speech is refused before connecting. The mode defaults to
  *                                     parallel (the reply goes out beside the judge, muted), stagger 0 ms.
+ *           [--fast-slots]            also sends FastSlotsV1 on every line that opens a write route (fast-slots.ts):
+ *                                     through a fake port unless --live; times, results and item kinds only.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { JUDGE_EFFORTS, type JudgeOutputCap, type JudgeSettings, isJudgeEffort, isJudgeOutputCap, isSpikeFormat, parseWav } from "@franki/core";
+import { FAST_SLOTS_DEADLINE_MS, JUDGE_CONTRACTS, JUDGE_EFFORTS, PREDICATE_SETS, type PredicateSetName, isPredicateSetName, type JudgeOutputCap, type JudgeSettings, isJudgeContract, isJudgeEffort, isJudgeOutputCap, isSpikeFormat, parseWav } from "@franki/core";
 import { MODEL_VARS, requireModel } from "../../packages/server/src/config/models";
 import { requireEnv } from "../../packages/server/src/config/env";
 import { type HarnessClock, liveClock, wallDateIso } from "./clock";
+import { type DecisionsKind, type ParseRow, fakeDecisionsPort, lineParser, liveDecisionsPort } from "./decisions";
+import { type FastSlotsRow, HARNESS_SLOTS_WAIT_MS, type SpeakerCount, fakeFastSlotsPort, liveFastSlotsPort, slotsLiner, slotsLogLine, speakerCertainCount } from "./fast-slots";
 import { fakeConnect, placeholderPcm } from "./fake-realtime";
 import { DEFAULT_RUN, DEFAULT_SEED, MAX_RUN_LINES, MAX_STAGGER_MS, NO_SPEECH, RUN_MODES, type RunMode, type RunSettings, SPIKE_JUDGE_SETTINGS, runHarness, silentTakes } from "./harness";
 import { type ProbeLine, lineSetHash, loadLines } from "./lines";
@@ -39,16 +43,19 @@ export interface CliContext {
 
 export interface Flags {
   live: boolean;
+  /** `--fast-slots`: also measure FastSlotsV1 (brief 012 task A9). */
+  fastSlots: boolean;
   lines: string[] | null;
   values: Record<string, string>;
 }
 
-/** `--live`, `--lines a,b` and `--name value` flags. Unknown positional words are an error. */
+/** `--live`, `--fast-slots`, `--lines a,b` and `--name value` flags. Unknown positional words are an error. */
 export function parseFlags(args: readonly string[]): Flags {
-  const flags: Flags = { live: false, lines: null, values: {} };
+  const flags: Flags = { live: false, fastSlots: false, lines: null, values: {} };
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (a === "--live") flags.live = true;
+    else if (a === "--fast-slots") flags.fastSlots = true;
     else if (a.startsWith("--") && i + 1 < args.length && !args[i + 1]!.startsWith("--")) {
       const name = a.slice(2);
       const value = args[++i]!;
@@ -119,7 +126,10 @@ function readTake(path: string): Uint8Array | string {
   return w.pcm;
 }
 
-/** `--max-tokens <n|inf>` and `--effort <value>`; the spike's defaults are no cap and `minimal`. */
+/**
+ * `--max-tokens <n|inf>`, `--effort <value>` and `--judge judge_v1|judge_v2`; the spike's defaults are no cap,
+ * `minimal` and judge_v1, at the app's judge deadline (voice-control R17.1).
+ */
 export function judgeSettings(values: Readonly<Record<string, string>>): JudgeSettings {
   const rawCap = values["max-tokens"];
   let maxOutputTokens: JudgeOutputCap = SPIKE_JUDGE_SETTINGS.maxOutputTokens;
@@ -130,7 +140,16 @@ export function judgeSettings(values: Readonly<Record<string, string>>): JudgeSe
   }
   const effort = values.effort ?? SPIKE_JUDGE_SETTINGS.effort;
   if (!isJudgeEffort(effort)) throw new Error(`--effort must be one of ${JUDGE_EFFORTS.join(", ")}, not ${effort}`);
-  return { maxOutputTokens, effort };
+  const contract = values.judge ?? SPIKE_JUDGE_SETTINGS.contract;
+  if (!isJudgeContract(contract)) throw new Error(`--judge must be one of ${JUDGE_CONTRACTS.join(", ")}, not ${contract}`);
+  return { ...SPIKE_JUDGE_SETTINGS, contract, maxOutputTokens, effort };
+}
+
+/** `--predicates <name>`: the named predicate set for the Decisions call; `contract` is the default and the only set today. */
+export function predicateSettings(values: Readonly<Record<string, string>>): PredicateSetName {
+  const name = values.predicates ?? "contract";
+  if (!isPredicateSetName(name)) throw new Error(`--predicates must be one of ${Object.keys(PREDICATE_SETS).join(", ")}, not ${name}`);
+  return name;
 }
 
 /** `--seed <n>` for the line order, an integer from 0 to 2^32 - 1; DEFAULT_SEED when absent. */
@@ -167,6 +186,7 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   const judge = judgeSettings(flags.values);
   const runMode = runSettings(flags.values);
   const seed = seedOf(flags.values);
+  const predicates = predicateSettings(flags.values);
   const all = loadLines(linesFile(ctx.spikeDir));
   let lines = selectLines(all, flags.lines);
   // The owner may record any subset: without --lines, the owner run takes the lines that have a take.
@@ -191,13 +211,14 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   const seconds = trims.reduce((n, t) => n + (t === null ? 0 : t.pcm.byteLength / 48_000), 0);
   const trimmedSeconds = trims.reduce((n, t) => n + (t === null ? 0 : t.trimmedMs / 1000), 0);
   ctx.log(`harness: ${lines.length} lines, ${seconds.toFixed(1)} s of audio, source ${source}, ${flags.live ? "LIVE Realtime session" : "fake transport"}`);
-  ctx.log(`harness: judge max_output_tokens ${judge.maxOutputTokens}, effort ${judge.effort}; line order seed ${seed}`);
+  ctx.log(`harness: judge ${judge.contract}, deadline ${judge.deadlineMs} ms, max_output_tokens ${judge.maxOutputTokens}, effort ${judge.effort}; line order seed ${seed}`);
   ctx.log(`harness: ${trimmedSeconds.toFixed(1)} s of trailing silence trimmed from the takes (speech threshold RMS ${SPEECH_RMS_THRESHOLD}, ${KEEP_AFTER_MS} ms kept)`);
   ctx.log(
     runMode.mode === "parallel"
       ? `harness: mode parallel, stagger ${runMode.staggerMs} ms; a speculative reply goes out on every line, held lines included, and is cancelled at the verdict`
       : "harness: mode sequential; the reply goes out only after a valid O",
   );
+  ctx.log(`harness: slow parse per line through the ${flags.live ? "LIVE Decisions API" : "fake Decisions port (every probability 0, 0 ms)"}`);
   if (lines.length === 0) {
     ctx.log("harness: no lines to run.");
     return 1;
@@ -248,10 +269,41 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   }
   if (source === "owner") for (const l of lines) voices.set(l.id, "owner");
 
-  const work = runHarness({ lines, audio, voices, models, judge, run: runMode, seed, apiKey, connect, clock, log: ctx.log });
+  // The slow parse per line: live only with --live (R17.2).
+  const decisions: DecisionsKind = flags.live ? "live" : "fake";
+  const baseParse = lineParser(flags.live ? liveDecisionsPort(ctx.env) : fakeDecisionsPort(), ctx.env, flags.live, predicates);
+  // FastSlotsV1 per line, after its parse (brief 012 item 6). A dry run's transcript means nothing, so the line's own
+  // text stands in for it there; a live run sends the transcript. Neither is stored.
+  const slotRows = new Map<string, FastSlotsRow>();
+  let parseLine = baseParse;
+  if (flags.fastSlots) {
+    ctx.log(`harness: FastSlotsV1 on every line that opens a write route, through the ${flags.live ? "LIVE FastSlots port" : "fake FastSlots port (valid and empty, 0 ms)"}`);
+    const slotsLine = slotsLiner(flags.live ? liveFastSlotsPort(ctx.env) : fakeFastSlotsPort());
+    const byId = new Map(lines.map((l) => [l.id, l]));
+    parseLine = async (turnId: string, utterance: string): Promise<ParseRow> => {
+      const parsed = await baseParse(turnId, utterance);
+      const line = byId.get(turnId);
+      const row = line === undefined ? null : await slotsLine(line, flags.live ? utterance : line.text, parsed.parse);
+      if (row !== null) {
+        slotRows.set(turnId, row);
+        ctx.log(slotsLogLine(row));
+      }
+      return parsed;
+    };
+  }
+  const work = runHarness({ lines, audio, voices, models, judge, run: runMode, seed, apiKey, connect, clock, log: ctx.log, parseLine });
   const out = virtual === null ? await work : await virtual.run(work);
   const date = wallDateIso();
-  const run = runFile({ date, source, transport: flags.live ? "live" : "fake", lineSetCommit: set.commit + (set.dirty ? " (dirty)" : ""), lineSetHash: lineSetHash(all), models, judge, run: runMode }, out);
+  const run = runFile({ date, source, transport: flags.live ? "live" : "fake", lineSetCommit: set.commit + (set.dirty ? " (dirty)" : ""), lineSetHash: lineSetHash(all), models, judge, run: runMode, decisions, predicates }, out);
+  if (flags.fastSlots) {
+    run.fastSlots = {
+      port: flags.live ? "live" : "fake",
+      waitMs: HARNESS_SLOTS_WAIT_MS,
+      deadlineMs: FAST_SLOTS_DEADLINE_MS,
+      rows: out.order.flatMap((id) => (slotRows.has(id) ? [slotRows.get(id)!] : [])),
+      speakerCertain: speakerCountFor(flags.live, run.rows, ctx.spikeDir),
+    };
+  }
   const dir = flags.live ? resultsDir(ctx.spikeDir) : join(ctx.spikeDir, "dist", "dry-run");
   mkdirSync(dir, { recursive: true });
   const base = join(dir, `${date.replace(/[:.]/g, "-")}-${source}`);
@@ -263,6 +315,34 @@ async function harnessCommand(flags: Flags, ctx: CliContext): Promise<number> {
   return 0;
 }
 
+/** The run whose parse probabilities `speakerCertain` is counted from: the Nov 10 owner run (brief 012 task A9). */
+export const SPEAKER_RUN_PREFIX = "2026-11-10";
+
+/**
+ * Speaker certainty for a FastSlots run: a live run counts its own parses; a dry run's parses are fake, so it (or a
+ * live run whose rows can't be counted) falls back to the earlier owner run.
+ */
+export function speakerCountFor(live: boolean, rows: readonly Parameters<typeof speakerCertainCount>[1][number][], spikeDir: string): SpeakerCount {
+  if (live) {
+    const here = speakerCertainCount("this run", rows);
+    if (!("unavailable" in here)) return here;
+  }
+  return earlierSpeakerCount(spikeDir);
+}
+
+/** Counts speaker certainty in the newest committed run of SPEAKER_RUN_PREFIX, or says why it can't. */
+export function earlierSpeakerCount(spikeDir: string): SpeakerCount {
+  const dir = resultsDir(spikeDir);
+  const name = existsSync(dir) ? readdirSync(dir).filter((f) => f.startsWith(SPEAKER_RUN_PREFIX) && f.endsWith(".json")).sort().at(-1) : undefined;
+  if (name === undefined) return { file: null, unavailable: "no run file" };
+  try {
+    const doc = JSON.parse(readFileSync(join(dir, name), "utf8")) as { rows?: unknown };
+    return speakerCertainCount(name, Array.isArray(doc.rows) ? doc.rows : []);
+  } catch {
+    return { file: name, unavailable: "the run file can't be read" };
+  }
+}
+
 const COMMANDS: Record<string, (flags: Flags, ctx: CliContext) => Promise<number>> = { synth: synthCommand, harness: harnessCommand };
 
 /** Runs one command and returns the exit code. */
@@ -270,7 +350,7 @@ export async function main(argv: readonly string[], ctx: CliContext): Promise<nu
   const [name, ...rest] = argv;
   const command = name === undefined ? undefined : COMMANDS[name];
   if (command === undefined) {
-    ctx.log(`usage: node scripts/judge-spike/run.mjs <${Object.keys(COMMANDS).join("|")}> [--live] [--lines id,id] [--source synthetic|owner] [--max-tokens n|inf] [--effort value] [--seed n] [--mode sequential|parallel] [--stagger-ms n]`);
+    ctx.log(`usage: node scripts/judge-spike/run.mjs <${Object.keys(COMMANDS).join("|")}> [--live] [--lines id,id] [--source synthetic|owner] [--max-tokens n|inf] [--effort value] [--seed n] [--mode sequential|parallel] [--stagger-ms n] [--judge judge_v1|judge_v2] [--predicates contract] [--fast-slots]`);
     return 2;
   }
   return command(parseFlags(rest), ctx);

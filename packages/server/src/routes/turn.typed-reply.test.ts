@@ -47,7 +47,7 @@ describe("typed reply without a call", () => {
       model: "test-brain-model",
       reasoning: { effort: "low" },
       store: false,
-      tools: [],
+      tools: [expect.objectContaining({ name: "make_phone_call", strict: true })],
       instructions: s.deck.head.text,
       input: [{ role: "user", content: "hi there" }],
     });

@@ -32,8 +32,8 @@ export const SPRING = {
   press: { stiffness: 420, damping: 30 },
 } as const satisfies Record<string, Spring>;
 
-/** Durations in milliseconds. */
-export const DUR = { quick: 160, base: 320, ritual: 1200 } as const;
+/** Durations in milliseconds. `drift` is the period of slow ambient loops; `current` is one pulse travelling a wire. */
+export const DUR = { quick: 160, base: 320, ritual: 1200, drift: 9000, current: 1600 } as const;
 
 /** Cubic-bezier control points. */
 export const EASE = { ecto: [0.22, 1, 0.36, 1] } as const;

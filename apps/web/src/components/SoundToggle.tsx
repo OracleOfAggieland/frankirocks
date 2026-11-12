@@ -54,14 +54,15 @@ export function SoundToggleView({ on, onToggle }: { on: boolean; onToggle: () =>
       aria-label={COPY.sound.toggle}
       data-sound-toggle=""
       onClick={onToggle}
-      className={`${TARGET} ${FOCUS} inline-flex items-center justify-center rounded-control border border-brass text-brass hover:bg-night-1`}
+      className={`${TARGET} ${FOCUS} inline-flex items-center justify-center rounded-full border border-brass/70 text-brass transition-colors duration-(--dur-quick) hover:border-brass hover:bg-brass/10 hover:text-brass-hi`}
     >
-      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false" className="h-5 w-5">
-        <path d="M3 8 H6 L10 4 V16 L6 12 H3 Z" fill="currentColor" />
+      {/* A speaker drawn in line: the box and its cone, then two sound waves on, or a small cross off. */}
+      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false" className="h-5 w-5" data-sound={on ? "on" : "off"}>
+        <path d="M2.75 7.75 H5.75 L9.75 4.25 V15.75 L5.75 12.25 H2.75 Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
         {on ? (
-          <path d="M13 7 Q15 10 13 13 M15 5 Q19 10 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M12.75 7.5 A3.5 3.5 0 0 1 12.75 12.5 M15 5.25 A6.75 6.75 0 0 1 15 14.75" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         ) : (
-          <path d="M13 7 L18 13 M18 7 L13 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M13 8 L17 12 M17 8 L13 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         )}
       </svg>
     </button>

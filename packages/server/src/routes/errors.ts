@@ -47,8 +47,6 @@ export function toRouteError(error: unknown): RouteError {
   if (error instanceof ConfigError) return configError(500, error.detail);
   // Kernel `unsupported` (fixture clock mode, R6.7) is a configuration state this slice cannot serve.
   if (error instanceof Error && (error as { code?: unknown }).code === "unsupported") return configError(500, "unsupported");
-  // devAdmit refusing in production (R17.5).
-  if (error instanceof Error && error.name === "DevAdmitRefusedError") return configError(500, "devAdmit");
   if (isStoreError(error)) {
     switch (error.code) {
       case "staleRevision":

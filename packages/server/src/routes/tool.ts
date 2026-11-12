@@ -1,5 +1,6 @@
 /**
- * POST /api/tool, the single-read recall tool (R27; R28.1–R28.3; KC06, KC09, KS01; Q28; design "Tool turn").
+ * POST /api/tool. Both tools check the session and wait for its committed turn before acting.
+ * Phone calls use a per-turn dial record. The recall path follows R27 and R28.1–R28.3:
  *
  *   1. The closed body, including the closed `recall` args, or PARSE (R27.11). The Session must be this Owner's
  *      (SCOPE).
@@ -13,7 +14,7 @@
  *      failed or late read gives code-ranked excerpts of the same lines (contracts §5 Recall readers), and empty
  *      notes with coverage `unknown` only when none match (R27.7). Statements without supplied citations are
  *      dropped (R27.6).
- *   6. In one transaction, `devAdmit` issues the tool continuation's `slowOrdinary` Permit over a payload that
+ *   6. In one transaction, the Admission_Seam (`admitRule`) issues the tool continuation's Permit over a payload that
  *      includes the tool output, its decision is written to the ledger, and the response is recorded (R27.8).
  * The response is sent within TOOL_RESULT_LIMIT_MS (R27.5): the read's deadline shrinks by whatever the parse wait and reads used.
  */
@@ -35,6 +36,8 @@ import {
   recallNotes,
   recallRequest,
   recallResult,
+  type RuleInput,
+  serverRule,
   tsFromMs,
   turnRef,
 } from "@franki/core";
@@ -44,8 +47,10 @@ import { ensureCoreDocs, ownerClock, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck, sameStamp } from "../deck";
 import { foregroundEC, readAllMemories, snapshotFor, storeReader } from "../head-build";
 import { completeRequest } from "../ledger/request";
-import { admit } from "../admission/seam";
+import { admitRule } from "../admission/seam";
+import { effectiveAudience, hasParseGap } from "../audience";
 import type { ResponsesResult } from "../openai/responses";
+import { placePhoneCall } from "../phone/outbound";
 import { paths } from "../store/paths";
 import { barrierError, scopeError } from "./errors";
 import { Unrecorded, mutation } from "./mutation";
@@ -93,9 +98,8 @@ const MIN_READ_MS = 400;
  * The recall read (steps 4 and 5). Never throws for model problems: a failed, refused, unparsable or late read
  * gives code-ranked excerpts of the same supplied lines (partial coverage), and empty notes only when none match.
  */
-async function readRecall(ctx: RouteContext, req: ToolReq, turn: Turn, deadlineAt: number): Promise<Result> {
+async function readRecall(ctx: RouteContext, req: ToolReq, args: Extract<ToolReq["tool"], { name: "recall" }>["args"], turn: Turn, deadlineAt: number): Promise<Result> {
   const { uid, deps } = ctx;
-  const args = req.tool.args;
   if (!explicitRequest(turn.text, args)) return recallResult([], "unknown", false);
   // `inspect` is snapshot() in the contract, which this slice does not build.
   if (args.purpose === "inspect" || deadlineAt <= deps.clock.read().opsClock.now) return recallResult([], "unknown", false);
@@ -154,7 +158,9 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
     if (check.kind === "stale") throw new Unrecorded<ToolRes>({ ...empty, status: "stale" });
     if (check.kind === "wait") throw new Unrecorded<ToolRes>({ ...empty, status: "hold" });
 
-    const result = await readRecall(ctx, req, check.turn, start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS);
+    const result: Result = req.tool.name === "make_phone_call"
+      ? { name: "make_phone_call", requestId: req.requestId, message: await placePhoneCall(ctx, req.stamp) }
+      : await readRecall(ctx, req, req.tool.args, check.turn, start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS);
 
     return deps.store.transaction(uid, async (tx) => {
       const doc = await tx.get<Session>(paths.session(uid, req.stamp.sessionId));
@@ -170,11 +176,34 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       const turn = check.turn;
       const safe = await earlierSafeTurns(tx, uid, req.stamp.sessionId, turn.seq, ctx);
       const deck = head === null ? null : issueDeck(current, head, ops, safe);
-      const admitted = admit(
+      // Row 3 of the Server_Rule: the Turn's parse has committed (the wait above). Recall notes are limited to S0
+      // unless the Turn could carry S1+ (judge O or typed, private audience, no gap) (R8.11, R12.7).
+      const rule: RuleInput = {
+        source: "tool",
+        transcript: "final",
+        // A pasted (T) Turn is not the Owner's own words: its tool output is limited to S0, so it never reads as a
+        // typed line here (review of wave A, item 21).
+        judge: turn.sourceClass === "T" ? "timeout" : (turn.judge ?? (turn.itemIds.length === 0 ? "typed" : "timeout")),
+        parse: { kind: "none" },
+        regexMatch: false,
+        audience: effectiveAudience(s, ops),
+        narrowedHere: false,
+        callLive: s.registeredCallIds.length > 0,
+        parseGap: hasParseGap(s),
+        noteSens: "none",
+        wordsPer2s: true,
+        allFinal: true,
+        toolParseCommitted: true,
+        wave: "A",
+      };
+      const planned = serverRule(rule);
+      const output = result.name === "recall" && planned.kind === "permit" && planned.notes !== "all" ? { ...result, notes: result.notes.filter((n) => n.sens === "S0") } : result;
+      const admitted = admitRule(
         tx,
         {
           uid,
           requestId: req.requestId,
+          requestEntryId: key.keyHash,
           turnRef: turnRef(req.stamp.turnId, req.stamp.sessionId, turn.rev),
           core: { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev },
           stamp: req.stamp,
@@ -182,15 +211,15 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
           notes: [],
           turns: deck?.turns ?? [],
           audioIds: turn.itemIds,
-          toolOutput: result,
-          turn: { kind: "tool" },
+          toolOutput: output,
           opsNow: ops,
+          rule,
         },
         deps,
       );
       const response: ToolRes =
         admitted.kind === "permit"
-          ? { stamp: req.stamp, callId: req.callId, status: "ready", result, deck, permit: admitted.permit }
+          ? { stamp: req.stamp, callId: req.callId, status: "ready", result: output, deck, permit: admitted.permit }
           : { ...empty, status: "hold", deck };
       await completeRequest(tx, key, response, ops);
       return response;

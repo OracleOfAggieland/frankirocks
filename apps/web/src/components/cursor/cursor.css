@@ -1,0 +1,217 @@
+/* The lab spider: the rule that hides the native cursor, the spider's drawing, its webs, and the footer switch. */
+
+/*
+ * The native cursor hides only once the spider has drawn itself (data-spider="on" is set on the first pointer
+ * move), only where the spider can run, and never in forced colours. Text fields keep the native text cursor.
+ * Modal dialogs and open popovers sit above every z-index, so the native cursor stays there too.
+ * The text-field list matches TEXT_SELECTOR in ui/cursor/targets.ts.
+ */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+  html[data-spider="on"],
+  html[data-spider="on"] *:not(:is(:modal, :popover-open), :is(:modal, :popover-open) *) {
+    cursor: none !important;
+  }
+
+  /* cursor is inherited, so a modal or popover sets it back; its contents inherit auto from it. */
+  html[data-spider="on"] :is(:modal, :popover-open) {
+    cursor: auto !important;
+  }
+
+  html[data-spider="on"]
+    :is(
+      input:not([type]),
+      input[type="text"],
+      input[type="search"],
+      input[type="email"],
+      input[type="url"],
+      input[type="tel"],
+      input[type="password"],
+      input[type="number"],
+      textarea,
+      [contenteditable]:not([contenteditable="false"]),
+      [contenteditable]:not([contenteditable="false"]) *
+    ):not(:disabled) {
+    cursor: text !important;
+  }
+}
+
+/* The drawing: a fixed point at the pointer, above everything, taking no pointer events. */
+.spider-layer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  opacity: 0;
+  will-change: transform, opacity;
+  contain: layout style;
+}
+
+.spider-layer svg {
+  position: absolute;
+  left: -48px;
+  top: -48px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.spider-ring {
+  fill: none;
+  stroke: var(--color-brass);
+  stroke-width: 1.5;
+}
+
+/* The light on the ring: a short bright arc where the lab's light falls, top left. */
+.spider-ring-light {
+  fill: none;
+  stroke: var(--color-brass-hi);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.spider-ring-shade {
+  fill: none;
+  stroke: color-mix(in srgb, var(--color-brass) 62%, var(--color-night-0));
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.spider-thread {
+  fill: none;
+  stroke-width: 0.6;
+  stroke-linecap: round;
+}
+
+.spider-thread-near {
+  stop-color: var(--color-ink-dim);
+  stop-opacity: 0.85;
+}
+
+.spider-thread-far {
+  stop-color: var(--color-ink-dim);
+  stop-opacity: 0;
+}
+
+.spider-leg {
+  fill: none;
+  stroke: var(--color-ghost-deep);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+
+.spider-body {
+  stroke: color-mix(in srgb, var(--color-night-0) 60%, transparent);
+  stroke-width: 1;
+}
+
+.spider-lit {
+  stop-color: var(--color-ghost);
+}
+
+.spider-shade {
+  stop-color: var(--color-ghost-deep);
+}
+
+.spider-stitch {
+  fill: none;
+  stroke: var(--color-night-0);
+  stroke-width: 0.7;
+  stroke-linecap: round;
+  opacity: 0.75;
+}
+
+.spider-eye {
+  fill: var(--color-night-0);
+}
+
+/* The webs left where a click is released: they grow from half size, then fade. */
+.spider-webs {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 2147482999;
+  pointer-events: none;
+  contain: layout style;
+}
+
+.spider-web {
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  overflow: visible;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.spider-web path {
+  fill: none;
+  stroke: var(--color-ink-dim);
+  stroke-opacity: 0.55;
+  stroke-width: 0.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@keyframes spider-web-grow {
+  from { transform: scale(0.5); }
+  to { transform: scale(1); }
+}
+
+@keyframes spider-web-fade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spider-web {
+    animation:
+      spider-web-grow var(--dur-quick) var(--ease-ecto) 1 both,
+      spider-web-fade var(--dur-ritual) var(--ease-ecto) var(--dur-quick) 1 both;
+  }
+}
+
+@media print {
+  .spider-layer,
+  .spider-webs {
+    display: none;
+  }
+}
+
+/* The footer switch's track and knob. Off: an ink-dim outline. On: brass, the knob to the right. */
+.spider-toggle-track {
+  position: relative;
+  display: inline-block;
+  width: 26px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-ink-dim);
+}
+
+/* Only the off state is filled here: this file is unlayered, so a fill on the on state would beat mat-brass. */
+.spider-toggle-track:not(.mat-brass) {
+  background: var(--color-night-1);
+}
+
+.spider-toggle-track.mat-brass {
+  border-color: color-mix(in srgb, var(--color-brass) 70%, var(--color-night-0));
+}
+
+.spider-toggle-knob {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--color-ink-dim);
+  transition: transform var(--dur-quick) var(--ease-ecto);
+}
+
+.mat-brass > .spider-toggle-knob {
+  background: var(--color-night-0);
+  transform: translateX(12px);
+}

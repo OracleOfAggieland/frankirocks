@@ -21,7 +21,7 @@ Models read, extract and word. They never set a date, a trust level or a permiss
 
 ## Admission seam
 
-Every reply obtains its Permit through one function, the Admission_Seam (KV02, KV03). In this slice it is `devAdmit`, which F2 replaces. `devAdmit` refuses to run when `NODE_ENV` is `production`. If that blocks a deployed test, stop and ask; never loosen it.
+Every server Permit comes from one module, the Admission_Seam (`packages/server/src/admission/seam.ts`), which runs the real admission rule and writes one ledger decision per admission (KV02, KV03). `fastO` comes only from the FastO_Rule (`packages/core/src/voice/fast-o.ts`), the browser half of admission, and the seam records it from the `admitted` receipt. No reply path skips either one. The voice-control rules are in `.kiro/steering/voice-control.md`.
 
 ## Records
 
@@ -36,7 +36,7 @@ Model IDs come from Model_Config (`FRANKI_*_MODEL` in `apps/web/apphosting.yaml`
 
 ## Design docs are read-only
 
-`docs/design/` is read-only for build work. Any conflict between contracts, or anything that cannot be built as written, goes under the "Contract questions" heading in `.kiro/specs/first-spoken-call/design.md` with a proposed resolution.
+`docs/design/` is read-only for build work. Any conflict between contracts, or anything that cannot be built as written, goes under the "Contract questions" heading in the `design.md` of the spec being built (for example `.kiro/specs/voice-control/design.md`), numbered on from the last question in any spec, with a proposed resolution.
 
 ## Secrets
 

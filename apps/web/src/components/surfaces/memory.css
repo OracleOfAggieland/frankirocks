@@ -1,0 +1,123 @@
+/* The strip, the jar and What I know: keyframes and loops. Loops run only under
+   prefers-reduced-motion: no-preference, stop under [data-reduced="true"] and pause under
+   [data-paused="true"] (the shared .franki-anim rules in globals.css). Only transform and opacity animate. */
+
+/* ---- The strip ---- */
+
+/* The wire's track: a dashed stitch line, 4 px on and 3 px off. */
+.franki-strip-track-x {
+  background-image: repeating-linear-gradient(to right, var(--color-stitch) 0 4px, transparent 4px 7px);
+}
+.franki-strip-track-y {
+  background-image: repeating-linear-gradient(to bottom, var(--color-stitch) 0 4px, transparent 4px 7px);
+}
+
+/* The travelling pulse: a soft bead, a little lighter than the ecto wire it rides. Hidden at rest. */
+.franki-strip-pulse-x,
+.franki-strip-pulse-y {
+  opacity: 0;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--color-ecto) 62%, var(--color-ink)) 0%,
+    color-mix(in srgb, var(--color-ecto) 70%, transparent) 50%,
+    transparent 100%
+  );
+}
+
+/* The band is 30% of the wire, so 333% of its own length carries it past the far end.
+   It travels for the first two thirds of the period (one dur-current) and rests for the last. */
+@keyframes franki-strip-pulse-x {
+  0% { transform: translateX(-100%); opacity: 0; }
+  12% { opacity: 1; }
+  56% { opacity: 1; }
+  66.667%, 100% { transform: translateX(333.333%); opacity: 0; }
+}
+@keyframes franki-strip-pulse-y {
+  0% { transform: translateY(-100%); opacity: 0; }
+  12% { opacity: 1; }
+  56% { opacity: 1; }
+  66.667%, 100% { transform: translateY(333.333%); opacity: 0; }
+}
+
+/* A filled post's core lights once the current reaches it. */
+@keyframes franki-strip-core {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Six gold rays, once. */
+.franki-strip-burst { opacity: 0; }
+@keyframes franki-strip-burst {
+  0% { opacity: 0; transform: scale(0.55); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.15); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .franki-strip-pulse-x { animation: franki-strip-pulse-x calc(var(--dur-current) * 1.5) ease-in-out infinite; }
+  .franki-strip-pulse-y { animation: franki-strip-pulse-y calc(var(--dur-current) * 1.5) ease-in-out infinite; }
+  .franki-strip-core {
+    animation: franki-strip-core var(--dur-base) var(--ease-ecto) 1 both;
+    animation-delay: calc(var(--stagger) * var(--post-i, 0) + var(--dur-base) * var(--post-wired, 1));
+  }
+  .franki-strip-burst {
+    animation: franki-strip-burst calc(var(--dur-base) * 2) var(--ease-ecto) 1 both;
+    animation-delay: calc(var(--stagger) * var(--post-i, 0) + var(--dur-base) * var(--post-wired, 1));
+  }
+}
+
+/* ---- The jar ---- */
+
+/* Each mote twinkles around its own resting opacity (--mote-o), out of step with its neighbours. */
+@keyframes franki-mote-twinkle {
+  0%, 100% { opacity: var(--mote-o, 1); }
+  50% { opacity: calc(var(--mote-o, 1) * 0.55); }
+}
+
+/* The motes' soft glow: one blurred copy of the mote group. Brighter while the jar is pointed at. */
+[data-jar-glow] {
+  opacity: 0.45;
+  transition: opacity var(--dur-base) var(--ease-ecto);
+}
+[data-jar]:hover [data-jar-glow],
+[data-jar]:focus-visible [data-jar-glow] {
+  opacity: 0.85;
+}
+
+/* The lid lifts 2 px while the jar is pointed at. */
+[data-jar] [data-jar-part="lid"] {
+  transition: transform var(--dur-base) var(--ease-ecto);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .franki-mote-twinkle {
+    animation: franki-mote-twinkle calc(var(--dur-drift) / 3) ease-in-out infinite;
+    animation-delay: calc(var(--stagger) * var(--mote-i, 0) * -7);
+  }
+  [data-jar]:hover [data-jar-part="lid"],
+  [data-jar]:focus-visible [data-jar-part="lid"] {
+    transform: translateY(-2px);
+  }
+}
+[data-reduced="true"] [data-jar] [data-jar-part="lid"] {
+  transform: none;
+}
+
+/* ---- What I know ---- */
+
+/* A hard rule's Forget keeps its other label in the same grid cell, unseen, so the button is always
+   as wide as the wider label and arming it never moves the buttons beside it. */
+.franki-sheet-label-spacer::before {
+  content: attr(data-label);
+  visibility: hidden;
+}
+
+/* The armed rule's warning line fades in under the action row, once. Reduced motion: it just appears. */
+@keyframes franki-sheet-confirm {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .franki-sheet-confirm { animation: franki-sheet-confirm var(--dur-quick) var(--ease-ecto) 1 both; }
+}
+[data-reduced="true"] .franki-sheet-confirm { animation: none; }

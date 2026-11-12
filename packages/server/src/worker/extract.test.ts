@@ -838,6 +838,17 @@ describe("ExtractV1 extractor", () => {
   });
 
   describe("KS06 mismatch (R22.8, R22.9)", () => {
+    it("a raised policyRev runs the job again at the new one; no extraction is lost (review of wave A, item 16)", async () => {
+      const { rig, turn, run, job } = await setup();
+      const before = await job();
+      await patchRecord(rig.store, UID, paths.core(UID, "epoch"), { policyRev: before.policyRev + 1 });
+      rig.openai.script("responses.create", output(factItem("statement", "new", "x", [span(turn, 0, 6)])), output(factItem("statement", "new", "x", [span(turn, 0, 6)])));
+      expect(await run()).toBe("requeued");
+      expect(await job()).toMatchObject({ status: "queued", policyRev: before.policyRev + 1, error: null, leaseToken: null });
+      expect(rig.store.countUnder(paths.collection(UID, "memories"))).toBe(0);
+      expect(await run()).toBe("complete");
+      expect(rig.store.countUnder(paths.collection(UID, "memories"))).toBe(1);
+    });
     it("marks the job failed and writes no Memory when the captured epoch changed", async () => {
       const { rig, turn, run, job } = await setup();
       await patchRecord(rig.store, UID, paths.core(UID, "epoch"), { epoch: 2 });

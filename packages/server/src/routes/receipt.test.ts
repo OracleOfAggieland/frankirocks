@@ -1,6 +1,7 @@
 import { type Evidence, type Session, type Turn, idParts } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
+import { fastODecisionId } from "../admission/seam";
 import { paths } from "../store/paths";
 import { evidenceId } from "../store/evidence";
 import { callRoute, patchRecord, testRig } from "../testing/fakes";
@@ -119,5 +120,54 @@ describe("POST /api/receipt", () => {
     expect(session.expiresAt).toBe("2026-11-03T12:11:00.000Z");
     await patchRecord<Session>(rig.store, UID, paths.session(UID, s.sessionId), { status: "closed" });
     expect((await receipt({ responseId: "resp_after" })).body.accepted).toBe(true);
+  });
+});
+
+describe("POST /api/receipt records fastO (task 35)", () => {
+  const admittedFastO = (stamp: Record<string, unknown>, label: string) => ({
+    requestId: testId(label),
+    stamp,
+    responseId: "resp_s",
+    kind: "admitted",
+    momentIds: [],
+    noteIds: [],
+    pendingId: null,
+    permitKind: "fastO",
+    text: null,
+  });
+  const fastOTurn = async (order: "receiptFirst" | "turnFirst") => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    const stamp = { ...s.stamp, turnId: testId("turn-1") };
+    if (order === "turnFirst") await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "hello"));
+    expect((await callRoute(rig, receiptRoute, admittedFastO(stamp, "r1"))).body).toEqual({ accepted: true, controlCheck: "none" });
+    if (order === "receiptFirst") await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "hello"));
+    const t = (await rig.store.get<Turn>(UID, paths.turn(UID, s.sessionId, testId("turn-1"))))!.data;
+    const id = fastODecisionId(rig.deps.hasher, s.sessionId, testId("turn-1"));
+    return { rig, s, stamp, t, decision: await rig.store.get(UID, paths.ledger(UID, id)) };
+  };
+
+  it("an accepted admitted + fastO receipt writes the fastO decision once", async () => {
+    const { rig, stamp, decision } = await fastOTurn("turnFirst");
+    expect(decision).not.toBeNull();
+    await callRoute(rig, receiptRoute, admittedFastO(stamp, "r2"));
+    const all = await rig.store.query(UID, { collection: paths.collection(UID, "ledger"), where: [{ field: "kind", op: "==", value: "decision" }], orderBy: { field: "at", dir: "desc" }, limit: 100 });
+    expect(all.filter((d) => d.id === decision!.id)).toHaveLength(1);
+  });
+
+  it("receipt-then-turn and turn-then-receipt give the same Turn fields (R9.2)", async () => {
+    const a = await fastOTurn("receiptFirst");
+    const b = await fastOTurn("turnFirst");
+    const pick = (t: Turn) => ({ judge: t.judge, admitted: t.admittedAt !== null });
+    expect(pick(a.t)).toEqual({ judge: "O", admitted: true });
+    expect(pick(b.t)).toEqual(pick(a.t));
+  });
+
+  it("a stale stamp writes nothing", async () => {
+    const rig = testRig();
+    const s = await openTestSession(rig);
+    const res = await callRoute(rig, receiptRoute, admittedFastO({ ...s.stamp, policyRev: 9, turnId: testId("turn-1") }, "r1"));
+    expect(res.body.accepted).toBe(false);
+    expect(await rig.store.get(UID, paths.ledger(UID, fastODecisionId(rig.deps.hasher, s.sessionId, testId("turn-1"))))).toBeNull();
   });
 });

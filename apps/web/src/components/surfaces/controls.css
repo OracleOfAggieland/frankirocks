@@ -1,0 +1,93 @@
+/* The company toggle and Forget last: keyframes and loops. */
+
+/*
+ * The company toggle's glyph and label arrive on each change: a 2 px rise and fade, with the curtain panels
+ * drawing shut from the rod's ends. Under reduced motion (the media query or a forced specimen) the glyph
+ * and label only fade, and the curtains arrive already shut.
+ */
+@keyframes franki-control-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes franki-control-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes franki-curtain-draw {
+  from { transform: scaleX(0.35); }
+  to { transform: scaleX(1); }
+}
+
+.franki-curtain-l,
+.franki-curtain-r {
+  transform-box: fill-box;
+}
+.franki-curtain-l { transform-origin: left center; }
+.franki-curtain-r { transform-origin: right center; }
+
+.franki-control-in {
+  animation: franki-control-fade var(--dur-base) linear 1 both;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .franki-control-in { animation: franki-control-in var(--dur-base) var(--ease-ecto) 1 both; }
+  .franki-curtain-l,
+  .franki-curtain-r {
+    animation: franki-curtain-draw calc(var(--dur-base) * 1.5) var(--ease-ecto) 1 both;
+  }
+}
+[data-reduced="true"] .franki-control-in {
+  animation: franki-control-fade var(--dur-base) linear 1 both;
+}
+[data-reduced="true"] .franki-curtain-l,
+[data-reduced="true"] .franki-curtain-r {
+  animation: none;
+}
+
+/*
+ * Forget last: on hover and keyboard focus the bits of the mote drift a little further off and fade.
+ * Nothing moves under reduced motion.
+ */
+.franki-mote-bit {
+  transform-box: fill-box;
+  transition:
+    transform var(--dur-base) var(--ease-ecto),
+    opacity var(--dur-base) var(--ease-ecto);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .franki-forget:not([aria-disabled="true"]):hover .franki-mote-bit,
+  .franki-forget:not([aria-disabled="true"]):focus-visible .franki-mote-bit {
+    opacity: 0.35;
+  }
+  .franki-forget:not([aria-disabled="true"]):hover .franki-mote-bit:nth-child(1),
+  .franki-forget:not([aria-disabled="true"]):focus-visible .franki-mote-bit:nth-child(1) {
+    transform: translate(0.6px, -0.6px);
+  }
+  .franki-forget:not([aria-disabled="true"]):hover .franki-mote-bit:nth-child(2),
+  .franki-forget:not([aria-disabled="true"]):focus-visible .franki-mote-bit:nth-child(2) {
+    transform: translate(1.2px, -1.2px);
+  }
+  .franki-forget:not([aria-disabled="true"]):hover .franki-mote-bit:nth-child(3),
+  .franki-forget:not([aria-disabled="true"]):focus-visible .franki-mote-bit:nth-child(3) {
+    transform: translate(1.8px, -1.8px);
+    opacity: 0.15;
+  }
+}
+[data-reduced="true"] .franki-mote-bit {
+  transition: none;
+  transform: none !important;
+}
+
+/* While a forget is pending its lamp breathes slowly. Steady under reduced motion; paused in a hidden tab. */
+@keyframes franki-forget-lamp {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .franki-forget-lamp { animation: franki-forget-lamp var(--dur-ritual) ease-in-out infinite; }
+}
+[data-reduced="true"] .franki-forget-lamp {
+  animation: none;
+}
+[data-paused="true"] .franki-forget-lamp {
+  animation-play-state: paused;
+}

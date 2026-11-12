@@ -31,3 +31,13 @@ describe("Wordmark", () => {
     expect(fade).not.toContain("transform");
   });
 });
+
+describe("Wordmark header bolt (brief 015)", () => {
+  it("a small decorative brass bolt leads Franki in the header", () => {
+    const html = renderToStaticMarkup(<Wordmark variant="header" />);
+    expect(html).toMatch(/<svg[^>]*aria-hidden="true"[^>]*data-wordmark-bolt=""/);
+    expect(html).toContain("var(--color-brass)");
+    expect(html.indexOf("data-wordmark-bolt")).toBeLessThan(html.indexOf(">Franki<"));
+    expect(renderToStaticMarkup(<Wordmark variant="signedOut" />)).not.toContain("data-wordmark-bolt");
+  });
+});

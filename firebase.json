@@ -35,6 +35,8 @@
         "firebase-debug.*.log",
         ".turbo",
         "**/.next",
+        "**/.env.local",
+        "**/.env.*.local",
         "**/dist",
         "functions"
       ]

@@ -1,0 +1,83 @@
+/*
+ * The five materials (UI direction "Materials"). Each is defined once here and used everywhere; a surface picks
+ * one and never mixes its own. Colours come from the @theme tokens only.
+ *   mat-blueprint  inert linework: scenery, diagrams, equipment at rest
+ *   mat-glass      something to read
+ *   mat-brass      something you can touch
+ *   mat-paper      a printed record: the receipt
+ *   mat-gold       a win, and nothing else
+ */
+
+@utility mat-blueprint {
+  color: var(--color-stitch);
+  border-color: var(--color-stitch);
+
+  &:where(svg),
+  & :where(svg) {
+    stroke: currentColor;
+    stroke-width: 1;
+    fill: none;
+  }
+}
+
+/* A blueprint outline for a box: a 1 px dashed stitch edge. */
+@utility mat-blueprint-box {
+  color: var(--color-stitch);
+  border: 1px dashed var(--color-stitch);
+}
+
+@utility mat-glass {
+  background:
+    linear-gradient(
+      155deg,
+      color-mix(in srgb, var(--color-ink) 7%, transparent) 0%,
+      color-mix(in srgb, var(--color-ink) 2%, transparent) 38%,
+      transparent 70%
+    ),
+    color-mix(in srgb, var(--color-night-2) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
+  box-shadow: var(--shadow-glass);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+@utility mat-brass {
+  background: linear-gradient(
+    170deg,
+    var(--color-brass-hi) 0%,
+    var(--color-brass) 46%,
+    color-mix(in srgb, var(--color-brass) 72%, var(--color-night-0)) 100%
+  );
+  color: var(--color-night-0);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--color-spark) 55%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--color-night-0) 35%, transparent),
+    var(--shadow-brass-glow);
+  &::selection,
+  & ::selection {
+    background: color-mix(in srgb, var(--color-night-0) 22%, transparent);
+    color: var(--color-night-0);
+  }
+}
+
+@utility mat-paper {
+  background: var(--color-spark);
+  color: var(--color-night-0);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-night-0) 55%, transparent);
+  &::selection,
+  & ::selection {
+    background: color-mix(in srgb, var(--color-night-0) 22%, transparent);
+    color: var(--color-night-0);
+  }
+}
+
+@utility mat-gold {
+  background: var(--color-gold);
+  color: var(--color-night-0);
+  box-shadow: var(--shadow-gold-glow);
+  &::selection,
+  & ::selection {
+    background: color-mix(in srgb, var(--color-night-0) 22%, transparent);
+    color: var(--color-night-0);
+  }
+}

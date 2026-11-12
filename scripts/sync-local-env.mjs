@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Local env sync (R30.10). `next dev` does not read apphosting.yaml, so `predev` copies every plain
+// Local env sync (R30.10). `next dev` does not read apphosting.yaml, so `predev` copies each nonempty plain
 // `value:` entry under `env:` in apps/web/apphosting.yaml into apps/web/.env.development.local.
 // Secret entries are never copied (they stay in apps/web/.env.local), and no value is ever printed.
 import { writeFileSync, readFileSync } from "node:fs";
@@ -13,7 +13,7 @@ export const OUTPUT_PATH = resolve(WEB_DIR, ".env.development.local");
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
- * Pure: returns [{ name, value }] for each `env:` entry with a `variable` and a scalar `value` and no `secret`.
+ * Pure: returns [{ name, value }] for each `env:` entry with a `variable`, a nonempty scalar `value` and no `secret`.
  * Entries with `secret:` are skipped; other keys (such as `availability`) are ignored.
  */
 export function parsePlainEnv(yamlText) {
@@ -24,7 +24,8 @@ export function parsePlainEnv(yamlText) {
   for (const entry of env) {
     if (!entry || typeof entry !== "object") continue;
     const { variable, value, secret } = entry;
-    if (secret !== undefined) continue;
+    // Empty deployment placeholders must not shadow values from .env.local in next dev.
+    if (secret !== undefined || value === "") continue;
     if (typeof variable !== "string" || !NAME.test(variable)) continue;
     if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") continue;
     plain.push({ name: variable, value: String(value) });

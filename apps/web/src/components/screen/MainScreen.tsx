@@ -4,18 +4,23 @@
 // and render nothing. Below 1024 px the dock is a bottom sheet (the Card_Dock positions itself); below
 // 640 px the corners stack. No element is wider than 343 px at 375 px.
 // With no Card the grid has one column, so the stage sits on the page's centre axis with the call
-// button and the Wordmark (Brief 004 item 1). A Card adds the dock column from 1024 px; the stage,
+// button and the Wordmark (Brief 004 item 1). A Card adds the dock column from 1024 px, and the column
+// stays until the last Card has finished leaving (ui.dockLayout); the stage,
 // chips, controls and reply all stay in the first column, so Franki and his controls keep one axis,
 // and each glides between the two positions as a motion layout animation on spring.settle; instant
 // under Reduced_Motion. The signed-out Wordmark sits outside the glide wrapper, on one line, so the
 // stage's width never wraps it. Below 1024 px the dock is a bottom sheet over the screen, so the grid
 // keeps room at the bottom to scroll the controls clear of it.
+// The header is a slim rail: the Wordmark and its bolt, the Time_Badge slot, then the sound toggle and the
+// signed-in identity, over a stitched seam that fades at both ends.
 import { motion } from "motion/react";
-import type { ReactNode } from "react";
+import { type ReactNode, useCallback, useState } from "react";
+import { type DockLayout, dockLayoutInit, dockLayoutStep, hasDockColumn } from "../../ui/dock-layout";
 import { SPRING } from "../../ui/motion";
 import type { CardProps } from "../../ui/surface-props";
 import { cardHasContent } from "../surfaces/Card";
 import { CardDock } from "../surfaces/CardDock";
+import { Seam } from "../surfaces/Seam";
 import { Wordmark } from "../surfaces/Wordmark";
 import { Backdrop } from "./Backdrop";
 
@@ -59,7 +64,11 @@ export const GRID_WITH_DOCK = `${GRID_BASE} max-lg:pb-[min(24rem,60vh)] lg:grid-
 
 /** Hides the email below 640 px (it stays in the accessibility tree), so the header keeps one row. */
 export const HEADER =
-  "flex min-w-0 flex-nowrap items-center justify-between gap-3 [grid-area:header] max-sm:[&_[data-testid=signed-in-email]]:sr-only";
+  "relative flex min-h-11 min-w-0 flex-nowrap items-center justify-between gap-3 pb-3 [grid-area:header] max-sm:[&_[data-testid=signed-in-email]]:sr-only";
+
+/** The stitched seam under the header rail, faded out toward both ends. */
+export const RAIL_SEAM =
+  "pointer-events-none absolute inset-x-0 bottom-0 [mask-image:linear-gradient(to_right,transparent,black_22%,black_78%,transparent)]";
 
 /** One layout-animated wrapper: glides on spring.settle when the grid gains or loses the dock column. */
 function Glide({ name, reduced, className, children }: { name: "stage" | "controls" | "reply"; reduced: boolean; className: string; children: ReactNode }) {
@@ -76,7 +85,14 @@ function Glide({ name, reduced, className, children }: { name: "stage" | "contro
 }
 
 export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed, reply, debug, live, reduced, paused, cards = [] }: MainScreenProps) {
-  const docked = cards.some(cardHasContent);
+  // The dock column stays from the first card until the last one has dematerialized (ui.dockLayout). The
+  // cards event runs during render, so the column is there on the very render that brings the first card.
+  const present = cards.some(cardHasContent);
+  const [held, setHeld] = useState<DockLayout>(() => dockLayoutInit(present));
+  const layout = dockLayoutStep(held, { type: "cards", present });
+  if (layout !== held) setHeld(layout);
+  const onExitComplete = useCallback(() => setHeld((l) => dockLayoutStep(l, { type: "exitComplete" })), []);
+  const docked = hasDockColumn(layout);
   return (
     <main
       data-screen={signedIn ? "signed-in" : "signed-out"}
@@ -91,13 +107,17 @@ export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed
           {signedIn ? <Wordmark variant="header" /> : <span />}
           {/* Time_Badge slot: no simulated-time source yet (contract question 8). */}
           <div data-slot="time-badge" />
-          <div className="flex min-w-0 shrink items-center gap-2">
+          <div className="flex min-w-0 shrink items-center gap-3">
             {soundToggle}
             {signedIn ? auth : null}
+          </div>
+          <div aria-hidden="true" data-rail-seam="" className={RAIL_SEAM}>
+            <Seam />
           </div>
         </header>
         {/* Strip slot: no open-loop source yet. */}
         <div data-area="strip" className="[grid-area:strip]" />
+        {/* gap-6 is the 24 px between the signed-out Wordmark and the avatar box that globals.css masks the canvas by. */}
         <section data-area="stage" aria-label="Franki" className="flex min-w-0 flex-col items-center justify-center gap-6 py-4 [grid-area:stage]">
           {/* Outside the glide wrapper: the word needs more width than the stage, and never wraps. */}
           {signedIn ? null : <Wordmark variant="signedOut" />}
@@ -108,7 +128,8 @@ export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed
           </Glide>
         </section>
         <div data-area="dock" className="[grid-area:dock]">
-          {docked ? <CardDock cards={cards} /> : null}
+          {/* Always mounted: it renders nothing without a card, and keeps the last one while it leaves. */}
+          <CardDock cards={cards} onExitComplete={onExitComplete} />
         </div>
         {/* Chips slot: chips show only when the server offers them. */}
         <div data-area="chips" className="[grid-area:chips]" />

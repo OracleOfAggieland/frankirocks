@@ -36,6 +36,10 @@ export const PAIRINGS: readonly Pairing[] = [
   { foreground: "night-0", background: "brass", use: "normal text" },
   { foreground: "night-0", background: "ecto", use: "normal text" },
   { foreground: "night-0", background: "ember", use: "normal text" },
+  // mat-paper, mat-gold and the lit top of mat-brass.
+  { foreground: "night-0", background: "spark", use: "normal text" },
+  { foreground: "night-0", background: "gold", use: "normal text" },
+  { foreground: "night-0", background: "brass-hi", use: "normal text" },
   { foreground: "gold", background: "night-0", use: "large text" },
 ];
 

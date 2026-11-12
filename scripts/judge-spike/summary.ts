@@ -4,8 +4,10 @@
  * or `over the line` when the rule fails even if every missing number had come out at its best. The stop rules
  * read the judge's own verdicts within the deadline, never a hold defaulted from an invalid answer.
  */
-import type { JudgeSettings, JudgeVerdict } from "@franki/core";
+import { CANDIDATE_P, CONTROL_CLASSES as INTENT_CLASSES, type ControlClass as IntentClass, DECISIONS_DEADLINE_MS, type JudgeSettings, type JudgeValue, type JudgeVerdict, STRONG_P, changesWhatIsSaid, choose, routeFires } from "@franki/core";
 import { CONTROL_CLASSES } from "./lines";
+import type { DecisionsKind } from "./decisions";
+import type { FastSlotsRow, SlotsKind, SpeakerCount } from "./fast-slots";
 import type { HarnessOutput, Row, RunSettings } from "./harness";
 import type { AudioSource } from "./paths";
 
@@ -31,10 +33,14 @@ export interface RunMeta {
   lineSetCommit: string;
   lineSetHash: string;
   models: { voice: string; transcribe: string };
-  /** The judge's output cap and reasoning effort for this run. */
-  judge: JudgeSettings;
+  /** The judge's settings for this run. Runs before brief 011 carry only the cap and effort, and ran judge_v1 at 600 ms. */
+  judge: Pick<JudgeSettings, "maxOutputTokens" | "effort"> & Partial<Pick<JudgeSettings, "contract" | "deadlineMs">>;
   /** Sequential or parallel, and the stagger (brief 009). Absent in runs before it, which were all sequential. */
   run?: RunSettings;
+  /** The Decisions_Port of the slow parse per line (voice-control R17.2). Absent in runs before brief 011. */
+  decisions?: DecisionsKind;
+  /** The named predicate set the slow parse used (review of the live run, item 6). Absent before Nov 10: `contract`. */
+  predicates?: string;
 }
 
 export interface RunFile extends RunMeta {
@@ -45,6 +51,17 @@ export interface RunFile extends RunMeta {
   sessions: string[][];
   eventNames: string[];
   rows: Row[];
+  /** The FastSlotsV1 measurement, with `--fast-slots` (brief 012 task A9). Absent otherwise. */
+  fastSlots?: FastSlotsSection;
+}
+
+/** What `--fast-slots` adds to a run file. No transcript and no item text. */
+export interface FastSlotsSection {
+  port: SlotsKind;
+  waitMs: number;
+  deadlineMs: number;
+  rows: FastSlotsRow[];
+  speakerCertain: SpeakerCount;
 }
 
 export function runFile(meta: RunMeta, out: HarnessOutput): RunFile {
@@ -140,6 +157,12 @@ export interface Summary {
   probes: { p50: number | null; measured: number; total: number };
   /** Parallel runs only (brief 009 item 4); null for a sequential run. */
   parallel: ParallelStats | null;
+  /** The slow parse beside the judge (voice-control R17.4, R17.5); null when no row has a parse. */
+  slowParse: SlowParseStats | null;
+  /** What the routes would do under the route rule (review of the live run, item 6); null when no row has a parse. */
+  routes: RouteStats | null;
+  /** Control lines whose judge went out late, so their within-deadline numbers count the harness's own wait. */
+  caveats: Caveats;
   /** Per session: its lines by kind and its judge time, so a session effect shows. */
   sessions: SessionStats[];
   stops: { verdict: StopState; latency: StopState; recall: StopState };
@@ -220,6 +243,57 @@ function shareRule(x: Ratio, fails: (share: number) => boolean): StopState {
 const dist = (values: number[]) => ({ p50: percentile(values, 50), p95: percentile(values, 95), n: values.length });
 const nums = (rows: readonly Row[], f: (r: Row) => number | null) => rows.map(f).filter((v): v is number => typeof v === "number");
 
+/** The Probe_Line class names the TurnIntents probability that should catch it. */
+export const LINE_INTENT: Record<(typeof CONTROL_CLASSES)[number], string> = { forget: "forget", company: "company", quiet: "quiet", correction: "correct", hardRule: "hardRule", crisis: "crisis" };
+
+export interface SlowParseStats {
+  /** Per control class: the judge's catch (anything but a valid O within the deadline), the parse's (its class at or above 0.20), and both missing. */
+  byClass: Record<string, { judgeRecall: Ratio; parseRecall: Ratio; jointMiss: Ratio }>;
+  /** Ordinary lines the judge held, and ordinary lines the parse didn't find ordinary. */
+  falseHolds: { judge: Ratio; parse: Ratio };
+  /** Parses over the app's 350 ms deadline, and the parse time. */
+  overDeadline: Ratio;
+  ms: { p50: number | null; p95: number | null; n: number };
+  /** Invalid answers and which check each failed (review of the live run, item 4). */
+  invalid: { n: number; reasons: Record<string, number> };
+}
+
+/** A Ratio over the rows that have a parse; rows without one are `missing`. */
+function parsedRatio(rows: readonly Row[], hit: (r: Row) => boolean): Ratio {
+  const measured = rows.filter((r) => r.parse != null);
+  return { n: measured.filter(hit).length, of: measured.length, missing: rows.length - measured.length };
+}
+
+function slowParseStats(rows: readonly Row[]): SlowParseStats | null {
+  if (!rows.some((r) => r.parse != null)) return null;
+  const judgePassed = (r: Row) => judgeVerdictOf(r, "deadline") === "O";
+  const byClass: SlowParseStats["byClass"] = {};
+  for (const c of CONTROL_CLASSES) {
+    const of = rows.filter((r) => r.expect === "hold" && r.class === c);
+    const caught = (r: Row) => (r.parse?.probabilities?.[LINE_INTENT[c]] ?? 0) >= CANDIDATE_P;
+    byClass[c] = {
+      judgeRecall: ratio(of, (r) => !judgePassed(r)),
+      parseRecall: parsedRatio(of, caught),
+      jointMiss: parsedRatio(of.filter(judged), (r) => judgePassed(r) && !caught(r)),
+    };
+  }
+  const ordinary = rows.filter((r) => r.expect === "ordinary");
+  const times = nums(rows, (r) => r.parse?.ms ?? null);
+  const reasons: Record<string, number> = {};
+  const invalidRows = rows.filter((r) => r.parse?.failure === "invalid");
+  for (const r of invalidRows) {
+    const k = r.parse?.invalid?.reason ?? "not recorded";
+    reasons[k] = (reasons[k] ?? 0) + 1;
+  }
+  return {
+    invalid: { n: invalidRows.length, reasons },
+    byClass,
+    falseHolds: { judge: ratio(ordinary, (r) => !judgePassed(r)), parse: parsedRatio(ordinary, (r) => r.parse!.ordinary !== true) },
+    overDeadline: parsedRatio(rows, (r) => r.parse!.missedDeadline),
+    ms: dist(times),
+  };
+}
+
 export function summarize(run: RunFile): Summary {
   const rows = run.rows;
   const control = rows.filter((r) => r.expect === "hold");
@@ -296,6 +370,9 @@ export function summarize(run: RunFile): Summary {
     },
     probes: { p50: percentile(probeLatencies, 50), measured: probeLatencies.length, total: probes.length },
     parallel: runModeOf(run).mode === "parallel" ? parallelStats(rows) : null,
+    slowParse: slowParseStats(rows),
+    routes: routeStats(rows),
+    caveats: caveatsOf(rows),
     sessions: [...new Set(rows.map((r) => r.session))]
       .sort((a, b) => a - b)
       .map((session) => {
@@ -316,10 +393,13 @@ export function summarize(run: RunFile): Summary {
 const ms = (v: number | null) => (v === null ? "—" : `${Math.round(v)} ms`);
 const pct = (x: Ratio) => (x.of === 0 ? "—" : `${((x.n / x.of) * 100).toFixed(1)}% (${x.n} of ${x.of}${x.missing > 0 ? `, ${x.missing} not measured` : ""})`);
 const tokens = (t: TokenStats) => (t.n === 0 ? "not reported in any usage object" : `largest ${t.max}, p50 ${t.p50}, over ${t.n} response(s)`);
-const cap = (j: JudgeSettings) => (j.maxOutputTokens === "inf" ? "inf (no cap)" : String(j.maxOutputTokens));
+const cap = (j: Pick<JudgeSettings, "maxOutputTokens">) => (j.maxOutputTokens === "inf" ? "inf (no cap)" : String(j.maxOutputTokens));
 
 export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): string {
   const out: string[] = [];
+  // Runs before brief 011 ran judge_v1 at the contract's 600 ms.
+  const deadline = run.judge.deadlineMs ?? 600;
+  const label = (l: string) => l.replace("600 ms", `${deadline} ms`);
   out.push(`# Judge spike run, ${run.date}`);
   out.push("");
   if (run.transport === "fake") out.push("**Fake transport: these numbers come from the scripted fake server, not from OpenAI. They measure nothing.**", "");
@@ -333,7 +413,7 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
           : "sequential (the reply goes out after a valid O)"
     }`,
   );
-  out.push(`- Judge: max_output_tokens ${cap(run.judge)}, reasoning effort ${run.judge.effort}`);
+  out.push(`- Judge: ${run.judge.contract ?? "judge_v1"}, deadline ${deadline} ms, max_output_tokens ${cap(run.judge)}, reasoning effort ${run.judge.effort}`);
   out.push(`- Audio: ${run.source}${run.source === "synthetic" ? " (text-to-speech, not a person's voice)" : " (the owner's own takes)"}`);
   out.push(`- Line set: commit ${run.lineSetCommit}, hash ${run.lineSetHash.slice(0, 12)}`);
   out.push(`- Models: voice ${run.models.voice}, transcription ${run.models.transcribe}`);
@@ -341,30 +421,30 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   out.push("");
   out.push("## Spec §14 stop rules");
   out.push("");
-  out.push("These read the judge's own verdicts within the 600 ms deadline. An invalid answer or a timeout is not a verdict: it is a miss on a control line.");
+  out.push(`These read the judge's own verdicts within the ${deadline} ms deadline. An invalid answer or a timeout is not a verdict: it is a miss on a control line.`);
   out.push("");
   const vd = s.validVerdicts.deadline;
-  out.push(`- No valid verdict on real audio (fewer than 90% of lines with one): **${s.stops.verdict}** (${vd.n} of ${vd.of + vd.missing} lines had a valid verdict within 600 ms${vd.missing > 0 ? `; ${vd.missing} never judged` : ""})`);
+  out.push(`- No valid verdict on real audio (fewer than 90% of lines with one): **${s.stops.verdict}** (${vd.n} of ${vd.of + vd.missing} lines had a valid verdict within ${deadline} ms${vd.missing > 0 ? `; ${vd.missing} never judged` : ""})`);
   out.push(`- ${mode.mode === "parallel" ? "Parallel" : "Sequential"} p50 over 850 ms on 15 probes: **${s.stops.latency}** (p50 ${ms(s.probes.p50)} over ${s.probes.measured} of ${s.probes.total} probes, from the end of audible speech (the take's last loud frame) to audible time; browser playback adds about ${PLAYBACK_MS} ms)`);
-  out.push(`- Control recall under 90%: **${s.stops.recall}** (judge H or U within 600 ms: ${pct(s.views.judgeDeadline.recall)})`);
+  out.push(`- Control recall under 90%: **${s.stops.recall}** (judge H or U within ${deadline} ms: ${pct(s.views.judgeDeadline.recall)})`);
   out.push("");
   out.push("## Recall and false holds");
   out.push("");
-  out.push("*Judge verdicts*: a control line is caught only on the judge's own H or U; an ordinary line passes only on its O. *As the app would act*: an invalid answer or a timeout holds. *Within 600 ms* is what ships; *any time* counts every valid verdict whatever its time.");
+  out.push(`*Judge verdicts*: a control line is caught only on the judge's own H or U; an ordinary line passes only on its O. *As the app would act*: an invalid answer or a timeout holds. *Within ${deadline} ms* is what ships; *any time* counts every valid verdict whatever its time.`);
   out.push("");
   out.push("| View | Control recall | False holds on ordinary lines |");
   out.push("|---|---|---|");
-  for (const v of VIEWS) out.push(`| ${v.label} | ${pct(s.views[v.key].recall)} | ${pct(s.views[v.key].falseHolds)} |`);
+  for (const v of VIEWS) out.push(`| ${label(v.label)} | ${pct(s.views[v.key].recall)} | ${pct(s.views[v.key].falseHolds)} |`);
   out.push("");
-  out.push(`| Control class | ${VIEWS.map((v) => v.label).join(" | ")} |`);
+  out.push(`| Control class | ${VIEWS.map((v) => label(v.label)).join(" | ")} |`);
   out.push(`|---|${VIEWS.map(() => "---").join("|")}|`);
   for (const c of CONTROL_CLASSES) out.push(`| ${c} | ${VIEWS.map((v) => pct(s.views[v.key].recallByClass[c]!)).join(" | ")} |`);
   out.push("");
   out.push("## Judge");
   out.push("");
-  out.push(`- Valid verdicts within 600 ms: ${pct(s.validVerdicts.deadline)}`);
+  out.push(`- Valid verdicts within ${deadline} ms: ${pct(s.validVerdicts.deadline)}`);
   out.push(`- Valid verdicts at any time: ${pct(s.validVerdicts.untimed)}`);
-  out.push(`- Timeouts (no response.done within 600 ms of commit): ${s.timeouts}`);
+  out.push(`- Timeouts (no response.done within ${deadline} ms of commit): ${s.timeouts}`);
   const reasons = Object.entries(s.invalidReasons);
   out.push(`- Invalid-verdict reasons: ${reasons.length === 0 ? "none" : reasons.map(([k, v]) => `${k} ${v}`).join(", ")}${s.invalidReasons.extraText ? " (extraText includes any preamble)" : ""}`);
   out.push(`- Output tokens per judge response (reasoning included): ${tokens(s.outputTokens)}`);
@@ -395,6 +475,10 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   else out.push(`**Over ${COMMIT_TO_SEND_FLAG_MS} ms from commit to judge sent on ${g.flagged.length} line(s); their judge time includes the harness's wait:** ${g.flagged.map((f) => `${f.lineId} (${Math.round(f.ms)} ms)`).join(", ")}`);
   out.push("");
   if (s.parallel !== null) out.push(...parallelMarkdown(s.parallel, mode.staggerMs));
+  if (s.slowParse !== null) out.push(...slowParseMarkdown(s.slowParse, run.decisions ?? "fake"));
+  if (s.routes !== null) out.push(...routesMarkdown(s.routes, run.predicates ?? "contract"));
+  out.push(...caveatsMarkdown(s.caveats));
+  if (run.fastSlots !== undefined) out.push(...fastSlotsMarkdown(run.fastSlots));
   out.push("## Sessions");
   out.push("");
   out.push(`Lines ran in a seeded order (seed ${run.seed}), up to 30 per session.`);
@@ -406,6 +490,26 @@ export function summaryMarkdown(run: RunFile, s: Summary = summarize(run)): stri
   run.sessions.forEach((ids, i) => out.push(`- Session ${i + 1}: ${ids.join(", ")}`));
   out.push("");
   return out.join("\n");
+}
+
+/** The slow parse beside the judge (voice-control R17.4, R17.5). */
+function slowParseMarkdown(p: SlowParseStats, decisions: DecisionsKind): string[] {
+  const out: string[] = [];
+  out.push("## Slow parse");
+  out.push("");
+  if (decisions === "fake") out.push("**Fake Decisions port: every probability is 0 at 0 ms. These rows measure nothing about the parse.**", "");
+  out.push(`The judge catches a control line with anything but a valid O within the deadline; the parse catches it when the line's class is at or above ${CANDIDATE_P}. A joint miss is a line both let through.`);
+  out.push("");
+  out.push("| Control class | Judge recall | Slow-parse recall | Joint miss |");
+  out.push("|---|---|---|---|");
+  for (const [c, x] of Object.entries(p.byClass)) out.push(`| ${c} | ${pct(x.judgeRecall)} | ${pct(x.parseRecall)} | ${pct(x.jointMiss)} |`);
+  out.push("");
+  out.push(`- False holds on ordinary lines: judge ${pct(p.falseHolds.judge)}, slow parse ${pct(p.falseHolds.parse)}`);
+  const inv = Object.entries(p.invalid.reasons).map(([k, v]) => `${k} ${v}`).join(", ");
+  out.push(`- Invalid answers: ${p.invalid.n}${p.invalid.n > 0 ? ` (${inv})` : ""}`);
+  out.push(`- Parses over ${DECISIONS_DEADLINE_MS} ms: ${pct(p.overDeadline)}; parse time p50 ${ms(p.ms.p50)}, p95 ${ms(p.ms.p95)}, over ${p.ms.n} parse(s)`);
+  out.push("");
+  return out;
 }
 
 /** The parallel section (brief 009 item 4). */
@@ -429,6 +533,159 @@ function parallelMarkdown(p: ParallelStats, staggerMs: number): string[] {
   else if (p.ranAtOnce === p.overlapped) out.push(`**Two out-of-band responses ran at once: yes.** On all ${p.overlapped} lines where the reply went out while the judge was still running, the server created both and sent no error event.`);
   else if (p.ranAtOnce === 0) out.push(`**Two out-of-band responses ran at once: no.** On none of the ${p.overlapped} lines where the reply went out while the judge was still running did the server create both without an error event.`);
   else out.push(`**Two out-of-band responses ran at once: not always.** The server created both with no error event on ${p.ranAtOnce} of the ${p.overlapped} lines where the reply went out while the judge was still running.`);
+  out.push("");
+  return out;
+}
+
+/** The classes whose route changes what is said, wave B included (question 92). */
+const ROUTE_CLASSES = ["forget", "company", "quiet", "alone", "crisis"] as const;
+type RouteClass = (typeof ROUTE_CLASSES)[number];
+
+export interface RouteStats {
+  /** Per TurnIntents class, ordinary lines at CANDIDATE_P or more and at STRONG_P or more. */
+  ordinaryAt: Record<IntentClass, { at20: number; at80: number }>;
+  /** Lines whose route would cut or swap under the route rule (wave B's routes included), per class. */
+  wouldFire: { ordinary: Record<RouteClass, number>; control: Record<RouteClass, number> };
+}
+
+/** The judge's value as the server would have it: a valid verdict, else `timeout` (not O). */
+const judgeValueOf = (r: Row): JudgeValue => (r.valid === true && r.verdict !== null ? r.verdict : "timeout");
+
+/** The route class that would fire on a row, or null. */
+function firingClass(r: Row): RouteClass | null {
+  const p = r.parse?.probabilities;
+  if (p == null) return null;
+  const candidates = INTENT_CLASSES.filter((c) => (p[c] ?? 0) >= CANDIDATE_P);
+  const parse = { chosen: choose(candidates), candidates, candidateP: Object.fromEntries(candidates.map((c) => [c, p[c] ?? 0])) };
+  const judge = judgeValueOf(r);
+  if (!changesWhatIsSaid(parse, judge, "B")) return null;
+  if (candidates.includes("crisis") && routeFires("crisis", p.crisis ?? 0, judge)) return "crisis";
+  return parse.chosen as RouteClass;
+}
+
+function routeStats(rows: readonly Row[]): RouteStats | null {
+  if (!rows.some((r) => r.parse?.probabilities != null)) return null;
+  const ordinary = rows.filter((r) => r.expect === "ordinary");
+  const at = (c: IntentClass, min: number) => ordinary.filter((r) => (r.parse?.probabilities?.[c] ?? 0) >= min).length;
+  const ordinaryAt = Object.fromEntries(INTENT_CLASSES.map((c) => [c, { at20: at(c, CANDIDATE_P), at80: at(c, STRONG_P) }])) as RouteStats["ordinaryAt"];
+  const count = (of: readonly Row[]) => Object.fromEntries(ROUTE_CLASSES.map((c) => [c, of.filter((r) => firingClass(r) === c).length])) as Record<RouteClass, number>;
+  return { ordinaryAt, wouldFire: { ordinary: count(ordinary), control: count(rows.filter((r) => r.expect === "hold")) } };
+}
+
+export interface Caveats {
+  control: number;
+  trimmed: number;
+  fragmented: number;
+  /** Control lines whose judge was sent 100 ms or more after the commit. */
+  lateJudge: number;
+  lateJudgeMs: { min: number; max: number } | null;
+}
+
+function caveatsOf(rows: readonly Row[]): Caveats {
+  const control = rows.filter((r) => r.expect === "hold");
+  const gaps = control.map((r) => (r.t.commit === null || r.t.judgeSent === null ? null : r.t.judgeSent - r.t.commit)).filter((g): g is number => g !== null && g >= 100);
+  return {
+    control: control.length,
+    trimmed: control.filter((r) => r.trimmedMs > 0).length,
+    fragmented: control.filter((r) => r.fragments > 1).length,
+    lateJudge: gaps.length,
+    lateJudgeMs: gaps.length === 0 ? null : { min: Math.round(Math.min(...gaps)), max: Math.round(Math.max(...gaps)) },
+  };
+}
+
+function routesMarkdown(r: RouteStats, predicates: string): string[] {
+  const out: string[] = [];
+  out.push("## What the routes would do");
+  out.push("");
+  out.push(`Predicate set: ${predicates}. A route that changes what is said fires when the judge's value is not O and the class is at ${CANDIDATE_P} or more, or the class alone is at ${STRONG_P} or more; crisis fires at ${CANDIDATE_P} whatever the judge said. Wave B's routes (company, quiet, alone) are counted too.`);
+  out.push("");
+  out.push(`| Class | Ordinary at ${CANDIDATE_P}+ | Ordinary at ${STRONG_P}+ | Ordinary would cut or swap | Control would cut or swap |`);
+  out.push("|---|---|---|---|---|");
+  for (const c of INTENT_CLASSES) {
+    const routed = (ROUTE_CLASSES as readonly string[]).includes(c);
+    const f = (side: "ordinary" | "control") => (routed ? String(r.wouldFire[side][c as RouteClass]) : "—");
+    out.push(`| ${c} | ${r.ordinaryAt[c].at20} | ${r.ordinaryAt[c].at80} | ${f("ordinary")} | ${f("control")} |`);
+  }
+  out.push("");
+  return out;
+}
+
+function caveatsMarkdown(c: Caveats): string[] {
+  if (c.lateJudge === 0 || c.lateJudgeMs === null) return [];
+  return [
+    "## Caveats",
+    "",
+    `Only ${c.trimmed} of the ${c.control} control takes had their tails trimmed, and ${c.fragmented} came in as more than one fragment, so on ${c.lateJudge} control lines the judge was sent ${c.lateJudgeMs.min} to ${c.lateJudgeMs.max} ms after the commit. Those rows count the harness's own wait as judge time: read control recall from the "any time" column, and judge speed from "judge sent to judge done".`,
+    "",
+  ];
+}
+
+// ---------------------------------------------------------------------------------------------
+// FastSlotsV1 (brief 012 task A9)
+
+/** The item kind a control class's lines should produce. `transition` has no class in lines.json. */
+export const FAST_SLOTS_EXPECTED: Readonly<Record<string, string>> = { hardRule: "allergy", correction: "correction", transition: "transition" };
+
+export interface FastSlotsStats {
+  n: number;
+  p50: number | null;
+  p95: number | null;
+  max: number | null;
+  /** Lines over the deadline (a timeout included), of n. */
+  over: number;
+  byResult: Record<string, number>;
+  /**
+   * Per expected class: lines sent, lines with a valid item of the expected kind, and lines where such an item also
+   * passes the code's first checks (FastSlotsRow.checked). Null: no lines of that class.
+   */
+  perClass: Record<string, { lines: number; validExpected: number; checked: number } | null>;
+}
+
+export function fastSlotsStats(sec: FastSlotsSection): FastSlotsStats {
+  const ms = sec.rows.map((r) => r.ms);
+  const byResult: Record<string, number> = {};
+  for (const r of sec.rows) byResult[r.result] = (byResult[r.result] ?? 0) + 1;
+  const perClass: FastSlotsStats["perClass"] = {};
+  for (const [cls, kind] of Object.entries(FAST_SLOTS_EXPECTED)) {
+    const rows = sec.rows.filter((r) => r.class === cls);
+    const valid = rows.filter((r) => r.result === "valid");
+    perClass[cls] = rows.length === 0 ? null : { lines: rows.length, validExpected: valid.filter((r) => r.kinds.includes(kind)).length, checked: valid.filter((r) => (r.checked ?? []).includes(kind)).length };
+  }
+  return { n: sec.rows.length, p50: percentile(ms, 50), p95: percentile(ms, 95), max: ms.length === 0 ? null : Math.max(...ms), over: sec.rows.filter((r) => r.overDeadline).length, byResult, perClass };
+}
+
+export function fastSlotsMarkdown(sec: FastSlotsSection, s: FastSlotsStats = fastSlotsStats(sec)): string[] {
+  const out: string[] = [];
+  const msOf = (v: number | null) => (v === null ? "—" : `${Math.round(v)} ms`);
+  out.push("## FastSlotsV1");
+  out.push("");
+  if (sec.port === "fake") out.push("**Fake FastSlots port: every answer is valid and empty at 0 ms. These numbers measure nothing.**", "");
+  out.push(`Sent on every line that matched RX4, RX6 or RX7 or had \`hardRule\`, \`correct\` or \`transition\` at 0.20 or more; waited up to ${sec.waitMs} ms, on time within ${sec.deadlineMs} ms.`);
+  out.push("");
+  out.push(`- Lines sent: ${s.n}`);
+  out.push(`- Time: p50 ${msOf(s.p50)}, p95 ${msOf(s.p95)}, largest ${msOf(s.max)}`);
+  out.push(`- Over ${sec.deadlineMs} ms: ${s.n === 0 ? "—" : `${s.over} of ${s.n} (${Math.round((100 * s.over) / s.n)}%)`}`);
+  out.push(`- Results: ${Object.keys(s.byResult).length === 0 ? "none" : Object.entries(s.byResult).map(([k, v]) => `${k} ${v}`).join(", ")}`);
+  out.push("");
+  out.push("| Class | Lines sent | Valid with the expected item | Passing the code's first checks |");
+  out.push("|---|---|---|---|");
+  for (const [cls, kind] of Object.entries(FAST_SLOTS_EXPECTED)) {
+    const c = s.perClass[cls];
+    const cell = (v: number | undefined) => (c === null || c === undefined ? "no lines" : String(v));
+    out.push(`| ${cls} (${kind}) | ${cell(c?.lines)} | ${cell(c?.validExpected)} | ${cell(c?.checked)} |`);
+  }
+  out.push("");
+  out.push(
+    "First checks: the span quotes the turn exactly, an allergy names a gazetteer allergen, a correction names only targets that were sent (each correction line is sent the row it corrects). validateItems' full tables don't run here, and an event correction (c-correction-2, c-correction-5) defers by design (C5b), so a line counted here can still write nothing.",
+  );
+  out.push("");
+  const sc = sec.speakerCertain;
+  if ("unavailable" in sc) out.push(`- Speaker certainty in an earlier run: can't tell (${sc.file === null ? "no run file found" : `${sc.file}: ${sc.unavailable}`}).`);
+  else out.push(`- Speaker certainty in ${sc.file} (parse committed, uncertainSpeaker under 0.10, no company or quiet candidate): hardRule ${sc.hardRule.pass} of ${sc.hardRule.of}, correction ${sc.correction.pass} of ${sc.correction.of}.`);
+  out.push("");
+  out.push("| Line | Result | ms | Items | Routes |");
+  out.push("|---|---|---|---|---|");
+  for (const r of sec.rows) out.push(`| ${r.lineId} | ${r.result}${r.reason === null ? "" : ` (${r.reason})`} | ${r.ms} | ${r.kinds.join(", ") || "—"} | ${r.routes.join("+")} |`);
   out.push("");
   return out;
 }

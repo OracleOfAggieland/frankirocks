@@ -15,5 +15,7 @@ export { turnRoute } from "./routes/turn";
 export { sdpRoute } from "./routes/sdp";
 export { receiptRoute } from "./routes/receipt";
 export { toolRoute } from "./routes/tool";
+export { phoneWebhook } from "./phone/webhook";
+export { phoneStatusRoute } from "./phone/status";
 export { debugMemoryRoute } from "./routes/debug-memory";
 export { TAKE_MAX_BYTES, listTakes, liveTakesDeps, saveTake } from "./dev/takes";

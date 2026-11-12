@@ -12,6 +12,7 @@
   "dependencies": {
     "@franki/core": "*",
     "firebase-admin": "14.5.0",
-    "openai": "7.45.1"
+    "openai": "7.45.1",
+    "ws": "8.22.2"
   }
 }

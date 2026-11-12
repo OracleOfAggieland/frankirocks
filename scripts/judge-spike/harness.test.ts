@@ -1,16 +1,22 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { JUDGE_V1_INSTRUCTIONS, encodeWav } from "@franki/core";
+import { APP_JUDGE_SETTINGS, JUDGE_V1_INSTRUCTIONS, JUDGE_V2_INSTRUCTIONS, type JudgeSettings, encodeWav } from "@franki/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { judgeSettings, main, runSettings, seedOf } from "./cli";
+import { earlierSpeakerCount, judgeSettings, main, parseFlags, predicateSettings, runSettings, seedOf, speakerCountFor } from "./cli";
+import { HARNESS_PARSE_WAIT_MS, fakeDecisionsPort, lineParser } from "./decisions";
+import { HARNESS_SLOTS_WAIT_MS, fakeFastSlotsPort, rowOf, slotsLiner, slotsRoutes, speakerCertainCount } from "./fast-slots";
+import { FIXTURE_TARGETS, fixtureInput } from "./fast-slots-fixture";
 import { FAKE_REFUSAL, type FakeJudgeScript, type FakeOptions, fakeConnect, placeholderPcm } from "./fake-realtime";
 import { DEFAULT_RUN, DEFAULT_SEED, MAX_RUN_LINES, NO_SPEECH, type Row, type RunSettings, SESSION_LINES, SPIKE_JUDGE_SETTINGS, openSession, outputTokensOf, reasoningTokensOf, runHarness, runLine, shuffleLines, silentTakes } from "./harness";
 import { type ProbeLine, LINES_URL, loadLines } from "./lines";
 import type { Connect } from "./realtime";
-import { COMMIT_TO_SEND_FLAG_MS, type RunFile, runFile, summarize, summaryMarkdown } from "./summary";
+import { COMMIT_TO_SEND_FLAG_MS, type FastSlotsSection, type RunFile, fastSlotsMarkdown, fastSlotsStats, runFile, summarize, summaryMarkdown } from "./summary";
 import { SPEECH_RMS_THRESHOLD } from "./trim";
 import { VirtualClock } from "./virtual-clock";
+
+/** The contract's 600 ms, which every run before brief 011 used. */
+const AT_600: JudgeSettings = { contract: "judge_v1", maxOutputTokens: "inf", effort: "minimal", deadlineMs: 600 };
 
 const lines = loadLines();
 const ordinary = lines.find((l) => l.id === "o-01")!;
@@ -20,13 +26,13 @@ const SEQUENTIAL: RunSettings = { mode: "sequential", staggerMs: 0 };
 const PARALLEL: RunSettings = DEFAULT_RUN;
 
 /** Runs one line on a fresh fake session and returns the row and everything the harness sent. */
-async function one(line: ProbeLine, script: FakeJudgeScript, pcm: Uint8Array = placeholderPcm(1200), run: RunSettings = SEQUENTIAL, fakeOpts: Partial<FakeOptions> = {}) {
+async function one(line: ProbeLine, script: FakeJudgeScript, pcm: Uint8Array = placeholderPcm(1200), run: RunSettings = SEQUENTIAL, fakeOpts: Partial<FakeOptions> = {}, judge: JudgeSettings = SPIKE_JUDGE_SETTINGS) {
   const clock = new VirtualClock();
   const fake = fakeConnect({ clock, judge: () => script, ...fakeOpts });
   const row = await clock.run(
     (async () => {
       const s = await openSession(fake.connect, MODELS, clock, 0);
-      const r = await runLine(s, line, pcm, null, SPIKE_JUDGE_SETTINGS, run);
+      const r = await runLine(s, line, pcm, null, judge, run);
       return { r, s };
     })(),
   );
@@ -119,7 +125,7 @@ describe("judge spike harness against the fake transport", () => {
   });
 
   it("a late O after 600 ms keeps its real time but is held", async () => {
-    const { row, creates } = await one(ordinary, { texts: ["O"], delayMs: 900 });
+    const { row, creates } = await one(ordinary, { texts: ["O"], delayMs: 900 }, undefined, SEQUENTIAL, {}, AT_600);
     expect(row).toMatchObject({ verdict: "O", valid: true, timedOut: true, decision: "held" });
     expect(row.derived.judgeMs).toBeGreaterThan(600);
     expect(purposes(creates)).toEqual(["judge"]);
@@ -237,7 +243,7 @@ describe("judge spike harness, parallel mode (brief 009)", () => {
   });
 
   it("a judge with no answer holds at 600 ms: the reply is cancelled then, the judge at 3 s", async () => {
-    const { row, sent } = await one(ordinary, { noDone: true }, undefined, PARALLEL);
+    const { row, sent } = await one(ordinary, { noDone: true }, undefined, PARALLEL, {}, AT_600);
     expect(row).toMatchObject({ timedOut: true, decision: "held", verdict: null, mutedReplyAudio: true });
     expect(row.t.replyCancelSent! - row.t.commit!).toBe(600);
     expect(cancels(sent).map((e) => e.response_id)).toEqual(["resp_2", "resp_1"]);
@@ -421,7 +427,7 @@ function row(over: Partial<Row>): Row {
   };
 }
 
-const META = { date: "2026-11-09T00:00:00.000Z", source: "synthetic" as const, transport: "fake" as const, lineSetCommit: "abc", lineSetHash: "f".repeat(64), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS };
+const META = { date: "2026-11-09T00:00:00.000Z", source: "synthetic" as const, transport: "fake" as const, lineSetCommit: "abc", lineSetHash: "f".repeat(64), models: { voice: "v", transcribe: "t" }, judge: AT_600 };
 const run = (rows: Row[], source: "synthetic" | "owner" = "synthetic"): RunFile => runFile({ ...META, source }, { rows, seed: DEFAULT_SEED, order: rows.map((r) => r.lineId), sessions: [rows.map((r) => r.lineId)], eventNames: [] });
 const probes = (n: number, latency: number | null) =>
   Array.from({ length: n }, (_, i) => row({ lineId: `o-${i}`, probe: true, derived: { judgeMs: 200, ordinaryLatencyMs: latency, ordinaryLatencyFromLoudMs: latency, asrMs: 400, commitToJudgeSentMs: 30 }, decision: latency === null ? "held" : "reply" }));
@@ -583,7 +589,7 @@ describe("judge spike summary", () => {
     expect(s.reasoningTokens).toEqual({ n: 3, p50: 12, max: 19 });
     expect(s.outputTokens).toEqual({ n: 3, p50: 13, max: 20 });
     const md = summaryMarkdown(run(rows));
-    expect(md.split("\n").slice(0, 6).join("\n")).toContain("- Judge: max_output_tokens inf (no cap), reasoning effort minimal");
+    expect(md.split("\n").slice(0, 6).join("\n")).toContain("- Judge: judge_v1, deadline 600 ms, max_output_tokens inf (no cap), reasoning effort minimal");
     expect(md).toContain("Output tokens per judge response (reasoning included): largest 20, p50 13, over 3 response(s)");
     expect(md).toContain("Reasoning tokens per judge response: largest 19, p50 12, over 3 response(s)");
     expect(summaryMarkdown(runFile({ ...META, judge: { maxOutputTokens: 16, effort: "low" } }, { rows, seed: 0, order: rows.map((r) => r.lineId), sessions: [], eventNames: [] }))).toContain("max_output_tokens 16, reasoning effort low");
@@ -620,7 +626,7 @@ describe("judge spike CLI", () => {
     expect(files.filter((f) => f.endsWith(".json"))).toHaveLength(1);
     const out = JSON.parse(readFileSync(join(d, "dist", "dry-run", files.find((f) => f.endsWith(".json"))!), "utf8")) as RunFile;
     expect(out.transport).toBe("fake");
-    expect(out.judge).toEqual({ maxOutputTokens: "inf", effort: "minimal" });
+    expect(out.judge).toEqual({ contract: "judge_v1", maxOutputTokens: "inf", effort: "minimal", deadlineMs: APP_JUDGE_SETTINGS.deadlineMs });
     expect(out.run).toEqual({ mode: "parallel", staggerMs: 0 });
     expect(logs[3]).toMatch(/^harness: mode parallel, stagger 0 ms;/);
     expect(Object.fromEntries(out.rows.map((r) => [r.lineId, r.decision]))).toEqual({ "c-forget-1": "held", "o-01": "reply" });
@@ -630,9 +636,9 @@ describe("judge spike CLI", () => {
     const d = spikeDir();
     const logs: string[] = [];
     expect(await main(["harness", "--lines", "o-01", "--max-tokens", "64", "--effort", "low"], { spikeDir: d, env: {}, log: (l) => logs.push(l) })).toBe(0);
-    expect(logs[1]).toBe("harness: judge max_output_tokens 64, effort low; line order seed 7");
+    expect(logs[1]).toBe("harness: judge judge_v1, deadline 1200 ms, max_output_tokens 64, effort low; line order seed 7");
     const file = readdirSync(join(d, "dist", "dry-run")).find((f) => f.endsWith(".json"))!;
-    expect((JSON.parse(readFileSync(join(d, "dist", "dry-run", file), "utf8")) as RunFile).judge).toEqual({ maxOutputTokens: 64, effort: "low" });
+    expect((JSON.parse(readFileSync(join(d, "dist", "dry-run", file), "utf8")) as RunFile).judge).toEqual({ contract: "judge_v1", maxOutputTokens: 64, effort: "low", deadlineMs: 1_200 });
     expect(judgeSettings({})).toEqual(SPIKE_JUDGE_SETTINGS);
     expect(judgeSettings({ "max-tokens": "inf" }).maxOutputTokens).toBe("inf");
     for (const bad of ["0", "-3", "1.5", "16x", "Infinity"]) expect(() => judgeSettings({ "max-tokens": bad })).toThrow(/--max-tokens/);
@@ -644,7 +650,7 @@ describe("judge spike CLI", () => {
     expect(runSettings({ mode: "sequential" })).toEqual({ mode: "sequential", staggerMs: 0 });
     expect(runSettings({ "stagger-ms": "120" })).toEqual({ mode: "parallel", staggerMs: 120 });
     expect(() => runSettings({ mode: "both" })).toThrow(/--mode/);
-    for (const bad of ["-1", "1.5", "x", "601"]) expect(() => runSettings({ "stagger-ms": bad })).toThrow(/--stagger-ms/);
+    for (const bad of ["-1", "1.5", "x", "1201"]) expect(() => runSettings({ "stagger-ms": bad })).toThrow(/--stagger-ms/);
     expect(() => runSettings({ mode: "sequential", "stagger-ms": "120" })).toThrow(/parallel only/);
     const d = spikeDir();
     const logs: string[] = [];
@@ -751,5 +757,308 @@ describe("judge spike CLI", () => {
     expect(await main(["synth", "--lines", "o-01"], { spikeDir: d, env: {}, log: (l) => logs.push(l) })).toBe(0);
     expect(logs.at(-1)).toContain("dry run, nothing sent");
     expect(existsSync(join(d, "audio"))).toBe(false);
+  });
+});
+
+describe("judge spike, judge_v2 and the slow parse per line (voice-control R17)", () => {
+  let dir: string | null = null;
+  afterEach(() => {
+    if (dir !== null) rmSync(dir, { recursive: true, force: true });
+    dir = null;
+  });
+  const spikeDir = () => {
+    dir = mkdtempSync(join(tmpdir(), "judge-spike-"));
+    copyFileSync(LINES_URL, join(dir, "lines.json"));
+    return dir;
+  };
+
+  it("--judge judge_v2 sends the v2 instructions with metadata.contract; the default is judge_v1 at the app's deadline", async () => {
+    expect(judgeSettings({ judge: "judge_v2" })).toEqual({ ...SPIKE_JUDGE_SETTINGS, contract: "judge_v2" });
+    expect(SPIKE_JUDGE_SETTINGS).toMatchObject({ contract: "judge_v1", deadlineMs: APP_JUDGE_SETTINGS.deadlineMs });
+    expect(() => judgeSettings({ judge: "judge_v3" })).toThrow(/--judge/);
+    const v2 = await one(ordinary, { texts: ["O"] }, undefined, SEQUENTIAL, {}, { ...SPIKE_JUDGE_SETTINGS, contract: "judge_v2" });
+    const judge = v2.creates.find((c) => (c.metadata as Record<string, string>).purpose === "judge")!;
+    expect(judge.instructions).toBe(JUDGE_V2_INSTRUCTIONS);
+    expect(judge.metadata).toMatchObject({ contract: "judge_v2" });
+    const v1 = await one(ordinary, { texts: ["O"] });
+    expect(v1.creates.find((c) => (c.metadata as Record<string, string>).purpose === "judge")!.metadata).toMatchObject({ contract: "judge_v1" });
+  });
+
+  it("each row has the regex match, the probabilities, the parse time and missedDeadline", async () => {
+    const forget = lines.find((l) => l.class === "forget")!;
+    const parse = lineParser(fakeDecisionsPort(), {}, false);
+    const fast = await parse(forget.id, "please forget what I said");
+    expect(fast.regex).toEqual({ hit: true, ids: ["RX1"] });
+    expect(fast.parse).toMatchObject({ chosen: null, ordinary: true, ms: 0, missedDeadline: false, failure: null });
+    expect(Object.values(fast.parse.probabilities!).every((p) => p === 0)).toBe(true);
+
+    // A port that answers in 1,100 ms: on the Harness's wait, but past the app's 1,000 ms.
+    const slowPort = { decide: async (body: Parameters<ReturnType<typeof fakeDecisionsPort>["decide"]>[0]) => ({ ...(await fakeDecisionsPort().decide(body, HARNESS_PARSE_WAIT_MS)), ms: 1_100 }) };
+    const late = await lineParser(slowPort, {}, false)("o-01", "my dog loves the park");
+    expect(late.parse).toMatchObject({ ms: 1_100, missedDeadline: true, ordinary: true });
+    expect(late.regex).toEqual({ hit: false, ids: [] });
+
+    const clock = new VirtualClock();
+    const fake = fakeConnect({ clock, judge: () => ({ texts: ["O"] }) });
+    const out = await clock.run(
+      runHarness({ lines: [ordinary], audio: new Map([[ordinary.id, placeholderPcm(1200)]]), voices: new Map(), models: { voice: "v", transcribe: "t" }, judge: SPIKE_JUDGE_SETTINGS, run: SEQUENTIAL, seed: 1, apiKey: "k", connect: fake.connect, clock, log: () => {}, parseLine: parse }),
+    );
+    expect(out.rows[0]!.regex).toEqual({ hit: false, ids: [] });
+    expect(out.rows[0]!.parse).toMatchObject({ ordinary: true, ms: 0, missedDeadline: false });
+  });
+
+  it("the summary prints judge recall, slow-parse recall and joint miss per class, false holds for each, and the parse time", () => {
+    const probs = (p: Record<string, number>) => ({ forget: 0, quiet: 0, correct: 0, transition: 0, hardRule: 0, crisis: 0, company: 0, alone: 0, why: 0, rushed: 0, food: 0, action: 0, answer: 0, uncertainSpeaker: 0, ...p });
+    const parse = (p: Record<string, number>, ms: number, ordinary: boolean) => ({ probabilities: probs(p), chosen: ordinary ? null : Object.keys(p)[0]!, ordinary, ms, missedDeadline: ms > 1_000, failure: null });
+    const rows = [
+      // company: the judge passes 2 of 3; the parse catches 2; one line both miss.
+      row({ lineId: "c-company-1", class: "company", expect: "hold", verdict: "H", decision: "held", parse: parse({ company: 0.9 }, 200, false) }),
+      row({ lineId: "c-company-2", class: "company", expect: "hold", verdict: "O", decision: "reply", parse: parse({ company: 0.5 }, 300, false) }),
+      row({ lineId: "c-company-3", class: "company", expect: "hold", verdict: "O", decision: "reply", parse: parse({}, 1_100, true) }),
+      // ordinary: the judge holds one, the parse finds one not ordinary.
+      row({ lineId: "o-01", verdict: "H", decision: "held", parse: parse({}, 100, true) }),
+      row({ lineId: "o-02", parse: parse({ food: 0.3 }, 1_500, false) }),
+    ];
+    const r = run(rows);
+    const s = summarize(r);
+    expect(s.slowParse!.byClass.company).toEqual({ judgeRecall: { n: 1, of: 3, missing: 0 }, parseRecall: { n: 2, of: 3, missing: 0 }, jointMiss: { n: 1, of: 3, missing: 0 } });
+    expect(s.slowParse!.falseHolds).toEqual({ judge: { n: 1, of: 2, missing: 0 }, parse: { n: 1, of: 2, missing: 0 } });
+    expect(s.slowParse!.overDeadline).toEqual({ n: 2, of: 5, missing: 0 });
+    expect(s.slowParse!.ms).toEqual({ p50: 300, p95: 1_500, n: 5 });
+    const md = summaryMarkdown({ ...r, decisions: "fake" });
+    expect(md).toContain("## Slow parse");
+    expect(md).toContain("**Fake Decisions port");
+    expect(md).toContain("| company | 33.3% (1 of 3) | 66.7% (2 of 3) | 33.3% (1 of 3) |");
+    expect(md).toContain("- False holds on ordinary lines: judge 50.0% (1 of 2), slow parse 50.0% (1 of 2)");
+    expect(md).toContain("- Parses over 1000 ms: 40.0% (2 of 5); parse time p50 300 ms, p95 1500 ms, over 5 parse(s)");
+    expect(summaryMarkdown({ ...r, decisions: "live" })).not.toContain("**Fake Decisions port");
+    // A run from before brief 011 has no parse and no section.
+    expect(summarize(run([row({})])).slowParse).toBeNull();
+    expect(summaryMarkdown(run([row({})]))).not.toContain("## Slow parse");
+  });
+
+  it("the run file records the deadline, the contract name and the Decisions port; lines.json is not written", async () => {
+    const d = spikeDir();
+    const before = readFileSync(join(d, "lines.json"), "utf8");
+    const logs: string[] = [];
+    expect(await main(["harness", "--lines", "o-01,c-forget-1", "--judge", "judge_v2"], { spikeDir: d, env: {}, log: (l) => logs.push(l) })).toBe(0);
+    const file = readdirSync(join(d, "dist", "dry-run")).find((f) => f.endsWith(".json"))!;
+    const out = JSON.parse(readFileSync(join(d, "dist", "dry-run", file), "utf8")) as RunFile;
+    expect(out.judge).toMatchObject({ contract: "judge_v2", deadlineMs: APP_JUDGE_SETTINGS.deadlineMs });
+    expect(out.decisions).toBe("fake");
+    expect(out.rows.every((r) => r.parse !== undefined && r.regex !== undefined)).toBe(true);
+    expect(logs).toContain("harness: slow parse per line through the fake Decisions port (every probability 0, 0 ms)");
+    const md = readFileSync(join(d, "dist", "dry-run", file.replace(/\.json$/, ".md")), "utf8");
+    expect(md).toContain("- Judge: judge_v2, deadline 1200 ms");
+    expect(readFileSync(join(d, "lines.json"), "utf8")).toBe(before);
+  });
+});
+
+describe("judge spike, invalid parse reasons (review of the live run, item 4)", () => {
+  it("each row says which check an invalid parse failed, and the summary counts them", async () => {
+    const bad = { decide: async (body: Parameters<ReturnType<typeof fakeDecisionsPort>["decide"]>[0]) => {
+      const r = await fakeDecisionsPort().decide(body, HARNESS_PARSE_WAIT_MS);
+      const d = r.ok ? (r.decision as { answers: Record<string, unknown>[] }) : { answers: [] };
+      d.answers[1] = { type: "refusal", name: d.answers[1]!.name };
+      return { ok: true as const, decision: d, ms: 500 };
+    } };
+    const row1 = await lineParser(bad, {}, false)("o-01", "my dog loves the park");
+    expect(row1.parse).toMatchObject({ failure: "invalid", invalid: { reason: "refusal", index: 1, name: "quiet" } });
+    const probs = Object.fromEntries(["forget", "quiet", "correct", "transition", "hardRule", "crisis", "company", "alone", "why", "rushed", "food", "action", "answer", "uncertainSpeaker"].map((k) => [k, 0]));
+    const ok = { probabilities: probs, chosen: null, ordinary: true, ms: 100, missedDeadline: false, failure: null, invalid: null };
+    const inv = (reason: string, name: string | null) => ({ probabilities: null, chosen: null, ordinary: false, ms: 500, missedDeadline: false, failure: "invalid", invalid: { reason, index: 1, name } });
+    const r = run([row({ lineId: "o-01", parse: ok }), row({ lineId: "o-02", parse: inv("refusal", "quiet") as never }), row({ lineId: "o-03", parse: inv("refusal", "alone") as never }), row({ lineId: "o-04", parse: inv("count", null) as never })]);
+    const s = summarize(r);
+    expect(s.slowParse!.invalid).toEqual({ n: 3, reasons: { refusal: 2, count: 1 } });
+    expect(summaryMarkdown({ ...r, decisions: "live" })).toContain("- Invalid answers: 3 (refusal 2, count 1)");
+  });
+});
+describe("judge spike, what the routes would do (review of the live run, item 6)", () => {
+  const probs = (p: Record<string, number>) => ({ forget: 0, quiet: 0, correct: 0, transition: 0, hardRule: 0, crisis: 0, company: 0, alone: 0, why: 0, rushed: 0, food: 0, action: 0, answer: 0, uncertainSpeaker: 0, ...p });
+  const parse = (p: Record<string, number>) => ({ probabilities: probs(p), chosen: Object.keys(p)[0] ?? null, ordinary: false, ms: 400, missedDeadline: false, failure: null, invalid: null });
+
+  it("per class, ordinary lines at 0.20 and at 0.80, and would-cut-or-swap counts under the route rule", () => {
+    const rows = [
+      row({ lineId: "o-01", verdict: "O", parse: parse({ company: 0.92 }) }),
+      row({ lineId: "o-06", verdict: "O", parse: parse({ alone: 0.41 }) }),
+      row({ lineId: "o-07", verdict: "H", decision: "held", parse: parse({ alone: 0.41 }) }),
+      row({ lineId: "c-forget-1", class: "forget", expect: "hold", verdict: "O", parse: parse({ forget: 0.5 }) }),
+      row({ lineId: "c-crisis-1", class: "crisis", expect: "hold", verdict: "O", parse: parse({ rushed: 0.4, crisis: 0.25 }) }),
+    ];
+    const s = summarize(run(rows));
+    expect(s.routes!.ordinaryAt.company).toEqual({ at20: 1, at80: 1 });
+    expect(s.routes!.ordinaryAt.alone).toEqual({ at20: 2, at80: 0 });
+    // o-01: company 0.92 alone fires; o-07: alone 0.41 with judge H fires; o-06: judge O and 0.41 doesn't.
+    expect(s.routes!.wouldFire.ordinary).toMatchObject({ company: 1, alone: 1 });
+    // c-forget-1: judge O and 0.5 doesn't fire; c-crisis-1: crisis is exempt.
+    expect(s.routes!.wouldFire.control).toMatchObject({ forget: 0, crisis: 1 });
+    const md = summaryMarkdown(run(rows));
+    expect(md).toContain("## What the routes would do");
+    expect(md).toContain("| company | 1 | 1 | 1 | 0 |");
+    expect(md).toContain("| alone | 2 | 0 | 1 | 0 |");
+  });
+
+  it("the caveats count control lines whose judge went out late, from the rows", () => {
+    const late = (id: string, trimmedMs: number, fragments: number, gap: number) =>
+      row({ lineId: id, class: "forget", expect: "hold", trimmedMs, fragments, t: { ...row({}).t, commit: 1_000, judgeSent: 1_000 + gap } });
+    const r = run([late("c-forget-1", 0, 2, 400), late("c-forget-2", 300, 1, 10), late("c-forget-3", 0, 1, 1_224)]);
+    expect(summarize(r).caveats).toEqual({ control: 3, trimmed: 1, fragmented: 1, lateJudge: 2, lateJudgeMs: { min: 400, max: 1_224 } });
+    expect(summaryMarkdown(r)).toContain("Only 1 of the 3 control takes had their tails trimmed, and 1 came in as more than one fragment, so on 2 control lines the judge was sent 400 to 1224 ms after the commit.");
+  });
+
+  it("--predicates contract is the default and the only set; it is recorded in the run file", async () => {
+    expect(predicateSettings({})).toBe("contract");
+    expect(() => predicateSettings({ predicates: "v2" })).toThrow(/--predicates/);
+    const d = mkdtempSync(join(tmpdir(), "judge-spike-"));
+    try {
+      copyFileSync(LINES_URL, join(d, "lines.json"));
+      expect(await main(["harness", "--lines", "o-01", "--predicates", "contract"], { spikeDir: d, env: {}, log: () => {} })).toBe(0);
+      const file = readdirSync(join(d, "dist", "dry-run")).find((f) => f.endsWith(".json"))!;
+      expect((JSON.parse(readFileSync(join(d, "dist", "dry-run", file), "utf8")) as RunFile).predicates).toBe("contract");
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("judge spike, FastSlotsV1 (brief 012 task A9)", () => {
+  const zeroParse = (over: Record<string, number> = {}) => ({
+    probabilities: { forget: 0, quiet: 0, correct: 0, transition: 0, hardRule: 0, crisis: 0, company: 0, alone: 0, why: 0, rushed: 0, food: 0, action: 0, answer: 0, uncertainSpeaker: 0, ...over },
+    chosen: null,
+    ordinary: true,
+    ms: 0,
+    missedDeadline: false,
+    failure: null,
+  });
+
+  it("opens a route on RX4, RX6 or RX7, or on a route candidate at 0.20 or more", () => {
+    expect(slotsRoutes("I just found out I'm allergic to shellfish.", zeroParse())).toEqual({ routes: ["hardRule"], triggers: ["regex"] });
+    expect(slotsRoutes("No, her name is Mara, not Maya.", zeroParse({ correct: 0.2 }))).toEqual({ routes: ["correct"], triggers: ["candidate"] });
+    expect(slotsRoutes("My dad passed away.", zeroParse({ hardRule: 0.5 }))).toEqual({ routes: ["hardRule", "transition"], triggers: ["regex", "candidate"] });
+    expect(slotsRoutes("I forgot my umbrella again.", zeroParse({ correct: 0.19 })).routes).toEqual([]);
+    expect(slotsRoutes("Hello there.", null).routes).toEqual([]);
+  });
+
+  it("sends the synthetic context, with targets only for the correct and transition routes", () => {
+    expect(fixtureInput("c-hardrule-1", "text", ["hardRule"]).targets).toEqual([]);
+    expect(fixtureInput("x", "text", ["correct"]).targets).toEqual(FIXTURE_TARGETS);
+    expect(fixtureInput("x", "text", ["transition"]).entities.length).toBeGreaterThan(0);
+    // Each correction line is sent the row it corrects, ahead of the shared set.
+    for (const id of ["c-correction-1", "c-correction-2", "c-correction-3", "c-correction-4", "c-correction-5"]) {
+      const sent = fixtureInput(id, "text", ["correct"]).targets;
+      expect(sent.slice(1)).toEqual(FIXTURE_TARGETS);
+      expect(FIXTURE_TARGETS.map((t) => t.id)).not.toContain(sent[0]!.id);
+    }
+    expect(fixtureInput("c-correction-1", "text", ["hardRule"]).targets).toEqual([]);
+  });
+
+  it("a row holds the time, the result, why it was invalid and the item kinds, never words", async () => {
+    const line = lines.find((l) => l.class === "hardRule")!;
+    const opened = slotsRoutes(line.text, null);
+    const invalid = rowOf(line, opened, { kind: "invalid", reason: "shape", path: "$.items[0].span", ms: 950 });
+    expect(invalid).toMatchObject({ result: "invalid", reason: "shape", path: "$.items[0].span", overDeadline: true, kinds: [] });
+    const span = { eid: "e", fieldPath: "text" as const, start: 0, end: 3, quote: "I'm" };
+    const valid = rowOf(line, opened, {
+      kind: "valid",
+      out: { items: [{ kind: "allergy", subject: { entityId: null, mention: null, isSelf: true }, item: "shellfish", severity: "allergy", polarity: "affirmed", act: "direct", span }], need: "none" },
+      ms: 400,
+    });
+    expect(valid).toMatchObject({ result: "valid", kinds: ["allergy"], checked: [], need: "none", overDeadline: false });
+    expect(JSON.stringify(valid)).not.toContain("shellfish");
+    expect(rowOf(line, opened, { kind: "timeout", ms: HARNESS_SLOTS_WAIT_MS }).overDeadline).toBe(true);
+    let waited = 0;
+    const row = await slotsLiner({
+      slots: async (_i, ms) => {
+        waited = ms;
+        return { kind: "transport", ms: 3 };
+      },
+    })(line, line.text, null);
+    expect(row).toMatchObject({ result: "transport", ms: 3 });
+    expect(waited).toBe(HARNESS_SLOTS_WAIT_MS);
+    expect(await slotsLiner(fakeFastSlotsPort())(lines.find((l) => l.id === "o-01")!, "Hello.", null)).toBeNull();
+  });
+
+  it("counts an item as checked only when its span, allergen and targets hold against the input sent", () => {
+    const line = lines.find((l) => l.id === "c-correction-1")!;
+    const opened = slotsRoutes(line.text, null);
+    const input = fixtureInput(line.id, line.text, ["correct"]);
+    const at = (quote: string, eid = input.turn.eid) => ({ eid, fieldPath: "text" as const, start: line.text.indexOf(quote), end: line.text.indexOf(quote) + quote.length, quote });
+    const fix = (targetIds: string[], span = at("her name is Mara")) => ({ kind: "correction" as const, targetIds, predicate: "identity.alias" as const, replacementValue: { kind: "text" as const, text: "Mara" }, args: null, act: "direct" as const, span });
+    const answer = (items: ReturnType<typeof fix>[]) => rowOf(line, opened, { kind: "valid", out: { items, need: "none" }, ms: 300 }, input);
+    expect(answer([fix([input.targets[0]!.id])]).checked).toEqual(["correction"]);
+    expect(answer([fix(["made-up-id"])]).checked).toEqual([]);
+    expect(answer([fix([])]).checked).toEqual([]);
+    expect(answer([fix([input.targets[0]!.id], { ...at("her name is Mara"), quote: "her name is Maya" })]).checked).toEqual([]);
+    expect(answer([fix([input.targets[0]!.id], at("her name is Mara", "another-turn"))]).checked).toEqual([]);
+    const text = "I'm allergic to shellfish.";
+    const aLine = { id: "c-hardrule-x", class: "hardRule" as const };
+    const aInput = fixtureInput(aLine.id, text, ["hardRule"]);
+    const allergy = (item: string, quote: string) => ({ kind: "allergy" as const, subject: { entityId: null, mention: null, isSelf: true }, item, severity: "allergy" as const, polarity: "affirmed" as const, act: "direct" as const, span: { eid: aInput.turn.eid, fieldPath: "text" as const, start: text.indexOf(quote), end: text.indexOf(quote) + quote.length, quote } });
+    const aRow = (item: string, quote: string) => rowOf(aLine, slotsRoutes(text, null), { kind: "valid", out: { items: [allergy(item, quote)], need: "none" }, ms: 1 }, aInput).checked;
+    expect(aRow("shellfish", "allergic to shellfish")).toEqual(["allergy"]);
+    expect(aRow("the thing", "I'm allergic")).toEqual([]);
+  });
+
+  it("summarizes p50, p95, the largest, the share over 900 ms, and per class the valid expected items", () => {
+    const row = (lineId: string, cls: string, ms: number, kinds: string[], result: "valid" | "timeout" = "valid", checked: string[] = kinds) =>
+      ({ lineId, class: cls, routes: [], triggers: [], ms, result, reason: null, path: null, kinds, checked, need: "none", overDeadline: result === "timeout" || ms > 900 }) as FastSlotsSection["rows"][number];
+    const sec: FastSlotsSection = {
+      port: "live",
+      waitMs: HARNESS_SLOTS_WAIT_MS,
+      deadlineMs: 900,
+      rows: [row("c-hardrule-1", "hardRule", 300, ["allergy"]), row("c-hardrule-2", "hardRule", 1200, []), row("c-correction-1", "correction", 500, ["correction"], "valid", []), row("c-correction-2", "correction", 5000, [], "timeout")],
+      speakerCertain: { file: "x.json", hardRule: { pass: 4, of: 5 }, correction: { pass: 3, of: 5 } },
+    };
+    const s = fastSlotsStats(sec);
+    expect(s).toMatchObject({ n: 4, p50: 500, p95: 5000, max: 5000, over: 2, byResult: { valid: 3, timeout: 1 } });
+    expect(s.perClass).toEqual({ hardRule: { lines: 2, validExpected: 1, checked: 1 }, correction: { lines: 2, validExpected: 1, checked: 0 }, transition: null });
+    const md = fastSlotsMarkdown(sec).join("\n");
+    expect(md).toContain("| transition (transition) | no lines | no lines | no lines |");
+    expect(md).toContain("| correction (correction) | 2 | 1 | 0 |");
+    expect(md).toContain("validateItems' full tables don't run here");
+    expect(md).toContain("Over 900 ms: 2 of 4 (50%)");
+    expect(md).toContain("hardRule 4 of 5, correction 3 of 5");
+  });
+
+  it("counts speaker certainty from the Nov 10 run file, and says when it can't", () => {
+    const d = mkdtempSync(join(tmpdir(), "judge-spike-speaker-"));
+    try {
+      expect(earlierSpeakerCount(d)).toEqual({ file: null, unavailable: "no run file" });
+      mkdirSync(join(d, "results"));
+      const name = "2026-11-10T06-32-11-722Z-owner.json";
+      copyFileSync(new URL(`./results/${name}`, import.meta.url), join(d, "results", name));
+      expect(earlierSpeakerCount(d)).toEqual({ file: name, hardRule: { pass: 4, of: 5 }, correction: { pass: 3, of: 5 } });
+      // A live run counts its own parses; a dry run, or live rows with no probabilities, falls back to the earlier run.
+      const p = { probabilities: { uncertainSpeaker: 0, company: 0, quiet: 0 }, failure: null };
+      const own = [{ class: "hardRule", parse: p }, { class: "correction", parse: { ...p, probabilities: { ...p.probabilities, uncertainSpeaker: 0.5 } } }];
+      expect(speakerCountFor(true, own, d)).toEqual({ file: "this run", hardRule: { pass: 1, of: 1 }, correction: { pass: 0, of: 1 } });
+      expect(speakerCountFor(false, own, d)).toMatchObject({ file: name });
+      expect(speakerCountFor(true, [{ class: "hardRule" }], d)).toMatchObject({ file: name });
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+    expect(speakerCertainCount("old.json", [{ class: "hardRule" }])).toEqual({ file: "old.json", unavailable: "the run file holds no parse probabilities for every line" });
+  });
+
+  it("a fake --fast-slots run measures the route lines, stores no line text, and never calls the network", async () => {
+    const d = mkdtempSync(join(tmpdir(), "judge-spike-slots-"));
+    try {
+      copyFileSync(LINES_URL, join(d, "lines.json"));
+      expect(parseFlags(["--fast-slots", "--lines", "o-01"]).fastSlots).toBe(true);
+      const logs: string[] = [];
+      const ids = ["c-hardrule-1", "c-hardrule-3", "o-10", "o-01"];
+      expect(await main(["harness", "--lines", ids.join(","), "--fast-slots"], { spikeDir: d, env: {}, log: (l) => logs.push(l) })).toBe(0);
+      expect(logs.some((l) => /^ {2}fast-slots c-hardrule-1: valid in 0 ms, items \[\], routes hardRule$/.test(l))).toBe(true);
+      const dir = join(d, "dist", "dry-run");
+      const file = readdirSync(dir).find((f) => f.endsWith(".json"))!;
+      const run = JSON.parse(readFileSync(join(dir, file), "utf8")) as RunFile;
+      expect(run.fastSlots?.port).toBe("fake");
+      expect(run.fastSlots?.rows.map((r) => r.lineId).sort()).toEqual(["c-hardrule-1", "c-hardrule-3", "o-10"]);
+      const section = JSON.stringify(run.fastSlots);
+      for (const id of ids) expect(section).not.toContain(lines.find((l) => l.id === id)!.text);
+      expect(readFileSync(join(dir, file.replace(/\.json$/, ".md")), "utf8")).toContain("## FastSlotsV1");
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
   });
 });

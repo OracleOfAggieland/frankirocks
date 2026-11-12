@@ -3,6 +3,8 @@
  * The live adapter maps the SDK response to this shape; Fake_OpenAI scripts it directly.
  */
 export interface ResponsesResult {
+  /** True only for a complete, argument-free phone tool call. */
+  phoneCallRequested?: boolean;
   status: "completed" | "incomplete" | "failed";
   /** The concatenated output text, or null when there is none. */
   outputText: string | null;

@@ -56,6 +56,8 @@ export interface TypedDeps {
   newId?: () => string;
   /** Waits `ms` before a hold retry. setTimeout by default. */
   sleep?: (ms: number) => Promise<void>;
+  /** Told the turn each answered typed line was, for the phone on the screen. Never changes what is sent. */
+  onTurn?: (turn: { sessionId: string; turnId: string }) => void;
 }
 
 /** Pure: whether the text may be sent (R18.1, R18.8). */
@@ -122,6 +124,7 @@ export class TypedTurns {
       // No call is open in this path, so the reply shows as text and no audio plays (R18.6).
       for (const note of result.notes) entries.push({ key: note.noteId, role: "franki", text: note.text });
       this.set({ text: "", sending: false, error: null, entries });
+      this.deps.onTurn?.({ sessionId: result.stamp.sessionId, turnId: result.stamp.turnId });
       return true;
     } catch {
       return this.fail("Not sent: something went wrong in the browser.");

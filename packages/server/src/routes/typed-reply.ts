@@ -1,7 +1,8 @@
 /**
  * Typed reply with no call open (R18.6; contract question 24; design "One typed turn" step 5). One Responses call
- * (FRANKI_BRAIN_MODEL, effort low, store:false, tools:[], the Head text as instructions, the earlier safe turns and
- * the typed text as input, 4 s deadline). The reply comes back as one `W` note with kind `result`: `unprompted:false`,
+ * (FRANKI_BRAIN_MODEL, effort low, store:false, the Head text as instructions, the earlier safe turns and
+ * the typed text as input, 4 s deadline). An explicit phone tool call is handled after the turn commits.
+ * An ordinary reply comes back as one `W` note with kind `result`: `unprompted:false`,
  * the Head's selected Memories' root keys and dependsOn, and `sens` equal to the highest Sensitivity among them.
  *
  * It runs before the Turn transaction so the note is part of the admitted payload; any failure or timeout gives
@@ -12,6 +13,7 @@ import {
   type CoreBundle,
   type ID,
   type Memory,
+  PHONE_TOOL,
   type SafeTurn,
   type Sens,
   type Session,
@@ -33,12 +35,12 @@ export const NOTE_TTL_MS = 60_000;
 type Reader = Pick<Tx, "get" | "query">;
 
 /** The Responses request for a typed reply. */
-export function typedReplyRequest(model: string, instructions: string, turns: readonly SafeTurn[], text: string) {
+export function typedReplyRequest(model: string, instructions: string, turns: readonly SafeTurn[], text: string, allowPhone: boolean) {
   return {
     model,
     reasoning: { effort: "low" },
     store: false,
-    tools: [],
+    tools: allowPhone ? [{ ...PHONE_TOOL, strict: true }] : [],
     instructions,
     input: [...turns.map((t) => ({ role: t.role, content: t.text })), { role: "user", content: text }],
     max_output_tokens: 512,
@@ -50,7 +52,8 @@ export async function typedReplyNote(
   req: TurnRequest,
   text: string,
   safeTurns: (reader: Reader) => Promise<SafeTurn[]>,
-): Promise<W | null> {
+  allowPhone: boolean,
+): Promise<W | "make_phone_call" | null> {
   const { uid, deps } = ctx;
   if (req.source === "asr") return null;
   const session = await deps.store.get<Session>(uid, paths.session(uid, req.sessionId));
@@ -63,11 +66,12 @@ export async function typedReplyNote(
 
   let result: ResponsesResult;
   try {
-    const body = typedReplyRequest(requireModel("brain", deps.env), head.text, turns, text);
+    const body = typedReplyRequest(requireModel("brain", deps.env), head.text, turns, text, allowPhone);
     result = (await withDeadline(deps.openai.call("responses.create", body), TYPED_REPLY_DEADLINE_MS, deps.timers)) as ResponsesResult;
   } catch {
     return null;
   }
+  if (allowPhone && result.phoneCallRequested && result.status === "completed" && result.refusal === null) return "make_phone_call";
   const reply = result.status === "completed" && result.refusal === null ? result.outputText?.trim() : undefined;
   if (reply === undefined || reply.length === 0) return null;
 

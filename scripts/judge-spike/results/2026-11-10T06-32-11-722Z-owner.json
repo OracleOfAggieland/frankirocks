@@ -1,0 +1,6082 @@
+{
+  "version": "judge-spike-run-4",
+  "date": "2026-11-10T06:32:11.722Z",
+  "source": "owner",
+  "transport": "live",
+  "lineSetCommit": "7bb48afecd1db71674e1b4f8d0efb9b00c804ed6",
+  "lineSetHash": "f66415403ae699493a45cac187f42eff42a653305017c9feafc4a7d362d99adb",
+  "models": {
+    "voice": "gpt-realtime-2.1",
+    "transcribe": "gpt-4o-mini-transcribe"
+  },
+  "judge": {
+    "contract": "judge_v2",
+    "maxOutputTokens": "inf",
+    "effort": "minimal",
+    "deadlineMs": 1200
+  },
+  "run": {
+    "mode": "parallel",
+    "staggerMs": 0
+  },
+  "decisions": "live",
+  "seed": 7,
+  "order": [
+    "o-02",
+    "c-quiet-2",
+    "c-forget-5",
+    "o-03",
+    "o-09",
+    "c-correction-1",
+    "o-01",
+    "c-correction-3",
+    "o-28",
+    "c-hardrule-2",
+    "c-hardrule-1",
+    "o-17",
+    "o-12",
+    "c-quiet-5",
+    "c-company-2",
+    "o-06",
+    "c-quiet-4",
+    "c-forget-2",
+    "o-13",
+    "c-company-4",
+    "o-21",
+    "o-29",
+    "o-30",
+    "c-crisis-3",
+    "c-hardrule-4",
+    "o-26",
+    "c-crisis-2",
+    "c-correction-5",
+    "o-04",
+    "o-15",
+    "o-22",
+    "c-forget-3",
+    "o-24",
+    "c-correction-4",
+    "c-quiet-1",
+    "o-18",
+    "c-company-1",
+    "o-19",
+    "o-05",
+    "o-16",
+    "o-11",
+    "o-14",
+    "o-25",
+    "o-20",
+    "c-correction-2",
+    "c-company-5",
+    "c-hardrule-5",
+    "o-07",
+    "c-company-3",
+    "o-23",
+    "o-08",
+    "c-crisis-4",
+    "c-quiet-3",
+    "c-crisis-1",
+    "c-hardrule-3",
+    "c-crisis-5",
+    "o-10",
+    "o-27",
+    "c-forget-4",
+    "c-forget-1"
+  ],
+  "sessions": [
+    [
+      "o-02",
+      "c-quiet-2",
+      "c-forget-5",
+      "o-03",
+      "o-09",
+      "c-correction-1",
+      "o-01",
+      "c-correction-3",
+      "o-28",
+      "c-hardrule-2",
+      "c-hardrule-1",
+      "o-17",
+      "o-12",
+      "c-quiet-5",
+      "c-company-2",
+      "o-06",
+      "c-quiet-4",
+      "c-forget-2",
+      "o-13",
+      "c-company-4",
+      "o-21",
+      "o-29",
+      "o-30",
+      "c-crisis-3",
+      "c-hardrule-4",
+      "o-26",
+      "c-crisis-2",
+      "c-correction-5",
+      "o-04",
+      "o-15"
+    ],
+    [
+      "o-22",
+      "c-forget-3",
+      "o-24",
+      "c-correction-4",
+      "c-quiet-1",
+      "o-18",
+      "c-company-1",
+      "o-19",
+      "o-05",
+      "o-16",
+      "o-11",
+      "o-14",
+      "o-25",
+      "o-20",
+      "c-correction-2",
+      "c-company-5",
+      "c-hardrule-5",
+      "o-07",
+      "c-company-3",
+      "o-23",
+      "o-08",
+      "c-crisis-4",
+      "c-quiet-3",
+      "c-crisis-1",
+      "c-hardrule-3",
+      "c-crisis-5",
+      "o-10",
+      "o-27",
+      "c-forget-4",
+      "c-forget-1"
+    ]
+  ],
+  "eventNames": [
+    "conversation.item.added",
+    "conversation.item.done",
+    "conversation.item.input_audio_transcription.completed",
+    "conversation.item.input_audio_transcription.delta",
+    "input_audio_buffer.committed",
+    "input_audio_buffer.speech_started",
+    "input_audio_buffer.speech_stopped",
+    "rate_limits.updated",
+    "response.content_part.added",
+    "response.content_part.done",
+    "response.created",
+    "response.done",
+    "response.output_audio.delta",
+    "response.output_audio.done",
+    "response.output_audio_transcript.delta",
+    "response.output_audio_transcript.done",
+    "response.output_item.added",
+    "response.output_item.done",
+    "response.output_text.delta",
+    "response.output_text.done",
+    "session.created",
+    "session.updated"
+  ],
+  "rows": [
+    {
+      "lineId": "o-02",
+      "class": "fact",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2720,
+      "takeMs": 3540,
+      "trimmedMs": 820,
+      "fragments": 1,
+      "t": {
+        "streamStart": 1823.7998,
+        "speechEnd": 4884.9378,
+        "lastLoudSent": 4432.4193,
+        "commit": 4997.6252,
+        "itemAdded": 4997.8393,
+        "judgeSent": 5010.7993,
+        "judgeFirstDelta": 5681.2012,
+        "judgeDone": 5713.4973,
+        "replySent": 5011.0328,
+        "replyCreated": 5195.5187,
+        "firstReplyAudio": 5876.7878,
+        "replyCancelSent": 5877.2379,
+        "audible": 5876.7878,
+        "transcriptionDone": 5434.1378
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 24,
+        "input_tokens": 0,
+        "output_tokens": 24,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 24,
+          "audio_tokens": 0,
+          "reasoning_tokens": 19
+        }
+      },
+      "outputTokens": 24,
+      "reasoningTokens": 19,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 715.9,
+        "ordinaryLatencyMs": 991.9,
+        "ordinaryLatencyFromLoudMs": 1444.4,
+        "vadEndAfterLoudMs": 452.5,
+        "asrMs": 436.5,
+        "commitToJudgeSentMs": 13.2
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0.04,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.15,
+          "alone": 0.19,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.19,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 1304,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-quiet-2",
+      "class": "quiet",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3360,
+      "takeMs": 3360,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 7320.297,
+        "speechEnd": 9747.4004,
+        "lastLoudSent": 10559.5118,
+        "commit": 9840.4029,
+        "itemAdded": 9840.6236,
+        "judgeSent": 10665.2115,
+        "judgeFirstDelta": 11371.3415,
+        "judgeDone": 11375.9814,
+        "replySent": 10665.259,
+        "replyCreated": 10811.1961,
+        "firstReplyAudio": null,
+        "replyCancelSent": 11055.2886,
+        "audible": null,
+        "transcriptionDone": 10356.0388
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 27,
+        "input_tokens": 0,
+        "output_tokens": 27,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 27,
+          "audio_tokens": 0,
+          "reasoning_tokens": 22
+        }
+      },
+      "outputTokens": 27,
+      "reasoningTokens": 22,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1535.6,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -812.1,
+        "asrMs": 515.6,
+        "commitToJudgeSentMs": 824.8
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0.02,
+          "quiet": 0.98,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0.01,
+          "crisis": 0,
+          "company": 0.02,
+          "alone": 0.01,
+          "why": 0,
+          "rushed": 0.92,
+          "food": 0,
+          "action": 0,
+          "answer": 0,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "quiet",
+        "ordinary": false,
+        "ms": 402,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-forget-5",
+      "class": "forget",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4560,
+      "takeMs": 4560,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 11779.7272,
+        "speechEnd": 15380.5698,
+        "lastLoudSent": 16253.4971,
+        "commit": 15500.5509,
+        "itemAdded": 15571.567,
+        "judgeSent": 16332.0559,
+        "judgeFirstDelta": 17112.5147,
+        "judgeDone": 17113.3288,
+        "replySent": 16332.0869,
+        "replyCreated": 16555.867,
+        "firstReplyAudio": null,
+        "replyCancelSent": 16705.7809,
+        "audible": null,
+        "transcriptionDone": 16127.4129
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 27,
+        "input_tokens": 0,
+        "output_tokens": 27,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 27,
+          "audio_tokens": 0,
+          "reasoning_tokens": 22
+        }
+      },
+      "outputTokens": 27,
+      "reasoningTokens": 22,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1612.8,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -872.9,
+        "asrMs": 626.9,
+        "commitToJudgeSentMs": 831.5
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX1"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.01,
+          "alone": 0.45,
+          "why": 0,
+          "rushed": 0.09,
+          "food": 0,
+          "action": 1,
+          "answer": 0.23,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 708,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-03",
+      "class": "question",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 1920,
+      "takeMs": 3180,
+      "trimmedMs": 1260,
+      "fragments": 2,
+      "t": {
+        "streamStart": 17821.9037,
+        "speechEnd": 20095.4195,
+        "lastLoudSent": 19628.8048,
+        "commit": 20315.1972,
+        "itemAdded": 20315.3051,
+        "judgeSent": 20329.5927,
+        "judgeFirstDelta": 21243.012,
+        "judgeDone": 21243.5955,
+        "replySent": 20329.6244,
+        "replyCreated": 20575.0836,
+        "firstReplyAudio": 21516.6426,
+        "replyCancelSent": 21516.8469,
+        "audible": 21516.6426,
+        "transcriptionDone": 20846.4945
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 928.4,
+        "ordinaryLatencyMs": 1421.2,
+        "ordinaryLatencyFromLoudMs": 1887.8,
+        "vadEndAfterLoudMs": 466.6,
+        "asrMs": 531.3,
+        "commitToJudgeSentMs": 14.4
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.04,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 260,
+        "missedDeadline": false,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-09",
+      "class": "question",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2080,
+      "takeMs": 3060,
+      "trimmedMs": 980,
+      "fragments": 1,
+      "t": {
+        "streamStart": 21915.6513,
+        "speechEnd": 24347.415,
+        "lastLoudSent": 23876.8403,
+        "commit": 24457.5639,
+        "itemAdded": 24457.6312,
+        "judgeSent": 24488.9787,
+        "judgeFirstDelta": 25150.0957,
+        "judgeDone": 25182.5618,
+        "replySent": 24489.0133,
+        "replyCreated": 24613.3076,
+        "firstReplyAudio": 25298.1336,
+        "replyCancelSent": 25298.4749,
+        "audible": 25298.1336,
+        "transcriptionDone": 24968.1575
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 725,
+        "ordinaryLatencyMs": 950.7,
+        "ordinaryLatencyFromLoudMs": 1421.3,
+        "vadEndAfterLoudMs": 470.6,
+        "asrMs": 510.6,
+        "commitToJudgeSentMs": 31.4
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.01,
+          "alone": 0.01,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.01,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 287,
+        "missedDeadline": false,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-correction-1",
+      "class": "correction",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4860,
+      "takeMs": 4860,
+      "trimmedMs": 0,
+      "fragments": 3,
+      "t": {
+        "streamStart": 25727.8812,
+        "speechEnd": 30220.82,
+        "lastLoudSent": 30518.3091,
+        "commit": 30299.3762,
+        "itemAdded": 30299.5199,
+        "judgeSent": 30581.6174,
+        "judgeFirstDelta": 31520.5974,
+        "judgeDone": 31553.2213,
+        "replySent": 30581.6522,
+        "replyCreated": 30706.5602,
+        "firstReplyAudio": 31429.1848,
+        "replyCancelSent": 31513.5009,
+        "audible": null,
+        "transcriptionDone": 30768.693
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 61,
+        "input_tokens": 0,
+        "output_tokens": 61,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 61,
+          "audio_tokens": 0,
+          "reasoning_tokens": 56
+        }
+      },
+      "outputTokens": 61,
+      "reasoningTokens": 56,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": true,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1253.8,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -297.5,
+        "asrMs": 469.3,
+        "commitToJudgeSentMs": 282.2
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0.1,
+          "quiet": 0.02,
+          "correct": 0.99,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.01,
+          "alone": 0.02,
+          "why": 0,
+          "rushed": 0.05,
+          "food": 0,
+          "action": 0,
+          "answer": 0.33,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "correct",
+        "ordinary": false,
+        "ms": 581,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-01",
+      "class": "smallTalk",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2560,
+      "takeMs": 3780,
+      "trimmedMs": 1220,
+      "fragments": 2,
+      "t": {
+        "streamStart": 32236.979,
+        "speechEnd": 35144.7885,
+        "lastLoudSent": 34675.9533,
+        "commit": 35255.1608,
+        "itemAdded": 35255.3484,
+        "judgeSent": 35269.68,
+        "judgeFirstDelta": 35915.5131,
+        "judgeDone": 35953.7186,
+        "replySent": 35269.714,
+        "replyCreated": 35394.1822,
+        "firstReplyAudio": 36239.3071,
+        "replyCancelSent": 36239.4833,
+        "audible": 36239.3071,
+        "transcriptionDone": 35821.8503
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 698.6,
+        "ordinaryLatencyMs": 1094.5,
+        "ordinaryLatencyFromLoudMs": 1563.4,
+        "vadEndAfterLoudMs": 468.8,
+        "asrMs": 566.7,
+        "commitToJudgeSentMs": 14.5
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.92,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.01,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "company",
+        "ordinary": false,
+        "ms": 808,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-correction-3",
+      "class": "correction",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 5400,
+      "takeMs": 5400,
+      "trimmedMs": 0,
+      "fragments": 4,
+      "t": {
+        "streamStart": 37183.5112,
+        "speechEnd": 42275.8759,
+        "lastLoudSent": 42509.5532,
+        "commit": 42354.725,
+        "itemAdded": 42354.8119,
+        "judgeSent": 42572.8287,
+        "judgeFirstDelta": 43476.6324,
+        "judgeDone": 43504.484,
+        "replySent": 42572.8517,
+        "replyCreated": 42705.9746,
+        "firstReplyAudio": 43567.0861,
+        "replyCancelSent": 43504.7524,
+        "audible": null,
+        "transcriptionDone": 42780.654
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 52,
+        "input_tokens": 0,
+        "output_tokens": 52,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 52,
+          "audio_tokens": 0,
+          "reasoning_tokens": 47
+        }
+      },
+      "outputTokens": 52,
+      "reasoningTokens": 47,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1149.8,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -233.7,
+        "asrMs": 425.9,
+        "commitToJudgeSentMs": 218.1
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX6"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0.01,
+          "quiet": 0,
+          "correct": 0.99,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.04,
+          "alone": 0,
+          "why": 0.01,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.05,
+          "uncertainSpeaker": 0.01
+        },
+        "chosen": "correct",
+        "ordinary": false,
+        "ms": 704,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-28",
+      "class": "question",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2080,
+      "takeMs": 3120,
+      "trimmedMs": 1040,
+      "fragments": 2,
+      "t": {
+        "streamStart": 44350.556,
+        "speechEnd": 46782.4191,
+        "lastLoudSent": 46316.6421,
+        "commit": 46891.4283,
+        "itemAdded": 46891.5759,
+        "judgeSent": 46924.3537,
+        "judgeFirstDelta": 47525.7527,
+        "judgeDone": 47556.4945,
+        "replySent": 46924.4112,
+        "replyCreated": 47048.2237,
+        "firstReplyAudio": 47882.2705,
+        "replyCancelSent": 47882.5064,
+        "audible": 47882.2705,
+        "transcriptionDone": 47361.3303
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 665.1,
+        "ordinaryLatencyMs": 1099.9,
+        "ordinaryLatencyFromLoudMs": 1565.6,
+        "vadEndAfterLoudMs": 465.8,
+        "asrMs": 469.9,
+        "commitToJudgeSentMs": 32.9
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.01,
+          "food": 0,
+          "action": 0,
+          "answer": 0.01,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 285,
+        "missedDeadline": false,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-hardrule-2",
+      "class": "hardRule",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4980,
+      "takeMs": 4980,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 48307.0609,
+        "speechEnd": 52879.4689,
+        "lastLoudSent": 53238.5347,
+        "commit": 52988.9782,
+        "itemAdded": 52989.3274,
+        "judgeSent": 53270.4927,
+        "judgeFirstDelta": 53931.3554,
+        "judgeDone": 53969.5653,
+        "replySent": 53270.515,
+        "replyCreated": 53396.3853,
+        "firstReplyAudio": null,
+        "replyCancelSent": 53969.8292,
+        "audible": null,
+        "transcriptionDone": 53526.6455
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 30,
+        "input_tokens": 0,
+        "output_tokens": 30,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 30,
+          "audio_tokens": 0,
+          "reasoning_tokens": 25
+        }
+      },
+      "outputTokens": 30,
+      "reasoningTokens": 25,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 980.6,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -359.1,
+        "asrMs": 537.7,
+        "commitToJudgeSentMs": 281.5
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": null,
+        "chosen": null,
+        "ordinary": false,
+        "ms": 710,
+        "missedDeadline": true,
+        "failure": "invalid"
+      }
+    },
+    {
+      "lineId": "c-hardrule-1",
+      "class": "hardRule",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4540,
+      "takeMs": 4560,
+      "trimmedMs": 20,
+      "fragments": 2,
+      "t": {
+        "streamStart": 54824.1466,
+        "speechEnd": 58127.9113,
+        "lastLoudSent": 59253.0468,
+        "commit": 58236.6116,
+        "itemAdded": 58236.7179,
+        "judgeSent": 59345.9247,
+        "judgeFirstDelta": 60073.7498,
+        "judgeDone": 60101.1841,
+        "replySent": 59345.9519,
+        "replyCreated": 59488.1077,
+        "firstReplyAudio": null,
+        "replyCancelSent": 59488.2558,
+        "audible": null,
+        "transcriptionDone": 58732.8236
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 29,
+        "input_tokens": 0,
+        "output_tokens": 29,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 29,
+          "audio_tokens": 0,
+          "reasoning_tokens": 24
+        }
+      },
+      "outputTokens": 29,
+      "reasoningTokens": 24,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1864.6,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -1125.1,
+        "asrMs": 496.2,
+        "commitToJudgeSentMs": 1109.3
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX4"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 1,
+          "hardRule": 0.99,
+          "crisis": 0,
+          "company": 0.01,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.02,
+          "food": 0.99,
+          "action": 0,
+          "answer": 0.01,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "hardRule",
+        "ordinary": false,
+        "ms": 550,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-17",
+      "class": "smallTalk",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3400,
+      "takeMs": 4680,
+      "trimmedMs": 1280,
+      "fragments": 2,
+      "t": {
+        "streamStart": 60652.2521,
+        "speechEnd": 64425.3674,
+        "lastLoudSent": 63939.8738,
+        "commit": 64504.2833,
+        "itemAdded": 64504.4081,
+        "judgeSent": 64519.6257,
+        "judgeFirstDelta": 65153.5887,
+        "judgeDone": 65205.6299,
+        "replySent": 64519.6388,
+        "replyCreated": 64641.2642,
+        "firstReplyAudio": 65490.428,
+        "replyCancelSent": 65490.7359,
+        "audible": 65490.428,
+        "transcriptionDone": 65319.8406
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 701.3,
+        "ordinaryLatencyMs": 1065.1,
+        "ordinaryLatencyFromLoudMs": 1550.6,
+        "vadEndAfterLoudMs": 485.5,
+        "asrMs": 815.6,
+        "commitToJudgeSentMs": 15.3
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0.05,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.06,
+          "alone": 0.5,
+          "why": 0,
+          "rushed": 0.01,
+          "food": 0,
+          "action": 0,
+          "answer": 0.02,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 466,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-12",
+      "class": "smallTalk",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3780,
+      "takeMs": 4380,
+      "trimmedMs": 600,
+      "fragments": 1,
+      "t": {
+        "streamStart": 66093.5726,
+        "speechEnd": 70244.2983,
+        "lastLoudSent": 69761.9963,
+        "commit": 70354.3345,
+        "itemAdded": 70354.5111,
+        "judgeSent": 70385.5132,
+        "judgeFirstDelta": 71096.6944,
+        "judgeDone": 71123.4139,
+        "replySent": 70385.5239,
+        "replyCreated": 70517.7356,
+        "firstReplyAudio": 71394.8741,
+        "replyCancelSent": 71395.126,
+        "audible": 71394.8741,
+        "transcriptionDone": 70850.1051
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 769.1,
+        "ordinaryLatencyMs": 1150.6,
+        "ordinaryLatencyFromLoudMs": 1632.9,
+        "vadEndAfterLoudMs": 482.3,
+        "asrMs": 495.8,
+        "commitToJudgeSentMs": 31.2
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.17,
+          "alone": 0.5,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.05,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 460,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-quiet-5",
+      "class": "quiet",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4020,
+      "takeMs": 4020,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 72106.439,
+        "speechEnd": 75496.2004,
+        "lastLoudSent": 76053.7721,
+        "commit": 75616.1429,
+        "itemAdded": 75616.3141,
+        "judgeSent": 76117.3843,
+        "judgeFirstDelta": 77058.8668,
+        "judgeDone": 77071.0419,
+        "replySent": 76117.3928,
+        "replyCreated": 76429.8426,
+        "firstReplyAudio": null,
+        "replyCancelSent": 76817.2348,
+        "audible": null,
+        "transcriptionDone": 76149.3591
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 28,
+        "input_tokens": 0,
+        "output_tokens": 28,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 28,
+          "audio_tokens": 0,
+          "reasoning_tokens": 23
+        }
+      },
+      "outputTokens": 28,
+      "reasoningTokens": 23,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1454.9,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -557.6,
+        "asrMs": 533.2,
+        "commitToJudgeSentMs": 501.2
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0.98,
+          "correct": 0,
+          "transition": 0.75,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.13,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.77,
+          "food": 0,
+          "action": 0.73,
+          "answer": 0.14,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "quiet",
+        "ordinary": false,
+        "ms": 464,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-company-2",
+      "class": "company",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4140,
+      "takeMs": 4140,
+      "trimmedMs": 0,
+      "fragments": 3,
+      "t": {
+        "streamStart": 77536.2984,
+        "speechEnd": 80939.7067,
+        "lastLoudSent": 81577.8468,
+        "commit": 81143.9323,
+        "itemAdded": 81144.0861,
+        "judgeSent": 81656.786,
+        "judgeFirstDelta": 82510.8417,
+        "judgeDone": 82535.2699,
+        "replySent": 81656.7995,
+        "replyCreated": 81969.7936,
+        "firstReplyAudio": null,
+        "replyCancelSent": 82358.7115,
+        "audible": null,
+        "transcriptionDone": 81546.6402
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 40,
+        "input_tokens": 0,
+        "output_tokens": 40,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 40,
+          "audio_tokens": 0,
+          "reasoning_tokens": 35
+        }
+      },
+      "outputTokens": 40,
+      "reasoningTokens": 35,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1391.3,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -638.1,
+        "asrMs": 402.7,
+        "commitToJudgeSentMs": 512.9
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX3"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0.37,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.03,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.97,
+          "food": 0,
+          "action": 0,
+          "answer": 0.08,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "quiet",
+        "ordinary": false,
+        "ms": 672,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-06",
+      "class": "smallTalk",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2360,
+      "takeMs": 3600,
+      "trimmedMs": 1240,
+      "fragments": 2,
+      "t": {
+        "streamStart": 83208.1173,
+        "speechEnd": 85928.6467,
+        "lastLoudSent": 85459.2644,
+        "commit": 86039.2997,
+        "itemAdded": 86039.3629,
+        "judgeSent": 86052.9442,
+        "judgeFirstDelta": 86817.8961,
+        "judgeDone": 86849.1126,
+        "replySent": 86052.9584,
+        "replyCreated": 86177.1319,
+        "firstReplyAudio": 86931.6262,
+        "replyCancelSent": 86931.8564,
+        "audible": 86931.6262,
+        "transcriptionDone": 86732.7921
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 25,
+        "input_tokens": 0,
+        "output_tokens": 25,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 25,
+          "audio_tokens": 0,
+          "reasoning_tokens": 20
+        }
+      },
+      "outputTokens": 25,
+      "reasoningTokens": 20,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 809.8,
+        "ordinaryLatencyMs": 1003,
+        "ordinaryLatencyFromLoudMs": 1472.4,
+        "vadEndAfterLoudMs": 469.4,
+        "asrMs": 693.5,
+        "commitToJudgeSentMs": 13.6
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.16,
+          "alone": 0.41,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.01,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 318,
+        "missedDeadline": false,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-quiet-4",
+      "class": "quiet",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 5100,
+      "takeMs": 5100,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 87385.12,
+        "speechEnd": 91745.5793,
+        "lastLoudSent": 92367.9723,
+        "commit": 91854.3525,
+        "itemAdded": 91854.5198,
+        "judgeSent": 92477.6628,
+        "judgeFirstDelta": 93257.1028,
+        "judgeDone": 93280.2879,
+        "replySent": 92477.6707,
+        "replyCreated": 92629.8984,
+        "firstReplyAudio": null,
+        "replyCancelSent": 93054.7664,
+        "audible": null,
+        "transcriptionDone": 92326.8275
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 29,
+        "input_tokens": 0,
+        "output_tokens": 29,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 29,
+          "audio_tokens": 0,
+          "reasoning_tokens": 24
+        }
+      },
+      "outputTokens": 29,
+      "reasoningTokens": 24,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1425.9,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -622.4,
+        "asrMs": 472.5,
+        "commitToJudgeSentMs": 623.3
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0.49,
+          "quiet": 0.97,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.03,
+          "alone": 0.32,
+          "why": 0,
+          "rushed": 0.92,
+          "food": 0,
+          "action": 0,
+          "answer": 0.01,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "forget",
+        "ordinary": false,
+        "ms": 410,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-forget-2",
+      "class": "forget",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3600,
+      "takeMs": 3600,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 93690.6791,
+        "speechEnd": 95950.2986,
+        "lastLoudSent": 97174.0396,
+        "commit": 96058.9075,
+        "itemAdded": 96059.0774,
+        "judgeSent": 97282.8312,
+        "judgeFirstDelta": 97999.1246,
+        "judgeDone": 98023.9379,
+        "replySent": null,
+        "replyCreated": null,
+        "firstReplyAudio": null,
+        "replyCancelSent": null,
+        "audible": null,
+        "transcriptionDone": 96485.128
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 34,
+        "input_tokens": 0,
+        "output_tokens": 34,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 34,
+          "audio_tokens": 0,
+          "reasoning_tokens": 29
+        }
+      },
+      "outputTokens": 34,
+      "reasoningTokens": 29,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1965,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -1223.7,
+        "asrMs": 426.2,
+        "commitToJudgeSentMs": 1223.9
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX1"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 1,
+          "quiet": 0.21,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.01,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.02,
+          "food": 0,
+          "action": 0.84,
+          "answer": 0.05,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "forget",
+        "ordinary": false,
+        "ms": 412,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-13",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3580,
+      "takeMs": 4800,
+      "trimmedMs": 1220,
+      "fragments": 1,
+      "t": {
+        "streamStart": 98437.1284,
+        "speechEnd": 102385.8191,
+        "lastLoudSent": 101903.5184,
+        "commit": 102506.4031,
+        "itemAdded": 102506.5161,
+        "judgeSent": 102528.3699,
+        "judgeFirstDelta": 103145.5986,
+        "judgeDone": 103179.7822,
+        "replySent": 102528.3837,
+        "replyCreated": 102652.6512,
+        "firstReplyAudio": 103565.956,
+        "replyCancelSent": 103566.1876,
+        "audible": 103565.956,
+        "transcriptionDone": 102963.3651
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 24,
+        "input_tokens": 0,
+        "output_tokens": 24,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 24,
+          "audio_tokens": 0,
+          "reasoning_tokens": 19
+        }
+      },
+      "outputTokens": 24,
+      "reasoningTokens": 19,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 673.4,
+        "ordinaryLatencyMs": 1180.1,
+        "ordinaryLatencyFromLoudMs": 1662.4,
+        "vadEndAfterLoudMs": 482.3,
+        "asrMs": 457,
+        "commitToJudgeSentMs": 22
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0.07,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.08,
+          "alone": 0,
+          "why": 0.03,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.04,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 651,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-company-4",
+      "class": "company",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4240,
+      "takeMs": 4260,
+      "trimmedMs": 20,
+      "fragments": 1,
+      "t": {
+        "streamStart": 104354.1202,
+        "speechEnd": 108161.4493,
+        "lastLoudSent": 108475.1307,
+        "commit": 108270.8956,
+        "itemAdded": 108270.9887,
+        "judgeSent": 108579.734,
+        "judgeFirstDelta": 109343.3782,
+        "judgeDone": 109363.9408,
+        "replySent": 108579.7442,
+        "replyCreated": 108705.167,
+        "firstReplyAudio": null,
+        "replyCancelSent": 109364.1399,
+        "audible": null,
+        "transcriptionDone": 108739.955
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 25,
+        "input_tokens": 0,
+        "output_tokens": 25,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 25,
+          "audio_tokens": 0,
+          "reasoning_tokens": 20
+        }
+      },
+      "outputTokens": 25,
+      "reasoningTokens": 20,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1093,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -313.7,
+        "asrMs": 469.1,
+        "commitToJudgeSentMs": 308.8
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.93,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0.7,
+          "answer": 0.31,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "company",
+        "ordinary": false,
+        "ms": 598,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-21",
+      "class": "question",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3580,
+      "takeMs": 4860,
+      "trimmedMs": 1280,
+      "fragments": 2,
+      "t": {
+        "streamStart": 110085.1887,
+        "speechEnd": 114030.6609,
+        "lastLoudSent": 113545.0079,
+        "commit": 114142.153,
+        "itemAdded": 114142.2815,
+        "judgeSent": 114155.422,
+        "judgeFirstDelta": 114844.5553,
+        "judgeDone": 114872.8229,
+        "replySent": 114155.4364,
+        "replyCreated": 114281.8262,
+        "firstReplyAudio": 115045.4331,
+        "replyCancelSent": 115045.6572,
+        "audible": 115045.4331,
+        "transcriptionDone": 114570.0322
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 27,
+        "input_tokens": 0,
+        "output_tokens": 27,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 27,
+          "audio_tokens": 0,
+          "reasoning_tokens": 22
+        }
+      },
+      "outputTokens": 27,
+      "reasoningTokens": 22,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 730.7,
+        "ordinaryLatencyMs": 1014.8,
+        "ordinaryLatencyFromLoudMs": 1500.4,
+        "vadEndAfterLoudMs": 485.7,
+        "asrMs": 427.9,
+        "commitToJudgeSentMs": 13.3
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.11,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 399,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-29",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3280,
+      "takeMs": 4500,
+      "trimmedMs": 1220,
+      "fragments": 1,
+      "t": {
+        "streamStart": 115578.9798,
+        "speechEnd": 119207.894,
+        "lastLoudSent": 118739.1057,
+        "commit": 119318.4856,
+        "itemAdded": 119318.5881,
+        "judgeSent": 119348.0354,
+        "judgeFirstDelta": 119998.1986,
+        "judgeDone": 120022.8002,
+        "replySent": 119348.0548,
+        "replyCreated": 119477.4061,
+        "firstReplyAudio": 120093.3422,
+        "replyCancelSent": 120093.5613,
+        "audible": 120093.3422,
+        "transcriptionDone": 119743.9804
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 24,
+        "input_tokens": 0,
+        "output_tokens": 24,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 24,
+          "audio_tokens": 0,
+          "reasoning_tokens": 19
+        }
+      },
+      "outputTokens": 24,
+      "reasoningTokens": 19,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 704.3,
+        "ordinaryLatencyMs": 885.4,
+        "ordinaryLatencyFromLoudMs": 1354.2,
+        "vadEndAfterLoudMs": 468.8,
+        "asrMs": 425.5,
+        "commitToJudgeSentMs": 29.5
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.01,
+          "alone": 0.17,
+          "why": 0,
+          "rushed": 0.02,
+          "food": 0,
+          "action": 0,
+          "answer": 0.06,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 435,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-30",
+      "class": "fact",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3040,
+      "takeMs": 3540,
+      "trimmedMs": 500,
+      "fragments": 2,
+      "t": {
+        "streamStart": 120686.4902,
+        "speechEnd": 124073.2985,
+        "lastLoudSent": 123606.1212,
+        "commit": 124211.0161,
+        "itemAdded": 124211.0838,
+        "judgeSent": 124228.2597,
+        "judgeFirstDelta": 124855.4107,
+        "judgeDone": 124882.6835,
+        "replySent": 124228.281,
+        "replyCreated": 124354.4336,
+        "firstReplyAudio": 125237.7682,
+        "replyCancelSent": 125237.9847,
+        "audible": 125237.7682,
+        "transcriptionDone": 124777.9882
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 18,
+        "input_tokens": 0,
+        "output_tokens": 18,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 18,
+          "audio_tokens": 0,
+          "reasoning_tokens": 13
+        }
+      },
+      "outputTokens": 18,
+      "reasoningTokens": 13,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 671.7,
+        "ordinaryLatencyMs": 1164.5,
+        "ordinaryLatencyFromLoudMs": 1631.6,
+        "vadEndAfterLoudMs": 467.2,
+        "asrMs": 567,
+        "commitToJudgeSentMs": 17.2
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": null,
+        "chosen": null,
+        "ordinary": false,
+        "ms": 514,
+        "missedDeadline": true,
+        "failure": "invalid"
+      }
+    },
+    {
+      "lineId": "c-crisis-3",
+      "class": "crisis",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3000,
+      "takeMs": 4200,
+      "trimmedMs": 1200,
+      "fragments": 1,
+      "t": {
+        "streamStart": 125889.3564,
+        "speechEnd": 129191.9777,
+        "lastLoudSent": 128771.3157,
+        "commit": 129300.7106,
+        "itemAdded": 129300.8594,
+        "judgeSent": 129316.4601,
+        "judgeFirstDelta": 130059.4505,
+        "judgeDone": 130128.8094,
+        "replySent": 129316.4724,
+        "replyCreated": 129441.0932,
+        "firstReplyAudio": 130239.6398,
+        "replyCancelSent": 130129.0627,
+        "audible": null,
+        "transcriptionDone": 129806.8458
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 31,
+        "input_tokens": 0,
+        "output_tokens": 31,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 31,
+          "audio_tokens": 0,
+          "reasoning_tokens": 26
+        }
+      },
+      "outputTokens": 31,
+      "reasoningTokens": 26,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 828.1,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": 420.7,
+        "asrMs": 506.1,
+        "commitToJudgeSentMs": 15.7
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX7"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 1,
+          "hardRule": 0,
+          "crisis": 0.11,
+          "company": 0.01,
+          "alone": 0.75,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.03,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 462,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-hardrule-4",
+      "class": "hardRule",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 4620,
+      "takeMs": 4620,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 130745.9609,
+        "speechEnd": 135100.6794,
+        "lastLoudSent": 135271.3303,
+        "commit": 135248.5194,
+        "itemAdded": 135250.1218,
+        "judgeSent": 135349.4015,
+        "judgeFirstDelta": 136051.8369,
+        "judgeDone": 136052.4593,
+        "replySent": 135349.4151,
+        "replyCreated": 135597.8369,
+        "firstReplyAudio": null,
+        "replyCancelSent": 136052.7459,
+        "audible": null,
+        "transcriptionDone": 135868.997
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 25,
+        "input_tokens": 0,
+        "output_tokens": 25,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 25,
+          "audio_tokens": 0,
+          "reasoning_tokens": 20
+        }
+      },
+      "outputTokens": 25,
+      "reasoningTokens": 20,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 803.9,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -170.7,
+        "asrMs": 620.5,
+        "commitToJudgeSentMs": 100.9
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX4",
+          "RX7"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0.97,
+          "hardRule": 1,
+          "crisis": 0,
+          "company": 0.03,
+          "alone": 0.23,
+          "why": 0,
+          "rushed": 0,
+          "food": 0.88,
+          "action": 0,
+          "answer": 0.01,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 449,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-26",
+      "class": "fact",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2700,
+      "takeMs": 3840,
+      "trimmedMs": 1140,
+      "fragments": 2,
+      "t": {
+        "streamStart": 136683.929,
+        "speechEnd": 139738.4623,
+        "lastLoudSent": 139271.6499,
+        "commit": 139965.8627,
+        "itemAdded": 139965.9499,
+        "judgeSent": 139987.6569,
+        "judgeFirstDelta": 140755.5222,
+        "judgeDone": 140757.3076,
+        "replySent": 139987.6719,
+        "replyCreated": 140222.5893,
+        "firstReplyAudio": 140924.526,
+        "replyCancelSent": 140924.7155,
+        "audible": 140924.526,
+        "transcriptionDone": 140498.2757
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 24,
+        "input_tokens": 0,
+        "output_tokens": 24,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 24,
+          "audio_tokens": 0,
+          "reasoning_tokens": 19
+        }
+      },
+      "outputTokens": 24,
+      "reasoningTokens": 19,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 791.4,
+        "ordinaryLatencyMs": 1186.1,
+        "ordinaryLatencyFromLoudMs": 1652.9,
+        "vadEndAfterLoudMs": 466.8,
+        "asrMs": 532.4,
+        "commitToJudgeSentMs": 21.8
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0.01,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.23,
+          "alone": 0.4,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.17,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "company",
+        "ordinary": false,
+        "ms": 666,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-crisis-2",
+      "class": "crisis",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 3440,
+      "takeMs": 4620,
+      "trimmedMs": 1180,
+      "fragments": 1,
+      "t": {
+        "streamStart": 141833.1453,
+        "speechEnd": 145620.577,
+        "lastLoudSent": 145167.6253,
+        "commit": 145715.8915,
+        "itemAdded": 145718.475,
+        "judgeSent": 145746.0063,
+        "judgeFirstDelta": 146354.3768,
+        "judgeDone": 146381.3315,
+        "replySent": 145746.0296,
+        "replyCreated": 145875.5625,
+        "firstReplyAudio": null,
+        "replyCancelSent": 146381.5394,
+        "audible": null,
+        "transcriptionDone": 146732.0164
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 23,
+        "input_tokens": 0,
+        "output_tokens": 23,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 23,
+          "audio_tokens": 0,
+          "reasoning_tokens": 18
+        }
+      },
+      "outputTokens": 23,
+      "reasoningTokens": 18,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 665.4,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": 453,
+        "asrMs": 1016.1,
+        "commitToJudgeSentMs": 30.1
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX5"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0.73,
+          "company": 0.01,
+          "alone": 0.46,
+          "why": 0,
+          "rushed": 0.03,
+          "food": 0,
+          "action": 0,
+          "answer": 0.08,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 400,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-correction-5",
+      "class": "correction",
+      "expect": "hold",
+      "probe": false,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 6120,
+      "takeMs": 6120,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 147133.6809,
+        "speechEnd": 152646.1544,
+        "lastLoudSent": 153158.4997,
+        "commit": 152756.7728,
+        "itemAdded": 152756.9578,
+        "judgeSent": 153235.892,
+        "judgeFirstDelta": 153835.1018,
+        "judgeDone": 153865.8317,
+        "replySent": 153235.9058,
+        "replyCreated": 153362.1585,
+        "firstReplyAudio": null,
+        "replyCancelSent": 153866.0211,
+        "audible": null,
+        "transcriptionDone": 153441.9346
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1109.1,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -512.3,
+        "asrMs": 685.2,
+        "commitToJudgeSentMs": 479.1
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 1,
+          "transition": 0.01,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.3,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.21,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "company",
+        "ordinary": false,
+        "ms": 406,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-04",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2080,
+      "takeMs": 3240,
+      "trimmedMs": 1160,
+      "fragments": 2,
+      "t": {
+        "streamStart": 154419.2898,
+        "speechEnd": 156853.1401,
+        "lastLoudSent": 156386.5209,
+        "commit": 156966.1432,
+        "itemAdded": 156966.2537,
+        "judgeSent": 156994.6074,
+        "judgeFirstDelta": 157872.0372,
+        "judgeDone": 157879.7149,
+        "replySent": 156994.6188,
+        "replyCreated": 157122.8074,
+        "firstReplyAudio": 157871.6575,
+        "replyCancelSent": 157879.9307,
+        "audible": 157879.7149,
+        "transcriptionDone": 157510.7069
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 47,
+        "input_tokens": 0,
+        "output_tokens": 47,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 47,
+          "audio_tokens": 0,
+          "reasoning_tokens": 42
+        }
+      },
+      "outputTokens": 47,
+      "reasoningTokens": 42,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 913.6,
+        "ordinaryLatencyMs": 1026.6,
+        "ordinaryLatencyFromLoudMs": 1493.2,
+        "vadEndAfterLoudMs": 466.6,
+        "asrMs": 544.6,
+        "commitToJudgeSentMs": 28.5
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.03,
+          "alone": 0.44,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.03,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 252,
+        "missedDeadline": false,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-15",
+      "class": "question",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 0,
+      "voice": "owner",
+      "audioMs": 2580,
+      "takeMs": 3600,
+      "trimmedMs": 1020,
+      "fragments": 1,
+      "t": {
+        "streamStart": 158269.7394,
+        "speechEnd": 161219.3084,
+        "lastLoudSent": 160735.2908,
+        "commit": 161328.8174,
+        "itemAdded": 161328.9337,
+        "judgeSent": 161360.8127,
+        "judgeFirstDelta": 161889.8704,
+        "judgeDone": 161916.5261,
+        "replySent": 161360.8269,
+        "replyCreated": 161489.7479,
+        "firstReplyAudio": 162248.3116,
+        "replyCancelSent": 162248.4874,
+        "audible": 162248.3116,
+        "transcriptionDone": 161779.63
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 15,
+        "input_tokens": 0,
+        "output_tokens": 15,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 15,
+          "audio_tokens": 0,
+          "reasoning_tokens": 10
+        }
+      },
+      "outputTokens": 15,
+      "reasoningTokens": 10,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 587.7,
+        "ordinaryLatencyMs": 1029,
+        "ordinaryLatencyFromLoudMs": 1513,
+        "vadEndAfterLoudMs": 484,
+        "asrMs": 450.8,
+        "commitToJudgeSentMs": 32
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.01,
+          "food": 0,
+          "action": 0,
+          "answer": 0.21,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "answer",
+        "ordinary": false,
+        "ms": 323,
+        "missedDeadline": false,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-22",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 4460,
+      "takeMs": 5520,
+      "trimmedMs": 1060,
+      "fragments": 2,
+      "t": {
+        "streamStart": 163049.1459,
+        "speechEnd": 167875.2887,
+        "lastLoudSent": 167389.4856,
+        "commit": 167974.0303,
+        "itemAdded": 167974.1552,
+        "judgeSent": 168000.2603,
+        "judgeFirstDelta": 168831.0236,
+        "judgeDone": 168875.4737,
+        "replySent": 168000.2759,
+        "replyCreated": 168118.5307,
+        "firstReplyAudio": 168975.1645,
+        "replyCancelSent": 168975.3962,
+        "audible": 168975.1645,
+        "transcriptionDone": 168524.273
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 46,
+        "input_tokens": 0,
+        "output_tokens": 46,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 46,
+          "audio_tokens": 0,
+          "reasoning_tokens": 41
+        }
+      },
+      "outputTokens": 46,
+      "reasoningTokens": 41,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 901.4,
+        "ordinaryLatencyMs": 1099.9,
+        "ordinaryLatencyFromLoudMs": 1585.7,
+        "vadEndAfterLoudMs": 485.8,
+        "asrMs": 550.2,
+        "commitToJudgeSentMs": 26.2
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0.74,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.69,
+          "alone": 0.22,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.17,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "company",
+        "ordinary": false,
+        "ms": 390,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-forget-3",
+      "class": "forget",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 5580,
+      "takeMs": 5580,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 169505.5738,
+        "speechEnd": 173916.0783,
+        "lastLoudSent": 175054.0994,
+        "commit": 174016.7875,
+        "itemAdded": 174019.8515,
+        "judgeSent": 175070.0624,
+        "judgeFirstDelta": 175773.2167,
+        "judgeDone": 175806.3878,
+        "replySent": 175070.081,
+        "replyCreated": 175226.7548,
+        "firstReplyAudio": null,
+        "replyCancelSent": 175226.9969,
+        "audible": null,
+        "transcriptionDone": 174545.9609
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 28,
+        "input_tokens": 0,
+        "output_tokens": 28,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 28,
+          "audio_tokens": 0,
+          "reasoning_tokens": 23
+        }
+      },
+      "outputTokens": 28,
+      "reasoningTokens": 23,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1789.6,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -1138,
+        "asrMs": 529.2,
+        "commitToJudgeSentMs": 1053.3
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX1"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0.99,
+          "quiet": 0.81,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.14,
+          "food": 0,
+          "action": 0.88,
+          "answer": 0.31,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "forget",
+        "ordinary": false,
+        "ms": 424,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-24",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 4860,
+      "takeMs": 5700,
+      "trimmedMs": 840,
+      "fragments": 2,
+      "t": {
+        "streamStart": 176231.09,
+        "speechEnd": 181453.6954,
+        "lastLoudSent": 180970.3497,
+        "commit": 181554.0573,
+        "itemAdded": 181554.2454,
+        "judgeSent": 181577.9454,
+        "judgeFirstDelta": 182154.7144,
+        "judgeDone": 182181.0347,
+        "replySent": 181577.9659,
+        "replyCreated": 181703.9212,
+        "firstReplyAudio": 183096.1746,
+        "replyCancelSent": 183096.7433,
+        "audible": 183096.1746,
+        "transcriptionDone": 182214.4438
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 627,
+        "ordinaryLatencyMs": 1642.5,
+        "ordinaryLatencyFromLoudMs": 2125.8,
+        "vadEndAfterLoudMs": 483.3,
+        "asrMs": 660.4,
+        "commitToJudgeSentMs": 23.9
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.04,
+          "alone": 0.46,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.08,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 700,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-correction-4",
+      "class": "correction",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 4500,
+      "takeMs": 4500,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 183932.462,
+        "speechEnd": 187823.1166,
+        "lastLoudSent": 188354.6169,
+        "commit": 187955.5956,
+        "itemAdded": 187957.1323,
+        "judgeSent": 188416.3685,
+        "judgeFirstDelta": 189090.9983,
+        "judgeDone": 189126.5493,
+        "replySent": 188416.3788,
+        "replyCreated": 188586.8493,
+        "firstReplyAudio": null,
+        "replyCancelSent": 189126.7435,
+        "audible": null,
+        "transcriptionDone": 188484.4758
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 25,
+        "input_tokens": 0,
+        "output_tokens": 25,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 25,
+          "audio_tokens": 0,
+          "reasoning_tokens": 20
+        }
+      },
+      "outputTokens": 25,
+      "reasoningTokens": 20,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1171,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -531.5,
+        "asrMs": 528.9,
+        "commitToJudgeSentMs": 460.8
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": null,
+        "chosen": null,
+        "ordinary": false,
+        "ms": 601,
+        "missedDeadline": true,
+        "failure": "invalid"
+      }
+    },
+    {
+      "lineId": "c-quiet-1",
+      "class": "quiet",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3660,
+      "takeMs": 3660,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 189868.9494,
+        "speechEnd": 192675.267,
+        "lastLoudSent": 193458.5206,
+        "commit": 192823.7842,
+        "itemAdded": 192823.9523,
+        "judgeSent": 193521.1367,
+        "judgeFirstDelta": 194471.0826,
+        "judgeDone": 194472.2662,
+        "replySent": 193521.145,
+        "replyCreated": 193742.1669,
+        "firstReplyAudio": null,
+        "replyCancelSent": 194036.8391,
+        "audible": null,
+        "transcriptionDone": 193296.168
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 39,
+        "input_tokens": 0,
+        "output_tokens": 39,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 39,
+          "audio_tokens": 0,
+          "reasoning_tokens": 34
+        }
+      },
+      "outputTokens": 39,
+      "reasoningTokens": 34,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1648.5,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -783.3,
+        "asrMs": 472.4,
+        "commitToJudgeSentMs": 697.4
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX2"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0.06,
+          "quiet": 0.99,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.34,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.9,
+          "food": 0,
+          "action": 0,
+          "answer": 0.03,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "company",
+        "ordinary": false,
+        "ms": 645,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-18",
+      "class": "askMemory",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2140,
+      "takeMs": 3780,
+      "trimmedMs": 1640,
+      "fragments": 2,
+      "t": {
+        "streamStart": 195117.9659,
+        "speechEnd": 197624.2479,
+        "lastLoudSent": 197138.7983,
+        "commit": 197796.7565,
+        "itemAdded": 197796.8715,
+        "judgeSent": 197798.3034,
+        "judgeFirstDelta": 198806.9398,
+        "judgeDone": 198807.8087,
+        "replySent": 197798.3198,
+        "replyCreated": 198407.262,
+        "firstReplyAudio": 198807.2775,
+        "replyCancelSent": 198807.9959,
+        "audible": 198807.8087,
+        "transcriptionDone": 198409.0424
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 57,
+        "input_tokens": 0,
+        "output_tokens": 57,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 57,
+          "audio_tokens": 0,
+          "reasoning_tokens": 52
+        }
+      },
+      "outputTokens": 57,
+      "reasoningTokens": 52,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1011.1,
+        "ordinaryLatencyMs": 1183.6,
+        "ordinaryLatencyFromLoudMs": 1669,
+        "vadEndAfterLoudMs": 485.4,
+        "asrMs": 612.3,
+        "commitToJudgeSentMs": 1.5
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.04,
+          "food": 0,
+          "action": 0,
+          "answer": 0.06,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 258,
+        "missedDeadline": false,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-company-1",
+      "class": "company",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3000,
+      "takeMs": 3000,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 199201.5349,
+        "speechEnd": 201526.7787,
+        "lastLoudSent": 202135.2781,
+        "commit": 201749.3834,
+        "itemAdded": 201749.4849,
+        "judgeSent": 202181.9921,
+        "judgeFirstDelta": 203180.6014,
+        "judgeDone": 203218.0824,
+        "replySent": 202182.0012,
+        "replyCreated": 202326.311,
+        "firstReplyAudio": null,
+        "replyCancelSent": 202959.6546,
+        "audible": null,
+        "transcriptionDone": 202168.6868
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 33,
+        "input_tokens": 0,
+        "output_tokens": 33,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 33,
+          "audio_tokens": 0,
+          "reasoning_tokens": 28
+        }
+      },
+      "outputTokens": 33,
+      "reasoningTokens": 28,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1468.7,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -608.5,
+        "asrMs": 419.3,
+        "commitToJudgeSentMs": 432.6
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0.05,
+          "company": 0.76,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.09,
+          "food": 0,
+          "action": 0,
+          "answer": 0.03,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "company",
+        "ordinary": false,
+        "ms": 407,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-19",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 4740,
+      "takeMs": 5460,
+      "trimmedMs": 720,
+      "fragments": 3,
+      "t": {
+        "streamStart": 203625.5032,
+        "speechEnd": 208712.1538,
+        "lastLoudSent": 208259.3116,
+        "commit": 208813.4876,
+        "itemAdded": 208813.5792,
+        "judgeSent": 208837.2801,
+        "judgeFirstDelta": 209756.1704,
+        "judgeDone": 209785.119,
+        "replySent": 208837.3032,
+        "replyCreated": 208957.3009,
+        "firstReplyAudio": 209863.3879,
+        "replyCancelSent": 209863.6011,
+        "audible": 209863.3879,
+        "transcriptionDone": 209249.9914
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 47,
+        "input_tokens": 0,
+        "output_tokens": 47,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 47,
+          "audio_tokens": 0,
+          "reasoning_tokens": 42
+        }
+      },
+      "outputTokens": 47,
+      "reasoningTokens": 42,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 971.6,
+        "ordinaryLatencyMs": 1151.2,
+        "ordinaryLatencyFromLoudMs": 1604.1,
+        "vadEndAfterLoudMs": 452.8,
+        "asrMs": 436.5,
+        "commitToJudgeSentMs": 23.8
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0.21,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0.12,
+          "hardRule": 0,
+          "crisis": 0.01,
+          "company": 0.01,
+          "alone": 0.08,
+          "why": 0,
+          "rushed": 0.01,
+          "food": 0,
+          "action": 0,
+          "answer": 0.38,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "forget",
+        "ordinary": false,
+        "ms": 419,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-05",
+      "class": "askMemory",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2280,
+      "takeMs": 3240,
+      "trimmedMs": 960,
+      "fragments": 1,
+      "t": {
+        "streamStart": 210431.3762,
+        "speechEnd": 213056.4038,
+        "lastLoudSent": 212604.4249,
+        "commit": 213159.5174,
+        "itemAdded": 213159.6689,
+        "judgeSent": 213180.7339,
+        "judgeFirstDelta": 213965.0924,
+        "judgeDone": 214011.9283,
+        "replySent": 213180.7468,
+        "replyCreated": 213298.3179,
+        "firstReplyAudio": null,
+        "replyCancelSent": 214012.0872,
+        "audible": null,
+        "transcriptionDone": 213650.7709
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 39,
+        "input_tokens": 0,
+        "output_tokens": 39,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 39,
+          "audio_tokens": 0,
+          "reasoning_tokens": 34
+        }
+      },
+      "outputTokens": 39,
+      "reasoningTokens": 34,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 852.4,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": 452,
+        "asrMs": 491.3,
+        "commitToJudgeSentMs": 21.2
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.02,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 302,
+        "missedDeadline": false,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-16",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3840,
+      "takeMs": 4680,
+      "trimmedMs": 840,
+      "fragments": 1,
+      "t": {
+        "streamStart": 214449.8002,
+        "speechEnd": 218660.2158,
+        "lastLoudSent": 218173.1543,
+        "commit": 218764.0671,
+        "itemAdded": 218764.2168,
+        "judgeSent": 218770.3327,
+        "judgeFirstDelta": 219615.388,
+        "judgeDone": 219648.1557,
+        "replySent": 218770.3464,
+        "replyCreated": 218898.9657,
+        "firstReplyAudio": 219550.4767,
+        "replyCancelSent": 219648.2627,
+        "audible": 219648.1557,
+        "transcriptionDone": 219289.9356
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 54,
+        "input_tokens": 0,
+        "output_tokens": 54,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 54,
+          "audio_tokens": 0,
+          "reasoning_tokens": 49
+        }
+      },
+      "outputTokens": 54,
+      "reasoningTokens": 49,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 884.1,
+        "ordinaryLatencyMs": 987.9,
+        "ordinaryLatencyFromLoudMs": 1475,
+        "vadEndAfterLoudMs": 487.1,
+        "asrMs": 525.9,
+        "commitToJudgeSentMs": 6.3
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0.02,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.09,
+          "alone": 0.46,
+          "why": 0,
+          "rushed": 0.02,
+          "food": 0,
+          "action": 0,
+          "answer": 0.01,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 378,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-11",
+      "class": "askMemory",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2460,
+      "takeMs": 3540,
+      "trimmedMs": 1080,
+      "fragments": 1,
+      "t": {
+        "streamStart": 220160.2358,
+        "speechEnd": 222968.2392,
+        "lastLoudSent": 222510.1204,
+        "commit": 223069.0762,
+        "itemAdded": 223069.2039,
+        "judgeSent": 223094.8012,
+        "judgeFirstDelta": 223845.2013,
+        "judgeDone": 223880.3752,
+        "replySent": 223094.8254,
+        "replyCreated": 223212.2695,
+        "firstReplyAudio": 224039.6271,
+        "replyCancelSent": 224039.782,
+        "audible": 224039.6271,
+        "transcriptionDone": 223503.6345
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 40,
+        "input_tokens": 0,
+        "output_tokens": 40,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 40,
+          "audio_tokens": 0,
+          "reasoning_tokens": 35
+        }
+      },
+      "outputTokens": 40,
+      "reasoningTokens": 35,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 811.3,
+        "ordinaryLatencyMs": 1071.4,
+        "ordinaryLatencyFromLoudMs": 1529.5,
+        "vadEndAfterLoudMs": 458.1,
+        "asrMs": 434.6,
+        "commitToJudgeSentMs": 25.7
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0.09,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0,
+          "alone": 0,
+          "why": 0.09,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.19,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 448,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-14",
+      "class": "fact",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3660,
+      "takeMs": 4440,
+      "trimmedMs": 780,
+      "fragments": 1,
+      "t": {
+        "streamStart": 224621.9967,
+        "speechEnd": 228620.8604,
+        "lastLoudSent": 228166.7056,
+        "commit": 228721.4571,
+        "itemAdded": 228721.5888,
+        "judgeSent": 228744.8782,
+        "judgeFirstDelta": 229418.1269,
+        "judgeDone": 229455.1138,
+        "replySent": 228744.8918,
+        "replyCreated": 228859.0911,
+        "firstReplyAudio": 229581.7965,
+        "replyCancelSent": 229581.9946,
+        "audible": 229581.7965,
+        "transcriptionDone": 229282.5978
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 733.7,
+        "ordinaryLatencyMs": 960.9,
+        "ordinaryLatencyFromLoudMs": 1415.1,
+        "vadEndAfterLoudMs": 454.2,
+        "asrMs": 561.1,
+        "commitToJudgeSentMs": 23.4
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.25,
+          "alone": 0.49,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.02,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "company",
+        "ordinary": false,
+        "ms": 427,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-25",
+      "class": "askMemory",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2280,
+      "takeMs": 3000,
+      "trimmedMs": 720,
+      "fragments": 1,
+      "t": {
+        "streamStart": 230144.7909,
+        "speechEnd": 232789.6957,
+        "lastLoudSent": 232306.85,
+        "commit": 232891.5396,
+        "itemAdded": 232891.6305,
+        "judgeSent": 232913.5141,
+        "judgeFirstDelta": 233509.3847,
+        "judgeDone": 233533.5831,
+        "replySent": 232913.5373,
+        "replyCreated": 233026.4026,
+        "firstReplyAudio": 234494.5011,
+        "replyCancelSent": 234494.6877,
+        "audible": 234494.5011,
+        "transcriptionDone": 233400.5335
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 642,
+        "ordinaryLatencyMs": 1704.8,
+        "ordinaryLatencyFromLoudMs": 2187.7,
+        "vadEndAfterLoudMs": 482.8,
+        "asrMs": 509,
+        "commitToJudgeSentMs": 22
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0.02,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.11,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 476,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-20",
+      "class": "fact",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3760,
+      "takeMs": 4320,
+      "trimmedMs": 560,
+      "fragments": 2,
+      "t": {
+        "streamStart": 235115.2919,
+        "speechEnd": 239222.3576,
+        "lastLoudSent": 238754.6662,
+        "commit": 239321.36,
+        "itemAdded": 239321.494,
+        "judgeSent": 239346.8002,
+        "judgeFirstDelta": 240136.2542,
+        "judgeDone": 240176.4786,
+        "replySent": 239346.8233,
+        "replyCreated": 239467.109,
+        "firstReplyAudio": 240388.5079,
+        "replyCancelSent": 240388.7233,
+        "audible": 240388.5079,
+        "transcriptionDone": 239780.6358
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 46,
+        "input_tokens": 0,
+        "output_tokens": 46,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 46,
+          "audio_tokens": 0,
+          "reasoning_tokens": 41
+        }
+      },
+      "outputTokens": 46,
+      "reasoningTokens": 41,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 855.1,
+        "ordinaryLatencyMs": 1166.2,
+        "ordinaryLatencyFromLoudMs": 1633.8,
+        "vadEndAfterLoudMs": 467.7,
+        "asrMs": 459.3,
+        "commitToJudgeSentMs": 25.4
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0.01,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.15,
+          "alone": 0.08,
+          "why": 0,
+          "rushed": 0.01,
+          "food": 0,
+          "action": 0,
+          "answer": 0.05,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 410,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-correction-2",
+      "class": "correction",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 5280,
+      "takeMs": 5280,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 240925.9351,
+        "speechEnd": 245549.2382,
+        "lastLoudSent": 246094.9281,
+        "commit": 245650.8646,
+        "itemAdded": 245653.9363,
+        "judgeSent": 246188.6499,
+        "judgeFirstDelta": 246910.7595,
+        "judgeDone": 246942.4366,
+        "replySent": 246188.6571,
+        "replyCreated": 246325.8028,
+        "firstReplyAudio": null,
+        "replyCancelSent": 246857.5853,
+        "audible": null,
+        "transcriptionDone": 246164.3037
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 27,
+        "input_tokens": 0,
+        "output_tokens": 27,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 27,
+          "audio_tokens": 0,
+          "reasoning_tokens": 22
+        }
+      },
+      "outputTokens": 27,
+      "reasoningTokens": 22,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1291.6,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -545.7,
+        "asrMs": 513.4,
+        "commitToJudgeSentMs": 537.8
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 1,
+          "transition": 0.01,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.1,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.1,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "correct",
+        "ordinary": false,
+        "ms": 784,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-company-5",
+      "class": "company",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3720,
+      "takeMs": 3720,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 247821.1154,
+        "speechEnd": 251166.1539,
+        "lastLoudSent": 251511.3033,
+        "commit": 251266.8805,
+        "itemAdded": 251266.9967,
+        "judgeSent": 251527.4375,
+        "judgeFirstDelta": 252188.7701,
+        "judgeDone": 252221.7479,
+        "replySent": 251527.456,
+        "replyCreated": 251652.0896,
+        "firstReplyAudio": null,
+        "replyCancelSent": 252221.9439,
+        "audible": null,
+        "transcriptionDone": 251787.165
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 29,
+        "input_tokens": 0,
+        "output_tokens": 29,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 29,
+          "audio_tokens": 0,
+          "reasoning_tokens": 24
+        }
+      },
+      "outputTokens": 29,
+      "reasoningTokens": 24,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 954.9,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -345.1,
+        "asrMs": 520.3,
+        "commitToJudgeSentMs": 260.6
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX3"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0.04,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.99,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.13,
+          "food": 0,
+          "action": 0,
+          "answer": 0.06,
+          "uncertainSpeaker": 0.02
+        },
+        "chosen": "company",
+        "ordinary": false,
+        "ms": 607,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-hardrule-5",
+      "class": "hardRule",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 4960,
+      "takeMs": 4980,
+      "trimmedMs": 20,
+      "fragments": 2,
+      "t": {
+        "streamStart": 252957.1838,
+        "speechEnd": 257169.5872,
+        "lastLoudSent": 257803.2077,
+        "commit": 257316.6636,
+        "itemAdded": 257318.2497,
+        "judgeSent": 257912.3161,
+        "judgeFirstDelta": 258692.8982,
+        "judgeDone": 258831.3939,
+        "replySent": 257912.3264,
+        "replyCreated": 258115.5709,
+        "firstReplyAudio": null,
+        "replyCancelSent": 258519.6054,
+        "audible": null,
+        "transcriptionDone": 257926.8949
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 27,
+        "input_tokens": 0,
+        "output_tokens": 27,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 27,
+          "audio_tokens": 0,
+          "reasoning_tokens": 22
+        }
+      },
+      "outputTokens": 27,
+      "reasoningTokens": 22,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1514.7,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -633.6,
+        "asrMs": 610.2,
+        "commitToJudgeSentMs": 595.7
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX4"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 1,
+          "transition": 0.65,
+          "hardRule": 0.98,
+          "crisis": 0,
+          "company": 0.02,
+          "alone": 0.03,
+          "why": 0,
+          "rushed": 0.04,
+          "food": 0,
+          "action": 0,
+          "answer": 0.35,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "hardRule",
+        "ordinary": false,
+        "ms": 675,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-07",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2400,
+      "takeMs": 3600,
+      "trimmedMs": 1200,
+      "fragments": 2,
+      "t": {
+        "streamStart": 259506.6913,
+        "speechEnd": 262270.113,
+        "lastLoudSent": 261786.2695,
+        "commit": 262446.2342,
+        "itemAdded": 262446.4706,
+        "judgeSent": 262474.2686,
+        "judgeFirstDelta": 263123.631,
+        "judgeDone": 263174.6895,
+        "replySent": 262474.2839,
+        "replyCreated": 262598.648,
+        "firstReplyAudio": 263304.7925,
+        "replyCancelSent": 263304.9201,
+        "audible": 263304.7925,
+        "transcriptionDone": 262925.2577
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 728.5,
+        "ordinaryLatencyMs": 1034.7,
+        "ordinaryLatencyFromLoudMs": 1518.5,
+        "vadEndAfterLoudMs": 483.8,
+        "asrMs": 479,
+        "commitToJudgeSentMs": 28
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.07,
+          "alone": 0.01,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.03,
+          "uncertainSpeaker": 0
+        },
+        "chosen": null,
+        "ordinary": true,
+        "ms": 259,
+        "missedDeadline": false,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-company-3",
+      "class": "company",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 4600,
+      "takeMs": 4620,
+      "trimmedMs": 20,
+      "fragments": 1,
+      "t": {
+        "streamStart": 263692.6398,
+        "speechEnd": 267521.6212,
+        "lastLoudSent": 268173.0024,
+        "commit": 267622.68,
+        "itemAdded": 267622.7763,
+        "judgeSent": 268278.6827,
+        "judgeFirstDelta": 268868.2752,
+        "judgeDone": 268892.3019,
+        "replySent": 268278.6923,
+        "replyCreated": 268414.1043,
+        "firstReplyAudio": null,
+        "replyCancelSent": 268829.079,
+        "audible": null,
+        "transcriptionDone": 268184.1528
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 18,
+        "input_tokens": 0,
+        "output_tokens": 18,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 18,
+          "audio_tokens": 0,
+          "reasoning_tokens": 13
+        }
+      },
+      "outputTokens": 18,
+      "reasoningTokens": 13,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1269.6,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -651.4,
+        "asrMs": 561.5,
+        "commitToJudgeSentMs": 656
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX3"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.99,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.01,
+          "food": 0,
+          "action": 0,
+          "answer": 0.03,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "company",
+        "ordinary": false,
+        "ms": 489,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-23",
+      "class": "smallTalk",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2940,
+      "takeMs": 3720,
+      "trimmedMs": 780,
+      "fragments": 3,
+      "t": {
+        "streamStart": 269478.8915,
+        "speechEnd": 272791.5206,
+        "lastLoudSent": 272310.0049,
+        "commit": 272862.1358,
+        "itemAdded": 272862.2194,
+        "judgeSent": 272885.6647,
+        "judgeFirstDelta": 273679.7513,
+        "judgeDone": 273720.173,
+        "replySent": 272885.6895,
+        "replyCreated": 273004.2446,
+        "firstReplyAudio": 273785.0674,
+        "replyCancelSent": 273785.2436,
+        "audible": 273785.0674,
+        "transcriptionDone": 273343.9931
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 43,
+        "input_tokens": 0,
+        "output_tokens": 43,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 43,
+          "audio_tokens": 0,
+          "reasoning_tokens": 38
+        }
+      },
+      "outputTokens": 43,
+      "reasoningTokens": 38,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 858,
+        "ordinaryLatencyMs": 993.5,
+        "ordinaryLatencyFromLoudMs": 1475.1,
+        "vadEndAfterLoudMs": 481.5,
+        "asrMs": 481.9,
+        "commitToJudgeSentMs": 23.5
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0.01,
+          "hardRule": 0.03,
+          "crisis": 0,
+          "company": 0.11,
+          "alone": 0.49,
+          "why": 0,
+          "rushed": 0.01,
+          "food": 0,
+          "action": 0,
+          "answer": 0.08,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 437,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-08",
+      "class": "fact",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3620,
+      "takeMs": 4320,
+      "trimmedMs": 700,
+      "fragments": 1,
+      "t": {
+        "streamStart": 274365.0222,
+        "speechEnd": 278330.2529,
+        "lastLoudSent": 277878.8027,
+        "commit": 278432.1832,
+        "itemAdded": 278433.6815,
+        "judgeSent": 278455.0699,
+        "judgeFirstDelta": 279399.8617,
+        "judgeDone": 279431.7664,
+        "replySent": 278455.0875,
+        "replyCreated": 278567.7441,
+        "firstReplyAudio": 279273.06,
+        "replyCancelSent": 279432.2232,
+        "audible": 279431.7664,
+        "transcriptionDone": 278941.1704
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 999.6,
+        "ordinaryLatencyMs": 1101.5,
+        "ordinaryLatencyFromLoudMs": 1553,
+        "vadEndAfterLoudMs": 451.5,
+        "asrMs": 509,
+        "commitToJudgeSentMs": 22.9
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.06,
+          "alone": 0.21,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.01,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 527,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-crisis-4",
+      "class": "crisis",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 900,
+      "takeMs": 2400,
+      "trimmedMs": 1500,
+      "fragments": 1,
+      "t": {
+        "streamStart": 280095.8496,
+        "speechEnd": 281366.4887,
+        "lastLoudSent": 280880.9763,
+        "commit": 281439.359,
+        "itemAdded": 281439.4691,
+        "judgeSent": 281461.0379,
+        "judgeFirstDelta": 282111.8932,
+        "judgeDone": 282143.2302,
+        "replySent": 281461.0517,
+        "replyCreated": 281579.4573,
+        "firstReplyAudio": 282265.8904,
+        "replyCancelSent": 282143.3993,
+        "audible": null,
+        "transcriptionDone": 281959.3558
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 29,
+        "input_tokens": 0,
+        "output_tokens": 29,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 29,
+          "audio_tokens": 0,
+          "reasoning_tokens": 24
+        }
+      },
+      "outputTokens": 29,
+      "reasoningTokens": 24,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 703.9,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": 485.5,
+        "asrMs": 520,
+        "commitToJudgeSentMs": 21.7
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX7"
+        ]
+      },
+      "parse": {
+        "probabilities": null,
+        "chosen": null,
+        "ordinary": false,
+        "ms": 290,
+        "missedDeadline": false,
+        "failure": "invalid"
+      }
+    },
+    {
+      "lineId": "c-quiet-3",
+      "class": "quiet",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 5040,
+      "takeMs": 5040,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 282577.7881,
+        "speechEnd": 287237.3972,
+        "lastLoudSent": 287502.6912,
+        "commit": 287361.9841,
+        "itemAdded": 287362.0629,
+        "judgeSent": 287602.7652,
+        "judgeFirstDelta": 288250.9216,
+        "judgeDone": 288282.1061,
+        "replySent": 287602.7833,
+        "replyCreated": 287737.4295,
+        "firstReplyAudio": null,
+        "replyCancelSent": 288282.3388,
+        "audible": null,
+        "transcriptionDone": 287877.1019
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 25,
+        "input_tokens": 0,
+        "output_tokens": 25,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 25,
+          "audio_tokens": 0,
+          "reasoning_tokens": 20
+        }
+      },
+      "outputTokens": 25,
+      "reasoningTokens": 20,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 920.1,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -265.3,
+        "asrMs": 515.1,
+        "commitToJudgeSentMs": 240.8
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0.99,
+          "correct": 0,
+          "transition": 0.01,
+          "hardRule": 0.06,
+          "crisis": 0,
+          "company": 0.02,
+          "alone": 0.01,
+          "why": 0.06,
+          "rushed": 0.68,
+          "food": 0,
+          "action": 0.13,
+          "answer": 0.39,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "quiet",
+        "ordinary": false,
+        "ms": 498,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-crisis-1",
+      "class": "crisis",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2680,
+      "takeMs": 4320,
+      "trimmedMs": 1640,
+      "fragments": 2,
+      "t": {
+        "streamStart": 288909.3205,
+        "speechEnd": 291958.3036,
+        "lastLoudSent": 291476.8135,
+        "commit": 292058.702,
+        "itemAdded": 292058.7616,
+        "judgeSent": 292083.2399,
+        "judgeFirstDelta": 292774.6942,
+        "judgeDone": 292808.9373,
+        "replySent": 292083.2584,
+        "replyCreated": 292209.4717,
+        "firstReplyAudio": null,
+        "replyCancelSent": 292809.1847,
+        "audible": null,
+        "transcriptionDone": 292609.2276
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 27,
+        "input_tokens": 0,
+        "output_tokens": 27,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 27,
+          "audio_tokens": 0,
+          "reasoning_tokens": 22
+        }
+      },
+      "outputTokens": 27,
+      "reasoningTokens": 22,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 750.2,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": 481.5,
+        "asrMs": 550.5,
+        "commitToJudgeSentMs": 24.5
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX7"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 1,
+          "hardRule": 0,
+          "crisis": 0.06,
+          "company": 0.02,
+          "alone": 0.01,
+          "why": 0,
+          "rushed": 0.02,
+          "food": 0,
+          "action": 0,
+          "answer": 0.01,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "transition",
+        "ordinary": false,
+        "ms": 743,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-hardrule-3",
+      "class": "hardRule",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 6180,
+      "takeMs": 6180,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 293707.6484,
+        "speechEnd": 299339.5308,
+        "lastLoudSent": 299820.4452,
+        "commit": 299410.0084,
+        "itemAdded": 299410.7918,
+        "judgeSent": 299868.0346,
+        "judgeFirstDelta": 300611.2133,
+        "judgeDone": 300644.9892,
+        "replySent": 299868.045,
+        "replyCreated": 300020.7848,
+        "firstReplyAudio": null,
+        "replyCancelSent": 300610.7725,
+        "audible": null,
+        "transcriptionDone": 299881.4892
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 30,
+        "input_tokens": 0,
+        "output_tokens": 30,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 30,
+          "audio_tokens": 0,
+          "reasoning_tokens": 25
+        }
+      },
+      "outputTokens": 30,
+      "reasoningTokens": 25,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1235,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -480.9,
+        "asrMs": 471.5,
+        "commitToJudgeSentMs": 458
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX4"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0.28,
+          "hardRule": 0.99,
+          "crisis": 0.02,
+          "company": 0.03,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0.08,
+          "food": 0.59,
+          "action": 0,
+          "answer": 0.06,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "hardRule",
+        "ordinary": false,
+        "ms": 708,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-crisis-5",
+      "class": "crisis",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3640,
+      "takeMs": 4500,
+      "trimmedMs": 860,
+      "fragments": 2,
+      "t": {
+        "streamStart": 301452.5891,
+        "speechEnd": 305441.6868,
+        "lastLoudSent": 304973.2683,
+        "commit": 305557.4824,
+        "itemAdded": 305557.5861,
+        "judgeSent": 305581.8905,
+        "judgeFirstDelta": 306309.5693,
+        "judgeDone": 306362.4267,
+        "replySent": 305581.903,
+        "replyCreated": 305705.4448,
+        "firstReplyAudio": null,
+        "replyCancelSent": 306362.5949,
+        "audible": null,
+        "transcriptionDone": 306198.6214
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 26,
+        "input_tokens": 0,
+        "output_tokens": 26,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 26,
+          "audio_tokens": 0,
+          "reasoning_tokens": 21
+        }
+      },
+      "outputTokens": 26,
+      "reasoningTokens": 21,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 804.9,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": 468.4,
+        "asrMs": 641.1,
+        "commitToJudgeSentMs": 24.4
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX5"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0.99,
+          "hardRule": 0,
+          "crisis": 0.85,
+          "company": 0.01,
+          "alone": 0.49,
+          "why": 0,
+          "rushed": 0.03,
+          "food": 0,
+          "action": 0,
+          "answer": 0,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "alone",
+        "ordinary": false,
+        "ms": 531,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "o-10",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": true,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 2200,
+      "takeMs": 3180,
+      "trimmedMs": 980,
+      "fragments": 1,
+      "t": {
+        "streamStart": 307037.7708,
+        "speechEnd": 309588.6363,
+        "lastLoudSent": 309117.5105,
+        "commit": 309689.2414,
+        "itemAdded": 309691.2642,
+        "judgeSent": 309698.0484,
+        "judgeFirstDelta": 310477.144,
+        "judgeDone": 310510.3308,
+        "replySent": 309698.0625,
+        "replyCreated": 309820.1172,
+        "firstReplyAudio": 310626.8951,
+        "replyCancelSent": 310510.5161,
+        "audible": null,
+        "transcriptionDone": 310222.6248
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 40,
+        "input_tokens": 0,
+        "output_tokens": 40,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 40,
+          "audio_tokens": 0,
+          "reasoning_tokens": 35
+        }
+      },
+      "outputTokens": 40,
+      "reasoningTokens": 35,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 821.1,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": 471.1,
+        "asrMs": 533.4,
+        "commitToJudgeSentMs": 8.8
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": null,
+        "chosen": null,
+        "ordinary": false,
+        "ms": 329,
+        "missedDeadline": false,
+        "failure": "invalid"
+      }
+    },
+    {
+      "lineId": "o-27",
+      "class": "nearMiss",
+      "expect": "ordinary",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 3640,
+      "takeMs": 3900,
+      "trimmedMs": 260,
+      "fragments": 1,
+      "t": {
+        "streamStart": 310966.7608,
+        "speechEnd": 314959,
+        "lastLoudSent": 314490.3766,
+        "commit": 315066.7547,
+        "itemAdded": 315066.8673,
+        "judgeSent": 315100.0389,
+        "judgeFirstDelta": 315717.0725,
+        "judgeDone": 315791.2521,
+        "replySent": 315100.0486,
+        "replyCreated": 315335.8316,
+        "firstReplyAudio": 316062.3518,
+        "replyCancelSent": 316062.5404,
+        "audible": 316062.3518,
+        "transcriptionDone": 315610.0581
+      },
+      "verdict": "O",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "O",
+      "judgeUsage": {
+        "total_tokens": 22,
+        "input_tokens": 0,
+        "output_tokens": 22,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 22,
+          "audio_tokens": 0,
+          "reasoning_tokens": 17
+        }
+      },
+      "outputTokens": 22,
+      "reasoningTokens": 17,
+      "judgeOtherItems": [],
+      "timedOut": false,
+      "decision": "reply",
+      "mutedReplyAudio": null,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 724.5,
+        "ordinaryLatencyMs": 1103.4,
+        "ordinaryLatencyFromLoudMs": 1572,
+        "vadEndAfterLoudMs": 468.6,
+        "asrMs": 543.3,
+        "commitToJudgeSentMs": 33.3
+      },
+      "errors": [],
+      "regex": {
+        "hit": false,
+        "ids": []
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0.01,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.01,
+          "alone": 0,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.06,
+          "uncertainSpeaker": 0.3
+        },
+        "chosen": null,
+        "ordinary": false,
+        "ms": 517,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-forget-4",
+      "class": "forget",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 6780,
+      "takeMs": 6780,
+      "trimmedMs": 0,
+      "fragments": 1,
+      "t": {
+        "streamStart": 316764.1924,
+        "speechEnd": 322933.0715,
+        "lastLoudSent": 323446.7016,
+        "commit": 323034.6894,
+        "itemAdded": 323034.8056,
+        "judgeSent": 323539.528,
+        "judgeFirstDelta": 324349.8779,
+        "judgeDone": 324474.7789,
+        "replySent": 323539.5362,
+        "replyCreated": 323681.4853,
+        "firstReplyAudio": null,
+        "replyCancelSent": 324240.3356,
+        "audible": null,
+        "transcriptionDone": 323545.0412
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 35,
+        "input_tokens": 0,
+        "output_tokens": 35,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 35,
+          "audio_tokens": 0,
+          "reasoning_tokens": 30
+        }
+      },
+      "outputTokens": 35,
+      "reasoningTokens": 30,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1440.1,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -513.6,
+        "asrMs": 510.4,
+        "commitToJudgeSentMs": 504.8
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX1"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0.31,
+          "quiet": 0,
+          "correct": 0,
+          "transition": 0.01,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.21,
+          "alone": 0.03,
+          "why": 0,
+          "rushed": 0,
+          "food": 0,
+          "action": 0,
+          "answer": 0.05,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "forget",
+        "ordinary": false,
+        "ms": 404,
+        "missedDeadline": true,
+        "failure": null
+      }
+    },
+    {
+      "lineId": "c-forget-1",
+      "class": "forget",
+      "expect": "hold",
+      "probe": false,
+      "session": 1,
+      "voice": "owner",
+      "audioMs": 5820,
+      "takeMs": 5820,
+      "trimmedMs": 0,
+      "fragments": 2,
+      "t": {
+        "streamStart": 324879.5882,
+        "speechEnd": 329478.6857,
+        "lastLoudSent": 330604.9222,
+        "commit": 329590.4405,
+        "itemAdded": 329590.5599,
+        "judgeSent": 330685.0066,
+        "judgeFirstDelta": 331437.6084,
+        "judgeDone": 331474.2506,
+        "replySent": 330685.0152,
+        "replyCreated": 330824.2086,
+        "firstReplyAudio": null,
+        "replyCancelSent": 330824.3845,
+        "audible": null,
+        "transcriptionDone": 330169.0499
+      },
+      "verdict": "H",
+      "valid": true,
+      "invalidReason": null,
+      "judgeStatus": "completed",
+      "judgeStatusDetails": null,
+      "judgeText": "H",
+      "judgeUsage": {
+        "total_tokens": 28,
+        "input_tokens": 0,
+        "output_tokens": 28,
+        "input_token_details": {
+          "text_tokens": 0,
+          "audio_tokens": 0,
+          "image_tokens": 0,
+          "cached_tokens": 0,
+          "cached_tokens_details": {
+            "text_tokens": 0,
+            "audio_tokens": 0,
+            "image_tokens": 0
+          }
+        },
+        "output_token_details": {
+          "text_tokens": 28,
+          "audio_tokens": 0,
+          "reasoning_tokens": 23
+        }
+      },
+      "outputTokens": 28,
+      "reasoningTokens": 23,
+      "judgeOtherItems": [],
+      "timedOut": true,
+      "decision": "held",
+      "mutedReplyAudio": false,
+      "concurrencyErrors": [],
+      "transcript": null,
+      "derived": {
+        "judgeMs": 1883.8,
+        "ordinaryLatencyMs": null,
+        "ordinaryLatencyFromLoudMs": null,
+        "vadEndAfterLoudMs": -1126.2,
+        "asrMs": 578.6,
+        "commitToJudgeSentMs": 1094.6
+      },
+      "errors": [],
+      "regex": {
+        "hit": true,
+        "ids": [
+          "RX1"
+        ]
+      },
+      "parse": {
+        "probabilities": {
+          "forget": 0.41,
+          "quiet": 0.75,
+          "correct": 0.06,
+          "transition": 0.13,
+          "hardRule": 0,
+          "crisis": 0,
+          "company": 0.18,
+          "alone": 0.01,
+          "why": 0,
+          "rushed": 0.04,
+          "food": 0,
+          "action": 0,
+          "answer": 0.04,
+          "uncertainSpeaker": 0
+        },
+        "chosen": "forget",
+        "ordinary": false,
+        "ms": 600,
+        "missedDeadline": true,
+        "failure": null
+      }
+    }
+  ]
+}

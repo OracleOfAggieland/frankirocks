@@ -21,6 +21,16 @@ The screen is Franki's lab at night. Franki floats in the middle. Everything els
 8. **Quiet by default.** No toasts, badges, "coming soon" or empty panels. A surface with nothing true to show renders nothing.
 9. **Motion is ghost physics.** Things float, rise and settle. Nothing slides in on a straight line. Nothing bounces like a toy.
 10. **Calm for everyone.** Reduced motion keeps every state readable. Contrast meets WCAG AA. Every control works by keyboard and has a 44 px target.
+11. **Blueprint until it's true.** Inert things are `stitch` linework. Material (glass, brass, paper, glow) is only for what is live or touchable.
+
+## Pages, materials, scenery, cursor
+
+- **Pages:** the lab is one screen at `/lab`. The front door at `/` is the only other page and the only place sample data may show, always under a "Sample data" plate. Nothing reachable from `/lab` imports `components/landing/` or `ui/landing/`.
+- **Materials:** use the utilities `mat-blueprint`, `mat-glass`, `mat-brass`, `mat-paper`, `mat-gold` and the shared parts in `components/lab/` (rivet, plate, lamp, fig label). A surface never mixes its own material.
+- **Scenery:** blueprint linework only, `stitch` at 55% opacity or less, never filled or glowing, `aria-hidden`. It never draws a stand-in for a real surface.
+- **Cursor:** the lab spider replaces the pointer only on a fine pointer with motion allowed and the "Lab spider" toggle on. Its body has no lag; text fields keep the native cursor. It never glows.
+- **Display type:** Fraunces (`font-display`, sizes `text-title` and `text-hero`) on the front door and the 404 and error pages only. Never in the lab, never for numbers.
+- **Front-door copy** lives in `apps/web/src/ui/copy-landing.ts` and follows the Copy rules below.
 
 ## Tokens
 
@@ -51,8 +61,8 @@ Glows are layered `box-shadow` or SVG blur at low opacity, never flat neon. Chec
 
 - Geist for interface text; Geist Mono with tabular figures for numbers, counters, times and sources.
 - Sizes 12, 14, 16, 20, 28, 44 px (`text-xs`, `text-sm`, `text-base`, `text-lg`, `text-2xl`, `text-display`). Body 16, card titles 20. One weight change per element at most.
-- Radius: `radius-card` 18 px, `radius-chip` 999 px, `radius-control` 12 px.
-- Shadow: `shadow-ecto-glow`, `shadow-brass-glow`, `shadow-card`.
+- Radius: `radius-card` 18 px, `radius-chip` 999 px, `radius-control` 12 px, `radius-frame` 28 px.
+- Shadow: `shadow-ecto-glow`, `shadow-brass-glow`, `shadow-gold-glow`, `shadow-card`, `shadow-glass`.
 
 ### Motion
 
@@ -64,6 +74,8 @@ Glows are layered `box-shadow` or SVG blur at low opacity, never flat neon. Chec
 | `dur.quick` | 160 ms | Hover, focus |
 | `dur.base` | 320 ms | Most transitions |
 | `dur.ritual` | 1200 ms | The wake, the receipt print |
+| `dur.current` | 1600 ms | A pulse travelling a wire |
+| `dur.drift` | 9000 ms | Slow ambient loops |
 | `ease.ecto` | `cubic-bezier(.22, 1, .36, 1)` | Non-spring easing |
 | `stagger` | 40 ms | Lists, strip terminals |
 
