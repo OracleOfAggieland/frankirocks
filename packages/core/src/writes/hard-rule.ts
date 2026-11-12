@@ -5,11 +5,12 @@
  * 1. Each allergy verdict moves its slots through `ruleTransition` (6.3). A proof must lie in a U slice of this turn
  *    (or be the asked rule's own proof with the answer on a U slice of this turn, answering rule 4); any other verdict
  *    writes nothing (P1). A rule made from an answer cites both Evidences in `dependsOn` (CQ 147). A newly active
- *    rule also supersedes, only where it answers them (CQ 132, narrowed by CQ 144): the anonymous pending rule with
- *    its code; for a food code, its subject's `unresolved` rule and an asked anonymous `unresolved` rule. Every
- *    other pending rule stays, so a pending rule leaves only for its own slot.
+ *    rule also supersedes, only where it answers them (CQ 132, narrowed by CQ 144 and brief 032 H3): the asked
+ *    anonymous rule this turn answers, with its code or, for a food code, `unresolved`; for a food code, its
+ *    subject's `unresolved` rule. Every other pending rule stays, so a pending rule leaves only for its own slot.
  * 2. Coverage: every alias found in the U parts of the cue sentences whose code no verdict carries becomes an
- *    anonymous pending rule (fail closed; an ignored item carries nothing). Only a plain mention a subject was
+ *    anonymous pending rule (fail closed; an ignored item carries nothing, and so does a denial that reaches no rule,
+ *    brief 032 H1). Only a plain mention a subject was
  *    resolved from is left out of the scan.
  * 3. The fallback: when nothing was written, kept, resolved or recorded, and the `notAllergy` double check (G3)
  *    doesn't pass, the anonymous `unresolved` rule, over the cue sentences' U parts with no mention cut. Never on a
@@ -21,7 +22,7 @@
 import { canonicalJSON } from "../ids";
 import type { EID, ID, Span } from "../schema/primitives";
 import type { CoreRules } from "../schema/records";
-import { GAZETTEER_VERSION, gazetteerEntry, scanAliases } from "./gazetteer";
+import { GAZETTEER_VERSION, NONE_CODE, gazetteerEntry, lookupAllergen, scanAliases } from "./gazetteer";
 import { type Range, cueSentenceRanges, cueSentenceUParts, cueSentences, cueSpan, notAllergyByCode } from "./not-allergy";
 import { ruleTransition } from "./rule-state";
 import { spanClass, uParts, verifyTurnSpan } from "./spans";
@@ -150,6 +151,22 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
     if (!("refused" in r) && r.next.kind === "absent") list.splice(i, 1);
   };
 
+  /**
+   * Whether a denial for (subject, code) reaches a rule stored before this turn: only then does it carry the code past
+   * coverage, count as something done, or move the slot (brief 032 H1). A wrong polarity from the model on an
+   * affirmed allergy lands on an absent slot, so coverage and the fallback still file it; and a denial never undoes
+   * a rule this same turn wrote ("I'm allergic to eggs. I'm not allergic to eggs."). Fails closed; at worst a true
+   * denial of an allergen nobody has is filed as a pending rule and asked about.
+   */
+  const denialReaches = (subject: EID | null, code: string): boolean => rules.allergies.some((r) => (r.anonymous ? null : r.subjectId) === subject && r.code === code);
+
+  /** Whether the item at `index` denies any allergy at all ("any allergies", "anything"), naming no item to file. */
+  const namesOnlyNone = (index: number): boolean => {
+    const it = turn.out?.items[index];
+    const codes = it === undefined || it.kind !== "allergy" ? [] : lookupAllergen(it.item);
+    return codes.length > 0 && codes.every((c) => c === NONE_CODE);
+  };
+
   /** Moves one slot; returns the slot's outcome, or null when the event was refused or a bound stood in. */
   const apply = (subject: EID | null, code: string, e: RuleEvent): HardRuleOutcome["kind"] | null => {
     const i = slotIndex(subject, code);
@@ -188,9 +205,17 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
     if (v.kind === "ignored") {
       // Row A6: a denial from an uncertain speaker is a ledger decision only, with the codes validation verified (CQ 148).
       if (v.reason === "speaker") {
-        for (const c of v.codes) carried.add(c);
+        // Its subject is unknown, so it reaches the anonymous slots only. A code with no slot there carries nothing
+        // (brief 032 H1): coverage still files it, and off an answering turn a denial that reached nothing never
+        // switches the fallback off. A "no" to Franki's own question still adds no filter (CQ 161), and neither does a
+        // denial of any allergy at all ("I don't have any allergies"), which names no item to file.
+        if (turn.answering !== null || namesOnlyNone(v.index)) denied = true;
+        for (const c of v.codes) {
+          if (!denialReaches(null, c)) continue;
+          carried.add(c);
+          denied = true;
+        }
         ledger.push({ eid: ev.eid, outcome: "denialRecorded", codes: v.codes });
-        denied = true;
       }
       continue;
     }
@@ -207,12 +232,11 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
           const out = apply(a.subject, code, { kind: "affirm", proof: p.proof, deps: p.dependsOn, install: activeRule(a.subject, code, p) });
           if (out === "ruleKept") keep(list[slotIndex(a.subject, code)]!.id, "duplicate");
           if (before !== "active" && (out === "ruleWritten" || out === "pendingResolved")) {
-            // Cross-slot reach (6.3, CQ 144): only the pending rules this rule answers.
-            supersede(slotIndex(null, code));
-            if (isFood(code)) {
-              supersede(slotIndex(a.subject, UNRESOLVED));
-              if (R !== null && R.anonymous && R.code === UNRESOLVED) supersede(list.findIndex((r) => r.id === R.id));
-            }
+            // Cross-slot reach (6.3, CQ 144): only the pending rules this rule answers. An anonymous rule leaves only
+            // when it is the asked rule and this turn answers it (brief 032 H3): a named person's rule never clears
+            // "one of the guests".
+            if (R !== null && R.anonymous && (R.code === code || (R.code === UNRESOLVED && isFood(code)))) supersede(list.findIndex((r) => r.id === R.id));
+            if (isFood(code)) supersede(slotIndex(a.subject, UNRESOLVED));
           }
         }
         break;
@@ -231,6 +255,7 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
       }
       case "deny": {
         if (proven(a.proof) === null || !turn.speakerCertain) break;
+        const deniedBefore: boolean = denied;
         denied = true;
         if ("answers" in a) {
           const target = list.find((r) => r.id === a.answers && r.state === "pending");
@@ -242,12 +267,20 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
           break;
         }
         const S = a.subject;
-        const named = a.scope === "global" ? list.filter((r) => !r.anonymous && r.subjectId === S).map((r) => r.code) : a.codes;
+        // A global denial reaches the subject's rules stored before this turn, never one this turn wrote (brief 032 H1).
+        const named = a.scope === "global" ? rules.allergies.filter((r) => !r.anonymous && r.subjectId === S).map((r) => r.code) : a.codes;
+        let reached = a.scope === "global";
         for (const code of new Set(named)) {
-          if (a.scope === "specific") carried.add(code);
+          // Brief 032 H1: a denial that lands on an absent slot carries nothing, so coverage still files the code.
+          if (a.scope === "specific") {
+            if (!denialReaches(S, code)) continue;
+            carried.add(code);
+            reached = true;
+          }
           const out = apply(S, code, { kind: "deny" });
           if (out === "ruleKept") keep(list[slotIndex(S, code)]!.id, "denied");
         }
+        if (!reached && turn.answering === null) denied = deniedBefore;
         if (a.scope === "global") globalDenials.push(S);
         // The decision is about every code it reached: a global denial's are the subject's rules.
         ledger.push({ eid: ev.eid, outcome: "denialRecorded", codes: [...new Set(named)].filter((c) => c !== UNRESOLVED) });

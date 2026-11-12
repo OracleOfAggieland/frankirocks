@@ -97,7 +97,9 @@ describe("the rules section (2.8)", () => {
   it("outside a private audience pending lines name no one", () => {
     const lines = renderRulesSection(rules, "company");
     expect(lines[0]).toContain("don't read them aloud");
-    expect(lines).toContain("- Not yet clear, ask before suggesting food, for someone: any food, peanuts.");
+    // Brief 032 M2: the owner's pending rule and the anonymous one are two subjects, so two lines, though both say "someone".
+    expect(lines).toContain("- Not yet clear, ask before suggesting food, for someone: any food.");
+    expect(lines).toContain("- Not yet clear, ask before suggesting food, for someone: peanuts.");
   });
   it("reads back what it renders", () => {
     expect(readRulesSection(renderRulesSection(rules, "private").join("\n"))).toEqual([
