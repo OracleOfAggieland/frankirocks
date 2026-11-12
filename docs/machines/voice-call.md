@@ -14,7 +14,7 @@ Rules: `.kiro/steering/voice-control.md` (what may be heard) and `.kiro/steering
 | State | `VoiceState`, `VoicePhase`, `TimerName` |
 | Events | `VoiceEvent`, `RealtimeServerEvent`, `VoiceCommand` |
 | States | `VoicePhase` |
-| Tests | `packages/core/src/voice/machine.test.ts`, `packages/core/src/voice/outstanding-reconnect.test.ts`, `packages/core/src/voice/testing/arb-call.test.ts`, `packages/core/src/voice/no-permit-no-sound.property.test.ts`, `packages/core/src/voice/every-wait-ends.property.test.ts`, `packages/core/src/voice/stale-inert.property.test.ts`, `packages/core/src/voice/held-never-resumes.property.test.ts`, `packages/core/src/voice/late-permit.property.test.ts`, `packages/core/src/voice/no-clipped-suffix.property.test.ts`, `packages/core/src/voice/no-dispatch-before-admission.property.test.ts`, `packages/core/src/voice/fast-o-fresh-ack.property.test.ts`, `packages/core/src/voice/admitted-turn-posted.property.test.ts`, `packages/core/src/voice/voice-unlisted.transitions.test.ts`, `apps/web/src/client/voice-client.test.ts` |
+| Tests | `packages/core/src/voice/machine.test.ts`, `packages/core/src/voice/outstanding-reconnect.test.ts`, `packages/core/src/voice/testing/arb-call.test.ts`, `packages/core/src/voice/no-permit-no-sound.property.test.ts`, `packages/core/src/voice/every-wait-ends.property.test.ts`, `packages/core/src/voice/stale-inert.property.test.ts`, `packages/core/src/voice/held-never-resumes.property.test.ts`, `packages/core/src/voice/late-permit.property.test.ts`, `packages/core/src/voice/no-clipped-suffix.property.test.ts`, `packages/core/src/voice/no-dispatch-before-admission.property.test.ts`, `packages/core/src/voice/fast-o-fresh-ack.property.test.ts`, `packages/core/src/voice/admitted-turn-posted.property.test.ts`, `packages/core/src/voice/voice-unlisted.transitions.test.ts`, `packages/core/src/voice/voice-swap.transitions.test.ts`, `packages/core/src/voice/narrowing.property.test.ts`, `apps/web/src/client/voice-client.test.ts` |
 
 The diagram shows the transitions `step` makes between phases. Three more apply from every phase of a live call and are left out of the drawing: `hangupPressed` goes to CLOSED, a lost connection (`connectionLost`, `sdpFailed`) goes to RECOVERY, and speech that starts while a reply, a check or a wait is in progress (barge-in) goes to LISTENING.
 
@@ -51,15 +51,21 @@ stateDiagram-v2
   RECOVERY --> SPEAKING : neutral line's audio starts
   RECOVERY --> LISTENING : line done
   RECOVERY --> WAIT_ITEM : input committed during the neutral line
-  SWAPPING
-  note right of SWAPPING : in the union and in avatarState; no transition enters it on this branch
+  HELD --> SWAPPING : turnOk blocked, or the care reply after one ends
+  SPEAKING --> SWAPPING : turnOk blocked, or the care reply after one ends or is interrupted
+  RECOVERY --> SWAPPING : turnOk blocked for the lost Session
+  SWAPPING --> LISTENING : stateOk with an ack matching the fresh call's Deck
+  SWAPPING --> HELD : the same, with the swap line in the open answer's proactive
+  SWAPPING --> RECOVERY : open failed, connect, ack or swap limit, or a lost connection
 ```
+
+**The call swap** (wave B; R14; questions 81 and 86; built by brief 017). A `blocked` answer (`onBlocked`) means a narrowing closed the call. From any phase but CLOSED, the call swaps (`startSwap`) at once: mute, cancel and clear what is in flight, tear down, and open a fresh call naming the narrowed Session as `previousSessionId`, with no close for it (the server hangs it up). A different Session the call held (a reconnect opened before the answer) is closed; an open already in flight is kept as the swap's. With a care Permit for the current Turn (crisis was also a candidate), the care reply plays first under `afterReply: "swap"`, and the swap follows when it ends or is interrupted, however it ends (`toListening`, `bargeIn`). The fresh call opens, connects and configures inside SWAPPING (the avatar shows `thinking`, the button `hang up`, the mute works); `swap` (12 s) bounds it, and any failure goes to connection recovery. When the ack matches, the open answer's `proactive`, if any, plays as a synthetic Turn's reply: the COMPANY Fixed_Line, spoken verbatim. A later `blocked` for the Session already swapped away from (`narrowedFrom`) does nothing. A lost connection with an Outstanding_Turn goes to connection recovery as before; if that Turn's answer is `blocked`, the recovery turns into the swap (R14.6, in the form contract question V-163 records).
 
 **What always holds** (the header of `packages/core/src/voice/machine.ts`, and the tests above):
 
 - Output audio is muted unless the phase is SPEAKING under a Permit that passed its checks. `avatarState` never says `speaking` while output is muted.
 - Every timer wait is an `armTimer` command plus a deadline in `deadlines`. Three more deadlines are kept in state with no timer and read only when a later event looks at them: `outstanding[].deadline`, `missing[].until` and `stateSentAt + STATE_STALE_MS`. A `timer` event whose deadline is absent does nothing; one that arrives before its deadline re-arms the same deadline.
-- Realtime events are read only while a Session is held, the phase is past CONFIGURING and the call is not in connection recovery. A `response.created` is matched to the judge, the speculative reply or the active reply by the `eventId` and `generation` in its metadata; one that matches none of them is cancelled, and so is audio that starts for a response the call does not own.
+- Realtime events are read only while a Session is held, the phase is past CONFIGURING, not SWAPPING, and the call is not in connection recovery. A `response.created` is matched to the judge, the speculative reply or the active reply by the `eventId` and `generation` in its metadata; one that matches none of them is cancelled, and so is audio that starts for a response the call does not own.
 - A Deck of another generation is ignored. A higher Deck (epoch, policyRev, bundleRev or rulesRev raised) cancels every recorded response by ID and clears output audio (`adoptDeck`, `cancelAll`).
 - `mutePressed` only flips `micMuted` and sends `setMic`; it never touches output audio.
 - Never two `/api/session/state` requests in flight for one Session while every state answer is that Session's own: `postState` sends nothing while one went out less than `STATE_STALE_MS` ago. `stateOk` and `stateFailed` do not name their request, and `onState` and `onStateFailed` clear `stateSentAt` before they check whose answer it is, so a late answer from an earlier Session ends the wait early.
@@ -77,6 +83,8 @@ stateDiagram-v2
 | `stateFailures`, `stateRetryVisible` | cleared | cleared: with no Session the state retry can't act, so its "Try again" goes | cleared |
 | `micMuted` | as set by `startOpen` | kept | false |
 | `lastSessionId` | the new Session | the Session that ended | the Session that ended |
+| `proactive` | the answer's | cleared | cleared |
+| `narrowedFrom` | kept | kept | cleared |
 
 `startOpen` (a press of Call, and every reconnect) sets `error: null`, and keeps `recovery`, `retryVisible` and `micMuted` only when it is a reconnect; a press of Call sets `micMuted: false`. So only `mutePressed` or the end of the call changes the mute, and the Voice_Client's `connect` applies it to the new microphone track. When CONFIGURING reaches LISTENING, `onState` sets `recovery` to null and `retryVisible` to false, and disarms `ack`, `connect`, `retryUi` and `reconnect`.
 

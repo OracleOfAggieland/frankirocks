@@ -9,7 +9,7 @@ import { arbSwapCall, runSwapCall, swapCalls } from "./testing/arb-swap";
 import { audibleResponse } from "./testing/trace";
 
 describe("Property 10: narrowing needs a closed call", () => {
-  it.fails("after a blocked answer, nothing is heard from a call opened before it but that Turn's care reply", () => {
+  it("after a blocked answer, nothing is heard from a call opened before it but that Turn's care reply", () => {
     fc.assert(
       fc.property(arbSwapCall, (steps) => {
         const trace = runSwapCall(steps).trace;
