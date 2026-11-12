@@ -1,83 +1,92 @@
 # Franki
 
-Franki is an avatar-first, voice-first assistant for your whole life: time, food, money and goals in one loop. It's an entry for Kiroween 2026 in the Frankenstein category.
+**Franki Rocks at making your life easier.**
 
-> **Status: scaffold.** The infrastructure is wired end to end. Franki's features come next.
+Franki is a friendly Frankenstein ghost you talk to: a very good friend who is also the best personal assistant you've had, stitched from your inbox, calendar, food and money by one memory. You speak, Franki answers out loud, and text shows up only when there's something to read or approve.
 
-## Stack
+Franki is a Kiroween 2026 entry in the Frankenstein category, and it is built with [Kiro](https://kiro.dev). The name says so: FRAN**KIRO**CKS.
 
-| Part | Choice |
+## It's alive
+
+This is a working build, not a mock-up. What runs today:
+
+- **You can call Franki and talk.** The first live call passed all 14 of its checks, end to end.
+- **Franki has a body.** A 3D ghost drawn entirely in code listens, thinks with electricity between its neck bolts, speaks, goes translucent on mute, and celebrates your wins.
+- **A judge sits in every call.** Each thing you say is admitted before Franki may answer it, so a "forget that" or a hard moment is never talked over.
+- **The lab is open.** The front door walks a sample month, and the Lab, the memory jar, the receipt and the "What I know" sheet are all on screen.
+- **Franki can make a phone call for you** and shows where the call stands on a wooden wall phone.
+- **3,186 tests pass on every push,** with a full-history secret scan beside them.
+
+What comes next is listed plainly under [Still on the slab](#still-on-the-slab).
+
+## Built with Kiro
+
+Kiro is the lab Franki was assembled in. Every body part below is a Kiro feature doing real work, and every claim links to its file.
+
+| Body part | Kiro feature | How we used it | Why it mattered | Evidence |
+|---|---|---|---|---|
+| Skeleton | **Specs** | Three specs, each with requirements, design and tasks: 80 requirements and 108 tasks, 97 of them done | Franki's voice path has dozens of ways to go wrong. The specs named each one before any code existed, so the first live call worked | [`.kiro/specs/`](.kiro/specs/) |
+| Brain | **Steering** | Eight steering files: four always on, four loaded only for the files they govern | Kiro kept the memory rules, the clock rule and the product's hard rules in mind on every task without being told twice | [`.kiro/steering/`](.kiro/steering/) |
+| Reflexes | **Hooks** | Three hooks: one blocks a write that reads the wall clock, one blocks an edit to a committed property test, one runs the invariant tests on save | A property can never be quietly edited to make it pass, and time stays testable | [`.kiro/hooks/`](.kiro/hooks/) |
+| Immune system | **Property-based tests** | 20 spec tasks are properties, such as "every wait ends" and "a held reply never resumes". 49 property test files in all, 23 of them written by Kiro | Properties catch the sequence nobody thought to write a test for. One still fails about 1 run in 30, and it is the real bug it was written to catch | [`voice-control/tasks.md`](.kiro/specs/voice-control/tasks.md), [`packages/core/src/voice/`](packages/core/src/voice/) |
+| Muscle | **Custom agent** | `franki-builder` builds spec tasks headless from the Kiro CLI. It can edit, test and commit. It cannot read secrets, push or deploy | Long builds ran unattended and safely | [`.kiro/agents/franki-builder.json`](.kiro/agents/franki-builder.json) |
+| Lab notes | **Briefs** | 15 briefs, each one a short assignment Kiro read before a run, with a report after | Every run has a paper trail: what was asked, what was built, what was seen | [`docs/briefs/`](docs/briefs/) |
+
+### The winning numbers
+
+| | |
 |---|---|
-| Web app | Next.js 16 (App Router) on Firebase App Hosting, us-central1 |
-| Brain | Route handlers in `apps/web`, with the logic in `packages/server` |
-| Voice | OpenAI Realtime (`gpt-realtime-2.1`) over WebRTC, straight from the browser to OpenAI |
-| Reasoning | OpenAI `gpt-6.1-terra`, escalating to `gpt-6.1-sol`, with `gpt-6-luna` for background work |
-| Background jobs | Cloud Functions for Firebase (2nd gen, Node 24) |
-| Data | Cloud Firestore (us-central1) |
-| Secrets | Secret Manager. Google and Plaid tokens are encrypted with Cloud KMS, and only Functions can decrypt them. |
+| Commits by Kiro | **249 of 434**, each ending `Built-with: Kiro` |
+| Spec requirements | **80** |
+| Spec tasks done | **97 of 108** |
+| Property test files | **49** |
+| Tests passing | **3,186** |
+| State machines mapped | **14 pages** in [`docs/machines/`](docs/machines/) |
 
-## Layout
+### Who built what
 
-```
-apps/web          Next.js app (the App Hosting root directory)
-packages/core     Pure TypeScript shared by everything, with property tests
-packages/server   Server-only logic (Firestore, OpenAI), independent of the web framework
-functions         Scheduled jobs, Pub/Sub and webhooks, bundled with esbuild
-tests             Deploy smoke test, no-network Vitest setup (tests/setup) and Firestore emulator tests (tests/firestore)
-```
+Kiro wrote the specs and built Franki's foundation and voice path from them: the first spoken call, the lab UI foundation, the judge spike, and the judge in the call. Those commits end `Built-with: Kiro`.
 
-## Develop
+Claude Code built the 3D avatar, the first wave of memory writes, the state machine safety net, the UI build-out and phone calls. Those commits carry its own trailer. The split is in the history, commit by commit.
+
+## Still on the slab
+
+The parts not yet stitched on, in build order:
+
+- **Memory that writes.** The write planners exist and are tested. No route calls them yet.
+- **Forget.** "Forget what I said about my brother" and its No Resurrection property.
+- **Time.** Check-ins and reminders that Franki raises on its own.
+- **The pattern across your life.** Noticing takeout spending against late meetings, and closing the loop with the number that changed.
+- **The seeded month** that the lab runs on. Franki runs on fixtures, not on live mail or bank connections.
+- Nine `voice-control` tasks and eight call-path fixes, each already written down as a failing test in [`docs/briefs/014-report.md`](docs/briefs/014-report.md).
+
+## Run it
 
 You need Node 24 (see `.nvmrc`). The emulator tests also need Java 21.
 
 ```bash
 npm install
 npm run dev              # http://localhost:3000
-npm test                 # unit and property tests (Vitest + fast-check)
-npm run test:emulator    # Firestore rules against the emulator
+npm test                 # unit and property tests
+npm run test:emulator    # store rules against the emulator
 npm run lint && npm run typecheck && npm run build
 ```
 
-Under `npm run dev`, `http://localhost:3000/recorder` records your own takes of the judge spike's probe lines into the gitignored `scripts/judge-spike/audio/owner/` (development only; production builds have no such page or route). See `docs/briefs/006-report.md`.
+`http://localhost:3000/specimens` shows every state of the ghost and every surface without calling anyone (development only).
 
-## Outbound phone calls
+Keys, phone calls and deploy are in [`docs/setup.md`](docs/setup.md).
 
-Sign in to Franki and say or type “Call +1 415 555 0123 and ask what time they close.” Give the destination and assignment together. Twilio dials the recipient and bridges the answered call to Franki. Franki introduces itself as an AI assistant and receives only the current request as its assignment. The initial receipt reports whether Twilio accepted the dial request.
+## Layout
 
-Phone calls use the live agent's existing `OPENAI_API_KEY` and voice model. Twilio authenticates dialing with its account SID and auth token. The OpenAI webhook signing secret verifies incoming callbacks.
-
-While a call is out, a wall phone hangs beside Franki and shows where the call stands: dialing, ringing, on the phone, ended, or why it was missed. The browser reads that from `GET /api/phone/status`, which checks the caller's own call record and then asks Twilio for the call's status.
-
-Any signed-in user can call. Franki saves the call request in that user's conversation and passes an opaque call ID through Twilio. The signed OpenAI webhook looks up that ID in Firestore to find the original request.
-
-For local development, use `apps/web/.env.local`. App Hosting reads the same five phone settings from Secret Manager at runtime. Deploy the Firestore indexes in this repository before enabling the webhook.
-
-| Variable | Value |
-| --- | --- |
-| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | Programmable Voice account credentials |
-| `TWILIO_PHONE_NUMBER` | Voice-capable Twilio number or verified outbound caller ID in international format, including the leading + |
-| `OPENAI_PROJECT_ID` | The OpenAI project ID beginning with `proj_` |
-| `OPENAI_WEBHOOK_SECRET` | Signing secret for the project's webhook |
-
-In the OpenAI project, subscribe a webhook to `realtime.call.incoming` at `https://<your-public-host>/api/phone/openai`. Local testing needs a public HTTPS tunnel to the running app. Twilio receives the SIP address in each call's TwiML. On a Twilio trial account, verify the destination as well. [OpenAI SIP setup](https://developers.openai.com/api/docs/guides/voice-sip?voice-api=realtime) · [Twilio outbound calls](https://www.twilio.com/docs/voice/api/call-resource)
-
-## Deploy
-
-Set each runtime secret listed in `apps/web/apphosting.yaml` in Secret Manager and grant the `franki-web` backend access. For example:
-
-```bash
-npx -y firebase-tools@15.34.2 apphosting:secrets:set OPENAI_API_KEY
-npx -y firebase-tools@15.34.2 apphosting:secrets:set SMOKE_TOKEN    # any long random string
 ```
-
-Then:
-
-```bash
-npm run deploy   # Firestore rules, Functions and App Hosting
-npm run smoke    # checks the live backend without spending audio minutes
+.kiro             Specs, steering, hooks and the custom agent
+apps/web          The app
+packages/core     Pure TypeScript shared by everything, with the property tests
+packages/server   Server-only logic
+functions         Scheduled jobs
+docs              Briefs, design documents and the state machine pages
+tests             Smoke test and emulator tests
 ```
-
-`npm run smoke` reads `SMOKE_TOKEN` from Secret Manager with your gcloud login unless the variable is set. It calls `POST /api/health`, which checks Firestore, the OpenAI key, Realtime client-secret minting, and the `heartbeat` function's last run.
 
 ## License
 
