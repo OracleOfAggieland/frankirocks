@@ -476,9 +476,9 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
 
 ### Group B3 (parallel)
 
-- [ ] 49. `/api/turn`: alone
+- [x] 49. `/api/turn`: alone
   - Requirements: R15.1, R15.8
-  - Depends on: 48 · Estimate: 2 h · Actual:
+  - Depends on: 48 · Estimate: 2 h · Actual: about 0.3 h. Built by Claude Code (brief 026). The Head for the audience a parse may move to (`alone` private, `company` or `quiet` company) is compiled from a snapshot before the transaction (`precompileAudienceHead`) and written only if the rules and epoch it read still hold and no hardRule write took core/bundle; otherwise the Deck keeps its Head. A typed company line with no call (row 9) gets the narrow Head the same way
   - Files: `packages/server/src/routes/turn.ts`, `packages/server/src/routes/turn-alone.test.ts` (new)
   - Witness: `turn-alone.test.ts` › `alone` stores `private`, raises `policyRev`, compiles a full Head with `bundleRev + 1`, returns the new Deck and the ALONE ack note; no hang-up; a gap stays a gap.
   - Commit: `feat(turn): alone widens the session`

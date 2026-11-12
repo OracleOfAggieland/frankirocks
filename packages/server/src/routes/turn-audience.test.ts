@@ -1,13 +1,14 @@
 // voice-control task 48 (brief 026): company, quiet and the hang-up on `/api/turn` (R14.1, R14.5, R14.7, R14.8;
 // design "Wave B", "Audience effects in the transaction"; questions 68, 79, 81).
-import { type CoreEpoch, type Job, type Ledger, type Session, msFromTs } from "@franki/core";
+import { COMPANY_LINE, type CoreEpoch, type Job, type Ledger, type Session, msFromTs } from "@franki/core";
 import { describe, expect, it } from "vitest";
 import { ok } from "../openai/fake";
 import { completed } from "../openai/responses";
 import { paths } from "../store/paths";
 import { decisionAnswer } from "../testing/decisions";
 import { type TestRig, callRoute, patchRecord, runScheduled, settle, testRig } from "../testing/fakes";
-import { asrTurn, openTestSession } from "../testing/session-fixtures";
+import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
+import { PERSONAL_FACT, PLAIN_FACT, seedTwoMemories } from "../testing/two-memories";
 import { hangupJobId } from "../worker/hangup";
 import { CARE_SWAP_WAIT_MS, SWAP_WAIT_MS } from "../audience-swap";
 import { turnRoute } from "./turn";
@@ -112,5 +113,25 @@ describe("/api/turn: company and quiet (task 48)", () => {
     const res = await post(rig, voice(s.stamp, 1, "Hey Franki, how's it going?", "O"));
     expect(res.body.status).not.toBe("blocked");
     expect((await sessionOf(rig, s.sessionId))).toMatchObject({ audience: "private", status: "active", waitDeadline: null });
+  });
+
+  it("a typed company line with no call open: the COMPANY line, company stored, and a narrow Head in the new Deck (row 9)", async () => {
+    const rig = testRig();
+    rig.openai.always("responses.create", ok(completed("All right.")));
+    await seedTwoMemories(rig);
+    const s = await openTestSession(rig);
+    expect(s.deck.head.text).toContain(PERSONAL_FACT);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9 })));
+    const res = await post(rig, typedTurn(s.stamp, 1, "My cousin is reading over my shoulder."));
+    expect(res.body).toMatchObject({ status: "ready", permit: { kind: "postCommitControl", scope: "ack" } });
+    expect(res.body.notes.map((n: { text: string }) => n.text)).toEqual([COMPANY_LINE]);
+    expect(res.body.deck.bundleRev).toBe(s.stamp.bundleRev + 1);
+    expect(res.body.deck.head.text).toContain(PLAIN_FACT);
+    expect(res.body.deck.head.text).not.toContain(PERSONAL_FACT);
+    expect(res.body.deck.head.text).toContain("Audience: company.");
+    const session = await sessionOf(rig, s.sessionId);
+    expect(session).toMatchObject({ audience: "company", waitDeadline: null });
+    expect(session.status).not.toBe("closing");
+    expect(await jobOf(rig, s.sessionId)).toBeNull();
   });
 });
