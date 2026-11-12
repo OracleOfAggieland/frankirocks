@@ -186,3 +186,26 @@ describe("finding 9: on the fast path a death leaves no stale Head for the rest 
     expect(r2.bundle.head?.text ?? "").not.toContain("caring for their dad");
   });
 });
+
+describe("finding 11: nothing is applied on the turn without its entry", () => {
+  it("three corrections and a death: the death keeps its entry, and the item past the cap is left to extraction", async () => {
+    let dad = "";
+    let seeded: Awaited<ReturnType<typeof seedPrior>> | null = null;
+    const a = await setup({
+      decision: { correct: 0.9, transition: 0.9 },
+      before: async (rig) => {
+        seeded = await seedPrior(rig, "Maya");
+        dad = mentionEid("person", "dad", rig.deps.hasher);
+        await seed(rig, "My dad has been really sick.", [{ subjectId: dad, predicate: "person.life", value: { kind: "enum", code: "ill" }, args: { detail: null }, line: "The owner's dad is ill." }], "prior2");
+      },
+    });
+    const t = "No, that's wrong about Maya and about Alec. My dad passed away last night.";
+    // Each correction's new name is missing from the span, so each defers ("value"); the death applies.
+    const c = (name: string) => correction(t, { targetIds: [seeded!.relId], replacementValue: { kind: "text", text: name } });
+    const r = await post(a, t, [c("Mara"), c("May"), c("Mira"), transition(t, (eid) => ({ subject: byMention(at(eid, t, "My dad")), whenSpoken: "last night" }))]);
+    expect(rowsAbout(r.after, dad)).toContainEqual(["person.life", "deceased", "active"]);
+    const entries = r.entries.map((e) => [e.route, e.outcome]);
+    expect(entries[0]).toEqual(["transition", "applied"]);
+    expect(entries).toHaveLength(3);
+  });
+});

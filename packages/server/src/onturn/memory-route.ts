@@ -79,6 +79,11 @@ export interface MemoryRouteInput {
   epoch: number;
   policyRev: number;
   hasher: Hasher;
+  /**
+   * Brief 043, finding 11: how many entries these routes may add to the turn's `handled` (the cap less the hardRule
+   * entry). An item past it is not applied on the turn and is left whole to extraction. Absent: no cap here.
+   */
+  entryCap?: number;
 }
 
 export interface MemoryOutcome {
@@ -172,7 +177,10 @@ export async function planMemoryRoutes(tx: Reader, a: MemoryRouteInput): Promise
   let wroteCorrection = false;
   let wroteTransition = false;
 
-  for (const v of verdicts) {
+  // Brief 043, finding 11: life changes before corrections, and nothing past the cap is applied without its entry.
+  const ordered = [...verdicts.filter((v) => v.kind === "transition"), ...verdicts.filter((v) => v.kind !== "transition")];
+  for (const v of ordered) {
+    if ((v.kind === "correction" || v.kind === "transition") && a.entryCap !== undefined && out.entries.length >= a.entryCap) continue;
     if (v.kind === "correction") {
       const c = v.v;
       if (c.kind === "defer") {

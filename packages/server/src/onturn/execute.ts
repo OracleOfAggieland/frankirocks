@@ -269,7 +269,9 @@ export async function planOnTurnMemory(reader: Pick<Tx, "get" | "query">, run: O
   const routes = run.context.memoryRoutes;
   let memory: MemoryOutcome = NO_MEMORY;
   if (routes !== undefined && (routes.correct || routes.transition) && run.slots.kind === "valid") {
+    const hardRuleOpen = run.trigger.regex || run.trigger.candidate || run.trigger.asked;
     memory = await planMemoryRoutes(reader, {
+      entryCap: HANDLED_ENTRIES_MAX - (hardRuleOpen ? 1 : 0),
       uid: run.uid,
       routes,
       out: run.slots.out,
