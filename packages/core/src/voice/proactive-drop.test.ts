@@ -23,11 +23,11 @@ describe("a state answer's line that can't play is dropped by name", () => {
     const d = new ProactiveDriver(false);
     d.ev({ type: "callPressed", zone: "UTC" });
     const deck = d.serverDeck;
-    d.ev({ type: "openOk", response: { sessionId: "s".repeat(43), generation: 1, deck, state: "connecting", ack: ackAt(d.now + 100), proactive: null } }, 100);
+    d.ev({ type: "openOk", response: { sessionId: "s".repeat(43), generation: 1, deck, state: "connecting", ack: ackAt(d.now + 100), proactive: null, audience: null } }, 100);
     d.ev({ type: "channelOpen" }, 200);
     const p = d.line(deck, d.now, "ok");
     expect(d.st.phase).toBe("CONFIGURING");
-    const at = d.ev({ type: "stateOk", response: { stamp: ss, state: "LISTENING", deck, ack: null, barrierReceiptId: null, proactive: p }, sentAt: d.now }, 50);
+    const at = d.ev({ type: "stateOk", response: { stamp: ss, state: "LISTENING", deck, ack: null, barrierReceiptId: null, proactive: p, audience: null }, sentAt: d.now }, 50);
     expect(at.some((c) => c.kind === "verifyPermit")).toBe(false);
     expect(d.st.proactiveDropped).toEqual({ turnId: p.turnId, reason: "phase" });
   });

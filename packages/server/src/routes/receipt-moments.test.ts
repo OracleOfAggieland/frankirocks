@@ -20,7 +20,7 @@ async function setup() {
   await resetAs(rig, UID, "v1", "r1", ZONE);
   const ctx = { uid: UID, deps: rig.deps, schedule: () => undefined };
   await memoryTick(ctx);
-  const open = await callRoute(rig, openRoute, { requestId: testId("open1"), initiator: "user", previousSessionId: null, clientZone: ZONE, visitId: null }, { token: `token:${UID}` });
+  const open = await callRoute(rig, openRoute, { requestId: testId("open1"), initiator: "user", previousSessionId: null, clientZone: ZONE, visitId: testId("visit-v1") }, { token: `token:${UID}` });
   expect(open.status).toBe(200);
   const d = open.body.deck;
   const stamp: Stamp = { sessionId: open.body.sessionId, epoch: d.epoch, policyRev: d.policyRev, bundleRev: d.bundleRev, rulesRev: d.rulesRev, generation: 1, turnId: testId("turn-0") };

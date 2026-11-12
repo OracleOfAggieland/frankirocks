@@ -160,8 +160,8 @@ const CASES: [string, Schema<unknown>, unknown, unknown, string][] = [
   [
     "OpenResponse",
     OpenResponse,
-    { sessionId: testId("s"), generation: 1, deck, state: "connecting", ack, proactive: null },
-    { sessionId: testId("s"), generation: 1, deck, state: "open", ack, proactive: null },
+    { sessionId: testId("s"), generation: 1, deck, state: "connecting", ack, proactive: null, audience: "company" },
+    { sessionId: testId("s"), generation: 1, deck, state: "open", ack, proactive: null, audience: "company" },
     "$.state",
   ],
   [
@@ -182,8 +182,8 @@ const CASES: [string, Schema<unknown>, unknown, unknown, string][] = [
   [
     "StateResponse",
     StateResponse,
-    { stamp: ss, state: "LISTENING", deck, ack, barrierReceiptId: null, proactive: null },
-    { stamp: ss, state: "DREAMING", deck, ack, barrierReceiptId: null, proactive: null },
+    { stamp: ss, state: "LISTENING", deck, ack, barrierReceiptId: null, proactive: null, audience: "private" },
+    { stamp: ss, state: "DREAMING", deck, ack, barrierReceiptId: null, proactive: null, audience: "private" },
     "$.state",
   ],
   [

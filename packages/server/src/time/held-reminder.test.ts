@@ -59,7 +59,7 @@ describe("a reminder held under crisis (brief 042 item 3)", () => {
   it("the next opening not under crisis says it late, by template, once", async () => {
     const t = await heldReminder();
     t.rig.clock.advance(60 * MINUTE);
-    const open = await callRoute(t.rig, openRoute, { requestId: testId("open2"), initiator: "user", previousSessionId: null, clientZone: ZONE, visitId: null }, { token: `token:${UID}` });
+    const open = await callRoute(t.rig, openRoute, { requestId: testId("open2"), initiator: "user", previousSessionId: null, clientZone: ZONE, visitId: testId("visit-v1") }, { token: `token:${UID}` });
     const p = open.body.proactive;
     expect(p?.whisper.text).toBe(LATE);
     expect(p?.permit.momentIds).toEqual([t.momentId]);
@@ -73,7 +73,7 @@ describe("a reminder held under crisis (brief 042 item 3)", () => {
     expect((await momentsOf(t.rig, UID)).get(t.momentId)!.saidAt).not.toBeNull();
     t.rig.clock.advance(60 * MINUTE);
     await memoryTick(t.ctx);
-    const again = await callRoute(t.rig, openRoute, { requestId: testId("open3"), initiator: "user", previousSessionId: null, clientZone: ZONE, visitId: null }, { token: `token:${UID}` });
+    const again = await callRoute(t.rig, openRoute, { requestId: testId("open3"), initiator: "user", previousSessionId: null, clientZone: ZONE, visitId: testId("visit-v1") }, { token: `token:${UID}` });
     expect(again.body.proactive?.permit.momentIds ?? []).not.toContain(t.momentId);
   });
 

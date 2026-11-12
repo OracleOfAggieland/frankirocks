@@ -20,6 +20,7 @@ import { T0_MS, type TestRig, runScheduled, settle, testRig } from "../../../../
 import { callCardProps } from "../ui/call-cards";
 import { type ApiClient, type FetchLike, createApiClient } from "./api";
 import { CallCardShelf } from "./call-cards";
+import { CompanyTap } from "./company-tap";
 import { createBrowserClock } from "./clock";
 import { permitPayloadHash } from "./hash";
 import { type AudioLike, type ChannelLike, type PeerLike, type StreamLike, TURN_TIMEOUT_MS, type TimerApi, type TrackLike, VoiceClient, type VoiceClientDeps } from "./voice-client";
@@ -152,7 +153,7 @@ function virtualTimers(rig: TestRig): TimerApi & { advance(ms: number): Promise<
   };
 }
 
-async function setup(opts: { hang?: string[]; hash?: (p: unknown) => Promise<string>; inputLevel?: () => number; wrapApi?: (api: ApiClient, rig: TestRig) => ApiClient; onControlCheck?: () => void; onToolCards?: VoiceClientDeps["onToolCards"] } = {}) {
+async function setup(opts: { hang?: string[]; hash?: (p: unknown) => Promise<string>; inputLevel?: () => number; wrapApi?: (api: ApiClient, rig: TestRig) => ApiClient; onControlCheck?: () => void; onToolCards?: VoiceClientDeps["onToolCards"]; onAudience?: VoiceClientDeps["onAudience"] } = {}) {
   const rig = testRig();
   // One Memory to recall; extraction requests fail, recall requests answer from `recallAnswer`.
   const t = await commitUserTurnForTest(rig.store, UID, testId("src"), "My dog is called Pip", rig.clock, rig.deps.hasher);
@@ -192,6 +193,7 @@ async function setup(opts: { hang?: string[]; hash?: (p: unknown) => Promise<str
     ...(opts.inputLevel === undefined ? {} : { inputLevel: opts.inputLevel }),
     ...(opts.onControlCheck === undefined ? {} : { onControlCheck: opts.onControlCheck }),
     ...(opts.onToolCards === undefined ? {} : { onToolCards: opts.onToolCards }),
+    ...(opts.onAudience === undefined ? {} : { onAudience: opts.onAudience }),
   });
   const peer = () => peers.at(-1)!;
   const sent = () => peer().channel.sent;
@@ -799,5 +801,31 @@ describe("Voice_Client: cards from a tool answer (brief 044, item 1)", () => {
     release();
     await flush(200);
     expect(shown).toEqual([]);
+  });
+});
+
+describe("Voice_Client: the confirmed audience on the open's and the state poll's answers (brief 045 part S)", () => {
+  it("the open and each state answer of the call's own Session tell the toggle; the next poll after company moves it", async () => {
+    const seen: { sessionId: string; audience: unknown }[] = [];
+    const tap = new CompanyTap({ api: { call: async () => ({ ok: false, kind: "network" }) as never }, newId: () => testId("x"), worldNow: () => 0, stampFor: async () => "none", adoptTypedStamp: () => {} });
+    const { rig, vc, connect, timers } = await setup({
+      onAudience: (stamp, audience) => {
+        seen.push({ sessionId: stamp.sessionId, audience });
+        tap.adopt(stamp, audience);
+      },
+    });
+    await connect();
+    const id = vc.getSnapshot().session!.sessionId;
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    expect(seen.every((x) => x.sessionId === id && x.audience === "private")).toBe(true);
+    expect(tap.getSnapshot().company).toBe(false);
+    // The Session is now company on the server (a company line in words: see the server's audience-on-answers test).
+    await rig.store.transaction(UID, async (tx) => {
+      const doc = (await tx.get<Session>(paths.session(UID, id)))!;
+      tx.update(paths.session(UID, id), { ...doc.data, audience: "company" });
+    });
+    await timers.advance(1_000);
+    expect(seen.at(-1)).toEqual({ sessionId: id, audience: "company" });
+    expect(tap.getSnapshot().company).toBe(true);
   });
 });

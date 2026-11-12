@@ -59,6 +59,8 @@ describe("the machine's own close keeps a company Session company (brief 040, it
     const { rig, s } = await doorRig(true);
     rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9 })));
     await postTurn(rig, { ...asrTurn(s.stamp, 1, "My boss just walked in.", [{ itemId: "item_1", commitSeq: 1 }]), judge: "H" });
+    // Brief 045: B opens after A's turn, as it always does in real time (a frozen clock would tie them).
+    rig.clock.advance(1_000);
     const b = await openNaming(rig, s.sessionId, "open-b");
     const bId: string = b.body.sessionId;
     await patchRecord<Session>(rig.store, UID, paths.session(UID, bId), { status: "active", registeredCallIds: ["rtc_b"], callId: "rtc_b" });

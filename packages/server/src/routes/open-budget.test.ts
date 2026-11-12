@@ -80,7 +80,7 @@ function slowOpenAI(fake: FakeOpenAI, wait: (endpoint: string) => Promise<void>)
 async function openAfterPrior(opts: { rttMs: number; hangupMs: number; extractMs: number; seeded: boolean }) {
   const rig = testRig();
   if (opts.seeded) await resetAs(rig, UID, "v1", "r1");
-  const s0 = await callRoute(rig, openRoute, { requestId: testId("open0"), initiator: "user", previousSessionId: null, clientZone: "America/Chicago", visitId: null });
+  const s0 = await callRoute(rig, openRoute, { requestId: testId("open0"), initiator: "user", previousSessionId: null, clientZone: "America/Chicago", visitId: opts.seeded ? testId("visit-v1") : null });
   expect(s0.status).toBe(200);
   await patchRecord<Session>(rig.store, UID, paths.session(UID, s0.body.sessionId), { status: "active", registeredCallIds: ["rtc_0"], callId: "rtc_0" });
   const turn = await commitUserTurnForTest(rig.store, UID, testId("t1"), LINE, rig.clock, rig.deps.hasher);
@@ -91,7 +91,7 @@ async function openAfterPrior(opts: { rttMs: number; hangupMs: number; extractMs
   rig.deps.store = distantStore(rig, rig.store, opts.rttMs, at);
   rig.deps.openai = slowOpenAI(rig.openai, (endpoint) => rig.timers.sleep(endpoint === "responses.create" ? opts.extractMs : endpoint === "realtime.calls.hangup" ? opts.hangupMs : 0));
   const start = rig.clock.read().opsClock.now;
-  const res = await callRoute(rig, openRoute, { requestId: testId("openA"), initiator: "user", previousSessionId: s0.body.sessionId, clientZone: "America/Chicago", visitId: null });
+  const res = await callRoute(rig, openRoute, { requestId: testId("openA"), initiator: "user", previousSessionId: s0.body.sessionId, clientZone: "America/Chicago", visitId: opts.seeded ? testId("visit-v1") : null });
   const deliveryDeadline = start + OPEN_BUDGET_MS - OPEN_ANSWER_MARGIN_MS;
   return { res, ms: res.elapsedMs, calls: at.length, afterDeadline: at.filter((t) => t >= deliveryDeadline).length };
 }

@@ -28,7 +28,9 @@ import {
   validate,
   type Infer,
   type Schema,
+  type Au,
   type Card,
+  type SS,
   type Stamp,
 } from "@franki/core";
 import { toolCardsThatFit } from "../ui/call-cards";
@@ -127,6 +129,12 @@ export interface VoiceClientDeps {
    * (`toolCardsThatFit`), for the screen's Card_Dock. The machine gets the tool output and no card content.
    */
   onToolCards?: (cards: readonly Card[], stamp: Stamp) => void;
+  /**
+   * Brief 045 part S: the audience an open's or a state poll's answer confirms, with the answer's stamp, when it
+   * answers the call's own Session and generation as the machine holds them after taking it. Never changes call
+   * behavior.
+   */
+  onAudience?: (stamp: SS, audience: Infer<typeof Au> | null) => void;
 }
 
 const liveTimers: TimerApi = { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
@@ -258,9 +266,10 @@ export class VoiceClient {
       case "state": {
         // `sentAt` dates the StateAck: one requested before the last turn answer can't grant fastO (R4.4).
         const sentAt = this.deps.clock.read().opsClock.now;
-        void this.post("/api/session/state", c.body, STATE_TIMEOUT_MS, StateResponse).then((res) =>
-          this.dispatch(res === null ? { type: "stateFailed" } : { type: "stateOk", response: res, sentAt }),
-        );
+        void this.post("/api/session/state", c.body, STATE_TIMEOUT_MS, StateResponse).then((res) => {
+          this.dispatch(res === null ? { type: "stateFailed" } : { type: "stateOk", response: res, sentAt });
+          if (res !== null) this.tellAudience(res.stamp, res.audience);
+        });
         return;
       }
       case "turn":
@@ -343,6 +352,14 @@ export class VoiceClient {
     if (res === null) return this.dispatch({ type: "openFailed" });
     if (res.deck !== null) this.deps.clock.syncToServer(msFromTs(res.deck.issuedAt), sentAt, this.deps.clock.mono());
     this.dispatch({ type: "openOk", response: res });
+    if (res.ack !== null) this.tellAudience(res.ack.stamp, res.audience);
+  }
+
+  /** The audience in an answer of the call's own Session, as the machine holds it now (brief 045 part S). */
+  private tellAudience(stamp: SS, audience: Infer<typeof Au> | null): void {
+    const held = this.state.session;
+    if (held === null || held.sessionId !== stamp.sessionId || held.generation !== stamp.generation) return;
+    this.deps.onAudience?.(stamp, audience);
   }
 
   private async postTurn(body: Extract<VoiceCommand, { kind: "turn" }>["body"], supersedesTurnId: string | null): Promise<void> {

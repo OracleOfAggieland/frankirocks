@@ -341,10 +341,10 @@ export class CallDriver {
   connect(): void {
     this.pending.open = false;
     this.serverDeck = deckAt(this.now, { policyRev: this.serverDeck.policyRev });
-    this.ev({ type: "openOk", response: { sessionId: SID, generation: GEN, deck: this.serverDeck, state: "connecting", ack: ackOf(this.serverDeck, this.now), proactive: null } }, 100);
+    this.ev({ type: "openOk", response: { sessionId: SID, generation: GEN, deck: this.serverDeck, state: "connecting", ack: ackOf(this.serverDeck, this.now), proactive: null, audience: null } }, 100);
     this.ev({ type: "channelOpen" }, 200);
     const sent = this.pending.states.shift() ?? this.now;
-    this.ev({ type: "stateOk", response: { stamp: ssOf(this.serverDeck), state: "LISTENING", deck: this.serverDeck, ack: ackOf(this.serverDeck, this.now), barrierReceiptId: null, proactive: null }, sentAt: sent }, 50);
+    this.ev({ type: "stateOk", response: { stamp: ssOf(this.serverDeck), state: "LISTENING", deck: this.serverDeck, ack: ackOf(this.serverDeck, this.now), barrierReceiptId: null, proactive: null, audience: null }, sentAt: sent }, 50);
   }
 
   start(): this {
@@ -505,7 +505,7 @@ export class CallDriver {
         const d = deckAt(at, { policyRev: this.serverDeck.policyRev });
         this.serverDeck = d;
         const ack = a.variant === "null" ? null : a.variant === "stale" ? ackOf(d, at - 3_000) : a.variant === "mismatch" ? ackOf(d, at, 1) : ackOf(d, at);
-        this.ev({ type: "stateOk", response: { stamp: ssOf(d), state: "LISTENING", deck: d, ack, barrierReceiptId: null, proactive: null }, sentAt }, dt);
+        this.ev({ type: "stateOk", response: { stamp: ssOf(d), state: "LISTENING", deck: d, ack, barrierReceiptId: null, proactive: null, audience: null }, sentAt }, dt);
         return;
       }
       case "stateFailed":

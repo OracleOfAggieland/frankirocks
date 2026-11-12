@@ -140,7 +140,7 @@ export class WideDriver extends CallDriver {
         this.sessions.push(sessionId);
         this.serverDeck = this.deckNow(at, { bundleRev: this.serverDeck.bundleRev + 1 });
         const deck = this.serverDeck;
-        this.ev({ type: "openOk", response: { sessionId, generation: 1, deck, state: "connecting", ack: this.ackFor(sessionId, deck, at), proactive: null } }, dt);
+        this.ev({ type: "openOk", response: { sessionId, generation: 1, deck, state: "connecting", ack: this.ackFor(sessionId, deck, at), proactive: null, audience: null } }, dt);
         break;
       }
       case "openFailed":
@@ -209,7 +209,7 @@ export class WideDriver extends CallDriver {
         this.serverDeck = d;
         const ack = a.variant === "null" ? null : a.variant === "stale" ? this.ackFor(q.sessionId, d, at - 3_000) : a.variant === "mismatch" ? this.ackFor(q.sessionId, d, at, 1) : this.ackFor(q.sessionId, d, at);
         const stamp = { sessionId: q.sessionId, epoch: d.epoch, policyRev: d.policyRev, bundleRev: d.bundleRev, rulesRev: d.rulesRev, generation: d.generation };
-        this.ev({ type: "stateOk", response: { stamp, state: "LISTENING", deck: d, ack, barrierReceiptId: null, proactive: null }, sentAt: q.sentAt }, dt);
+        this.ev({ type: "stateOk", response: { stamp, state: "LISTENING", deck: d, ack, barrierReceiptId: null, proactive: null, audience: null }, sentAt: q.sentAt }, dt);
         break;
       }
       case "stateFailed":

@@ -7,8 +7,15 @@
  *
  * The toggle shows the audience the server last confirmed, never its own guess: `company` changes only when a tap's
  * answer comes back, and stays as it was while one is in flight or after one fails.
+ *
+ * Brief 045 part S: the open's and the state poll's answers also carry the Session's confirmed audience, and
+ * `adopt` takes it, so a company line in words, or an open that inherited company, shows before any tap. Order: an
+ * answer moves the toggle only if its stamp is not older than the last one taken (tap answers included): on the
+ * same Session, compared by epoch, then generation, then policyRev (bundleRev and rulesRev do not order an
+ * audience); equal stamps go by arrival. An answer for a new Session moves on from the old one, and a later answer
+ * for a Session the toggle has left moves nothing.
  */
-import { type SS, TurnResponse, type Infer, tsFromMs, validate } from "@franki/core";
+import { type Au, type SS, TurnResponse, type Infer, tsFromMs, validate } from "@franki/core";
 import { COPY } from "../ui/copy";
 import type { ApiClient } from "./api";
 
@@ -43,6 +50,9 @@ type TurnRes = Infer<typeof TurnResponse>;
 export class CompanyTap {
   private state: CompanyTapState = { company: false, sending: false, error: null };
   private listeners = new Set<() => void>();
+  /** The stamp of the last answer the toggle took, and the Sessions it has moved on from. */
+  private last: SS | null = null;
+  private left = new Set<string>();
 
   constructor(private readonly deps: CompanyTapDeps) {}
 
@@ -71,6 +81,7 @@ export class CompanyTap {
         current = next;
         continue;
       }
+      this.take(next);
       this.set({ company: verb === "company", sending: false, error: null });
       return true;
     }
@@ -79,7 +90,30 @@ export class CompanyTap {
 
   /** Signed out, a reset or a forget: nothing the server said about the last visit stays. */
   clear(): void {
+    this.last = null;
+    this.left.clear();
     this.set({ company: false, sending: false, error: null });
+  }
+
+  /**
+   * An open's or a state poll's answer, current for its own Session: the audience the server holds for it, or null
+   * when the answer carries none. Older answers than the last one taken move nothing.
+   */
+  adopt(stamp: SS, audience: Infer<typeof Au> | null): void {
+    if (audience === null || !this.take(stamp)) return;
+    if (this.state.company !== (audience === "company")) this.set({ company: audience === "company" });
+  }
+
+  /** Records `stamp` as the last answer taken; false when it is older than that one, or of a Session left behind. */
+  private take(stamp: SS): boolean {
+    if (this.left.has(stamp.sessionId)) return false;
+    const last = this.last;
+    if (last !== null && last.sessionId === stamp.sessionId) {
+      const order = [stamp.epoch - last.epoch, stamp.generation - last.generation, stamp.policyRev - last.policyRev].find((d) => d !== 0) ?? 0;
+      if (order < 0) return false;
+    } else if (last !== null) this.left.add(last.sessionId);
+    this.last = stamp;
+    return true;
   }
 
   private async post(stamp: SS, verb: "company" | "alone", requestId: string, turnId: string): Promise<TurnRes | null> {

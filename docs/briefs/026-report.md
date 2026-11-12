@@ -147,3 +147,43 @@ These amend the rulings above. Brief 035's "Outcome" names the commits.
 - **V-179.** A typed reply's note takes the highest sens of the Head's Memories and the earlier safe turns (finding 12). Its `rootKeys` and `dependsOn` still come from the Head only, so a forget of a root that only an earlier turn carried doesn't reach the note. Proposal: v3 says whether the safe turns' roots join the note.
 - **V-180.** `alone` has no check of who said it, and the spec doesn't ask for one (finding 14, no change). A guest saying "it's just us now" widens the audience. Proposal: v3 says whether `alone` needs the Owner's voice or a typed turn.
 - **V-181.** `/api/tool` still runs the Server_Rule in wave A with `narrowedHere` false, so brief 035's property 1 doesn't probe it. Proposal: the brief that wires the tool route adds it to the property's probes.
+
+## Contract questions added by brief 045, part S
+
+Brief 045's "Outcome, part S" names the commits.
+
+- **V-183.** Amends V-172 and design "Open with inheritance" (finding 2).
+  - An open inherits from three Sessions: the one it names, the owner's active Session, and the most recent closing or closed Session (of the last three by `lastTurnAt`).
+  - It takes the narrowest: `company`, then `unknown`, then `private`. Company ranks narrowest because the Gate still lets an S1 template through under `unknown`.
+  - A tie on `lastTurnAt` goes to the narrower Session.
+  - Proposal: v3 states the order and the tie.
+- **V-184.** Amends V-173 (finding 2).
+  - A company Session whose set wait expired gives `unknown` to an open naming nothing, as it does to one naming it.
+  - A typed company narrowing with no wait carries to every later open, with no time limit, until "alone" or the owner's own hang-up.
+  - Proposal: v3 says whether company ever ends on its own.
+- **V-185.** Finding 2's reads: three in one parallel round trip inside the open's transaction, where there was one get. Store reads inside a transaction have no deadline. Proposal: the wire lane's budget work says whether transaction reads take one.
+- **V-186.** Amends brief 030 part A's opener (finding 4). An open that inherited any non-private audience gets the swap line or no line. It never gets delivery's opener, whatever that line's sens. The fix is at the open; the Gate is unchanged.
+- **V-187.** Finding 5.
+  - The hold is marked in `core/state.modifiers.crisis` (until now unused) with world time.
+  - It is set by a crisis or life-change regex hit, or by a crisis or transition candidate in the parse, whether or not that candidate fired. So it fails closed.
+  - An open inside `HOLD_CARRY_MS` starts its Session with `transitionCandidateSeq: 0`, whatever its audience.
+  - Proposal: v3 names the field and the trigger.
+- **V-188.** Finding 5.
+  - The window is world time, so on a clone a seed advance past 24 hours ends it.
+  - The check-in hold (`turnsSinceCheckInAnswer`) is still per Session and does not cross a hang-up. Question: should it?
+- **V-189.** Amends brief 030 P1-8 (finding 11).
+  - On an account on the fixture clock, an open with no visit ID is STALE and writes nothing. A live account still opens with none.
+  - A tab that opens before its reset answers is refused, and the visit gate reloads.
+- **V-190.** The open's and the state poll's answers carry the Session's confirmed audience (`Au`).
+  - The open sends the new Session's audience, or null when blocked.
+  - The poll sends `effectiveAudience` at the poll, so an expired wait reads `unknown` and the toggle shows off.
+  - `TurnResponse` gets no field: it carries no state ack, and its answers are replayed from the request ledger.
+  - An open replayed from a ledger row written before this change has no field, and fails the browser's check once.
+  - Question: should the turn's answer carry it too?
+- **V-191.** The toggle's order.
+  - An answer moves the toggle only if its stamp is not older than the last one taken, tap answers included. On the same Session the stamps are compared by epoch, then generation, then policyRev.
+  - Equal stamps go by arrival. So a poll sent before a tap, with the same stamp and answered after it, shows its audience until the next poll.
+  - An answer for a new Session moves on. Later answers of a Session left behind move nothing.
+  - Question: should the server bump a revision when the audience changes, so equal stamps cannot disagree?
+- **V-192.** On a second call after a company call, the swap line ("Got it. I'll keep things general for now.") is heard at the open, as V-186 allows. Nothing else plays. Question: does the swap line count as unprompted on a call the owner just started, or should an inherited open say nothing?
+  - Separately, `testing/voice-call.ts`'s `ScriptCall` numbers request IDs from 1 per call. Two `call` steps in one script would replay the first open from the request ledger. Proposal: part V's lane seeds the numbering per call.
