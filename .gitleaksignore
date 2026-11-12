@@ -1,0 +1,2 @@
+# The public Firebase web API key in the browser bundle (NEXT_PUBLIC_FIREBASE_API_KEY). An identifier, not a secret.
+85825bb292db2d721edadb293aaf248162e68d1a:apps/web/apphosting.yaml:gcp-api-key:31
