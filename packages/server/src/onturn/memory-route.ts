@@ -221,6 +221,12 @@ export async function planMemoryRoutes(tx: Reader, a: MemoryRouteInput): Promise
         out.same = true;
         continue;
       }
+      // Brief 043: a second item whose writes land on a row this turn already wrote (the same correction twice) is
+      // never written twice in one transaction; it is extraction's.
+      if (puts.some((p) => written.has(p.id))) {
+        out.entries.push(deferred("correct", []));
+        continue;
+      }
       for (const p0 of puts) {
         const p = p0.expectRev === null ? { ...p0, row: rootedAtTurnSlice(p0.row, ev, a.hasher) } : p0;
         out.commands.push(p);
@@ -285,6 +291,11 @@ export async function planMemoryRoutes(tx: Reader, a: MemoryRouteInput): Promise
       }
       if (beside) {
         out.entries.push(deferred("transition", [...rows.values()].map(memRef)));
+        continue;
+      }
+      // Brief 043: the same change said twice in one turn writes once; the second is never a second write of a row.
+      if (puts.some((p) => written.has(p.id))) {
+        out.entries.push(deferred("transition", []));
         continue;
       }
       for (const p0 of puts) {
