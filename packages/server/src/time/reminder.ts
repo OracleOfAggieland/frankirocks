@@ -36,7 +36,7 @@ import { readCoreDocs } from "../core-docs";
 import { cFields } from "../records";
 import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
-import type { Tx } from "../store/port";
+import type { StoredDoc, Tx } from "../store/port";
 
 type Hasher = { id(parts: unknown): string };
 
@@ -96,6 +96,50 @@ export async function recordPendingRendered(tx: Tx, uid: string, pendingId: ID, 
     payload: { purpose: "proactive", acceptedRefs: [{ type: "pending", id: pendingId, rev: 1 }], heldRefs: [], reasonCodes: [], audience: core.state.data.audience },
   };
   tx.create(paths.ledger(uid, id), entry);
+}
+
+/**
+ * Brief 042 item 1 (finding 3): every showing of an offer, per session, in order, beside the first showing's row
+ * (`recordPendingRendered`, kept as it is for the ledger). A yes binds to the latest showing in its own session, so an
+ * offer shown again after the owner comes back can be answered. Showings past the cap are not recorded: the binding
+ * then reads the last one recorded, and a yes after other turns is `clarify` (fails closed).
+ */
+export const SHOWINGS_PER_SESSION_MAX = 16;
+export const showingEntryId = (hasher: Hasher, pendingId: string, sessionId: string, n: number): ID => hasher.id(["pendingShown", pendingId, sessionId, n]) as ID;
+
+type LedgerGet = (path: string) => Promise<StoredDoc<Ledger> | null>;
+
+/** The latest recorded showing of this offer in this session, or null. */
+export async function latestShowing(get: LedgerGet, uid: string, pendingId: string, sessionId: string, hasher: Hasher): Promise<StoredDoc<Ledger> | null> {
+  let last: StoredDoc<Ledger> | null = null;
+  for (let n = 0; n < SHOWINGS_PER_SESSION_MAX; n++) {
+    const row = await get(paths.ledger(uid, showingEntryId(hasher, pendingId, sessionId, n)));
+    if (row === null) break;
+    last = row;
+  }
+  return last;
+}
+
+/**
+ * Records one showing of this offer in this session (and the first showing's row, if there is none yet). Call it at
+ * most once per offer per transaction: reads are not buffered, so a second call would pick the same slot.
+ */
+export async function recordShowing(tx: Tx, uid: string, pendingId: ID, sessionId: string, opsNow: number, hasher: Hasher): Promise<void> {
+  await recordPendingRendered(tx, uid, pendingId, opsNow, hasher);
+  let n = 0;
+  while (n < SHOWINGS_PER_SESSION_MAX && (await tx.get(paths.ledger(uid, showingEntryId(hasher, pendingId, sessionId, n)))) !== null) n++;
+  if (n >= SHOWINGS_PER_SESSION_MAX) return;
+  const core = await readCoreDocs(tx, uid);
+  const now = tsFromMs(opsNow);
+  const entry: Extract<Ledger, { kind: "decision" }> = {
+    ...cFields(uid, now, core.epoch.data.epoch, core.epoch.data.policyRev),
+    kind: "decision",
+    state: "complete",
+    at: now,
+    retainUntil: null,
+    payload: { purpose: "proactive", acceptedRefs: [{ type: "pending", id: pendingId, rev: 1 }], heldRefs: [], reasonCodes: [], audience: core.state.data.audience },
+  };
+  tx.create(paths.ledger(uid, showingEntryId(hasher, pendingId, sessionId, n)), entry);
 }
 
 export type ReminderAnswer = { state: "applied"; actionId: ID; momentId: ID } | { state: "declined" | "clarify" | "stale" };

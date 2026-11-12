@@ -68,7 +68,7 @@ import { forgetRowsFor } from "../forget/snapshot-rows";
 import { foregroundEC, storeReader } from "../head-build";
 import { cFields } from "../records";
 import type { Reader, Tx } from "../store/port";
-import { renderedEntryId } from "../time/reminder";
+import { latestShowing, renderedEntryId } from "../time/reminder";
 import { paths } from "../store/paths";
 import { readFoodPrefs } from "../food/prefs-read";
 import type { RouteContext } from "./runtime";
@@ -496,13 +496,16 @@ function loopMemory(ctx: RouteContext, at: string, epoch: number, policyRev: num
 /**
  * Brief 037, finding 4 (the binding). A yes acts only on the offer just presented: the offer was recorded as shown
  * (the `pendingRendered` receipt's ledger row for its pending ID) during this session, and the yes is the owner's
- * next turn after that record. Anything else is not a yes, and Franki may ask again. Fails closed.
+ * next turn after that record. Brief 042 item 1: the record read is the latest showing in the yes turn's session. Anything else is not a yes, and Franki may ask again. Fails closed.
  */
 export const YES_LOOKBACK_TURNS = 32;
 
 async function yesFollowsOffer(ctx: RouteContext, pendingId: string, turnId: string, turn: Turn): Promise<boolean> {
   const { uid, deps } = ctx;
-  const shown = await deps.store.get<Ledger>(uid, paths.ledger(uid, renderedEntryId(deps.hasher, pendingId)));
+  // Brief 042 item 1: the latest showing in this session; a first showing recorded without one is read as before.
+  const shown =
+    (await latestShowing((p) => deps.store.get<Ledger>(uid, p), uid, pendingId, turn.sessionId, deps.hasher)) ??
+    (await deps.store.get<Ledger>(uid, paths.ledger(uid, renderedEntryId(deps.hasher, pendingId))));
   if (shown === null || shown.data.kind !== "decision") return false;
   const shownAt = Date.parse(shown.data.at);
   const session = await deps.store.get<Session>(uid, paths.session(uid, turn.sessionId));

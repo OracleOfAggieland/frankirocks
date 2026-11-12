@@ -25,7 +25,7 @@ import type { Tx } from "../store/port";
 import { getMoment } from "../time/verdict";
 import { heroOffer } from "./tool-food";
 import type { RouteContext } from "./runtime";
-import { recordPendingRendered } from "../time/reminder";
+import { recordShowing } from "../time/reminder";
 import { admitMoments, recordPlayback, recordSaid } from "../time/said";
 
 export const MOMENT_PERMIT_KIND = "proactive" as const;
@@ -33,13 +33,20 @@ export const MOMENT_PERMIT_KIND = "proactive" as const;
 export async function receiptMoments(tx: Tx, ctx: RouteContext, req: Infer<typeof ReceiptRequest>, opsNow: number): Promise<void> {
   const { uid, deps } = ctx;
   const ids = req.momentIds as ID[];
+  // Brief 042 item 1: each offer is recorded as shown at most once per receipt.
+  const shown = new Set<ID>();
+  const show = async (pendingId: ID): Promise<void> => {
+    if (shown.has(pendingId)) return;
+    shown.add(pendingId);
+    await recordShowing(tx, uid, pendingId, req.stamp.sessionId, opsNow, deps.hasher);
+  };
   if (req.kind === "admitted" && req.permitKind === MOMENT_PERMIT_KIND) await admitMoments(tx, uid, ids, { responseId: req.responseId, noteIds: req.noteIds }, deps);
   // Brief 036 finding 14: a playback start is recorded, and a cancel before the line was said ends the moment.
   else if (req.kind === "playbackStarted" || req.kind === "cancelled") {
     for (const id of new Set(ids)) {
       const before = req.kind === "playbackStarted" ? await getMoment(tx, paths.moment(uid, id)) : null;
       const played = await recordPlayback(tx, uid, id, { kind: req.kind, responseId: req.responseId }, deps.clock);
-      if (played && before !== null) await offerShown(tx, ctx, before.data, opsNow);
+      if (played && before !== null) await offerShown(ctx, before.data, show);
     }
   } else if (req.kind === "transcript") {
     const receipt = { kind: req.kind, responseId: req.responseId, momentIds: req.momentIds, noteIds: req.noteIds, text: req.text };
@@ -48,13 +55,13 @@ export async function receiptMoments(tx: Tx, ctx: RouteContext, req: Infer<typeo
       const match = await recordSaid(tx, uid, id, receipt, MOMENT_PERMIT_KIND, deps.clock, deps.hasher);
       if (match !== null && before !== null) await celebrated(tx, uid, before.data, opsNow);
     }
-  } else if (req.kind === "pendingRendered" && req.pendingId !== null) await recordPendingRendered(tx, uid, req.pendingId as ID, opsNow, deps.hasher);
+  } else if (req.kind === "pendingRendered" && req.pendingId !== null) await show(req.pendingId as ID);
   else if (req.kind === "pendingRendered") {
     // Brief 030 part A: a line shown on the screen (a typed session's Proactive) names its moments, not a pending ID;
     // each one admitted on this response is shown, as a played one is.
     for (const id of new Set(ids)) {
       const doc = await getMoment(tx, paths.moment(uid, id));
-      if (doc !== null && doc.data.status === "admitted" && doc.data.responseId === req.responseId) await offerShown(tx, ctx, doc.data, opsNow);
+      if (doc !== null && doc.data.status === "admitted" && doc.data.responseId === req.responseId) await offerShown(ctx, doc.data, show);
     }
   }
 }
@@ -67,9 +74,9 @@ export async function shownPendingId(ctx: RouteContext, m: Moment): Promise<ID |
   return offer !== null && offer.line === m.rendered.text ? (offer.pendingId as ID) : null;
 }
 
-async function offerShown(tx: Tx, ctx: RouteContext, m: Moment, opsNow: number): Promise<void> {
+async function offerShown(ctx: RouteContext, m: Moment, show: (pendingId: ID) => Promise<void>): Promise<void> {
   const pendingId = await shownPendingId(ctx, m);
-  if (pendingId !== null) await recordPendingRendered(tx, ctx.uid, pendingId, opsNow, ctx.deps.hasher);
+  if (pendingId !== null) await show(pendingId);
 }
 
 /** A `celebrate` moment said: its loop moves from `eligible` to `celebrated` (`markCelebrated`), in this transaction. */
