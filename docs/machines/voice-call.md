@@ -143,7 +143,7 @@ A Turn lives in four places, written by several functions:
 | Field | Holds | Written by |
 |---|---|---|
 | `turn` | The current Turn, from its first commit (or a typed line) until it is posted and answered | `onCommitted`, `typedSubmitted`, `postTurn`, `toListening`, `bargeIn`, the `permit` limit |
-| `heldBack` | An admitted Turn whose reply ended before its transcript came; posted `final` when the transcript arrives or `missing` at t0 + 5 s | `toListening`, `postHeldBack` |
+| `heldBack` | A once-admitted Turn that left `turn` unposted: its reply ended before its transcript came, a higher Deck cut the reply and the permit wait ended, or Realtime refused the reply's create and the recovery screen ended. Posted `final` when the transcript arrives or `missing` at t0 + 5 s. `VoiceTurn.admitted` marks a Turn whose reply was admitted, since a cut or a refusal clears `admittedTurnId`; noise with an empty transcript clears it (contract question Q-SM18) | `toListening`, the `permit` timer, `parkAdmitted`, `postHeldBack` |
 | `missing` | Turns posted `missing` whose transcript may still come (at most two, 10 s each); the transcript is sent as a Superseding_Post | `postTurn`, `postHeldBack`, `onLateTranscript` |
 | `admittedTurnId` | The Turn whose reply is admitted | `admit`; cleared by `toListening`, `bargeIn`, a cut in `onTurn`, a refused create |
 
@@ -220,7 +220,7 @@ A pure classifier for a `/api/turn` answer and the request that asked, so the re
 | State | `TurnMode`, `LegalTurnMode`, `IllegalTurnMode` |
 | Tests | `packages/core/src/voice/testing/turn-mode.test.ts`, `packages/core/src/voice/turn-mode-legal.property.test.ts` |
 
-A test-side view, under `testing/`; the reducer never reads it. `turnMode(state)` reads `turn`, `heldBack`, `admittedTurnId`, `active` and `phase` and names what the current voice Turn is doing: six legal modes (`LEGAL_TURN_MODES`) and eight illegal ones (`ILLEGAL_TURN_MODES`), each illegal mode the break of one invariant. The property runs every step of the wide generator and of `arbCall` and allows an illegal mode only when `TURN_MODES_ALLOWED` names it. Three are allowed today: `admittedWithoutReply` and `admittedWithoutTurn` (a cut reply leaves `admittedTurnId` set) and `unpostedInRecovery` (the recovery screen ends a Turn still waiting for its words). The list only shrinks: `turn-mode.test.ts` fails when an allowed mode is no longer reached over 1,000 wide calls at seed 7. The file's header calls it a view of `voice.turn`.
+A test-side view, under `testing/`; the reducer never reads it. `turnMode(state)` reads `turn`, `heldBack`, `admittedTurnId`, `active` and `phase` and names what the current voice Turn is doing: six legal modes (`LEGAL_TURN_MODES`) and eight illegal ones (`ILLEGAL_TURN_MODES`), each illegal mode the break of one invariant. The property runs every step of the wide generator and of `arbCall` and allows an illegal mode only when `TURN_MODES_ALLOWED` names it. Three are allowed today: `admittedWithoutReply` and `admittedWithoutTurn` (a cut reply leaves `admittedTurnId` set) and `unpostedInRecovery` (a Turn still waiting for its words on the recovery screen; since V2 a once-admitted one is held back and posted when the screen ends). The list only shrinks: `turn-mode.test.ts` fails when an allowed mode is no longer reached over 1,000 wide calls at seed 7. The file's header calls it a view of `voice.turn`.
 
 ### `voice.replyStage`
 

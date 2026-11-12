@@ -231,6 +231,11 @@ export interface VoiceTurn {
   verdict?: JudgeVerdict | null;
   /** Held by H, U, a judge timeout or a fastO refusal: a reply held never resumes, so the Turn doesn't speculate again. */
   held?: boolean;
+  /**
+   * A reply of this Turn was admitted at some point (admit). Kept after a cut or a refused create clears
+   * admittedTurnId, so the Turn is still posted once, never dropped unposted (Property 13; V2 steps 2 and 3).
+   */
+  admitted?: boolean;
 }
 
 export type ReplyPurpose = "speech" | "recovery" | "tool";
@@ -1370,13 +1375,10 @@ function toListening(s: Step): void {
   const turn = st.turn;
   // R7.6: an admitted reply ended before its transcript came. The Turn is kept until it is posted `final` (its
   // transcript), or `missing` at t0 + 5 s, so its Evidence and slow parse still happen (review of wave A, item 7).
-  const keep = turn !== null && turn.posted === null && turn.source === "asr" && st.admittedTurnId === turn.turnId;
+  // A Turn whose admitted reply was cut or refused counts too: admittedTurnId was cleared, the Turn was still admitted.
+  const keep = unpostedAdmitted(st, turn);
   s.disarm("permit", "turnRetry", "tool", "lineDone", "item", "transcript", "judge", "speakCap");
-  if (keep) {
-    if (st.heldBack !== null) postHeldBack(s, "missing");
-    s.set({ heldBack: turn });
-    s.arm("heldBack", turn.tEnd + ADMITTED_TRANSCRIPT_LIMIT_MS);
-  }
+  if (keep) parkAdmitted(s, turn);
   s.set({ phase: "LISTENING", turn: null, pending: null, active: null, admittedTurnId: null, recovery: s.st.recovery?.kind === "line" ? null : s.st.recovery });
 }
 
@@ -1549,7 +1551,24 @@ function admit(s: Step, reply: PendingReply): void {
   s.arm("speakCap", s.now + SPEAK_CAP_MS);
   // R7.6: a Turn admitted before its transcript waits ADMITTED_TRANSCRIPT_LIMIT_MS for it.
   const turn = s.st.turn;
+  if (turn !== null && turn.turnId === turnId && turn.admitted !== true) s.set({ turn: { ...turn, admitted: true } });
   if (turn !== null && turn.posted === null && turn.source === "asr" && turn.turnId === turnId) s.arm("transcript", turn.tEnd + ADMITTED_TRANSCRIPT_LIMIT_MS);
+}
+
+/** A voice Turn whose reply was admitted at some point and that is not posted yet: it must not be dropped. */
+function unpostedAdmitted(st: VoiceState, turn: VoiceTurn | null): turn is VoiceTurn {
+  return turn !== null && turn.posted === null && turn.source === "asr" && (turn.admitted === true || st.admittedTurnId === turn.turnId);
+}
+
+/**
+ * Keeps an unposted, once-admitted Turn that is leaving `turn` as the held-back Turn: posted `final` when its
+ * transcripts are in, or `missing` at t0 + ADMITTED_TRANSCRIPT_LIMIT_MS (R7.6; review of wave A, item 7; V2). An
+ * earlier held-back Turn is posted `missing` first, so clientSeq keeps commit order. Changes no phase.
+ */
+function parkAdmitted(s: Step, turn: VoiceTurn): void {
+  if (s.st.heldBack !== null) postHeldBack(s, "missing");
+  s.set({ heldBack: turn });
+  s.arm("heldBack", turn.tEnd + ADMITTED_TRANSCRIPT_LIMIT_MS);
 }
 
 /** The active reply's response ID is known: it is tracked for receipts, and a fastO admission is reported (R3.7). */
@@ -2008,6 +2027,9 @@ function maybeAdmit(s: Step): void {
       cancelAll(s, false);
       s.set({ admittedTurnId: null });
     }
+    // Noise is no Turn even if a reply of it was admitted, so it is not held back either (contract question Q-SM18
+    // is still open: Property 13 reads this as an admitted Turn never posted).
+    s.set({ turn: { ...turn, admitted: false } });
     toListening(s);
     return;
   }
@@ -2060,6 +2082,11 @@ function onTimer(s: Step, name: TimerName): void {
       if ((["HELD", "SPECULATING", "JUDGING"] as VoicePhase[]).includes(st.phase) && st.active === null) {
         dropSpeculation(s);
         s.disarm("turnRetry");
+        // A higher Deck cut this Turn's admitted reply before its transcript: the Turn is still posted (V2 step 2).
+        if (unpostedAdmitted(s.st, s.st.turn)) {
+          parkAdmitted(s, s.st.turn);
+          s.disarm("item", "transcript");
+        }
         s.set({ phase: "RECOVERY", recovery: { kind: "line", since: s.now, attempts: 0 }, turn: null, pending: null });
         s.arm("lineDone", s.now + LINE_FALLBACK_MS);
       }

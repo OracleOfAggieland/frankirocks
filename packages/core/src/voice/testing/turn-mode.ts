@@ -15,7 +15,7 @@
  *   admittedWithoutReply  `admittedTurnId` names the current Turn, but no reply of it is admitted
  *   replyWithoutTurn      an admitted reply with no current Turn
  *   admittedWithoutTurn   `admittedTurnId` is set, there is no current Turn and no reply is admitted
- *   unpostedInRecovery    an unposted voice Turn on the recovery screen, which ends it unposted
+ *   unpostedInRecovery    an unposted voice Turn on the recovery screen
  *   unpostedSpeaking      an unposted, unadmitted Turn while a reply plays or a recall waits
  *   typedUnposted         a typed Turn that was not posted at once
  *   postedInListening     a posted Turn still current in LISTENING
@@ -83,7 +83,7 @@ export function turnMode(st: VoiceState): TurnMode {
 export const TURN_MODES_ALLOWED: Partial<Record<IllegalTurnMode, string>> = {
   admittedWithoutReply: "admittedTurnId names the Turn whose reply is admitted now (a higher Deck or an error cuts the reply and leaves the id)",
   admittedWithoutTurn: "admittedTurnId names the Turn whose reply is admitted now (the cut Turn is dropped and the id stays)",
-  unpostedInRecovery: "a Turn still waiting for its words is never shown the recovery screen, which ends it unposted",
+  unpostedInRecovery: "a Turn still waiting for its words is never shown the recovery screen (since V2 a once-admitted one is held back when the screen ends and still posted, but it waits there unposted)",
 };
 
 export const isIllegalTurnMode = (m: TurnMode): m is IllegalTurnMode => (ILLEGAL_TURN_MODES as readonly string[]).includes(m);

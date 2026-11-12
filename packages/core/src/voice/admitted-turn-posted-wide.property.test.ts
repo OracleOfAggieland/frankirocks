@@ -12,7 +12,7 @@ import { activeTurn, drainAll } from "./testing/trace";
 const KEEP_ALIVE = ["poll", "refresh", "stateRetry", "stateRetryUi"] as const;
 
 describe("Property 13 over the wide generator: an admitted turn is posted", () => {
-  it.fails("every admitted turn is posted once, or the call ended, or it is still collecting audio", () => {
+  it("every admitted turn is posted once, or the call ended, or it is still collecting audio", () => {
     fc.assert(
       fc.property(arbWideCall, (steps) => {
         const trace = runWideCall(steps).trace;
