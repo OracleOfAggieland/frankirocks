@@ -117,6 +117,32 @@ describe("finding 2: the food paths filter by every stored rule of every subject
   });
 });
 
+describe("finding 10: the card cites every counted row or says how many more", () => {
+  it("the card's lines are the guarded core lines", async () => {
+    const t = await setup({ turns: ["Hi"] });
+    expect(t.offer!.card.lines).toEqual(heroOfferCardLines(t.offer!.pattern));
+  });
+
+  it("past 32 sources, the card says how many more, and the count matches", async () => {
+    // 20 orders on the four late-meeting nights, each partly refunded, and two at lunch: 44 purchase rows and 4
+    // meetings to cite.
+    const nights = ["2026-10-06", "2026-10-08", "2026-10-13", "2026-10-15"];
+    const orders = Array.from({ length: 20 }, (_, i) => bankRow(`n${i}`, nights[i % 4]!, 19 * 60 + i, 2000));
+    const lunch = [bankRow("l1", "2026-10-19", 12 * 60, 500), bankRow("l2", "2026-10-20", 12 * 60, 500)];
+    const refunds = [...orders, ...lunch].map((o, i) => {
+      const r = bankRow(`rf${i}`, "2026-10-21", 12 * 60, -100);
+      return { ...r, bank: { ...r.bank, refundOfId: o.id } };
+    });
+    const t = await setup({ turns: ["Hi"], rows: [...orders, ...lunch, ...refunds, ...HERO_MEETINGS] });
+    const o = t.offer!;
+    const cited = o.pattern.window.purchaseIds.length + o.pattern.meetingIds.length + o.pattern.receiptIds.length;
+    expect(cited).toBe(48);
+    const more = o.card.lines.find((l) => /more source/.test(l));
+    expect(more).toBeDefined();
+    expect(Number(/(\d+) more/.exec(more!)?.[1])).toBe(cited - o.card.sources.length);
+  });
+});
+
 describe("finding 11: the food paths read rule proposals", () => {
   it("a backstop proposal's egg rule filters suggest", async () => {
     const t = await setup({ turns: ["What should I make for dinner"], proposals: [rule("egg", "self", "pending")] });

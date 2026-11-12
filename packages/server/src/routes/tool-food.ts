@@ -41,14 +41,15 @@ import {
   civilDateAt,
   docRef,
   eligible,
-  formatDollars,
   groceryItems,
+  heroOfferCardLines,
   heroOfferLine,
   heroOfferParts,
   heroWindow,
   ingredient,
   isPlainYes,
   loopPredicate,
+  moreSourcesLine,
   planHeroLoop,
   rootKey,
   suggestFood,
@@ -175,6 +176,9 @@ const evidenceRefs = (ids: readonly string[], evidence: Map<string, Evidence>, m
     return e === undefined ? [] : [{ type: "evidence" as const, id, rev: e.rev }];
   }).slice(0, max);
 
+/** A card holds at most this many sources (wire `Card.sources`). */
+const CARD_SOURCES_MAX = 32;
+
 function patternFor(rows: MoneyRows): PatternResult {
   const zone = rows.clock.worldClock.zone;
   // Brief 030 P1-1: a live insight keeps its own window across a jump; heroWindow ends the day before `today`.
@@ -194,20 +198,21 @@ function offerFrom(ctx: RouteContext, rows: MoneyRows): HeroOffer | null {
   const pattern = patternFor(rows);
   const line = heroOfferLine(pattern);
   ctx.deps.log("tool.heroPattern", { status: pattern.status, mostly: pattern.mostly, orders: pattern.orderCount, coveredDates: pattern.coveredDates, rows: rows.bank.length, events: rows.events.length, late: pattern.lateOrderCount });
-  if (line === null) return null;
+  // Brief 037, finding 10: the card's lines are worded in core and every one passes the guard, or there's no offer.
+  const lines = heroOfferCardLines(pattern);
+  if (line === null || lines === null) return null;
   const pendingId = ctx.deps.hasher.id(heroOfferParts(pattern));
   const w = pattern.window;
-  const unit = pattern.associationUnit === "night" ? "nights" : "days";
+  // Every counted row is cited, or the card says how many more there are; the count matches the rows left out.
+  const cited = evidenceRefs([...w.purchaseIds, ...pattern.meetingIds, ...pattern.receiptIds], rows.evidence, Number.MAX_SAFE_INTEGER);
+  const sources = cited.slice(0, CARD_SOURCES_MAX);
+  const more = moreSourcesLine(cited.length - sources.length);
   const card: Card = {
     id: ctx.deps.hasher.id(["heroOfferCard", pendingId]),
     kind: "source",
     title: "Takeout and late meetings",
-    lines: [
-      `${formatDollars(pattern.totalCents)} on takeout, ${pattern.orderCount} orders, ${w.fromCivil} to ${w.toCivil}`,
-      `${formatDollars(pattern.lateCents)} of it in ${pattern.lateOrderCount} orders on ${unit} with meetings after 6`,
-      "A pattern in your own records, not a cause",
-    ],
-    sources: evidenceRefs([...w.purchaseIds, ...pattern.meetingIds, ...pattern.receiptIds], rows.evidence, 32),
+    lines: more === null ? lines : [...lines, more],
+    sources,
     sens: "S1",
   };
   return { pattern, pendingId, yesId: ctx.deps.hasher.id(["heroOfferChoice", pendingId, "yes"]), noId: ctx.deps.hasher.id(["heroOfferChoice", pendingId, "no"]), line, card };
@@ -296,8 +301,11 @@ export function loopRootSlice(e: Evidence): Evidence["fieldSlices"][number] | nu
   return e.fieldSlices.find((x) => x.start !== null && x.end !== null && x.start < x.end) ?? null;
 }
 
+/** The loop's lineage holds at most this many cited rows (a Memory's `rootSlices`); more, and the yes is stale. */
+const LOOP_CITED_MAX = 128;
+
 function loopCited(pattern: PatternResult, evidence: Map<string, Evidence>): string[] {
-  return [...pattern.window.purchaseIds, ...pattern.meetingIds, ...pattern.receiptIds].filter((eid) => evidence.has(eid)).slice(0, 128);
+  return [...pattern.window.purchaseIds, ...pattern.meetingIds, ...pattern.receiptIds].filter((eid) => evidence.has(eid));
 }
 
 function loopMemory(ctx: RouteContext, at: string, epoch: number, policyRev: number, id: string, loop: LoopRecord, pattern: PatternResult, evidence: Map<string, Evidence>): Memory {
@@ -334,6 +342,7 @@ function loopMemory(ctx: RouteContext, at: string, epoch: number, policyRev: num
     endWhen: { kind: "standing" },
     nextReviewAt: loop.checkAt,
     replacesIds: [],
+    // The first 16 cited rows; the full lineage is in `rootSlices` and `dependsOn`.
     supportingIds: evidenceRefs(cited, evidence, 16),
     entityIds: [],
     topicIds: [],
@@ -372,7 +381,8 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerAr
   const loopId = deps.hasher.id(["heroLoop", offer.pendingId]);
   const loop = planHeroLoop(offer.pattern, rows.clock.worldClock.now, actionId);
   if (loop === null) return answer("stale");
-  if (loopCited(offer.pattern, rows.evidence).some((eid) => loopRootSlice(rows.evidence.get(eid)!) === null)) return answer("stale");
+  const cited = loopCited(offer.pattern, rows.evidence);
+  if (cited.length > LOOP_CITED_MAX || cited.some((eid) => loopRootSlice(rows.evidence.get(eid)!) === null)) return answer("stale");
   const card = foodCard(ctx, dinners.candidates, "Three quick dinners for those nights");
 
   await deps.store.transaction(uid, async (tx) => {

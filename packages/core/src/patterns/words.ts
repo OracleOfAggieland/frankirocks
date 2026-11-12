@@ -50,6 +50,15 @@ export function lessOnTakeoutLine(deltaCents: number): string | null {
 }
 
 /**
+ * The card line for the sources a card can't hold (brief 037, finding 10): a card cites every counted row, or says
+ * how many more there are. Null for none.
+ */
+export function moreSourcesLine(more: number): string | null {
+  if (!Number.isSafeInteger(more) || more <= 0) return null;
+  return guard(more === 1 ? "1 more source in your records, not shown here" : `${more} more sources in your records, not shown here`);
+}
+
+/**
  * The lines of the offer's source card, worded by code from the same numbers as the offer. Every line passes the
  * guard, or the card has no lines (null) and the offer isn't made.
  */
