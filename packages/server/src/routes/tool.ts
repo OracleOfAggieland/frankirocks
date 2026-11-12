@@ -19,6 +19,7 @@
  *      includes the tool output, its decision is written to the ledger, and the response is recorded (R27.8).
  * The response is sent within TOOL_RESULT_LIMIT_MS (R27.5): the read's deadline shrinks by whatever the parse wait and reads used.
  */
+import { narrowedHere } from "../audience-swap";
 import {
   type Evidence,
   type Infer,
@@ -190,7 +191,9 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       const head = core.bundle.data.head;
       const turn = check.turn;
       const safe = await earlierSafeTurns(tx, uid, req.stamp.sessionId, turn.seq, ctx);
-      const deck = head === null ? null : issueDeck(current, head, ops, safe);
+      // V-181: a Session narrowed here gets no Deck and runs the Server_Rule narrowed, as the turn route does.
+      const narrowed = narrowedHere(s);
+      const deck = head === null || narrowed ? null : issueDeck(current, head, ops, safe);
       // Row 3 of the Server_Rule: the Turn's parse has committed (the wait above). Recall notes are limited to S0
       // unless the Turn could carry S1+ (judge O or typed, private audience, no gap) (R8.11, R12.7).
       const rule: RuleInput = {
@@ -202,7 +205,7 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
         parse: { kind: "none" },
         regexMatch: false,
         audience: effectiveAudience(s, ops),
-        narrowedHere: false,
+        narrowedHere: narrowed,
         callLive: s.registeredCallIds.length > 0,
         parseGap: hasParseGap(s),
         noteSens: "none",
