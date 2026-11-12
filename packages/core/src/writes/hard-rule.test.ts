@@ -130,8 +130,10 @@ describe("planHardRule", () => {
     const rules = { ...emptyRules(), allergies: [pending] };
     expect(plan(t, [allergy(t, "peanuts", "denied")], rules).outcome).toEqual({ kind: "pendingResolved", ruleIds: [pending.id], by: "denial" });
     const guest = plan(t, [allergy(t, "peanuts", "denied")], rules, { speakerCertain: false });
-    expect(guest.rules).toBe(rules);
-    expect(guest.outcome).toEqual({ kind: "denialRecorded", wrote: "ledgerOnly" });
+    // Brief 032 H1: the guest's denial reaches no anonymous slot, so it carries nothing and coverage files peanut for
+    // anyone. The owner's pending rule stays.
+    expect(guest.rules.allergies.map((r) => [r.subjectId, r.code, r.state])).toEqual([["self", "peanut", "pending"], [null, "peanut", "pending"]]);
+    expect(guest.outcome).toMatchObject({ kind: "pendingWritten", question: "whoHas" });
     expect(guest.ledger).toEqual([{ eid: TURN_EID, outcome: "denialRecorded", codes: ["peanut"] }]);
   });
 

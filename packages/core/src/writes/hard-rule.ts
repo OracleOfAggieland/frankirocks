@@ -9,7 +9,8 @@
  *    its code; for a food code, its subject's `unresolved` rule and an asked anonymous `unresolved` rule. Every
  *    other pending rule stays, so a pending rule leaves only for its own slot.
  * 2. Coverage: every alias found in the U parts of the cue sentences whose code no verdict carries becomes an
- *    anonymous pending rule (fail closed; an ignored item carries nothing). Only a plain mention a subject was
+ *    anonymous pending rule (fail closed; an ignored item carries nothing, and so does a denial that reaches no rule,
+ *    brief 032 H1). Only a plain mention a subject was
  *    resolved from is left out of the scan.
  * 3. The fallback: when nothing was written, kept, resolved or recorded, and the `notAllergy` double check (G3)
  *    doesn't pass, the anonymous `unresolved` rule, over the cue sentences' U parts with no mention cut. Never on a
@@ -21,7 +22,7 @@
 import { canonicalJSON } from "../ids";
 import type { EID, ID, Span } from "../schema/primitives";
 import type { CoreRules } from "../schema/records";
-import { GAZETTEER_VERSION, gazetteerEntry, scanAliases } from "./gazetteer";
+import { GAZETTEER_VERSION, NONE_CODE, gazetteerEntry, lookupAllergen, scanAliases } from "./gazetteer";
 import { type Range, cueSentenceRanges, cueSentenceUParts, cueSentences, cueSpan, notAllergyByCode } from "./not-allergy";
 import { ruleTransition } from "./rule-state";
 import { spanClass, uParts, verifyTurnSpan } from "./spans";
@@ -150,6 +151,21 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
     if (!("refused" in r) && r.next.kind === "absent") list.splice(i, 1);
   };
 
+  /**
+   * Whether a denial for (subject, code) reaches a rule: only then does it carry the code past coverage and count as
+   * something done (brief 032 H1). A wrong polarity from the model on an affirmed allergy lands on an absent slot, so
+   * coverage and the fallback still file it. Fails closed; at worst a true denial of an allergen nobody has is filed
+   * as a pending rule and asked about.
+   */
+  const denialReaches = (subject: EID | null, code: string): boolean => slotAt(slotIndex(subject, code)).kind !== "absent";
+
+  /** Whether the item at `index` denies any allergy at all ("any allergies", "anything"), naming no item to file. */
+  const namesOnlyNone = (index: number): boolean => {
+    const it = turn.out?.items[index];
+    const codes = it === undefined || it.kind !== "allergy" ? [] : lookupAllergen(it.item);
+    return codes.length > 0 && codes.every((c) => c === NONE_CODE);
+  };
+
   /** Moves one slot; returns the slot's outcome, or null when the event was refused or a bound stood in. */
   const apply = (subject: EID | null, code: string, e: RuleEvent): HardRuleOutcome["kind"] | null => {
     const i = slotIndex(subject, code);
@@ -188,9 +204,17 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
     if (v.kind === "ignored") {
       // Row A6: a denial from an uncertain speaker is a ledger decision only, with the codes validation verified (CQ 148).
       if (v.reason === "speaker") {
-        for (const c of v.codes) carried.add(c);
+        // Its subject is unknown, so it reaches the anonymous slots only. A code with no slot there carries nothing
+        // (brief 032 H1): coverage still files it, and off an answering turn a denial that reached nothing never
+        // switches the fallback off. A "no" to Franki's own question still adds no filter (CQ 161), and neither does a
+        // denial of any allergy at all ("I don't have any allergies"), which names no item to file.
+        if (turn.answering !== null || namesOnlyNone(v.index)) denied = true;
+        for (const c of v.codes) {
+          if (!denialReaches(null, c)) continue;
+          carried.add(c);
+          denied = true;
+        }
         ledger.push({ eid: ev.eid, outcome: "denialRecorded", codes: v.codes });
-        denied = true;
       }
       continue;
     }
@@ -231,6 +255,7 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
       }
       case "deny": {
         if (proven(a.proof) === null || !turn.speakerCertain) break;
+        const deniedBefore: boolean = denied;
         denied = true;
         if ("answers" in a) {
           const target = list.find((r) => r.id === a.answers && r.state === "pending");
@@ -243,11 +268,17 @@ export function planHardRule(rules: CoreRules, verdicts: readonly ItemVerdict[],
         }
         const S = a.subject;
         const named = a.scope === "global" ? list.filter((r) => !r.anonymous && r.subjectId === S).map((r) => r.code) : a.codes;
+        let reached = a.scope === "global";
         for (const code of new Set(named)) {
-          if (a.scope === "specific") carried.add(code);
+          // Brief 032 H1: a denial that lands on an absent slot carries nothing, so coverage still files the code.
+          if (a.scope === "specific" && denialReaches(S, code)) {
+            carried.add(code);
+            reached = true;
+          }
           const out = apply(S, code, { kind: "deny" });
           if (out === "ruleKept") keep(list[slotIndex(S, code)]!.id, "denied");
         }
+        if (!reached && turn.answering === null) denied = deniedBefore;
         if (a.scope === "global") globalDenials.push(S);
         // The decision is about every code it reached: a global denial's are the subject's rules.
         ledger.push({ eid: ev.eid, outcome: "denialRecorded", codes: [...new Set(named)].filter((c) => c !== UNRESOLVED) });

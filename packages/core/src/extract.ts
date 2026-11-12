@@ -517,7 +517,8 @@ export interface PlanContext {
   open?: ReadonlyMap<string, OpenRef>;
   /**
    * The (subject, code) slots the on-turn hardRule route wrote or kept for this Evidence, and every code a denial
-   * named (brief 012 section 5, `handled.ruleKeys`). An allergy item on one of them is skipped `handled`.
+   * named (brief 012 section 5, `handled.ruleKeys`). An allergy item on one of them, with the same subject exactly,
+   * is skipped `handled` (brief 032 H1, reversing W-175: an anonymous key never covers the owner's own item).
    */
   handled?: readonly { subjectId: string | null; code: string }[];
   /**
@@ -855,7 +856,7 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
     const raw = String((item.args as { allergenCode?: unknown }).allergenCode ?? "");
     const code = lookupAllergen(raw.replace(/_/g, " "))[0] ?? raw;
     const subject = item.subject === "self" ? "self" : null;
-    if (ctx.handled.some((h) => h.code === code && (h.subjectId === subject || h.subjectId === null))) return { kind: "skip", index, reason: "handled" };
+    if (ctx.handled.some((h) => h.code === code && h.subjectId === subject)) return { kind: "skip", index, reason: "handled" };
   }
   // Holds: allergies and standing rules need the rules path, which is outside this slice (R23.3, R23.4).
   if (item.predicate === "allergy" || HOLD_ACTS.has(item.act) || (item.kind === "rule" && !item.predicate.startsWith("preference."))) {
