@@ -41,8 +41,9 @@ import {
   utf8,
   validateItems,
 } from "@franki/core";
-import { foregroundEC } from "../head-build";
+import { foregroundEC, readAllMemories, snapshotFor } from "../head-build";
 import { DECK_TTL_MS } from "../sessions";
+import { paths } from "../store/paths";
 import { type OnTurnContext, entitiesFor, subjectIndex, turnEvidence } from "./context";
 import { applyProposals } from "./proposals";
 import type { Tx } from "../store/port";
@@ -199,15 +200,24 @@ export function executeHardRule(run: HardRuleRun): HardRuleResult {
   rules = { ...rules, subjectLabels: labels, handled, ask };
   const rulesRevChanged = rules.rulesRev !== run.rules.rulesRev;
   // G1: a transition-only write on a turn whose reply is already admitted under fastO writes no bundle.
-  const headMoves = memory.changed && !(memory.transitionOnly && run.fastO === true);
+  const heldBack = memory.changed && memory.transitionOnly && run.fastO === true;
+  const headMoves = memory.changed && !heldBack;
+  // Brief 043, finding 9: a bundle an earlier fastO change left dirty is recompiled by the next turn that can raise it.
+  const stale = run.bundle.state === "dirty" && run.fastO !== true;
 
   let bundle: CoreBundle | null = null;
+  let dirtied = false;
   let kinds: RouteNoteKind[] = [...plan.note, ...memory.kinds];
-  if (rulesRevChanged || headMoves) {
+  if (rulesRevChanged || headMoves || stale) {
     const laid = memory.changed ? overlay(run.context, memory.overlay, { eid: run.evidence.eid, record: run.evidence.record, rev: run.evidence.record.rev }) : null;
     bundle = recompiled(run, rules, laid);
     // G16: a failed compile keeps the old Head, and nothing says anything was saved.
     if (bundle.state === "dirty") kinds = [];
+  } else if (heldBack) {
+    // Brief 043, finding 9: the Head is stale, but the Deck doesn't rise under the admitted reply (G1). The bundle is
+    // marked dirty, so the next turn recompiles it.
+    bundle = { ...run.bundle, state: "dirty", updatedAt: tsFromMs(run.clock.opsClock.now) };
+    dirtied = true;
   }
 
   const routes: Route[] = [
@@ -218,12 +228,25 @@ export function executeHardRule(run: HardRuleRun): HardRuleResult {
   const cut = plan.outcome.kind === "ruleKept" && plan.outcome.why === "denied";
   const committed = rulesRevChanged || memory.changed;
   const write: TurnWrite = committed
-    ? { kind: "committed", routes, note: null, deckRaised: bundle !== null }
+    ? { kind: "committed", routes, note: null, deckRaised: bundle !== null && !dirtied }
     : kinds.length > 0 || cut || memory.same
       ? { kind: "kept", routes, note: null, cut }
       : { kind: "none" };
   // `rulesChanged` tells the caller the Deck rises: the rules or the Head changed.
-  return { rules, rulesChanged: rulesRevChanged || bundle !== null, bundle, outcome: plan.outcome, kinds, write, entry };
+  return { rules, rulesChanged: rulesRevChanged || (bundle !== null && !dirtied), bundle, outcome: plan.outcome, kinds, write, entry };
+}
+
+/**
+ * Brief 043, finding 9: on a turn the route didn't run on, a bundle an earlier fastO life change left dirty is
+ * recompiled from the Memories read in `tx`, raising the Deck at this turn's boundary. Null when it is clean, or when
+ * this turn's own reply was admitted under fastO.
+ */
+export async function refreshDirtyBundle(tx: Pick<Tx, "get" | "query">, run: Omit<CompileRun, "context"> & { rules: CoreRules; fastO: boolean }): Promise<CoreBundle | null> {
+  if (run.bundle.state !== "dirty" || run.fastO || run.bundle.head === null) return null;
+  const memories = await readAllMemories(tx, run.uid);
+  const snapshot = await snapshotFor(tx, run.uid, memories, run.epoch, run.generation);
+  const next = recompiled({ ...run, context: { memories, snapshot, known: { entries: [] } } }, run.rules);
+  return next.state === "clean" ? next : null;
 }
 
 /**
@@ -267,4 +290,12 @@ export async function planOnTurnMemory(reader: Pick<Tx, "get" | "query">, run: O
     memory = { ...NO_MEMORY, entries: [...(routes.correct ? [none("correct")] : []), ...(routes.transition ? [none("transition")] : [])] };
   }
   return memory;
+}
+
+/** `refreshDirtyBundle` on a turn with no route and no proposals: writes the bundle and says the Deck rises. */
+export async function refreshDirtyTurn(tx: Tx, run: Parameters<typeof refreshDirtyBundle>[1]): Promise<{ rules: CoreRules; rulesChanged: boolean; bundle: CoreBundle } | null> {
+  const bundle = await refreshDirtyBundle(tx, run);
+  if (bundle === null) return null;
+  tx.update(paths.core(run.uid, "bundle"), bundle);
+  return { rules: run.rules, rulesChanged: true, bundle };
 }

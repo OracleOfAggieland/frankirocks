@@ -52,7 +52,7 @@ import { extractJobId, extractJobRecord } from "../worker/extract-jobs";
 import { barrierError, parseError, scopeError, staleError } from "./errors";
 import { Unrecorded, mutation } from "./mutation";
 import { typedReplyNote } from "./typed-reply";
-import { type HardRuleResult, type HardRuleRun, applyOpenProposals, executeHardRule, executeOnTurn } from "../onturn/execute";
+import { type HardRuleResult, type HardRuleRun, applyOpenProposals, executeHardRule, executeOnTurn, refreshDirtyTurn } from "../onturn/execute";
 import { readOnTurnContext } from "../onturn/context";
 import { readSnapshot } from "../store/port";
 import { type TypedPlan, planTypedReply, readPreRoute, runHardRuleSlots, typedRouteNote } from "../onturn/route";
@@ -337,6 +337,8 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
               if (proposed.rulesChanged) write = { kind: "committed", routes: ["hardRule"], note: null, deckRaised: true };
             }
           }
+          // Brief 043, finding 9: a Head a fastO life change left dirty is recompiled here, and the Deck rises.
+          if (hr === null && proposed === null) proposed = await refreshDirtyTurn(tx, { uid, epoch: core.epoch.data, bundle: core.bundle.data, rules: core.rules.data as CoreRules, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher, fastO: fastO !== null });
           const changed = hr ?? proposed;
           const stampOut = changed?.rulesChanged ? { ...currentStamp(req.sessionId, s0.generation, { epoch: core.epoch.data, rules: changed.rules, bundle: changed.bundle ?? core.bundle.data }), turnId: req.turnId } : stamp;
           const headOut = changed?.bundle?.head ?? head;

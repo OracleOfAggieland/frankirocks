@@ -1,5 +1,7 @@
 // Brief 043: the review of corrections and life changes. Each block runs the reviewer's own sequence on `/api/turn`.
-import { type ID, ROUTE_NOTE_TEXT, mentionEid } from "@franki/core";
+import { type CoreBundle, type ID, ROUTE_NOTE_TEXT, mentionEid } from "@franki/core";
+import { recordFastO } from "../admission/seam";
+import { paths } from "../store/paths";
 import { testId } from "@franki/core/testing";
 import { ok } from "../openai/fake";
 import { completed } from "../openai/responses";
@@ -156,5 +158,31 @@ describe("finding 8: a transition that writes nothing is deferred with no refs, 
     a.rig.openai.script("responses.create", ok(completed(JSON.stringify(extractOutput([item])))));
     await settle(runExtractJob(OWNER, extractJobId(eid, H), a.rig.deps), a.rig.clock, a.rig.timers);
     expect((await memoriesOf(a.rig.store)).get(role!)!.status).toBe("history");
+  });
+});
+
+describe("finding 9: on the fast path a death leaves no stale Head for the rest of the session", () => {
+  it("the next turn's Head no longer has the dad ill, nor his care, in People", async () => {
+    let dad = "";
+    const a = await setup({
+      before: async (rig) => {
+        dad = mentionEid("person", "dad", rig.deps.hasher);
+        await seed(rig, "My dad has been really sick.", [
+          { subjectId: dad, predicate: "person.life", value: { kind: "enum", code: "ill" }, args: { detail: null }, line: "The owner's dad is ill." },
+          { subjectId: "self", predicate: "care", value: { kind: "enum", code: "open" }, args: { careSubjectRef: dad, topic: "sick" }, line: "The owner is caring for their dad.", entityIds: [dad] },
+        ]);
+      },
+    });
+    const before = (await a.rig.store.get<CoreBundle>(OWNER, paths.core(OWNER, "bundle")))!.data;
+    expect(before.head?.text ?? "").toContain("dad is ill");
+    const stamp = { ...a.s.stamp, turnId: testId("turn-1") };
+    await a.rig.store.transaction(OWNER, (tx) => recordFastO(tx, { uid: OWNER, stamp, responseId: "resp_s", opsNow: a.rig.clock.read().opsClock.now, core: { epoch: 1, policyRev: 1 }, audience: "private" }, a.rig.deps));
+    const D = "My dad passed away last night.";
+    const r1 = await post(a, D, [transition(D, (eid) => ({ subject: byMention(at(eid, D, "My dad")), whenSpoken: "last night" }))], { asr: true });
+    expect(r1.bundle.bundleRev).toBe(before.bundleRev);
+    const T2 = "Thanks for listening.";
+    const r2 = await post(a, T2, [], { seq: 2, stamp: r1.res.body.stamp });
+    expect(r2.bundle.head?.text ?? "").not.toContain("dad is ill");
+    expect(r2.bundle.head?.text ?? "").not.toContain("caring for their dad");
   });
 });

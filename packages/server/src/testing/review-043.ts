@@ -79,8 +79,10 @@ export interface Rig {
 }
 
 /** A rig with a Session open, a call registered on it or not, and a reply from the brain. */
-export async function setup(o: { call?: boolean; reply?: string; decision?: Parameters<typeof decisionAnswer>[0] } = {}): Promise<Rig> {
+export async function setup(o: { call?: boolean; reply?: string; decision?: Parameters<typeof decisionAnswer>[0]; before?: (rig: TestRig) => Promise<unknown> } = {}): Promise<Rig> {
   const rig = testRig();
+  // Seeded before the open, so the open's Head holds what was seeded.
+  if (o.before !== undefined) await o.before(rig);
   const s = await openTestSession(rig);
   const call = o.call ?? true;
   if (call) await patchRecord<Session>(rig.store, UID, paths.session(UID, s.sessionId), { status: "active", registeredCallIds: ["rtc_a"], callId: "rtc_a" });
