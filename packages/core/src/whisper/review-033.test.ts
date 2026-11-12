@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { GateResult } from "../gate/types";
 import { testId } from "../testing/samples";
+import { addedFacts } from "./added-facts";
 import { audienceMayHear, buildGatedWhisper, buildWhisper } from "./build";
 
 const OPS = Date.parse("2026-11-12T17:00:00.000Z");
@@ -74,5 +75,22 @@ describe("finding 6: a whisper belongs to the candidate the Gate approved", () =
     const s1 = buildGatedWhisper({ ...note(["Pip"]), sens: "S1" }, say({ sens: "S1" }), "item", at)!;
     expect(audienceMayHear(s1, "unknown")).toBe(false);
     expect(audienceMayHear(s1, "company")).toBe(false);
+  });
+});
+
+describe("finding 9: addedFacts catches an added negation, a win and template words from another template", () => {
+  const w = (text: string) => ({ text, tokens: [] as string[] });
+
+  it("flags them", () => {
+    expect(addedFacts("She did not get the job", [w("She got the job")])).toEqual(["not"]);
+    expect(addedFacts("She didn't get the job", [w("She got the job")])).toEqual(["didn", "t"]);
+    expect(addedFacts("You won", [w("Race today")])).toEqual(["won"]);
+    expect(addedFacts("personal appointment, possibly", [w("Personal appointment at 10.")])).toEqual(["possibly"]);
+  });
+
+  it("still knows the note's own words and its own template's", () => {
+    expect(addedFacts("Personal appointment at 10", [w("Personal appointment at 10.")])).toEqual([]);
+    expect(addedFacts("Possibly a new job, hedge it", [w("Possibly a new job. Hedge it, not as fact.")])).toEqual([]);
+    expect(addedFacts("possibly a new job", [w("a new job")], ["hedged"])).toEqual([]);
   });
 });
