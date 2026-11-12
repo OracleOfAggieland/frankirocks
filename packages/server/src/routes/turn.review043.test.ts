@@ -1,7 +1,15 @@
 // Brief 043: the review of corrections and life changes. Each block runs the reviewer's own sequence on `/api/turn`.
-import { ROUTE_NOTE_TEXT, mentionEid } from "@franki/core";
+import { type ID, ROUTE_NOTE_TEXT, mentionEid } from "@franki/core";
+import { testId } from "@franki/core/testing";
+import { ok } from "../openai/fake";
+import { completed } from "../openai/responses";
+import { extractOutput, factItem } from "../testing/extract-fixtures";
+import { settle } from "../testing/fakes";
+import { turnEvidenceId } from "../turns";
+import { runExtractJob } from "../worker/extract";
+import { extractJobId } from "../worker/extract-jobs";
 import { describe, expect, it } from "vitest";
-import { seedPrior } from "../testing/arb-corrections";
+import { UID as OWNER, memoriesOf, seedPrior } from "../testing/arb-corrections";
 import { SELF, at, byId, byMention, correction, rowsAbout, seed, setup, post, transition } from "../testing/review-043";
 
 describe("finding 1: the owner's words choose who died, never the model's subject", () => {
@@ -118,5 +126,35 @@ describe("finding 5: a null replacement retracts only on the owner's negation", 
     const r = await post(a, t, [correction(t, { targetIds: [seeded.relId], predicate: "person.relation", replacementValue: null })]);
     expect(r.after.get(seeded.relId)!.status).toBe("active");
     expect(r.notes).not.toContain(ROUTE_NOTE_TEXT.retracted);
+  });
+});
+
+describe("finding 8: a transition that writes nothing is deferred with no refs, and extraction can still end the role", () => {
+  it("one role at Acme; \"I left my job yesterday and I start at Brill on Monday.\" with counterpart Brill", async () => {
+    const a = await setup();
+    const H = a.rig.deps.hasher;
+    const [role] = await seed(a.rig, "I work at Acme as an engineer.", [
+      { subjectId: "self", predicate: "employment.role", value: { kind: "text", text: "engineer" }, args: { employerRef: mentionEid("organization", "acme", H), managerRef: null }, line: "The owner's job is engineer at Acme." },
+    ]);
+    // The stored line shares "job" with the turn, so extraction's `open` (relevantOpen) can offer the role.
+    const t = "I left my job yesterday and I start at Brill on Monday.";
+    const r = await post(a, t, [transition(t, (eid) => ({ transition: "jobChangeOwn", counterpart: byMention(at(eid, t, "Brill")), whenSpoken: "yesterday" }))]);
+    expect(r.after.get(role!)!.status).toBe("active");
+    expect(r.entries.map((e) => [e.route, e.outcome, e.refs.length])).toEqual([["transition", "deferred", 0]]);
+
+    // The same turn's extraction ends the Acme role.
+    const eid = turnEvidenceId(testId("turn-1") as ID, H);
+    const span = (w: string) => ({ eid, fieldPath: "text" as const, start: t.indexOf(w), end: t.indexOf(w) + w.length, quote: w });
+    const item = {
+      ...factItem("transition", "new", "engineer", [span("I left my job yesterday")]),
+      predicate: "employment.role",
+      value: { kind: "text", text: "engineer" },
+      args: { employerRef: "m1", managerRef: null },
+      mentions: [{ localId: "m1", type: "organization", observedName: "Brill", span: span("Brill"), existingId: null }],
+      changes: [{ verb: "transition", targetMid: role }],
+    };
+    a.rig.openai.script("responses.create", ok(completed(JSON.stringify(extractOutput([item])))));
+    await settle(runExtractJob(OWNER, extractJobId(eid, H), a.rig.deps), a.rig.clock, a.rig.timers);
+    expect((await memoriesOf(a.rig.store)).get(role!)!.status).toBe("history");
   });
 });

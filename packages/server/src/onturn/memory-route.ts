@@ -125,7 +125,12 @@ function correctionKeys(v: CorrectionVerdict, targets: readonly Memory[], hasher
   return [...new Set(keys)];
 }
 
-const deferred = (route: Route, refs: Ref[]): OnTurnHandled => ({ route, outcome: "deferred", keys: [], refs: refs.slice(0, HANDLED_REFS_MAX), ruleKeys: [] });
+/**
+ * A deferred entry (brief 043, finding 8): never any keys or refs. A deferral is extraction's to apply, and a ref here
+ * would keep `pickOpen` and `closable` from offering that row to extraction. `_read` names what the route read, for
+ * the reader of this file only.
+ */
+const deferred = (route: Route, _read: Ref[]): OnTurnHandled => ({ route, outcome: "deferred", keys: [], refs: [], ruleKeys: [] });
 
 export async function planMemoryRoutes(tx: Reader, a: MemoryRouteInput): Promise<MemoryOutcome> {
   const routes = new Set<Route>([...(a.routes.correct ? (["correct"] as const) : []), ...(a.routes.transition ? (["transition"] as const) : [])]);
@@ -303,7 +308,12 @@ export async function planMemoryRoutes(tx: Reader, a: MemoryRouteInput): Promise
         out.commands.push(p);
         written.set(p.id, p.row);
       }
-      if (puts.length > 0) wroteTransition = true;
+      // Brief 043, finding 8: a change that writes nothing is deferred, so extraction can still apply it.
+      if (puts.length === 0) {
+        out.entries.push(deferred("transition", []));
+        continue;
+      }
+      wroteTransition = true;
       const refs = [...new Map([...[...rows.values()].map(memRef), ...puts.map((p) => memRef(p.row))].map((r) => [r.id, r])).values()];
       out.entries.push({ route: "transition", outcome: "applied", keys: [...new Set(puts.map((p) => p.row.key))].slice(0, HANDLED_KEYS_MAX), refs: refs.slice(0, HANDLED_REFS_MAX), ruleKeys: [] });
     }
