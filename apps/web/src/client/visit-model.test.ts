@@ -30,6 +30,7 @@ function harness(opts: { answer?: (url: string, body: unknown) => Response; stor
     storage,
     newId: () => vid(`id${++ids}`),
     call: opts.call ?? null,
+    zone: () => "America/Chicago",
     sessionId: () => null,
     onShow: (p) => shown.push(p),
     onAfterReset: () => void resets++,
@@ -47,7 +48,7 @@ describe("VisitModel", () => {
     h.model.enter();
     expect(parseStoredVisit(h.storage.data.get(KEY) ?? null)).toEqual({ visitId: vid("id1"), fixtureNamespace: null, worldClockMs: null });
     await flush();
-    expect(h.seen).toEqual([{ url: RESET_PATH, body: { requestId: vid("id2"), sessionId: null, fixtureId: PERSONA_FIXTURE_ID, visitId: vid("id1") } }]);
+    expect(h.seen).toEqual([{ url: RESET_PATH, body: { requestId: vid("id2"), sessionId: null, fixtureId: PERSONA_FIXTURE_ID, visitId: vid("id1"), clientZone: "America/Chicago" } }]);
     expect(h.model.getSnapshot()).toMatchObject({ phase: "ready", worldMs: Date.parse(CLONE_WORLD) });
     expect(parseStoredVisit(h.storage.data.get(KEY) ?? null)).toEqual({ visitId: vid("id1"), fixtureNamespace: RESET_ANSWER.fixtureNamespace, worldClockMs: Date.parse(CLONE_WORLD) });
     expect(h.afterResets()).toBe(1);
@@ -62,7 +63,7 @@ describe("VisitModel", () => {
     expect(h.model.getSnapshot()).toMatchObject({ phase: "ready", visit: { visitId: vid("old") } });
   });
 
-  it("a failed clone shows try again, and try again resets the same visit", async () => {
+  it("a failed clone shows try again, and try again resets with a new visit ID", async () => {
     let fail = true;
     const h = harness({ answer: () => (fail ? Response.json({ error: "DEPENDENCY", retryAfterMs: 0 }, { status: 503 }) : Response.json(RESET_ANSWER)) });
     h.model.enter();
@@ -71,7 +72,7 @@ describe("VisitModel", () => {
     fail = false;
     h.model.retry();
     await flush();
-    expect(h.seen.map((s) => (s.body as { visitId: string }).visitId)).toEqual([vid("id1"), vid("id1")]);
+    expect(h.seen.map((s) => (s.body as { visitId: string }).visitId)).toEqual([vid("id1"), vid("id3")]);
     expect(h.model.getSnapshot().phase).toBe("ready");
   });
 
@@ -150,5 +151,30 @@ describe("VisitModel", () => {
     expect(parseStoredVisit("{not json")).toBeNull();
     expect(parseStoredVisit(JSON.stringify({ visitId: "" }))).toBeNull();
     expect(parseStoredVisit(JSON.stringify({ visitId: "v", fixtureNamespace: 3, worldClockMs: "x" }))).toEqual({ visitId: "v", fixtureNamespace: null, worldClockMs: null });
+  });
+
+  it("a LIVE answer is stored, and a reload of a real account is live with no reset (brief 038 finding 1)", async () => {
+    const h = harness({ answer: () => Response.json({ error: "LIVE", retryAfterMs: 0 }, { status: 409 }) });
+    h.model.enter();
+    await flush();
+    expect(h.model.getSnapshot().phase).toBe("live");
+    expect(parseStoredVisit(h.storage.data.get(KEY) ?? null)).toEqual({ visitId: vid("id1"), fixtureNamespace: null, worldClockMs: null, live: true });
+    const again = harness({ storage: h.storage });
+    again.model.enter();
+    await flush();
+    expect(again.model.getSnapshot().phase).toBe("live");
+    expect(again.seen).toEqual([]);
+  });
+
+  it("a bolt answered STALE takes up the newer visit another tab stored (brief 038 finding 4)", async () => {
+    const storage = memoryStorage({ [KEY]: JSON.stringify({ visitId: vid("old"), fixtureNamespace: vid("ns"), worldClockMs: Date.parse(CLONE_WORLD) }) });
+    const h = harness({ storage, answer: () => Response.json({ error: "STALE", retryAfterMs: 0 }, { status: 409 }) });
+    h.model.enter();
+    // Tab B starts over and stores its new visit.
+    storage.data.set(KEY, JSON.stringify({ visitId: vid("new"), fixtureNamespace: vid("ns2"), worldClockMs: Date.parse(THURSDAY_WORLD) }));
+    h.model.press(Date.parse(THURSDAY_WORLD) + 3_600_000);
+    await flush();
+    expect(h.model.getSnapshot()).toMatchObject({ phase: "ready", visit: { visitId: vid("new"), fixtureNamespace: vid("ns2") }, worldMs: Date.parse(THURSDAY_WORLD) });
+    expect(h.afterResets()).toBe(1);
   });
 });

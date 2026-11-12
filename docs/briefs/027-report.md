@@ -43,6 +43,10 @@ All in `apps/web/src/client/seed-guesses.ts`: `RESET_PATH`, `ADVANCE_PATH`, `PER
 - **S-169.** The `sessionId` in the reset response has no stated meaning. The client ignores it.
 - **S-170.** The client ignores `advance`'s `deck`. A proactive line shown as text sends no receipt, so `said` stays null (no claim). Proposal: add a receipt kind for a line shown as text.
 - **S-171.** It isn't stated whether the fixture world clock runs between jumps or stays put. The client shows the last world clock it was given, unchanged.
+- **S-172 (brief 038 finding 4, amends "Try again and Start over both reuse the same visit ID"):** each reset has a new visit ID. A tab still holding the old one gets STALE, reads the stored visit again, and takes up a newer one or shows Try again.
+- **S-173 (brief 038 finding 1):** a new phase, `live`: the server answered LIVE. It has no start over and no bolt, shows the real clock, and takes input. In `cloning`, `resetting` and `failed` the screen takes no input: no chip, no typed send, no call.
+- **S-174 (brief 038 finding 5, amends `visitBadge`):** the screen shows `badgeFor`. There is no clock until the server has said which one: `ready` shows the world clock as simulated, and `live` shows the real clock.
+- **S-175 (brief 038 finding 4, amends S-168 in part):** an open that names a visit is checked against `core/state.visitId`. A call's open still sends null, which is accepted.
 
 ## Rulings needed (each one named constant or function)
 

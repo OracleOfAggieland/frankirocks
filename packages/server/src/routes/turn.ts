@@ -50,9 +50,10 @@ import { classifyTurn, normalizedTranscript, safeTurn, turnOrder, userTurnRecord
 import { drainExtractJobs } from "../worker/drain";
 import { extractJobId, extractJobRecord } from "../worker/extract-jobs";
 import { barrierError, parseError, scopeError, staleError } from "./errors";
+import { missingSessionError } from "./open-visit";
 import { Unrecorded, mutation } from "./mutation";
 import { typedReplyNote } from "./typed-reply";
-import { type HardRuleResult, type HardRuleRun, applyOpenProposals, executeHardRule, executeOnTurn, refreshDirtyTurn } from "../onturn/execute";
+import { type HardRuleResult, type HardRuleRun, applyOpenProposals, applyPastedAllergy, executeHardRule, executeOnTurn, refreshDirtyTurn } from "../onturn/execute";
 import { readOnTurnContext } from "../onturn/context";
 import { readSnapshot } from "../store/port";
 import { type TypedPlan, planTypedReply, readPreRoute, runHardRuleSlots, typedRouteNote } from "../onturn/route";
@@ -228,7 +229,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           coreP.catch(() => {});
           fastOP.catch(() => {});
           const doc = await tx.get<Session>(paths.session(uid, req.sessionId));
-          if (doc === null) throw scopeError();
+          if (doc === null) throw missingSessionError((await coreP).state.data); // Brief 038 finding 4: an old visit's tab.
           const s0 = doc.data;
           // Brief 035 (finding 8): a company turn on a Session an open already replaced is kept and narrows. Telling
           // needs core/epoch, so for a Session that isn't open the core documents are awaited before the check.
@@ -337,6 +338,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
               if (proposed.rulesChanged) write = { kind: "committed", routes: ["hardRule"], note: null, deckRaised: true };
             }
           }
+          if (hr === null && evidence !== null && cls.cls === "T") proposed = (await applyPastedAllergy(tx, { uid, rules: (proposed?.rules ?? core.rules.data) as CoreRules, epoch: core.epoch.data, bundle: proposed?.bundle ?? core.bundle.data, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher, evidence, sessionId: req.sessionId, seq: req.clientSeq })) ?? proposed;
           // Brief 043, finding 9: a Head a fastO life change left dirty is recompiled here, and the Deck rises.
           if (hr === null && proposed === null) proposed = await refreshDirtyTurn(tx, { uid, epoch: core.epoch.data, bundle: core.bundle.data, rules: core.rules.data as CoreRules, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher, fastO: fastO !== null });
           const changed = hr ?? proposed;

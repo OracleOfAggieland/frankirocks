@@ -40,12 +40,13 @@ import {
   tsFromMs,
   utf8,
   validateItems,
+  pastedFilters,
 } from "@franki/core";
 import { foregroundEC, readAllMemories, snapshotFor } from "../head-build";
 import { DECK_TTL_MS } from "../sessions";
-import { paths } from "../store/paths";
-import { type OnTurnContext, entitiesFor, subjectIndex, turnEvidence } from "./context";
+import { type OnTurnContext, entitiesFor, readOnTurnContext, subjectIndex, turnEvidence } from "./context";
 import { applyProposals } from "./proposals";
+import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import { type MemoryOutcome, NO_MEMORY, overlay, planMemoryRoutes, writeMemoryCommands } from "./memory-route";
 import { askedHere } from "./trigger";
@@ -126,6 +127,28 @@ export function applyOpenProposals(run: CompileRun & { rules: CoreRules }): { ru
   if (!applied.changed) return null;
   const rulesChanged = applied.rules.rulesRev !== run.rules.rulesRev;
   return { rules: applied.rules, rulesChanged, bundle: rulesChanged ? recompiled(run, applied.rules) : null };
+}
+
+/**
+ * A pasted turn (brief 041 part 1, G-A2): pasted text opens no route and writes no rule, but a line the allergy cues
+ * match subtracts. Each named allergen gets an anonymous pending filter with no proof (`pastedFilters`), the one
+ * question is planned, and the Head is recompiled from a context read in this transaction, so the filter is listed
+ * and the question is open. Writes `core/rules` and `core/bundle` itself. `prior` is what open proposals already
+ * applied on this turn. Null when the cues match nothing.
+ */
+export async function applyPastedAllergy(
+  tx: Tx,
+  run: Omit<CompileRun, "context"> & { rules: CoreRules; evidence: { eid: string; record: Evidence }; sessionId: string; seq: number },
+): Promise<{ rules: CoreRules; rulesChanged: boolean; bundle: CoreBundle | null } | null> {
+  const ev = turnEvidence(run.evidence.record, run.evidence.eid, run.hasher);
+  const pasted = pastedFilters(run.rules, ev, { sessionId: run.sessionId as ID, seq: run.seq }, run.hasher);
+  if (pasted === null) return null;
+  const rulesChanged = pasted.rules.rulesRev !== run.rules.rulesRev;
+  const context = rulesChanged ? await readOnTurnContext(tx, run.uid, run.epoch, run.generation) : null;
+  const bundle = context === null ? null : recompiled({ ...run, context }, pasted.rules);
+  tx.update(paths.core(run.uid, "rules"), pasted.rules);
+  if (bundle !== null) tx.update(paths.core(run.uid, "bundle"), bundle);
+  return { rules: pasted.rules, rulesChanged, bundle };
 }
 
 export function executeHardRule(run: HardRuleRun): HardRuleResult {

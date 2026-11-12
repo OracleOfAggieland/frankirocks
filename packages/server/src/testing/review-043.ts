@@ -17,7 +17,8 @@ import { type OpenedSession, asrTurn, openTestSession, typedTurn } from "./sessi
 
 export { UID };
 
-type Pred = Parameters<typeof keyOf>[1];
+/** Any predicate: `keyOf` is the one key function (contracts §3), and a seeded row of another predicate uses it too. */
+type Pred = Memory["predicate"];
 export interface RowIn {
   subjectId: string;
   predicate: Pred;
@@ -40,7 +41,7 @@ export async function seed(rig: TestRig, text: string, rows: RowIn[], label = "p
   const ids = rows.map((_, i) => H.id(idParts.memory(prior.jobId, i)));
   await rig.store.transaction(UID, async (tx) => {
     rows.forEach((r, i) => {
-      const k = keyOf(r.subjectId, r.predicate, r.args, r.value, H);
+      const k = keyOf(r.subjectId, r.predicate as Parameters<typeof keyOf>[1], r.args, r.value, H);
       tx.create(
         paths.memory(UID, ids[i]!),
         sampleMemory({

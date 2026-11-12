@@ -26,3 +26,5 @@ export * from "./life-subject";
 export * from "./self-life";
 export * from "./rename-words";
 export * from "./retract-words";
+export * from "./paste";
+export * from "./people";

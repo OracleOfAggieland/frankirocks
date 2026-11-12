@@ -177,11 +177,18 @@ export class VoiceClient {
   retry(): void {
     this.dispatch({ type: "retryPressed" });
   }
-  /** A typed line while the call is live: the reply follows the voice path (design "One typed turn" step 4). */
-  sendTyped(text: string): boolean {
+  /**
+   * A typed line while the call is live: the reply follows the voice path (design "One typed turn" step 4). `pasted`
+   * when a paste event supplied it: posted as pasted, as with no call open (brief 040, item 3).
+   */
+  sendTyped(text: string, source: "typed" | "pasted"): boolean {
     if (this.state.phase !== "LISTENING") return false;
-    this.dispatch({ type: "typedSubmitted", turnId: this.newId(), text });
+    this.dispatch({ type: "typedSubmitted", turnId: this.newId(), text, source });
     return true;
+  }
+  /** The visit the screen's visit model holds (brief 040, item 4): every open the call makes names it. */
+  setVisit(visitId: string | null): void {
+    if ((this.state.visitId ?? null) !== visitId) this.dispatch({ type: "visitSet", visitId });
   }
   get inCall(): boolean {
     return this.state.phase !== "CLOSED";

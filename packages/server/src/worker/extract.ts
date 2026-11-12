@@ -55,6 +55,8 @@ import {
   extractOutputJsonSchema,
   needsEarlierTurns,
   openRefOf,
+  peopleRoster,
+  statedPeople,
   parseDep,
   parseExtractOutput,
   planItem,
@@ -379,6 +381,9 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
       policyRev: job.policyRev,
       open: open.refs,
       renames,
+      // Brief 041 part 2 (G-FT16): who a name may already be, and the roles this job states.
+      people: peopleRoster(all),
+      statedPeople: statedPeople(call.items),
       context,
       zone: stateDoc?.data.currentZone ?? stateDoc?.data.homeZone ?? "UTC",
     };

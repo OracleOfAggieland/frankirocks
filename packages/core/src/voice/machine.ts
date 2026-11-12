@@ -38,10 +38,14 @@ import { APP_JUDGE_SETTINGS, type JudgeVerdict, judgeCreate, parseJudgeDone } fr
 import { type FastORefusal, LATE_TURN_MS, type LatencyRow, type LatencyTimes, emptyTimes, finishRow, pushRow } from "./latency";
 import { fastOProblem, issueFastO } from "./fast-o";
 import { sayExactly } from "./lines";
+// Brief 040: what a call sends for each tool; re-exported here so the core barrel needs no new line.
+export { CALL_ANSWER_ARGS, CALL_TOOL_NAMES, type CallToolName, callToolArgs, isCallToolName } from "./tool-args";
+import { type CallToolName, callToolArgs, isCallToolName } from "./tool-args";
 import { type Infer } from "../schema/v";
 import { type SS, type StateAck, msFromTs, tsFromMs } from "../schema/primitives";
 import type { PermitKind } from "../schema/records";
 import {
+  ANSWER_TOOL,
   type CloseRequest,
   type Deck,
   type OpenResponse,
@@ -50,6 +54,7 @@ import {
   type Proactive,
   RECALL_TOOL,
   type ReceiptRequest,
+  SUGGEST_TOOL,
   type SafeTurn,
   type Stamp,
   type StateRequest,
@@ -230,8 +235,9 @@ export type TurnBody = Omit<Infer<typeof TurnRequest>, "requestId">;
 
 export interface VoiceTurn {
   turnId: string;
-  source: "asr" | "typed";
-  /** Typed text; null for ASR turns. */
+  /** `pasted` when a paste event supplied the typed line (brief 040, item 3): posted as pasted, third-party text. */
+  source: "asr" | "typed" | "pasted";
+  /** Typed or pasted text; null for ASR turns. */
   text: string | null;
   items: VoiceItem[];
   /** End of speech: opsClock at the last `input_audio_buffer.committed` (C§6 t0=committed). */
@@ -254,7 +260,7 @@ export type ReplyPurpose = "speech" | "recovery" | "tool";
 
 export interface ToolCallItem {
   callId: string;
-  name: "recall" | "make_phone_call";
+  name: CallToolName;
   arguments: string;
 }
 
@@ -405,6 +411,11 @@ export interface VoiceState {
   latency: { current: LatencyTimes | null; rows: LatencyRow[] };
   /** Counter for client `event_id`s. */
   eventSeq: number;
+  /**
+   * The visit the screen's visit model holds, set by the controller (`visitSet`; brief 040, item 4). Every open names
+   * it. Never reset by an exit: it belongs to the tab's visit, not to a call. Absent (older states) reads as null.
+   */
+  visitId?: string | null;
   /** Audio of a response this call doesn't own started since the last clear; the next reply clears first (R3.2). */
   strayAudio?: boolean;
   /** Realtime `error` events this visit, by the client event they name (review of wave A, item 15). */
@@ -509,7 +520,9 @@ export type VoiceEvent =
   /** The Voice_Client's SHA-256 of the payload a `hashPayload` command named. */
   | { type: "specHashed"; eventId: string; hash: string }
   /** A typed line sent while a call is live (design "One typed turn" step 4). */
-  | { type: "typedSubmitted"; turnId: string; text: string }
+  | { type: "typedSubmitted"; turnId: string; text: string; source: "typed" | "pasted" }
+  /** The visit the screen's visit model holds now, or null for none (brief 040, item 4); the controller sends it on every change. */
+  | { type: "visitSet"; visitId: string | null }
   /** `freshId` is a new random ID, used as the turnId if this event starts a Turn. `lastLoudAt` is the Voice_Client's
    * last loud input frame on the opsClock, sent with commits for the Latency_Clock. */
   | { type: "realtime"; event: RealtimeServerEvent; freshId: string; lastLoudAt?: number | null }
@@ -529,7 +542,7 @@ export type VoiceCommand =
   /** Stop the microphone track, close the data channel, close the peer connection, in that order (R14.1). */
   | { kind: "teardown" }
   | { kind: "send"; event: RealtimeClientEvent }
-  | { kind: "open"; body: { initiator: "user"; previousSessionId: string | null; clientZone: string; visitId: null } }
+  | { kind: "open"; body: { initiator: "user"; previousSessionId: string | null; clientZone: string; visitId: string | null } }
   | { kind: "state"; body: Infer<typeof StateRequest> }
   /** `supersedesTurnId` names a Turn posted `missing`; the Voice_Client fills `supersedesRequestId` with that request's ID (R7.8). */
   | { kind: "turn"; body: TurnBody; supersedesTurnId?: string }
@@ -556,6 +569,12 @@ export interface StepResult {
 export const TRANSCRIBE_LANGUAGE = "en";
 export const TRANSCRIBE_PROMPT = "A friendly conversation in English with Franki, a personal assistant. The speaker often mentions names of people, pets and places; spell names as said.";
 
+/**
+ * The tools a call offers the model, in every session and every reply that may call one (brief 040, item 1). All four
+ * are dispatched under one rule (dispatchTool, behind the reply's Permit); `answer` has no parameters (H-186).
+ */
+export const CALL_TOOLS = [RECALL_TOOL, PHONE_TOOL, SUGGEST_TOOL, ANSWER_TOOL] as const;
+
 export function sessionUpdate(instructions: string, transcribeModel: string): RealtimeClientEvent {
   // No `model` and no `voice`: those are fixed when the SDP proxy creates the call (R13.1, R13.5).
   return {
@@ -564,7 +583,7 @@ export function sessionUpdate(instructions: string, transcribeModel: string): Re
       type: "realtime",
       tracing: null,
       instructions,
-      tools: [RECALL_TOOL, PHONE_TOOL],
+      tools: [...CALL_TOOLS],
       audio: {
         input: {
           noise_reduction: { type: "near_field" },
@@ -631,7 +650,7 @@ export function replyCreate(st: VoiceState, reply: PendingReply, eventId: string
   const input = replyInput(st, reply);
   // Scope `ack` (the crisis care reply) has no tools (R12.6; question 88).
   const tools = reply.permit.scope === "ack" || reply.toolOutput?.name === "make_phone_call"
-    ? { tools: [] } : { tools: [RECALL_TOOL, PHONE_TOOL], tool_choice: "auto" };
+    ? { tools: [] } : { tools: [...CALL_TOOLS], tool_choice: "auto" };
   return tag({
     type: "response.create",
     response: { conversation: "none", instructions: deck.head.text + notes, input, ...tools, metadata },
@@ -644,7 +663,7 @@ export function specCreate(st: VoiceState, eventId: string): RealtimeClientEvent
   return withEventId(
     {
       type: "response.create",
-      response: { conversation: "none", instructions: st.deck!.head.text, input: replyInput(st, { toolCall: null, toolOutput: null }), tools: [RECALL_TOOL, PHONE_TOOL], tool_choice: "auto", metadata },
+      response: { conversation: "none", instructions: st.deck!.head.text, input: replyInput(st, { toolCall: null, toolOutput: null }), tools: [...CALL_TOOLS], tool_choice: "auto", metadata },
     },
     eventId,
   );
@@ -931,9 +950,13 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       break;
     case "typedSubmitted":
       if (state.phase === "LISTENING" && state.session !== null && state.deck !== null && event.text.trim() !== "") {
-        s.set({ turn: { turnId: event.turnId, source: "typed", text: event.text, items: [], tEnd: now, posted: null, staleRetried: false } });
+        s.set({ turn: { turnId: event.turnId, source: event.source === "pasted" ? "pasted" : "typed", text: event.text, items: [], tEnd: now, posted: null, staleRetried: false } });
         postTurn(s, "final");
       }
+      break;
+    case "visitSet":
+      // Changes no phase and sends nothing: the next open names it (brief 040, item 4).
+      if ((state.visitId ?? null) !== event.visitId) s.set({ visitId: event.visitId });
       break;
     case "realtime":
       onRealtime(s, event.event, event.freshId, event.lastLoudAt ?? null);
@@ -951,6 +974,16 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
 // ---------------------------------------------------------------------------------------------
 // Open, connect, recovery and close
 
+/**
+ * The reason of every close the machine sends on its own (brief 040, item 5): a Session the swap leaves, a stale
+ * open's answer, an open answered after the call ended. Only the Owner's hang-up (hangUp) sends `user`, which marks
+ * a narrowed Session private on the server (brief 035, question V-172); `replace` keeps its audience. Fails closed.
+ */
+export const MACHINE_CLOSE_REASON = "replace" as const;
+
+/** The visit every open names: the one the controller last set (brief 040, item 4). */
+const openVisit = (st: VoiceState): string | null => st.visitId ?? null;
+
 function startOpen(s: Step, zone: string, retrying: boolean): void {
   s.set({
     phase: "CONNECTING",
@@ -962,7 +995,7 @@ function startOpen(s: Step, zone: string, retrying: boolean): void {
     recovery: retrying ? s.st.recovery : null,
     retryVisible: retrying ? s.st.retryVisible : false,
   });
-  s.push({ kind: "open", body: { initiator: "user", previousSessionId: s.st.lastSessionId, clientZone: zone, visitId: null } });
+  s.push({ kind: "open", body: { initiator: "user", previousSessionId: s.st.lastSessionId, clientZone: zone, visitId: openVisit(s.st) } });
   s.arm("openWait", s.now + OPEN_LIMIT_MS);
 }
 
@@ -973,9 +1006,9 @@ function startOpen(s: Step, zone: string, retrying: boolean): void {
  */
 function dropStaleOpen(s: Step, res: Infer<typeof OpenResponse> | null): void {
   s.set({ staleOpen: false });
-  if (res !== null && res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: "user" } });
+  if (res !== null && res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: MACHINE_CLOSE_REASON } });
   if (s.st.phase !== "SWAPPING" || !s.st.awaitingOpen) return;
-  s.push({ kind: "open", body: { initiator: "user", previousSessionId: s.st.narrowedFrom ?? s.st.lastSessionId, clientZone: s.st.zone, visitId: null } });
+  s.push({ kind: "open", body: { initiator: "user", previousSessionId: s.st.narrowedFrom ?? s.st.lastSessionId, clientZone: s.st.zone, visitId: openVisit(s.st) } });
   s.arm("openWait", s.now + OPEN_LIMIT_MS);
 }
 
@@ -983,8 +1016,9 @@ function onOpen(s: Step, res: Infer<typeof OpenResponse>): void {
   const st = s.st;
   if (st.staleOpen) return dropStaleOpen(s, res);
   if (!st.awaitingOpen) {
-    // The Owner hung up before the open answered: close the Session it created.
-    if (res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: "user" } });
+    // The Owner hung up, or the open's wait ended, before the open answered: close the Session it created. The
+    // machine's own close: that Session was never the call's (brief 040, item 5; question V-182).
+    if (res.state === "connecting") s.push({ kind: "close", body: { sessionId: res.sessionId, generation: res.generation, reason: MACHINE_CLOSE_REASON } });
     return;
   }
   s.disarm("openWait");
@@ -1086,7 +1120,7 @@ function openFailed(s: Step): void {
  *                             done; openFailed: keep
  *   zone                      -                         -                              -               the press's
  * Never reset by any exit: config, lastTurnResponseAt, ackDroppedStale, lastLoudAt, latency, eventSeq, strayAudio,
- * realtimeErrors.
+ * realtimeErrors, visitId.
  * Not an exit, but a reset: when CONFIGURING reaches LISTENING, onState sets recovery to null and retryVisible to
  * false, and disarms ack, connect, retryUi and reconnect.
  * A fifth exit, startSwap (a `blocked` answer, or the end of a care reply after one), resets as `recovery` does,
@@ -1198,7 +1232,7 @@ function startSwap(s: Step, from: string): void {
   s.push({ kind: "teardown" });
   flushRecent(s);
   const st = s.st;
-  if (st.session !== null && st.session.sessionId !== from) s.push({ kind: "close", body: { sessionId: st.session.sessionId, generation: st.session.generation, reason: "user" } });
+  if (st.session !== null && st.session.sessionId !== from) s.push({ kind: "close", body: { sessionId: st.session.sessionId, generation: st.session.generation, reason: MACHINE_CLOSE_REASON } });
   s.set({
     phase: "SWAPPING",
     lastSessionId: from,
@@ -1230,7 +1264,7 @@ function startSwap(s: Step, from: string): void {
     s.arm("openWait", st.deadlines.openWait ?? s.now + OPEN_LIMIT_MS);
   } else {
     s.set({ awaitingOpen: true });
-    s.push({ kind: "open", body: { initiator: "user", previousSessionId: from, clientZone: s.st.zone, visitId: null } });
+    s.push({ kind: "open", body: { initiator: "user", previousSessionId: from, clientZone: s.st.zone, visitId: openVisit(s.st) } });
     s.arm("openWait", s.now + OPEN_LIMIT_MS);
   }
   s.arm("swap", s.now + SWAP_LIMIT_MS);
@@ -1396,7 +1430,7 @@ function buildTurnBody(st: VoiceState, turn: VoiceTurn, transcriptState: "final"
     .sort((a, b) => (a.commitSeq ?? Number.MAX_SAFE_INTEGER) - (b.commitSeq ?? Number.MAX_SAFE_INTEGER) || a.committedAt - b.committedAt)
     .map((i) => (i.commitSeq !== null ? i : { ...i, commitSeq: ++lastCommitSeq }));
   const transcript =
-    transcriptState !== "final" ? "" : turn.source === "typed" ? (turn.text ?? "") : items.map((i) => i.transcript ?? "").join(" ").slice(0, 8192);
+    transcriptState !== "final" ? "" : turn.source !== "asr" ? (turn.text ?? "") : items.map((i) => i.transcript ?? "").join(" ").slice(0, 8192);
   const body: TurnBody = {
     sessionId: session.sessionId,
     epoch: deck.epoch,
@@ -1408,7 +1442,7 @@ function buildTurnBody(st: VoiceState, turn: VoiceTurn, transcriptState: "final"
     clientSeq: st.nextClientSeq,
     source: turn.source,
     items:
-      turn.source === "typed"
+      turn.source !== "asr"
         ? []
         : items.map((i) => ({
             itemId: i.itemId,
@@ -1420,7 +1454,7 @@ function buildTurnBody(st: VoiceState, turn: VoiceTurn, transcriptState: "final"
     utteredWorldAt: tsFromMs(turn.tEnd),
     transcript,
     transcriptState,
-    judge: turn.source === "typed" ? "typed" : (turn.verdict ?? "timeout"),
+    judge: turn.source !== "asr" ? "typed" : (turn.verdict ?? "timeout"),
     pendingId: null,
     choiceId: null,
     supersedesRequestId: null,
@@ -1838,12 +1872,10 @@ function replyKnown(s: Step, a: ActiveReply): void {
 
 /** KV02: a function call of an admitted reply goes to `/api/tool`. */
 function dispatchTool(s: Step, a: ActiveReply, call: ToolCallItem): void {
-  let args: unknown;
-  try {
-    args = JSON.parse(call.arguments);
-  } catch {
-    return;
-  }
+  // The same rule for every tool: arguments that don't parse send nothing. `answer` sends both IDs null (H-186).
+  const sent = callToolArgs(call.name, call.arguments);
+  if (sent === null) return;
+  const args = sent.args;
   // While its lead-in audio plays the reply stays SPEAKING; TOOL_WAIT starts when the audio stops (R6.1).
   s.set({ phase: a.audioStarted ? "SPEAKING" : "TOOL_WAIT", active: { ...a, pendingTool: call } });
   s.push({ kind: "tool", body: { stamp: a.permit.stamp, callId: call.callId, tool: { name: call.name, args } as Infer<typeof ToolRequest>["tool"] } });
@@ -2043,7 +2075,7 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string, lastLoudA
       return;
     }
     case "response.function_call_arguments.done": {
-      if (ev.name !== "recall" && ev.name !== "make_phone_call") return;
+      if (!isCallToolName(ev.name)) return;
       const sp = st.spec;
       if (sp !== null && sp.responseId === ev.response_id) {
         // KV02, R6.3: a call inside an unadmitted speculative reply is held, never dispatched yet.
