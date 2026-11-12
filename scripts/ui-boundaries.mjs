@@ -5,6 +5,9 @@
 //           check covers the Date forms).
 //   Rule 5: nothing in apps/web/src/components/surfaces imports from apps/web/src/client.
 //   No file under apps/web/src or apps/web/public references the mascot concept art.
+//   The lab (brief 015 rule 8): nothing reachable from app/lab/page.tsx or the root layout lives under
+//   components/landing/ or ui/landing/, or is the front door's copy, so the front door's sample data and
+//   strings never reach the lab.
 // Patterns are built from pieces so this file's own source never matches them.
 // Usage: node scripts/ui-boundaries.mjs [root]   (prints one line per violation, exits 1 if any)
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -78,8 +81,11 @@ export function importsOf(text) {
 
 /** Resolves a relative specifier from a repo-relative file to a repo-relative module path, or null. */
 export function resolveRelative(file, specifier, exists) {
-  if (!specifier.startsWith(".")) return null;
-  const base = posix.normalize(posix.join(posix.dirname(file), specifier));
+  let base;
+  // apps/web/tsconfig.json maps "@/*" to "./src/*".
+  if (specifier.startsWith("@/") && file.startsWith("apps/web/")) base = posix.normalize("apps/web/src/" + specifier.slice(2));
+  else if (specifier.startsWith(".")) base = posix.normalize(posix.join(posix.dirname(file), specifier));
+  else return null;
   for (const candidate of [base, base + ".ts", base + ".tsx", base + "/index.ts", base + "/index.tsx", base.replace(/\.js$/, ".ts")]) {
     if (exists(candidate)) return candidate;
   }
@@ -157,7 +163,11 @@ export const RECORDER_DIR = APP + "recorder/";
 /** The only files that may use the development-only `.dev.tsx` and `.dev.ts` suffixes. */
 export const DEV_FILES = [SPECIMENS_PAGE, RECORDER_DIR + "page.dev.tsx", APP + "api/dev/takes/route.dev.ts"];
 const DEV_DIRS = [SPECIMENS_DIR, RECORDER_DIR];
-export const ENTRY_POINTS = [APP + "page.tsx", APP + "layout.tsx"];
+export const ENTRY_POINTS = [APP + "page.tsx", APP + "lab/page.tsx", APP + "layout.tsx"];
+/** The lab's own entry points: its page and the layout that wraps it. */
+export const LAB_ENTRY_POINTS = [APP + "lab/page.tsx", APP + "layout.tsx"];
+/** The front door's modules, which the lab must never reach. */
+export const LANDING_ONLY = ["apps/web/src/components/landing/", "apps/web/src/ui/landing/", "apps/web/src/ui/copy-landing.ts"];
 const WORKSPACE = {
   "@franki/core": "packages/core/src/index.ts",
   "@franki/core/testing": "packages/core/src/testing/index.ts",
@@ -168,8 +178,11 @@ const CODE = /\.(ts|tsx|js|jsx|mjs)$/;
 /** Resolves one import of `file` to a repo-relative code module, or null (packages, CSS, assets). */
 export function resolveModule(file, specifier, exists) {
   if (Object.hasOwn(WORKSPACE, specifier)) return WORKSPACE[specifier];
-  if (!specifier.startsWith(".")) return null;
-  const base = posix.normalize(posix.join(posix.dirname(file), specifier));
+  let base;
+  // apps/web/tsconfig.json maps "@/*" to "./src/*".
+  if (specifier.startsWith("@/") && file.startsWith("apps/web/")) base = posix.normalize("apps/web/src/" + specifier.slice(2));
+  else if (specifier.startsWith(".")) base = posix.normalize(posix.join(posix.dirname(file), specifier));
+  else return null;
   for (const candidate of [base, ...[".ts", ".tsx", ".js", ".mjs", "/index.ts", "/index.tsx"].map((e) => base + e)]) {
     if (CODE.test(candidate) && exists(candidate)) return candidate;
   }
@@ -226,6 +239,19 @@ export function checkSpecimens(root = REPO_ROOT) {
   return violations;
 }
 
+/** Rule 8: every front-door module reachable from the lab, reported at the import that first reached it. */
+export function checkLab(root = REPO_ROOT) {
+  const exists = (rel) => existsSync(join(root, rel));
+  const read = (rel) => readFileSync(join(root, rel), "utf8");
+  const violations = [];
+  for (const [file, via] of reachable(LAB_ENTRY_POINTS, read, exists)) {
+    if (LANDING_ONLY.some((prefix) => file.startsWith(prefix))) {
+      violations.push({ file: via ?? file, line: 1, match: file, rule: "the lab reaches a front-door module" });
+    }
+  }
+  return violations;
+}
+
 export function scanUiBoundaries(root = REPO_ROOT) {
   const exists = (rel) => existsSync(join(root, rel));
   const read = (rel) => readFileSync(join(root, rel), "utf8");
@@ -236,6 +262,7 @@ export function scanUiBoundaries(root = REPO_ROOT) {
     else violations.push({ file, line: 0, match: file, rule: "a listed pure module does not exist" });
   }
   violations.push(...checkSpecimens(root));
+  violations.push(...checkLab(root));
   for (const dir of ["apps/web/src/components", "apps/web/src/ui"]) {
     for (const abs of walk(join(root, dir))) {
       const file = toRepoPath(abs, root);

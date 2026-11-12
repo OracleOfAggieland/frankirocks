@@ -32,6 +32,8 @@ export interface AvatarInput {
   /** True only while the Visit's wake ritual runs. */
   firstConnecting: boolean;
   reducedMotion: boolean;
+  /** Where Franki looks while listening: at the camera (the default when absent) or at the pointer. */
+  attend?: "camera" | "pointer";
 }
 
 export type Eyes = "closed" | "wide" | "half" | "open" | "glance-up" | "squint" | "glance-card" | "expectant" | "happy";

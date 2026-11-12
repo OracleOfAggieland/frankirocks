@@ -69,6 +69,7 @@ These are gaps found while writing requirements. The design records each under "
 - **Token_Check**: The script under `scripts/` that scans for raw hex colours and ad hoc durations, run by `npm test`.
 - **UI_Steering**: The steering file `.kiro/steering/ui-design.md`.
 - **Main_Screen**: The page served at `/` by `apps/web/src/app/page.tsx`.
+  Since brief 015 it is served at `/lab` by `apps/web/src/app/lab/page.tsx`, and `/` is the front door.
 - **Specimens_Page**: The development-only page served at `/specimens`.
 - **Fixture**: Example props used only to show a component on the Specimens_Page.
 - **Surface**: One of the components in UI direction "Surfaces": stage, call button, mute, Chips, Typed_Line, Card, Strip, Jar, What_I_Know_Sheet, Lab, Receipt, Time_Badge, Captions, Wordmark, Footer and Debug_Panel.

@@ -5,10 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/font/google", () => ({
   Geist: () => ({ variable: "font-geist-sans" }),
   Geist_Mono: () => ({ variable: "font-geist-mono" }),
+  Fraunces: () => ({ variable: "font-fraunces" }),
 }));
 
 const { default: RootLayout } = await import("../app/layout");
 const { default: Home } = await import("../app/page");
+const { default: LabPage } = await import("../app/lab/page");
 const { AuthPanel } = await import("./AuthPanel");
 const { default: SpecimensPage } = await import("../app/specimens/page.dev");
 
@@ -20,6 +22,7 @@ describe("Built with Kiro footer (R16.7)", () => {
   it("root layout renders 'Built with Kiro' on every page, signed in and signed out", () => {
     const pages: [string, React.ReactNode][] = [
       ["home page", <Home key="home" />],
+      ["lab page", <LabPage key="lab" />],
       ["specimens page", <SpecimensPage key="specimens" />],
       ["loading", <AuthPanel key="l" state={{ kind: "loading" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />],
       ["signed out", <AuthPanel key="o" state={{ kind: "signedOut", error: null }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />],
@@ -45,6 +48,23 @@ describe("Built with Kiro footer (R16.7)", () => {
       expect(footerCount(html), label).toBe(1);
       expect(html, label).toMatch(/<footer[^>]*>Built with Kiro<\/footer><\/body>/);
     }
+  });
+
+  it("the layout loads the display font beside the Geist fonts", () => {
+    const html = renderToStaticMarkup(RootLayout(layoutProps(<Home />)));
+    expect(html).toMatch(/<html[^>]*class="font-geist-sans font-geist-mono font-fraunces /);
+  });
+
+  it("the home page is the front door, with one h1 and no server call; the lab page is the app", () => {
+    const home = renderToStaticMarkup(<Home />);
+    expect(home).toContain("data-landing");
+    expect(home.match(/<h1[\s>]/g)).toHaveLength(1);
+    expect(home).not.toContain("/api/");
+    expect(home).not.toContain("Built with Kiro");
+    for (const id of ["top", "loop", "memory", "rules", "build", "wake"]) expect(home, id).toContain(`id="${id}"`);
+    const lab = renderToStaticMarkup(<LabPage />);
+    expect(lab).toContain("data-screen=");
+    expect(lab).not.toContain("data-landing");
   });
 
   it("signed-in view shows the email; signed-out view shows an enabled sign-in control", () => {

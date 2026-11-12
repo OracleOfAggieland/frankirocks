@@ -30,6 +30,11 @@ export const COPY = {
     sources: "Sources",
     ingredients: "Ingredients",
     lockedRule: "Locked rule",
+    rows: "Rows behind this number",
+    total: "Total",
+    when: "When",
+    what: "What",
+    amount: "Amount",
   },
   strip: {
     terminals: ["Noticed", "Connected", "Suggested", "You said yes"] as const,
@@ -45,8 +50,9 @@ export const COPY = {
     forget: "Forget",
     quiet: "Don't bring it up",
     close: "Close",
+    confirmRule: "Tap again to remove this rule",
   },
-  lab: { title: "The Lab", none: "—", limits: "What I can't do yet" },
+  lab: { title: "The Lab", none: "—", limits: "What I can't do yet", on: "Counting", off: "No counts yet" },
   receipt: {
     title: "Receipt",
     blocked: "Blocked now",
@@ -60,7 +66,7 @@ export const COPY = {
   time: { simulated: "Simulated:" },
   captions: { toggle: "Captions" },
   sound: { toggle: "Sound effects" },
-  auth: { signIn: "Sign in to wake Franki", signOut: "Sign out" },
+  auth: { signIn: "Sign in to wake Franki", signOut: "Sign out", about: "About Franki" },
   typed: { open: "Type to Franki", label: "Type to Franki", send: "Send" },
   call: {
     start: "Call Franki",
@@ -76,5 +82,8 @@ export const COPY = {
     },
     notSetUp: "Calls aren't set up here yet.",
   },
+  cursor: { toggle: "Lab spider" },
+  company: { walkedIn: "Someone walked in", alone: "We're alone" },
+  forgetLast: "Forget last thing",
   areas: ["Time and work", "Food and health", "Money", "People", "Goals"] as const,
 } as const;

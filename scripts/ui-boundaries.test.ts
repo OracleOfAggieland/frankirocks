@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { REPO_ROOT } from "./clock-check.mjs";
-import { ENTRY_POINTS, checkPureModule, formatUiViolations, importsOf, reachable, scanUiBoundaries } from "./ui-boundaries.mjs";
+import { ENTRY_POINTS, LAB_ENTRY_POINTS, checkPureModule, formatUiViolations, importsOf, reachable, scanUiBoundaries } from "./ui-boundaries.mjs";
 
 const PERF = "performance" + ".now()";
 const MISSING_PURE = "a listed pure module does not exist";
@@ -22,6 +22,15 @@ describe("UI boundary check on the repo", () => {
       expect(seen.has(f), f).toBe(true);
     }
     expect([...seen.keys()].some((f: string) => f.startsWith("apps/web/src/app/specimens/"))).toBe(false);
+  });
+
+  it("walks the lab from its own page, and the lab reaches no front-door module", () => {
+    expect(ENTRY_POINTS).toContain("apps/web/src/app/lab/page.tsx");
+    const seen = reachable(LAB_ENTRY_POINTS, (f: string) => readFileSync(join(REPO_ROOT, f), "utf8"), (f: string) => existsSync(join(REPO_ROOT, f)));
+    expect(seen.has("apps/web/src/app/lab/page.tsx")).toBe(true);
+    expect(seen.has("apps/web/src/components/App.tsx")).toBe(true);
+    const landing = [...seen.keys()].filter((f: string) => /^apps\/web\/src\/(components\/landing\/|ui\/landing\/|ui\/copy-landing\.ts$)/.test(f));
+    expect(landing).toEqual([]);
   });
 });
 
@@ -98,6 +107,57 @@ describe("UI boundary rules on fake trees", () => {
         "apps/web/src/components/Footer.test.tsx": 'import Page from "../app/specimens/page.dev";\n',
         "apps/web/src/app/specimens/page.dev.tsx": 'import { CARDS } from "./_fixtures";\n',
         "apps/web/src/app/specimens/_fixtures/index.ts": "export const CARDS = [];\n",
+      }),
+    ).toEqual([]);
+  });
+
+  it("rule 8 fails a front-door module reachable from the lab page or the layout, wherever it is imported", () => {
+    expect(
+      tree({
+        "apps/web/src/app/page.tsx": 'import { Landing } from "../components/landing/Landing";\n',
+        "apps/web/src/components/landing/Landing.tsx": 'import { STEP_IDS } from "../../ui/landing/steps";\n',
+        "apps/web/src/ui/landing/steps.ts": "export const STEP_IDS = [];\n",
+        "apps/web/src/app/lab/page.tsx": 'import { App } from "../../components/App";\n',
+        "apps/web/src/components/App.tsx": 'import { Card } from "./surfaces/Card";\n',
+        "apps/web/src/components/surfaces/Card.tsx": 'import { SAMPLE } from "../landing/sample";\n',
+        "apps/web/src/components/landing/sample.ts": "export const SAMPLE = 1;\n",
+        "apps/web/src/app/layout.tsx": 'import { Footer } from "../components/Footer";\n',
+        "apps/web/src/components/Footer.tsx": 'import { LANDING } from "../ui/copy-landing";\n',
+        "apps/web/src/ui/copy-landing.ts": 'import type { StepId } from "./landing/steps";\n',
+      }),
+    ).toEqual([
+      "apps/web/src/components/Footer.tsx: apps/web/src/ui/copy-landing.ts",
+      "apps/web/src/components/surfaces/Card.tsx: apps/web/src/components/landing/sample.ts",
+      "apps/web/src/ui/copy-landing.ts: apps/web/src/ui/landing/steps.ts",
+    ]);
+  });
+
+  it("rule 8 follows the @/ path alias", () => {
+    expect(
+      tree({
+        "apps/web/src/app/page.tsx": 'import { Landing } from "../components/landing/Landing";\n',
+        "apps/web/src/components/landing/Landing.tsx": "export const Landing = 1;\n",
+        "apps/web/src/app/lab/page.tsx": 'import { App } from "@/components/App";\n',
+        "apps/web/src/components/App.tsx": 'import { Card } from "./surfaces/Card";\n',
+        "apps/web/src/components/surfaces/Card.tsx": 'import { SAMPLE } from "@/components/landing/sample";\n',
+        "apps/web/src/components/landing/sample.ts": "export const SAMPLE = 1;\n",
+        "apps/web/src/app/layout.tsx": 'import { Footer } from "../components/Footer";\n',
+        "apps/web/src/components/Footer.tsx": "export const Footer = 1;\n",
+      }),
+    ).toEqual(["apps/web/src/components/surfaces/Card.tsx: apps/web/src/components/landing/sample.ts"]);
+  });
+
+  it("rule 8 lets the front door use its own modules", () => {
+    expect(
+      tree({
+        "apps/web/src/app/page.tsx": 'import { Landing } from "../components/landing/Landing";\n',
+        "apps/web/src/components/landing/Landing.tsx": 'import { LANDING } from "../../ui/copy-landing";\nimport { Rivet } from "../lab/Rivet";\n',
+        "apps/web/src/ui/copy-landing.ts": 'import type { StepId } from "./landing/steps";\n',
+        "apps/web/src/ui/landing/steps.ts": "export const STEP_IDS = [];\n",
+        "apps/web/src/components/lab/Rivet.tsx": "export const Rivet = 1;\n",
+        "apps/web/src/app/lab/page.tsx": 'import { Rivet } from "../../components/lab/Rivet";\n',
+        "apps/web/src/app/layout.tsx": 'import { Footer } from "../components/Footer";\n',
+        "apps/web/src/components/Footer.tsx": "export const Footer = 1;\n",
       }),
     ).toEqual([]);
   });
