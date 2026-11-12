@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ReducedMotionOverride } from "../../ui/hooks/reduced-motion";
 import type { CaptionsProps } from "../../ui/surface-props";
 import { Captions } from "./Captions";
+import { FOCUS, QUIET_BUTTON, TARGET } from "./classes";
 
 const render = (p: Partial<CaptionsProps>) =>
   renderToStaticMarkup(
@@ -42,6 +43,13 @@ describe("Captions", () => {
       expect(toggle(html)).toContain("min-h-11");
       expect(toggle(html)).toContain("focus-visible:outline-2");
     }
+  });
+
+  it("the toggle is on the shared class recipes", () => {
+    const toggle = (html: string) => /<button[^>]*class="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(toggle(render({}))).toBe(`${QUIET_BUTTON} gap-2`);
+    const on = toggle(render({ on: true }));
+    for (const k of [...TARGET.split(" "), ...FOCUS.split(" "), "rounded-control", "px-4", "text-base", "franki-card-press"]) expect(on.split(" ")).toContain(k);
   });
 
   it("the toggle calls onToggle", () => {

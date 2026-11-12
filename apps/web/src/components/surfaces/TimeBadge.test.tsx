@@ -10,7 +10,15 @@ describe("TimeBadge", () => {
     expect(html).toContain("Simulated:");
     expect(html).toContain("Thu 6:00 PM");
     expect(html).toContain("<svg");
-    expect(html).toContain("border-brass");
+    // Brief 015: a brass plate, the shared Plate part (was a brass-bordered pill).
+    expect(html).toMatch(/data-plate="brass" class="mat-brass /);
+  });
+
+  it("the bolt is decorative and engraved in the plate's own ink", () => {
+    const html = renderToStaticMarkup(<TimeBadge simulated instantMs={THU_6PM_CHICAGO} zone="America/Chicago" />);
+    expect(html).toMatch(/<svg[^>]*aria-hidden="true"[^>]*class="franki-badge-bolt/);
+    expect(html).toContain('fill="currentColor"');
+    expect(html).toContain("whitespace-nowrap");
   });
 
   it("renders nothing when not simulated", () => {

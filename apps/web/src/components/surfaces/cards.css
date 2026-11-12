@@ -1,1 +1,139 @@
 /* Cards, the card dock, chips, the seal, the time badge and captions: keyframes and loops. */
+
+/*
+ * spring.press (stiffness 420, damping 30, unit mass) sampled over --dur-base into a linear() curve, so a CSS
+ * transition moves on the same spring as motion's press. It settles inside 1% by 320 ms and overshoots about
+ * 3%. Card.test.tsx recomputes these points from SPRING.press and fails when they drift.
+ */
+.franki-card,
+.franki-card-press,
+.franki-chip {
+  --franki-spring-press: linear(0, 0.069, 0.222, 0.403, 0.577, 0.725, 0.841, 0.924, 0.979, 1.012, 1.029, 1.034, 1.033, 1.028, 1.022, 1.016, 1);
+}
+
+/* A card lifts 2 px under a hovering pointer, on spring.press. Nothing moves under reduced motion. */
+.franki-card {
+  transition: transform var(--dur-base) var(--franki-spring-press);
+}
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  .franki-card:hover { transform: translateY(-2px); }
+}
+[data-reduced="true"] .franki-card:hover { transform: none; }
+
+/* A brass control depresses 2 px on press, on spring.press. Colour changes keep the quick fade. */
+.franki-card-press {
+  transition:
+    transform var(--dur-base) var(--franki-spring-press),
+    background-color var(--dur-quick) var(--ease-ecto),
+    color var(--dur-quick) var(--ease-ecto);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .franki-card-press:not(:disabled):active { transform: translateY(2px); }
+}
+[data-reduced="true"] .franki-card-press:active { transform: none; }
+
+/*
+ * A source row materializes: rise 12 px and fade in, one row after another on --stagger (the row's index is
+ * --row). Under reduced motion it is a plain fade, all rows together: the shorthand resets the delay.
+ */
+@keyframes franki-row-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes franki-row-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.franki-row {
+  animation: franki-row-fade var(--dur-base) linear 1 both;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .franki-row {
+    animation: franki-row-in var(--dur-base) var(--ease-ecto) 1 both;
+    animation-delay: calc(var(--stagger) * var(--row, 0));
+  }
+}
+[data-reduced="true"] .franki-row {
+  animation: franki-row-fade var(--dur-base) linear 1 both;
+}
+
+/*
+ * Chips. A chip rises into place on --stagger (its index is --chip); a press settles it 3% smaller on
+ * spring.press; under a hovering pointer, or keyboard focus, its stitches run one stitch along per --dur-base.
+ */
+@keyframes franki-chip-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes franki-chip-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* One dash plus one gap of the chip's stitch (5 + 4). */
+@keyframes franki-stitch-run {
+  to { stroke-dashoffset: -9; }
+}
+.franki-chip-enter {
+  animation: franki-chip-fade var(--dur-base) linear 1 both;
+}
+.franki-chip {
+  transition:
+    transform var(--dur-base) var(--franki-spring-press),
+    background-color var(--dur-quick) var(--ease-ecto);
+}
+.franki-chip-stitch {
+  stroke: var(--color-stitch);
+  transition: stroke var(--dur-quick) var(--ease-ecto);
+}
+.franki-chip:not(:disabled):hover .franki-chip-stitch,
+.franki-chip:focus-visible .franki-chip-stitch {
+  stroke: color-mix(in srgb, var(--color-brass) 60%, var(--color-stitch));
+}
+@media (prefers-reduced-motion: no-preference) {
+  .franki-chip-enter {
+    animation: franki-chip-in var(--dur-base) var(--ease-ecto) 1 both;
+    animation-delay: calc(var(--stagger) * var(--chip, 0));
+  }
+  .franki-chip:not(:disabled):active { transform: scale(0.97); }
+  .franki-chip:focus-visible .franki-chip-stitch {
+    animation: franki-stitch-run var(--dur-base) linear infinite;
+  }
+}
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  .franki-chip:not(:disabled):hover .franki-chip-stitch {
+    animation: franki-stitch-run var(--dur-base) linear infinite;
+  }
+}
+[data-reduced="true"] .franki-chip-enter {
+  animation: franki-chip-fade var(--dur-base) linear 1 both;
+}
+[data-reduced="true"] .franki-chip:active { transform: none; }
+[data-reduced="true"] .franki-chip .franki-chip-stitch { animation: none !important; }
+[data-paused="true"] .franki-chip-stitch,
+[data-paused="true"] .franki-chip-enter,
+[data-paused="true"] .franki-row {
+  animation-play-state: paused !important;
+}
+
+/*
+ * The seal: an embossed brass disc. The disc is cut to twelve rounded scallops; inside it a pressed ring (dark
+ * above, lit below, like a groove struck into metal) and the lock, engraved the same way. A soft brass glow
+ * follows the scalloped outline.
+ */
+.franki-seal {
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--color-brass) 40%, transparent))
+    drop-shadow(0 1px 1px color-mix(in srgb, var(--color-night-0) 60%, transparent));
+}
+.franki-seal-disc {
+  clip-path: polygon(100.0% 50.0%, 99.6% 53.2%, 98.3% 56.4%, 96.3% 59.2%, 93.9% 61.8%, 94.7% 65.2%, 95.0% 68.6%, 94.5% 72.0%, 93.3% 75.0%, 91.3% 77.6%, 88.6% 79.6%, 85.5% 81.1%, 82.2% 82.2%, 81.1% 85.5%, 79.6% 88.6%, 77.6% 91.3%, 75.0% 93.3%, 72.0% 94.5%, 68.6% 95.0%, 65.2% 94.7%, 61.8% 93.9%, 59.2% 96.3%, 56.4% 98.3%, 53.2% 99.6%, 50.0% 100.0%, 46.8% 99.6%, 43.6% 98.3%, 40.8% 96.3%, 38.2% 93.9%, 34.8% 94.7%, 31.4% 95.0%, 28.0% 94.5%, 25.0% 93.3%, 22.4% 91.3%, 20.4% 88.6%, 18.9% 85.5%, 17.8% 82.2%, 14.5% 81.1%, 11.4% 79.6%, 8.7% 77.6%, 6.7% 75.0%, 5.5% 72.0%, 5.0% 68.6%, 5.3% 65.2%, 6.1% 61.8%, 3.7% 59.2%, 1.7% 56.4%, 0.4% 53.2%, 0.0% 50.0%, 0.4% 46.8%, 1.7% 43.6%, 3.7% 40.8%, 6.1% 38.2%, 5.3% 34.8%, 5.0% 31.4%, 5.5% 28.0%, 6.7% 25.0%, 8.7% 22.4%, 11.4% 20.4%, 14.5% 18.9%, 17.8% 17.8%, 18.9% 14.5%, 20.4% 11.4%, 22.4% 8.7%, 25.0% 6.7%, 28.0% 5.5%, 31.4% 5.0%, 34.8% 5.3%, 38.2% 6.1%, 40.8% 3.7%, 43.6% 1.7%, 46.8% 0.4%, 50.0% 0.0%, 53.2% 0.4%, 56.4% 1.7%, 59.2% 3.7%, 61.8% 6.1%, 65.2% 5.3%, 68.6% 5.0%, 72.0% 5.5%, 75.0% 6.7%, 77.6% 8.7%, 79.6% 11.4%, 81.1% 14.5%, 82.2% 17.8%, 85.5% 18.9%, 88.6% 20.4%, 91.3% 22.4%, 93.3% 25.0%, 94.5% 28.0%, 95.0% 31.4%, 94.7% 34.8%, 93.9% 38.2%, 96.3% 40.8%, 98.3% 43.6%, 99.6% 46.8%);
+}
+.franki-seal-ring {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--color-night-0) 45%, transparent),
+    0 1px 0 color-mix(in srgb, var(--color-spark) 50%, transparent);
+}
+.franki-seal-lock,
+.franki-badge-bolt {
+  /* Engraved: a lit lower lip, like the plate's words. */
+  filter: drop-shadow(0 1px 0 color-mix(in srgb, var(--color-spark) 45%, transparent));
+}
