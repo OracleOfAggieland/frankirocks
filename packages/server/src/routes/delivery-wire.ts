@@ -29,7 +29,17 @@ import type { RouteContext } from "./runtime";
 
 /** Kept back from the open's tick for the choice and the render (two reads and one small transaction). */
 export const OPEN_DELIVERY_RESERVE_MS = 600;
-/** Kept back from delivery's deadline for the open's own answer after it (the request ledger is already written). */
+/**
+ * Store calls the open makes after delivery's deadline and before it answers: 0. The request ledger's answer is
+ * completed inside the open's transaction, the prior Session's close runs before delivery, and `mutation` writes
+ * nothing on success; an abandoned delivery read keeps running but is not awaited (`open-budget.test.ts` counts them).
+ */
+export const OPEN_CALLS_AFTER_DELIVERY = 0;
+/**
+ * Kept back from delivery's deadline for the open's own answer after it. With no store call left
+ * (`OPEN_CALLS_AFTER_DELIVERY`), it covers only the route's return, the timer that fires the deadline running late
+ * on a busy process, and the response's serialization; it is not sized for store round trips.
+ */
 export const OPEN_ANSWER_MARGIN_MS = 150;
 /**
  * The state route's own budget, from its start on the ops clock: the browser gives a poll 1,500 ms
