@@ -180,6 +180,41 @@ describe("post transitions", () => {
     return { turnId, cmds };
   }
 
+  /**
+   * A Turn posted `missing`, the neutral line ended, then its late transcript's Superseding_Post, with the `missing`
+   * post still unanswered: the Voice_Client resends a Superseding_Post that came first, so its answer can land first.
+   */
+  function supersedingFirst(d: WideDriver) {
+    committed(d);
+    const missing = turnPosts(play(d, { k: "fire", name: "transcript" }))[0]!;
+    expect(missing.body.transcriptState).toBe("missing");
+    play(d, { k: "fire", name: "lineDone" });
+    expect(d.st.turn).toBeNull();
+    const sup = turnPosts(play(d, { k: "transcript", pick: 0, fail: false, empty: false }, 1_000))[0]!;
+    expect(sup).toMatchObject({ supersedesTurnId: missing.body.turnId });
+    for (const p of d.pending.posts) p.answered = true;
+    return { turnId: missing.body.turnId, sup };
+  }
+
+  it("LISTENING + turnOk stale for a Superseding_Post answered before its missing post -> LISTENING (matched by its supersede flag, no reconnect)", () => {
+    const d = live();
+    const { turnId, sup } = supersedingFirst(d);
+    play(d, { k: "higherDeck" });
+    const cmds = d.ev({ type: "turnOk", turnId, supersede: true, response: d.turnResponse(sup.body, "stale", true) as never }, 300);
+    expect(cmds.some((c) => c.kind === "teardown"), "the call is not torn down").toBe(false);
+    expect(turnPosts(cmds), "the resend is the Superseding_Post").toMatchObject([{ supersedesTurnId: turnId, body: { transcriptState: "final" } }]);
+    expect(d.st.outstanding.filter((o) => o.turnId === turnId && o.supersede === undefined), "the missing post still waits for its own answer").toHaveLength(1);
+  });
+
+  it("LISTENING + turnFailed for a Superseding_Post before its missing post's answer -> LISTENING (matched by its supersede flag, no reconnect)", () => {
+    const d = live();
+    const { turnId } = supersedingFirst(d);
+    const cmds = d.ev({ type: "turnFailed", turnId, supersede: true }, 300);
+    expect(cmds.some((c) => c.kind === "teardown"), "the call is not torn down").toBe(false);
+    expect(d.st.phase).toBe("LISTENING");
+    expect(d.st.outstanding.filter((o) => o.turnId === turnId && o.supersede === undefined), "the missing post still waits for its own answer").toHaveLength(1);
+  });
+
   it("LISTENING + turnOk stale for a Superseding_Post -> LISTENING (resent once as a Superseding_Post, no reconnect)", () => {
     const d = live();
     const { turnId, cmds } = superseding(d, true);

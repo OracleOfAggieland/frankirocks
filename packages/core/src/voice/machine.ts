@@ -491,8 +491,12 @@ export type VoiceEvent =
   | { type: "connectionLost" }
   | { type: "stateOk"; response: Infer<typeof StateResponse>; sentAt?: number }
   | { type: "stateFailed" }
-  | { type: "turnOk"; turnId: string; response: Infer<typeof TurnResponse> }
-  | { type: "turnFailed"; turnId: string }
+  /**
+   * `supersede` says whether the answer is to a Superseding_Post (a `turn` command with `supersedesTurnId`); the
+   * Voice_Client always sets it, and an answer without it is matched by order (answerOf; brief 031, finding 4).
+   */
+  | { type: "turnOk"; turnId: string; response: Infer<typeof TurnResponse>; supersede?: boolean }
+  | { type: "turnFailed"; turnId: string; supersede?: boolean }
   | { type: "toolOk"; callId: string; response: Infer<typeof ToolResponse> }
   | { type: "toolFailed"; callId: string }
   | { type: "closeDone" }
@@ -884,13 +888,13 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       onStateFailed(s);
       break;
     case "turnOk":
-      onTurn(s, event.turnId, event.response);
+      onTurn(s, event.turnId, event.response, event.supersede);
       break;
     case "turnFailed": {
       // The client already retried the same requestId; the Session's clientSeq is unknown now, so reconnect,
       // which opens a fresh Session (design "Session timing"). That holds for any post of this Session, current
       // or not, and whether or not the permit wait fired first (review of wave A, item 6).
-      const { entry: was, rest } = answerOf(state, event.turnId);
+      const { entry: was, rest } = answerOf(state, event.turnId, event.supersede);
       const ownSession = was !== undefined && was.sessionId === state.session?.sessionId;
       const ours = ownSession || (state.turn?.turnId === event.turnId && state.turn.posted !== null);
       s.set({ outstanding: rest, lastTurnResponseAt: now });
@@ -898,6 +902,8 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       // A Superseding_Post reuses its `missing` post's clientSeq, so its failure leaves the Session's clientSeq
       // where it was: the late transcript is lost, the call goes on (V2 step 7).
       if (ownSession && was.supersede !== undefined) break;
+      // A Superseding_Post's failure with no entry left (its wait ended) is never read as its `missing` post's.
+      if (event.supersede === true) break;
       if (ours && state.session !== null) connectionRecovery(s, true);
       break;
     }
@@ -1480,12 +1486,16 @@ function pushTurn(s: Step, body: TurnBody, supersedesTurnId: string | null = nul
 }
 
 /**
- * Which outstanding post of `turnId` an answer belongs to: its ordinary post while that one is unanswered, else its
- * Superseding_Post. Answers carry only the turnId; the server takes a Superseding_Post after its `missing` post
- * (the Voice_Client resends one that came first), so the ordinary post is answered first.
+ * Which outstanding post of `turnId` an answer belongs to. With `supersede` (the Voice_Client knows which request it
+ * answered), the post of that kind only: the Voice_Client resends a Superseding_Post that came before its `missing`
+ * post committed, so their HTTP answers can land in either order (brief 031, finding 4). Without it, by order: the
+ * ordinary post while that one is unanswered, else the Superseding_Post.
  */
-function answerOf(st: VoiceState, turnId: string): { entry: VoiceState["outstanding"][number] | undefined; rest: VoiceState["outstanding"] } {
-  const entry = st.outstanding.find((o) => o.turnId === turnId && o.supersede === undefined) ?? st.outstanding.find((o) => o.turnId === turnId);
+function answerOf(st: VoiceState, turnId: string, supersede?: boolean): { entry: VoiceState["outstanding"][number] | undefined; rest: VoiceState["outstanding"] } {
+  const entry =
+    supersede !== undefined
+      ? st.outstanding.find((o) => o.turnId === turnId && (o.supersede !== undefined) === supersede)
+      : (st.outstanding.find((o) => o.turnId === turnId && o.supersede === undefined) ?? st.outstanding.find((o) => o.turnId === turnId));
   return { entry, rest: st.outstanding.filter((o) => o !== entry) };
 }
 
@@ -1502,9 +1512,9 @@ function onSupersedingAnswer(s: Step, turnId: string, post: SupersedingPost, res
   pushTurn(s, body, turnId, true);
 }
 
-function onTurn(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void {
+function onTurn(s: Step, turnId: string, res: Infer<typeof TurnResponse>, supersede?: boolean): void {
   // Every answer ends its request's wait and dates the next StateAck: an ack requested before it can't grant fastO.
-  const { entry: was, rest } = answerOf(s.st, turnId);
+  const { entry: was, rest } = answerOf(s.st, turnId, supersede);
   const wasOutstanding = was !== undefined;
   s.set({ outstanding: rest, lastTurnResponseAt: s.now });
   if (s.st.ack !== null) s.set({ ack: null, ackDroppedStale: true });
@@ -1515,6 +1525,8 @@ function onTurn(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void 
   if (st.session === null || res.stamp.sessionId !== st.session.sessionId || res.stamp.generation !== st.session.generation) return;
   // The latest post of this Turn was a Superseding_Post: the answer is its own, whether or not the Turn is current.
   if (was?.supersede !== undefined && was.sessionId === st.session.sessionId) return onSupersedingAnswer(s, turnId, was.supersede, res);
+  // A Superseding_Post's answer with no entry left (its wait ended) gives its Deck only; it is never the Turn's own.
+  if (supersede === true) return adoptDeck(s, res.deck);
   // The answer to a post kept after its Turn left `turn` (retryPost): another hint waits again; anything else ends it
   // and is read below as any answer for a Turn that is no longer current (brief 031, finding 2).
   if (st.retryPost !== null && st.retryPost.turnId === turnId && (turn === null || turn.turnId !== turnId)) {
