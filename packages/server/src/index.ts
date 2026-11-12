@@ -19,3 +19,6 @@ export { phoneWebhook } from "./phone/webhook";
 export { phoneStatusRoute } from "./phone/status";
 export { debugMemoryRoute } from "./routes/debug-memory";
 export { TAKE_MAX_BYTES, listTakes, liveTakesDeps, saveTake } from "./dev/takes";
+// Brief 019: the seeded persona, clone and reset.
+export { seedResetRoute } from "./routes/seed-reset";
+export { PERSONA_FIXTURE_ID } from "./seed/persona";

@@ -36,7 +36,26 @@ export async function listTenantRows(store: StorePort, uid: string): Promise<Sto
   return out;
 }
 
-/** Deletes every row of the tenant except `keep` (paths). Not built yet. */
-export async function clearTenant(_store: StorePort, _uid: string, _keep: ReadonlySet<string>): Promise<number> {
-  return 0;
+/**
+ * Deletes every row of the tenant except the core documents and the paths in `keep`, one page per transaction.
+ * Each Session's turns go before the Session. Returns the number of rows deleted.
+ */
+export async function clearTenant(store: StorePort, uid: string, keep: ReadonlySet<string>): Promise<number> {
+  let deleted = 0;
+  const drop = async (page: StoredDoc[]) => {
+    const gone = page.filter((r) => !keep.has(r.path));
+    if (gone.length === 0) return;
+    await store.transaction(uid, async (tx) => {
+      for (const r of gone) tx.delete(r.path);
+    });
+    deleted += gone.length;
+  };
+  for (const collection of TOP_COLLECTIONS) {
+    if (collection === "core") continue;
+    await pages(store, uid, paths.collection(uid, collection), async (page) => {
+      if (collection === "sessions") for (const s of page) await pages(store, uid, paths.turns(uid, s.id), drop);
+      await drop(page);
+    });
+  }
+  return deleted;
 }
