@@ -1,15 +1,17 @@
 // Brief 035: the review of the audience wave. One block per finding, each the reviewer's sequence as a route test.
-import { COMPANY_LINE, OPEN_LIMIT_MS, SWAP_LIMIT_MS, type CoreBundle, type CoreEpoch, type CoreRules, type Job, type SS, type Session, type Turn } from "@franki/core";
+import { COMPANY_LINE, OPEN_LIMIT_MS, SWAP_LIMIT_MS, type CoreBundle, type CoreEpoch, type CoreRules, type Job, type SS, type SafeTurn, type Session, type Turn } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { never, ok } from "../openai/fake";
 import { paths } from "../store/paths";
 import { decisionAnswer } from "../testing/decisions";
-import { type TestRig, callRoute, patchRecord, runScheduled } from "../testing/fakes";
+import { type TestRig, callRoute, patchRecord, runScheduled, settle, testRig } from "../testing/fakes";
 import { closeRoute } from "./close";
 import { openRoute } from "./open";
 import { stateRoute } from "./state";
-import { asrTurn, typedTurn } from "../testing/session-fixtures";
+import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
+import { completed } from "../openai/responses";
+import { typedReplyNote } from "./typed-reply";
 import { PERSONAL_FACT } from "../testing/two-memories";
 import { UID, doorRig, postTurn } from "../testing/audience-doors";
 import { hangupJobId } from "../worker/hangup";
@@ -298,5 +300,18 @@ describe("finding 11: a row 8 answer that hangs up carries no Deck", () => {
     const res = await postTurn(rig, voice(s.stamp, 1, "My boss is here and I can't do this anymore."));
     expect(res.body).toMatchObject({ status: "blocked", permit: { kind: "postCommitControl", scope: "ack" } });
     expect(res.body.deck ?? null).toBeNull();
+  });
+});
+
+describe("finding 12: a typed reply's note takes the sensitivity of the earlier turns it read too", () => {
+  it("with no Memory in the Head and an S1 earlier turn in its input, the note is S1", async () => {
+    const rig = testRig();
+    rig.openai.always("responses.create", ok(completed("All right.")));
+    const s = await openTestSession(rig);
+    const req = typedTurn(s.stamp, 1, "What did I just say?");
+    const earlier: SafeTurn[] = [{ turnId: testId("t0") as never, role: "user", text: "My diagnosis came back.", sens: "S1", rootKeys: [], dependsOn: [], policyRev: s.stamp.policyRev }];
+    const note = await settle(typedReplyNote({ uid: UID, deps: rig.deps, schedule: rig.sched.schedule }, req as never, req.text, async () => earlier, false), rig.clock, rig.timers).then((r) => r.value);
+    expect(note).not.toBeNull();
+    expect(typeof note === "object" && note !== null ? note.sens : null).toBe("S1");
   });
 });
