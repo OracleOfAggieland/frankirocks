@@ -23,7 +23,8 @@ import { ownerWordsSettle } from "./life-subject";
 import { selfIsLifeSubject } from "./self-life";
 import { renameRefuted } from "./rename-words";
 import { retractionSaid } from "./retract-words";
-import { ownerSentence } from "./owner-sentence";
+import { allergySubject } from "./allergy-subject";
+import { ownerSentence, ownerSentenceRange } from "./owner-sentence";
 import { spanClass, verifyTurnSpan } from "./spans";
 import type { AllergyVerdict, ArgPair, CorrectionVerdict, EntityKind, FastItem, FastSlotsOut, ItemVerdict, Need, QuestionKind, Route, Subject, TransitionKind, TransitionVerdict, ValidateContext } from "./types";
 
@@ -146,7 +147,6 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
   // allergy word itself: "my brother with the peanut allergy") names no one, so the item fails closed (CQ 150). On an
   // answering turn "Mine." and "Not mine." name the speaker too (CQ 159, CQ 160).
   const reading = answering ? "answer" : "allergy";
-  const mentionQuote = item.subject.mention === null ? null : (verifyTurnSpan(item.subject.mention, ctx.evidence)?.quote ?? null);
   let subject: SubjectResult;
   // Answering rule 2, narrowed (brief 018 task 0, item 3): R's subject is lent only when the answer's span names no
   // one (`LEND_ONLY_WHEN_NAMES_NO_ONE`). An item marked `isSelf` whose words hold no first person ("It's a real
@@ -156,14 +156,17 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
   // model's span boundaries; when that sentence holds a first person, R's subject is never lent.
   const said = ownerSentence(span, ctx.evidence);
   const saidFirst = hasFirstPerson(said, { kind: reading });
+  // W-231: a model entityId or mention keeps its person only when that sentence names them as the owner's own.
+  const itemSubject = allergySubject(item.subject, ctx.evidence, ownerSentenceRange(span, ctx.evidence), said, saidFirst, ctx.known, ctx.entities);
+  const mentionQuote = itemSubject.mention === null ? null : (verifyTurnSpan(itemSubject.mention, ctx.evidence)?.quote ?? null);
   const namesNoOneSaid = !namesSomeone(said, knownNameWords(ctx.known, ctx.entities));
-  const selfOnly = item.subject.isSelf && item.subject.entityId === null && item.subject.mention === null;
-  const lend = answering && R !== null && R.subjectId !== null && !saidFirst && (!LEND_ONLY_WHEN_NAMES_NO_ONE || namesNoOneSaid) && (isEmptySubject(item.subject) || (selfOnly && namesNoOneSaid));
+  const selfOnly = itemSubject.isSelf && itemSubject.entityId === null && itemSubject.mention === null;
+  const lend = answering && R !== null && R.subjectId !== null && !saidFirst && (!LEND_ONLY_WHEN_NAMES_NO_ONE || namesNoOneSaid) && (isEmptySubject(itemSubject) || (selfOnly && namesNoOneSaid));
   if (lend) subject = { kind: "resolved", id: R!.subjectId!, label: null };
-  else if (answering && isEmptySubject(item.subject)) {
+  else if (answering && isEmptySubject(itemSubject)) {
     subject = saidFirst ? { kind: "resolved", id: "self", label: null } : { kind: "unresolved" };
   } else if (mentionQuote !== null && !plainMention(mentionQuote)) subject = { kind: "unresolved" };
-  else subject = subjectOf(item.subject, said, ctx, "person", reading);
+  else subject = subjectOf(itemSubject, said, ctx, "person", reading);
   const resolved = subject.kind === "resolved" ? subject : null;
 
   if (polarity === "denied") {
