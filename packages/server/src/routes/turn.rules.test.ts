@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { never, ok } from "../openai/fake";
 import { completed } from "../openai/responses";
 import { paths } from "../store/paths";
+import { expectPasteFilters } from "../testing/arb-paste";
 import { template } from "../testing/arb-rule-turns";
 import { decisionAnswer } from "../testing/decisions";
 import type { FakeSlotsScript } from "../testing/fake-fast-slots";
@@ -274,13 +275,13 @@ describe("the hardRule route (B6)", () => {
 
 // Brief 018 task B10 (brief 012 G34, CQ 127): text a paste event supplied is T whatever its length.
 describe("pasted text is T (B10)", () => {
-  it("a pasted one-line allergy writes nothing in core/rules and opens no route", async () => {
+  it("a pasted one-line allergy writes only an anonymous pending filter in core/rules and opens no route (brief 041 G-A2)", async () => {
     for (const call of [false, true]) {
       const { rig, stamp } = await setup(call);
       const before = await rulesOf(rig);
       const res = await post(rig, { ...typedTurn(stamp, 1, "I'm allergic to peanuts, please no satay"), source: "pasted" });
       expect(res.status, String(call)).toBe(200);
-      expect(await rulesOf(rig), String(call)).toEqual(before);
+      await expectPasteFilters(rig.store, before, await rulesOf(rig), "I'm allergic to peanuts, please no satay");
       expect(rig.fastSlots.calls, String(call)).toHaveLength(0);
       expect(rig.openai.requestsTo("decisions.create"), String(call)).toHaveLength(0);
     }
