@@ -88,13 +88,11 @@ const FT02 = friend("FT02", 2, "Vegetarian this month", [
   { label: "ask about dinner this month", do: "say", text: "What should I make for dinner?", answers: [parse()] },
   {
     ...suggestCall("suggest this month", [foodSafe("suggest this month", MEAT)]),
-    waits: W.G_FT02,
   },
   { label: "the month ends", do: "advance", to: at(33, "18:00"), called: "December 2, after the month" },
   { label: "ask about dinner after the month", do: "say", text: "What's for dinner tonight?", answers: [parse()] },
   {
     ...suggestCall("suggest after the month", [{ mustSay: { has: ["vegetarian"], channel: "tool" } }]),
-    waits: "suggest(food)'s open domain moments first (spec §10, 'Still vegetarian, or was November it?'): suggestTool's question is only the rules-unavailable line",
   },
 ]);
 
@@ -287,7 +285,6 @@ const FT11 = friend("FT11", 11, "Dinner with twenty relevant memories", [
   { label: "ask again", do: "say", text: "Anything else for dinner?", answers: [parse()] },
   {
     ...suggestCall("the disliked ingredient is left off", [foodSafe("the disliked ingredient is left off", ["mushroom"])]),
-    waits: W.G_FT02,
   },
 ]);
 
