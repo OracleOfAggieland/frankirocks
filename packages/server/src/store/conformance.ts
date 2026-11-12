@@ -373,6 +373,46 @@ export function storeConformance(name: string, setup: () => Promise<ConformanceC
       });
     });
 
+    describe("delete (brief 019)", () => {
+      it("deletes a record, and a missing path is not an error", async () => {
+        await store.transaction(UID, async (tx) => tx.create(sessionPath("a"), sampleSession()));
+        await store.transaction(UID, async (tx) => {
+          tx.delete(sessionPath("a"));
+          tx.delete(sessionPath("never"));
+        });
+        expect(await store.get(UID, sessionPath("a"))).toBeNull();
+      });
+
+      it("a delete in a transaction that aborts deletes nothing", async () => {
+        await store.transaction(UID, async (tx) => tx.create(sessionPath("a"), sampleSession()));
+        await expectStoreError(
+          store.transaction(UID, async (tx) => {
+            tx.delete(sessionPath("a"));
+            tx.update(sessionPath("zz"), sampleSession(), 1);
+          }),
+          "staleRevision",
+        );
+        expect(await store.get(UID, sessionPath("a"))).not.toBeNull();
+      });
+
+      it("a path written and deleted in one transaction is invalid input", async () => {
+        await expectStoreError(
+          store.transaction(UID, async (tx) => {
+            tx.create(sessionPath("a"), sampleSession());
+            tx.delete(sessionPath("a"));
+          }),
+          "invalidInput",
+        );
+      });
+
+      it("rejects a delete outside the caller's Tenant_Root", async () => {
+        await expectStoreError(
+          store.transaction(UID, async (tx) => tx.delete(paths.session(OTHER, testId("a")))),
+          "tenantMismatch",
+        );
+      });
+    });
+
     describe("queries", () => {
       it("Q14 cursor order: turns by seq > cursor, ascending, limited", async () => {
         const ses = testId("ses");

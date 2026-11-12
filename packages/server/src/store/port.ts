@@ -49,6 +49,12 @@ export interface Tx {
    * stored `rev` must still match at commit.
    */
   update(path: string, record: object, expectRev?: number): void;
+  /**
+   * Deletes a record (brief 019: the seed reset's clear is its only caller). A path already absent at commit is
+   * not an error. A path read in this transaction must still hold the rev that was read. A path may not be both
+   * written and deleted in one transaction.
+   */
+  delete(path: string): void;
 }
 
 export interface StorePort {

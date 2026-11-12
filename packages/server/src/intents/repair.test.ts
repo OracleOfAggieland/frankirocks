@@ -98,7 +98,7 @@ describe("the Parse_Repair (R15.3–R15.6, R15.8; question 80)", () => {
     const transaction = rig.store.transaction.bind(rig.store);
     rig.store.transaction = ((uid: string, fn: (tx: Tx) => Promise<unknown>) =>
       transaction(uid, (tx) =>
-        fn({ get: (p) => tx.get(p), query: (q) => tx.query(q), update: (p, r, e) => tx.update(p, r, e), create: (p, r) => (created.push(r as { kind?: string }), tx.create(p, r)) }),
+        fn({ get: (p) => tx.get(p), query: (q) => tx.query(q), update: (p, r, e) => tx.update(p, r, e), delete: (p) => tx.delete(p), create: (p, r) => (created.push(r as { kind?: string }), tx.create(p, r)) }),
       )) as typeof rig.store.transaction;
     await runScheduled(rig);
     expect(await policyRev(rig)).toBe(rev + 1);
