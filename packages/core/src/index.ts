@@ -43,3 +43,7 @@ export * from "./false-gone";
 
 // Brief 021: forget, part one.
 export * from "./forget";
+
+// Brief 022: the hero pattern, the loop and food.
+export * from "./patterns";
+export * from "./food";

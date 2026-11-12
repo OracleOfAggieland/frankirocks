@@ -709,3 +709,9 @@ export const Overlay = refine(
   },
 );
 export type Overlay = Infer<typeof Overlay>;
+
+// Brief 022 (lane hero): the loop's window, exported for the money patterns.
+
+export const LoopWindow = Window;
+export type LoopWindow = Infer<typeof Window>;
+export type LoopRecord = Infer<typeof Loop>;

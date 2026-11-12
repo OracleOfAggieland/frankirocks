@@ -55,6 +55,7 @@ import { admitRule } from "../admission/seam";
 import { effectiveAudience, hasParseGap } from "../audience";
 import type { ResponsesResult } from "../openai/responses";
 import { placePhoneCall } from "../phone/outbound";
+import { answerTool, suggestTool } from "./tool-food";
 import { paths } from "../store/paths";
 import { barrierError, scopeError } from "./errors";
 import { Unrecorded, mutation } from "./mutation";
@@ -165,6 +166,8 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
 
     const result: Result = req.tool.name === "make_phone_call"
       ? { name: "make_phone_call", requestId: req.requestId, message: await placePhoneCall(ctx, req.stamp) }
+      : req.tool.name === "suggest" ? await suggestTool(ctx, req.stamp, req.tool.args)
+      : req.tool.name === "answer" ? await answerTool(ctx, req.stamp, req.tool.args, check.turn)
       : await readRecall(ctx, req, req.tool.args, check.turn, start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS);
 
     return deps.store.transaction(uid, async (tx) => {
