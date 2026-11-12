@@ -9,7 +9,16 @@ What runs before code ships, and what has to stay compatible while an old browse
 | Status | documented |
 | File | `.github/workflows/ci.yml` |
 
-One job on every pull request and every push to `main`, cancelled when a newer run starts for the same ref. In order: `npm ci`, lint, typecheck, test, build, the Firestore emulator suite, a grep of the build output (`apps/web/.next/static`, `functions/dist`) for anything shaped like an OpenAI key, and a secret scan. A failed step stops the job.
+One job on every pull request and every push to `main`. A newer push to a pull request cancels its older run. A push run that has started is never cancelled; one still waiting is replaced by a newer push to the same branch, so the waiting commit gets no run of its own. In order: `npm ci`, lint, typecheck, test, build, the Firestore emulator suite, and a grep of the build output (`apps/web/.next/static`, `functions/dist`) for anything shaped like an OpenAI key. The grep step fails closed: it fails when either folder is missing or empty, when grep finds a match (exit 0), and when grep exits with anything but 1 (no match), such as 2 for a folder it could not read. A failed step stops the job. There is no secret scan step here; the history scan is `deploy.secretScan`.
+
+### `deploy.secretScan`
+
+| Field | Value |
+|---|---|
+| Status | documented |
+| File | `.github/workflows/secret-scan.yml` |
+
+Its own workflow, independent of the build: on a push to any branch and on every pull request. The same concurrency rule as `deploy.ci`: a newer push to a pull request cancels its older run, a started push run is never cancelled, and one still waiting is replaced by a newer push to the same branch. The checkout fetches full history (`fetch-depth: 0`). The gitleaks CLI is downloaded at a pinned version (`GITLEAKS_VERSION`) and checked against a pinned SHA-256 (`GITLEAKS_SHA256`) before it runs. The step prints the commit count reachable from any ref, with and without merges, then runs `gitleaks git --redact` with no `--log-opts` and so no commit range (the workflow's note says gitleaks then reads `git log -p --full-history --all`): every fetched commit is meant to be scanned on every run, so a commit an earlier run missed is scanned by the next. Findings are printed redacted, and a finding fails the job. There is no allow-list file in the repo.
 
 ### `deploy.order`
 

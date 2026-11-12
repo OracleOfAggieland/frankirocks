@@ -14,7 +14,7 @@ Rules: `.kiro/steering/voice-control.md` (what may be heard) and `.kiro/steering
 | State | `VoiceState`, `VoicePhase`, `TimerName` |
 | Events | `VoiceEvent`, `RealtimeServerEvent`, `VoiceCommand` |
 | States | `VoicePhase` |
-| Tests | `packages/core/src/voice/machine.test.ts`, `packages/core/src/voice/outstanding-reconnect.test.ts`, `packages/core/src/voice/testing/arb-call.test.ts`, `packages/core/src/voice/no-permit-no-sound.property.test.ts`, `packages/core/src/voice/every-wait-ends.property.test.ts`, `packages/core/src/voice/stale-inert.property.test.ts`, `packages/core/src/voice/held-never-resumes.property.test.ts`, `packages/core/src/voice/late-permit.property.test.ts`, `packages/core/src/voice/no-clipped-suffix.property.test.ts`, `packages/core/src/voice/no-dispatch-before-admission.property.test.ts`, `packages/core/src/voice/fast-o-fresh-ack.property.test.ts`, `packages/core/src/voice/admitted-turn-posted.property.test.ts`, `apps/web/src/client/voice-client.test.ts` |
+| Tests | `packages/core/src/voice/machine.test.ts`, `packages/core/src/voice/outstanding-reconnect.test.ts`, `packages/core/src/voice/testing/arb-call.test.ts`, `packages/core/src/voice/no-permit-no-sound.property.test.ts`, `packages/core/src/voice/every-wait-ends.property.test.ts`, `packages/core/src/voice/stale-inert.property.test.ts`, `packages/core/src/voice/held-never-resumes.property.test.ts`, `packages/core/src/voice/late-permit.property.test.ts`, `packages/core/src/voice/no-clipped-suffix.property.test.ts`, `packages/core/src/voice/no-dispatch-before-admission.property.test.ts`, `packages/core/src/voice/fast-o-fresh-ack.property.test.ts`, `packages/core/src/voice/admitted-turn-posted.property.test.ts`, `packages/core/src/voice/voice-unlisted.transitions.test.ts`, `apps/web/src/client/voice-client.test.ts` |
 
 The diagram shows the transitions `step` makes between phases. Three more apply from every phase of a live call and are left out of the drawing: `hangupPressed` goes to CLOSED, a lost connection (`connectionLost`, `sdpFailed`) goes to RECOVERY, and speech that starts while a reply, a check or a wait is in progress (barge-in) goes to LISTENING.
 
@@ -62,7 +62,8 @@ stateDiagram-v2
 - Realtime events are read only while a Session is held, the phase is past CONFIGURING and the call is not in connection recovery. A `response.created` is matched to the judge, the speculative reply or the active reply by the `eventId` and `generation` in its metadata; one that matches none of them is cancelled, and so is audio that starts for a response the call does not own.
 - A Deck of another generation is ignored. A higher Deck (epoch, policyRev, bundleRev or rulesRev raised) cancels every recorded response by ID and clears output audio (`adoptDeck`, `cancelAll`).
 - `mutePressed` only flips `micMuted` and sends `setMic`; it never touches output audio.
-- Never two `/api/session/state` requests in flight: `postState` sends nothing while one went out less than `STATE_STALE_MS` ago.
+- Never two `/api/session/state` requests in flight for one Session while every state answer is that Session's own: `postState` sends nothing while one went out less than `STATE_STALE_MS` ago. `stateOk` and `stateFailed` do not name their request, and `onState` and `onStateFailed` clear `stateSentAt` before they check whose answer it is, so a late answer from an earlier Session ends the wait early.
+- `step` does not throw on a well-typed `VoiceEvent`. A listed Realtime type that arrives without its fields throws today: `conversation.item.added`, `response.created`, `response.done`, `response.output_audio_transcript.done` and `error`. The Voice_Client checks only that `type` is a string before it dispatches.
 
 **The exits and what they reset.** Three functions end a stretch of the call. `closedFields` (hang-up, a failed open), `connectionRecovery` (a lost connection, a failed post of this Session, the connect and ack limits) and `onOpen` (a new Session):
 
@@ -70,16 +71,18 @@ stateDiagram-v2
 |---|---|---|---|
 | `outstanding` | kept | kept | kept |
 | `turn`, `pending`, `active`, `judge`, `spec`, `heldBack`, `missing` | cleared | cleared | cleared |
-| `deadlines` | `connect` armed, others kept | cleared, then `reconnect` (and `retryUi`) armed | cleared |
+| `deadlines` | `openWait` disarmed, `connect` armed, others kept | cleared, then `retryUi` armed unless "Try again" already shows, and `reconnect` while an attempt remains | cleared |
 | `recovery` | kept | `connection`, attempts kept | null |
 | `retryVisible` | kept | kept | false |
 | `stateFailures`, `stateRetryVisible` | cleared | kept | cleared |
 | `micMuted` | as set by `startOpen` | kept | false |
 | `lastSessionId` | the new Session | the Session that ended | the Session that ended |
 
-`startOpen` (a press of Call, and every reconnect) sets `micMuted: false` and `error: null`, and keeps `recovery` and `retryVisible` only when it is a reconnect.
+`startOpen` (a press of Call, and every reconnect) sets `micMuted: false` and `error: null`, and keeps `recovery` and `retryVisible` only when it is a reconnect. When CONFIGURING reaches LISTENING, `onState` sets `recovery` to null and `retryVisible` to false, and disarms `ack`, `connect`, `retryUi` and `reconnect`.
 
-**Not modelled here:** the microphone prompt. `getMicrophone` runs inside the `connect` command, so a refused microphone reaches the reducer as `sdpFailed`. The `swap` timer and `afterReply` are named but do nothing on this branch.
+**Where the tables live.** In `packages/core/src/voice/machine.ts`: the full reset table, with a cell for every `VoiceState` field in each of the closed, recovery, open and press exits, is the comment above `closedFields`; what each `TimerName` means, by the phase it is armed in, is the comment on that type; the file's `@machine voice.call` header says what always holds and what it never does. The three switches over a closed union, in `step` (over `VoiceEvent`), `onTimer` (over `TimerName`) and `onRealtime` (over `RealtimeServerEvent`), end in `satisfies never`, so a member with no case fails `npm run typecheck`; at run time an unknown value changes nothing. `onRealtime`'s default is where every Realtime type the union does not list lands; `packages/core/src/voice/voice-unlisted.transitions.test.ts` pins that it returns the same state and no commands. `onTimer` returns before its switch for a name with no deadline, so its default is not reached at run time.
+
+**Not modelled here:** the microphone prompt. `getMicrophone` runs inside the `connect` command, after the open answer armed the 5 s `connect` limit, so the browser's permission prompt runs inside that limit: an Allow later than 5 s ends in connection recovery. A refused microphone reaches the reducer as `sdpFailed`. The `swap` timer and `afterReply` are named but do nothing on this branch.
 
 ### `voice.permit`
 
@@ -211,16 +214,22 @@ A pure classifier for a `/api/turn` answer and the request that asked, so the re
 
 | Field | Value |
 |---|---|
-| Status | planned |
+| Status | view |
 | File | `packages/core/src/voice/testing/turn-mode.ts` |
+| Decides | `turnMode` |
+| State | `TurnMode`, `LegalTurnMode`, `IllegalTurnMode` |
+| Tests | `packages/core/src/voice/testing/turn-mode.test.ts`, `packages/core/src/voice/turn-mode-legal.property.test.ts` |
 
-A test-side view of the Turn's mode over `VoiceState`, with a property that no illegal mode is produced.
+A test-side view, under `testing/`; the reducer never reads it. `turnMode(state)` reads `turn`, `heldBack`, `admittedTurnId`, `active` and `phase` and names what the current voice Turn is doing: six legal modes (`LEGAL_TURN_MODES`) and eight illegal ones (`ILLEGAL_TURN_MODES`), each illegal mode the break of one invariant. The property runs every step of the wide generator and of `arbCall` and allows an illegal mode only when `TURN_MODES_ALLOWED` names it. Three are allowed today: `admittedWithoutReply` and `admittedWithoutTurn` (a cut reply leaves `admittedTurnId` set) and `unpostedInRecovery` (the recovery screen ends a Turn still waiting for its words). The list only shrinks: `turn-mode.test.ts` fails when an allowed mode is no longer reached over 1,000 wide calls at seed 7. The file's header calls it a view of `voice.turn`.
 
 ### `voice.replyStage`
 
 | Field | Value |
 |---|---|
-| Status | planned |
+| Status | view |
 | File | `packages/core/src/voice/testing/reply-stage.ts` |
+| Decides | `replyStage` |
+| State | `ReplyStage`, `LegalReplyStage`, `IllegalReplyStage` |
+| Tests | `packages/core/src/voice/reply-stage-legal.property.test.ts` |
 
-A test-side view of the reply's stage (speculative, pending check, admitted, playing), with the same kind of property.
+A test-side view, like `voice.turnMode`. `replyStage(state)` reads the four reply slots (`judge`, `spec`, `pending`, `active`), the phase and the output mute and names where the current reply is: thirteen legal stages (`LEGAL_REPLY_STAGES`, from `offCall` and `idle` through `racing`, the checks, `admittedMuted`, `speaking`, `toolWait` and `recoveryLine`) and eleven illegal ones (`ILLEGAL_REPLY_STAGES`, such as `audibleOutsideSpeaking` or `pendingAndActive`). The property runs every step of the wide generator and of `arbCall`; its allow-list is empty, so no illegal stage is produced on either. The file's header calls it a view of `voice.reply`.

@@ -1,6 +1,6 @@
 # Memory: eligibility, revisions and the read side
 
-What Franki may use or say is decided in code from stored records. Rules: `.kiro/steering/memory-rules.md`. The memory write side (on-turn slots, hard rules, corrections, status moves) is being built on another branch; its machines are listed here as `planned`.
+What Franki may use or say is decided in code from stored records. Rules: `.kiro/steering/memory-rules.md`, and for the write side `.kiro/steering/memory-writes.md`. The write side's machines (status moves, the FastSlots call, hard-rule slots, the bundle state) are the last four blocks.
 
 ### `memory.eligible`
 
@@ -10,9 +10,13 @@ What Franki may use or say is decided in code from stored records. Rules: `.kiro
 | File | `packages/core/src/eligible.ts` |
 | Decides | `eligible` |
 | State | `ER`, `EligibilityReason`, `EC`, `Snapshot` |
-| Tests | `packages/core/src/eligible.test.ts` |
+| Tests | `packages/core/src/eligible.test.ts`, `packages/core/src/eligible.context.test.ts`, `packages/core/src/eligible.row-epoch.property.test.ts`, `packages/core/src/eligible.row-policy-rev.property.test.ts`, `packages/core/src/eligible.row-stamp.property.test.ts`, `packages/server/src/routes/policy-rise.test.ts` |
 
 `eligible(x, c, s)` is the one decision whether a Memory or Evidence row may be used for a verb at a stage. Pure: no clock, store, network or global state, and identical inputs give an identical `ER`. Invalid or missing input answers `{ allow: false, reason: "ineligible" }` and never throws. The Head compiler and recall read Memory rows through it.
+
+Freshness (its clause 5) has two halves. The read's context must be current: a context whose `epoch` or `policyRev` differs from `core/epoch` is denied `freshness`. The row is compared on its `epoch` only: a row below the context's epoch is denied `freshness`, so forget, which raises the epoch, still fences what was stored before it. A stored row's own `policyRev` records when it was written and is not compared, so a `policyRev` rise does not hide a Memory stored before it, from recall or from the next Head. The ruling is CQ 162 in `docs/briefs/012-design.md`. `eligible.context.test.ts` pins the context half; `eligible.row-epoch.property.test.ts` and `eligible.row-policy-rev.property.test.ts` state the two row halves over Memory rows, and `eligible.row-stamp.property.test.ts` states both over every Memory and Evidence status, class and dirty flag. `routes/policy-rise.test.ts` raises `policyRev` through a late forget on a Superseding_Post and on a Parse_Repair, then checks that recall in the same call still reads the stored Memory and that the next Head holds it.
+
+The browser generation, foreground generation and worker revision checks that follow (clauses 6 to 8) are unchanged.
 
 ### `memory.parseGap`
 
@@ -49,7 +53,9 @@ Three fields of the Session decide whether the room is trusted:
 | `packages/server/src/routes/turn.ts`, a Superseding_Post with a hit that changes what is said | `policyRev + 1` |
 | `packages/server/src/intents/repair.ts` (`runParseRepair`), a repaired hit that cuts | `policyRev + 1` |
 
-A raised `policyRev` makes every Deck issued before it lower than the next one, so the browser cancels older speech. An Extract_Job written before the raise is requeued at the new `policyRev`; one whose epoch changed fails `STALE` (see [server-jobs](server-jobs.md)).
+These two are the only places that raise `policyRev`, each behind `changesWhatIsSaid`; `scripts/policy-rev-raises.test.ts` fails when another appears. No write, proposal, the repair's hardRule route or the extraction backstop raises it (`.kiro/steering/memory-writes.md`).
+
+A raised `policyRev` is the counter that cancels speech, Decks and work in flight. It makes every Deck issued before it lower than the next one, so the browser cancels older speech; the browser's `fastO` refuses an ack whose revisions differ from the Deck; and an Extract_Job written before the raise is requeued at the new `policyRev`, while one whose epoch changed fails `STALE` (see [server-jobs](server-jobs.md)). It does not hide stored rows: `memory.eligible` compares a row on its epoch only.
 
 ### `memory.forget`
 
@@ -110,34 +116,50 @@ A `transcript` receipt writes Franki's words as an assistant Turn with ID `H("at
 
 | Field | Value |
 |---|---|
-| Status | planned |
+| Status | table |
 | File | `packages/core/src/writes/status.ts` |
+| Decides | `statusTransition` |
+| State | `MemoryStatus` in `packages/core/src/writes/types.ts` |
+| Events | `StatusEvent` in `packages/core/src/writes/types.ts` |
+| Tests | `packages/core/src/writes/plans.test.ts`, `packages/core/src/writes/error-never-history.property.test.ts` |
 
-The table of allowed Memory status moves, read by one transition function.
+The only code that decides a Memory's next status when a correction (`correct`) or a change (`transition`) names it. A file-private table typed `Record<MemoryStatus, Record<StatusEvent, ...>>`, read by `statusTransition`; a pair it does not hold answers `refuse`. A correction marks any `active`, `scheduled`, `history` or `alleged` row `wrong`, never `history`. A change moves `active` and `history` to `history`, and refuses `scheduled` and `alleged`. A `wrong`, `retracted` or `blocked` row refuses both, so an error never comes back.
 
 ### `memory.slots`
 
 | Field | Value |
 |---|---|
-| Status | planned |
+| Status | explicit |
 | File | `packages/core/src/writes/slots-phase.ts` |
+| Decides | `nextSlots`, `initialSlots` |
+| State | `SlotsPhase` in `packages/core/src/writes/types.ts` |
+| Events | `SlotsEvent` in `packages/core/src/writes/types.ts` |
+| Tests | `packages/core/src/writes/slots-phase.test.ts`, `packages/core/src/writes/slots-phase.property.test.ts` |
 
-The on-turn slot reader's phase, as a pure step.
+The FastSlots call of one request: when it starts and when it settles. `initialSlots(regex)` starts `idle`, with whether the final transcript matched the regex rules. In `idle`, `ready` (the request is new and its context is read) and `parsed` update what is known. Once the context is read, a regex match, an asked question or a route candidate starts the call, in that order of precedence, with its deadline `FAST_SLOTS_DEADLINE_MS` from that event (`start: true` is returned once). With the context read and a parse that found nothing, no regex match and nothing asked, the call is `notNeeded`. A `running` call settles on its answer, or on a deadline event at or past its deadline as a timeout. `settled` and `notNeeded` never change. A replayed request never reaches `ready`, so it never calls FastSlots.
 
 ### `memory.ruleState`
 
 | Field | Value |
 |---|---|
-| Status | planned |
+| Status | explicit |
 | File | `packages/core/src/writes/rule-state.ts` |
+| Decides | `ruleTransition` |
+| State | `RuleSlot` in `packages/core/src/writes/types.ts` |
+| Events | `RuleEvent` in `packages/core/src/writes/types.ts` |
+| Tests | `packages/core/src/writes/hard-rule.test.ts` |
 
-A pending hard rule's state until its slots are answered.
+One hard-rule slot, keyed by subject (or anonymous) and code: `absent`, `pending` or `active`. `ruleTransition` returns the next slot and the outcome, or a refusal. From `absent`, an affirm writes the rule `active` and an unsure answer writes it `pending`; a denial is recorded and the slot stays `absent`. From `pending`, an affirm makes it `active`, an unsure answer keeps it, and a denial clears it. An `active` rule is kept whatever voice says: voice never relaxes it. `superseded` (a firmer rule on another slot answers this one) clears only a `pending` slot and is refused otherwise. A trusted tap is refused (`tapOnly`): removal by tap is not built.
 
 ### `memory.bundle`
 
 | Field | Value |
 |---|---|
-| Status | planned |
+| Status | explicit |
 | File | `packages/core/src/writes/bundle.ts` |
+| Decides | `bundleAfter` |
+| State | `BundleState` |
+| Events | `BundleEvent` |
+| Tests | `packages/core/src/writes/plans.test.ts` |
 
-The bundle state a write leaves behind, and when the Head must be rebuilt.
+The only code that decides `core/bundle.state`. `bundleAfter(prev, event)`: a compiled Head is `clean`; a failed compile or a burned bundle is `dirty`, the old Head stays and writes still commit; `blocked` stays `blocked` whatever the event, since only forget is meant to leave it.

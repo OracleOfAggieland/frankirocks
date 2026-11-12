@@ -30,8 +30,8 @@ Every piece of code that holds state and moves it between named states is listed
 | `voice.latency` | documented | When a Turn's latency row opens and closes | `packages/core/src/voice/latency.ts` | [voice-call](voice-call.md) |
 | `voice.transport` | documented | Which peer connection, data channel and mic track are live | `apps/web/src/client/voice-client.ts` | [voice-call](voice-call.md) |
 | `voice.turnAnswer` | planned | What a `/api/turn` answer means for the request that asked | `packages/core/src/voice/turn-answer.ts` | [voice-call](voice-call.md) |
-| `voice.turnMode` | planned | The Turn's mode, derived for tests | `packages/core/src/voice/testing/turn-mode.ts` | [voice-call](voice-call.md) |
-| `voice.replyStage` | planned | The reply's stage, derived for tests | `packages/core/src/voice/testing/reply-stage.ts` | [voice-call](voice-call.md) |
+| `voice.turnMode` | view | The Turn's mode, derived for tests | `packages/core/src/voice/testing/turn-mode.ts` | [voice-call](voice-call.md) |
+| `voice.replyStage` | view | The reply's stage, derived for tests | `packages/core/src/voice/testing/reply-stage.ts` | [voice-call](voice-call.md) |
 | `time.deadlines` | documented | The order of the limits that nest inside each other | `packages/core/src/voice/machine.ts` | [deadlines](deadlines.md) |
 | `client.api` | documented | What one route call returns: a body or a failure kind | `apps/web/src/client/api.ts` | [client-api](client-api.md) |
 | `client.retries` | documented | How a turn post and a receipt are sent again | `apps/web/src/client/voice-client.ts` | [client-api](client-api.md) |
@@ -48,11 +48,11 @@ Every piece of code that holds state and moves it between named states is listed
 | `ui.audioContext` | documented | When the Visit's one AudioContext is created | `apps/web/src/ui/audio/context.ts` | [ui-electricity](ui-electricity.md) |
 | `ui.reducedMotion` | documented | Whether Reduced_Motion is on | `apps/web/src/ui/hooks/reduced-motion.ts` | [ui-electricity](ui-electricity.md) |
 | `ui.screen` | documented | The main screen's live sources and its one frame loop | `apps/web/src/ui/hooks/screen-controller.ts` | [ui-electricity](ui-electricity.md) |
-| `ui.ringSpark` | planned | The call button's ring spark and its grant | `apps/web/src/ui/ring-spark.ts` | [ui-electricity](ui-electricity.md) |
-| `ui.levelTap` | planned | Each Level_Meter analyser's tap | `apps/web/src/ui/levels/level-meter.ts` | [ui-electricity](ui-electricity.md) |
-| `ui.rendererPhase` | planned | Which renderer shows the avatar, and the engine's loop | `apps/web/src/ui/avatar/renderer-phase.ts` | [ui-electricity](ui-electricity.md) |
-| `ui.frameLoop` | planned | The three.js engine's frames | `apps/web/src/components/avatar/three/loop.ts` | [ui-electricity](ui-electricity.md) |
-| `ui.acting` | planned | The three.js engine's pose and one-shot edges | `apps/web/src/ui/avatar/acting.ts` | [ui-electricity](ui-electricity.md) |
+| `ui.ringSpark` | explicit | The call button's ring spark and its grant | `apps/web/src/ui/ring-spark.ts` | [ui-electricity](ui-electricity.md) |
+| `ui.levelTap` | explicit | The life of each Level_Meter tap's second analyser | `apps/web/src/ui/levels/level-meter.ts` | [ui-electricity](ui-electricity.md) |
+| `ui.rendererPhase` | explicit | Which renderer shows the avatar, and the engine's loop | `apps/web/src/ui/avatar/renderer-phase.ts` | [ui-electricity](ui-electricity.md) |
+| `ui.frameLoop` | documented | When the three.js engine requests and cancels frames | `apps/web/src/components/avatar/three/loop.ts` | [ui-electricity](ui-electricity.md) |
+| `ui.acting` | explicit | The three.js engine's pose and one-shot edges | `apps/web/src/ui/avatar/acting.ts` | [ui-electricity](ui-electricity.md) |
 | `server.tick` | documented | Which maintenance runs for an Owner this ops minute | `packages/server/src/worker/tick.ts` | [server-tick](server-tick.md) |
 | `server.session` | documented | A Session's stored status, from open to closed | `packages/server/src/sessions.ts` | [server-tick](server-tick.md) |
 | `server.sdp` | documented | Which Realtime calls a Session has registered | `packages/server/src/routes/sdp.ts` | [server-tick](server-tick.md) |
@@ -71,11 +71,12 @@ Every piece of code that holds state and moves it between named states is listed
 | `memory.recall` | documented | What one recall tool call answers | `packages/server/src/routes/tool.ts` | [memory](memory.md) |
 | `memory.assistantTurn` | documented | Where Franki's spoken words are stored | `packages/server/src/routes/receipt.ts` | [memory](memory.md) |
 | `memory.spokenTime` | documented | The one civil day spoken words name, or none | `packages/core/src/dates.ts` | [memory](memory.md) |
-| `memory.status` | planned | Which Memory status moves are allowed | `packages/core/src/writes/status.ts` | [memory](memory.md) |
-| `memory.slots` | planned | The on-turn slot reader's phase | `packages/core/src/writes/slots-phase.ts` | [memory](memory.md) |
-| `memory.ruleState` | planned | A pending hard rule's state | `packages/core/src/writes/rule-state.ts` | [memory](memory.md) |
-| `memory.bundle` | planned | The bundle a write leaves behind | `packages/core/src/writes/bundle.ts` | [memory](memory.md) |
+| `memory.status` | table | Which Memory status moves are allowed | `packages/core/src/writes/status.ts` | [memory](memory.md) |
+| `memory.slots` | explicit | When the FastSlots call of a request starts and settles | `packages/core/src/writes/slots-phase.ts` | [memory](memory.md) |
+| `memory.ruleState` | explicit | A hard-rule slot's next state | `packages/core/src/writes/rule-state.ts` | [memory](memory.md) |
+| `memory.bundle` | explicit | The bundle state a compile or a burn leaves behind | `packages/core/src/writes/bundle.ts` | [memory](memory.md) |
 | `deploy.ci` | documented | The checks a push runs, in order | `.github/workflows/ci.yml` | [deploy](deploy.md) |
+| `deploy.secretScan` | documented | Which commits a push or pull request scans for secrets | `.github/workflows/secret-scan.yml` | [deploy](deploy.md) |
 | `deploy.order` | documented | What one deploy command updates | `package.json` | [deploy](deploy.md) |
 | `deploy.config` | documented | Whether a server variable is present | `packages/server/src/config/env.ts` | [deploy](deploy.md) |
 | `deploy.wire` | documented | The closed wire shapes both sides share | `packages/core/src/schema/wire.ts` | [deploy](deploy.md) |
