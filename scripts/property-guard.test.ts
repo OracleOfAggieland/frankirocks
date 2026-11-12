@@ -193,4 +193,9 @@ describe("property guard, the suffix, the pathspec and the working folder", () =
   it("resolves a relative path from the repository root, not the folder the hook was started in", () => {
     expect(runHookFrom(join(REPO_ROOT, "scripts"), event("str_replace", { path: TRACKED, oldStr: "a", newStr: "b" })).code).toBe(2);
   });
+
+  it("blocks a tracked property file when GIT_LITERAL_PATHSPECS=1 is in the hook's environment", () => {
+    const env = { ...process.env, GIT_LITERAL_PATHSPECS: "1" };
+    expect(runHookFrom(REPO_ROOT, event("str_replace", { path: TRACKED, oldStr: "a", newStr: "b" }), env).code).toBe(2);
+  });
 });

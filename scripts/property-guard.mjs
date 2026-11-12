@@ -40,10 +40,12 @@ export function isPropertyFile(file) {
 /**
  * Whether git tracks `file` (repo-relative POSIX), staged or committed. Exit 0 of `git ls-files --error-unmatch`
  * means tracked and 1 means not tracked; anything else (no git, not a repository) throws, so the hook blocks rather
- * than guess. The `:(literal,icase)` pathspec matches the name exactly except for letter case.
+ * than guess. The `:(literal,icase)` pathspec matches the name exactly except for letter case. Git is run without
+ * GIT_LITERAL_PATHSPECS, which would make it read that pathspec as a file name and report every file untracked.
  */
 export function gitTracks(file, root = REPO_ROOT) {
-  const r = spawnSync("git", ["ls-files", "--error-unmatch", "--", `:(literal,icase)${file}`], { cwd: root, encoding: "utf8" });
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toUpperCase() !== "GIT_LITERAL_PATHSPECS"));
+  const r = spawnSync("git", ["ls-files", "--error-unmatch", "--", `:(literal,icase)${file}`], { cwd: root, encoding: "utf8", env });
   if (r.status === 0) return true;
   if (r.status === 1) return false;
   throw new Error(`git ls-files failed (${r.error?.message ?? `status ${r.status}`})`);
