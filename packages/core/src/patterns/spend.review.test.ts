@@ -1,7 +1,8 @@
 // The reviewer's inputs for brief 037's money findings, one block per finding.
 import { describe, expect, it } from "vitest";
+import { testId } from "../testing/samples";
 import { takeoutLateMeetingV1 } from "./takeout";
-import { HERO_ORDERS, HERO_ZONE, bankRow, heroInput, instantAt } from "./testing/hero-fixture";
+import { HERO_MEETINGS, HERO_ORDERS, HERO_ZONE, bankRow, heroInput, instantAt } from "./testing/hero-fixture";
 import type { BankRow } from "./types";
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -49,3 +50,12 @@ describe("finding 8: an unlinked refund", () => {
   });
 });
 
+describe("finding 10: a meeting held twice is cited once", () => {
+  it("two rows under one provider key give one cited meeting", () => {
+    const m1 = HERO_MEETINGS[0]!;
+    const copy = { ...m1, id: testId("he_m1copy"), rootKey: testId("herk_m1copy") };
+    const p = takeoutLateMeetingV1(heroInput({ events: [...HERO_MEETINGS, copy] }));
+    expect(p.meetingIds).toHaveLength(4);
+    expect(p.meetingIds).toContain([m1.id, copy.id].sort()[0]);
+  });
+});
