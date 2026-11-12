@@ -71,4 +71,11 @@ describe("POST /api/receipt: moments (brief 030 P1-6)", () => {
     await receipt({ kind: "pendingRendered", pendingId });
     expect(await rig.store.get(UID, paths.ledger(UID, renderedEntryId(rig.deps.hasher, pendingId as never)))).not.toBeNull();
   });
+
+  it("a spoken line that claims something is gone, with no forget receipt, asks (brief 030 P1-7)", async () => {
+    const { receipt } = await setup();
+    expect((await receipt({ text: "Done, that's deleted." })).body).toEqual({ accepted: true, controlCheck: "pending" });
+    expect((await receipt({ responseId: "resp_2", text: "Want me to forget that?" })).body).toEqual({ accepted: true, controlCheck: "none" });
+    expect((await receipt({ responseId: "resp_3", kind: "playbackEnded" })).body).toEqual({ accepted: true, controlCheck: "none" });
+  });
 });

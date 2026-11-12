@@ -39,7 +39,7 @@ import { mutation } from "./mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 import { retryStale } from "./state";
 import { askAfterSpoken } from "../onturn/ask";
-import { receiptMoments } from "./receipt-moments";
+import { goneCheck, receiptMoments } from "./receipt-moments";
 
 type ReceiptReq = Infer<typeof ReceiptRequest>;
 type ReceiptRes = Infer<typeof ReceiptResponse>;
@@ -70,7 +70,7 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
           await completeRequest(tx, key, refused, ops);
           return refused;
         }
-        const accepted: ReceiptRes = { accepted: true, controlCheck: "none" };
+        const accepted: ReceiptRes = { accepted: true, controlCheck: goneCheck(req) };
         const live = s.status === "minting" || s.status === "active";
 
         if (req.kind === "transcript") {
