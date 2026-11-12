@@ -24,5 +24,3 @@ export const ADVANCE_TIMEOUT_MS = 4_000;
 
 /** The barrier answer: HTTP 423 (contracts §6, "barrier423"), or the ErrorCode BARRIER on another status. */
 export const BARRIER_STATUS = 423;
-/** How long the bolt waits after a barrier answer that carries no `retryAfterMs`. */
-export const BARRIER_WAIT_MS = 2_000;

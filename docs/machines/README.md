@@ -58,6 +58,7 @@ Every piece of code that holds state and moves it between named states is listed
 | `ui.cardSource` | explicit | Which source's rows show under a Card | `apps/web/src/components/surfaces/Card.tsx` | [ui-surfaces](ui-surfaces.md) |
 | `ui.ruleForget` | explicit | Which hard rule's Forget is armed for its second tap | `apps/web/src/components/surfaces/WhatIKnowSheet.tsx` | [ui-surfaces](ui-surfaces.md) |
 | `ui.spider` | explicit | The lab spider's springs, rest and travel, one frame at a time | `apps/web/src/ui/cursor/spider.ts` | [ui-surfaces](ui-surfaces.md) |
+| `ui.visit` | explicit | Whether the visit is cloned, ready, resetting or failed, and what the time bolt may ask for | `apps/web/src/ui/visit/visit-machine.ts` | [visit](visit.md) |
 | `ui.gait` | explicit | Which of the spider's feet are planted and which are swinging | `apps/web/src/ui/cursor/gait.ts` | [ui-surfaces](ui-surfaces.md) |
 | `landing.stepClock` | explicit | The stage's beat and words said within one visit to a story step | `apps/web/src/ui/landing/stage-script.ts` | [landing](landing.md) |
 | `landing.stageDriver` | explicit | When the front door's Franki wakes, and when a scene's one-shot fires or is cut | `apps/web/src/ui/landing/stage-script.ts` | [landing](landing.md) |
