@@ -6,7 +6,7 @@
  */
 import type { W } from "../schema/wire";
 import { tokenize } from "../text";
-import { WHISPER_TEMPLATES, type WhisperTemplateId, templateWords } from "./templates";
+import { type WhisperTemplateId, templateWords } from "./templates";
 
 /** Words that state no fact: function words, pronouns, light verbs and the friendly filler of a spoken line. */
 export const FUNCTION_WORDS: ReadonlySet<string> = new Set(
@@ -23,10 +23,18 @@ export const FUNCTION_WORDS: ReadonlySet<string> = new Set(
 );
 
 const HAS_DIGIT = /\p{N}/u;
-const ALL_TEMPLATES = Object.keys(WHISPER_TEMPLATES) as WhisperTemplateId[];
 
-/** Tokens of `spoken` that carry a fact found in no note and no template. */
-export function addedFacts(spoken: string, notes: readonly Pick<W, "text" | "tokens">[], templates: readonly WhisperTemplateId[] = ALL_TEMPLATES): string[] {
+/**
+ * Function words that still carry a fact when a line adds them (brief 033 finding 9): a negation turns "She got the
+ * job" around, and "won" is a claim, not only the stem of "won't".
+ */
+export const FACT_WORDS: ReadonlySet<string> = new Set(["not", "no", "t", "don", "didn", "doesn", "isn", "aren", "wasn", "won", "wouldn", "cannot"]);
+
+/**
+ * Tokens of `spoken` that carry a fact found in no note and no listed template. A note's text already holds its own
+ * template's words, so by default no other template's words count as known (brief 033 finding 9).
+ */
+export function addedFacts(spoken: string, notes: readonly Pick<W, "text" | "tokens">[], templates: readonly WhisperTemplateId[] = []): string[] {
   if (typeof spoken !== "string") return [];
   const known = new Set<string>();
   for (const n of notes) for (const k of tokenize([n.text, ...n.tokens].join(" "))) known.add(k);
@@ -34,7 +42,7 @@ export function addedFacts(spoken: string, notes: readonly Pick<W, "text" | "tok
   const extra: string[] = [];
   for (const k of tokenize(spoken)) {
     if (known.has(k) || extra.includes(k)) continue;
-    if (HAS_DIGIT.test(k) || !FUNCTION_WORDS.has(k)) extra.push(k);
+    if (HAS_DIGIT.test(k) || FACT_WORDS.has(k) || !FUNCTION_WORDS.has(k)) extra.push(k);
   }
   return extra;
 }

@@ -1,0 +1,139 @@
+/** The review of the Gate (brief 033): each finding on the reviewer's own inputs. */
+import { describe, expect, it } from "vitest";
+import { testId } from "../testing/samples";
+import { S2_SCREEN_ASK_BUILT, gate } from "./gate";
+import { inQuietHours, localMinute } from "./quiet-hours";
+import { gateCand, gateCtx, ownerSaid } from "./testing/cases";
+
+const WORK = testId("topic-work");
+const work = { topicId: WORK, label: "work", labelClass: "U" as const, terms: ["work"], quiet: null };
+const counts = (o: Partial<ReturnType<typeof gateCtx>["counts"]> = {}) => ({ proactive: 0, heavy: 0, senderAsks: 0, notesThisReply: 0, ...o });
+
+describe("finding 1: an opened topic never lifts unprompted mail", () => {
+  const opened = gateCtx({ openedTopics: [WORK] });
+
+  it("keeps the sender cap card for a T S1 ask", () => {
+    const c = gateCand({ sourceClass: "T", sens: "S1", purpose: "ask", sender: { mailedByOwner: true }, topic: work });
+    const capped = { ...opened, counts: counts({ senderAsks: 5 }) };
+    expect(gate(c, capped)).toMatchObject({ verdict: "card", reasons: ["senderCap"] });
+    expect(gate(c, { ...capped, openedTopics: [] })).toMatchObject({ verdict: "card", reasons: ["senderCap"] });
+  });
+
+  it("cards T S0 mail from a sender the owner never mailed", () => {
+    expect(gate(gateCand({ sourceClass: "T", sender: { mailedByOwner: false }, topic: work }), opened).verdict).toBe("card");
+  });
+
+  it("cards a T S1 insight with no sender", () => {
+    expect(gate(gateCand({ sourceClass: "T", sens: "S1", purpose: "insight", sender: null, topic: work }), opened).verdict).toBe("card");
+  });
+});
+
+describe("finding 14: one T ask per sender per day, at any sensitivity", () => {
+  it("cards a T S0 ask from a mailed sender over the cap", () => {
+    const c = gateCand({ sourceClass: "T", purpose: "ask", sender: { mailedByOwner: true } });
+    expect(gate(c, gateCtx({ counts: counts({ senderAsks: 9 }) }))).toMatchObject({ verdict: "card", reasons: ["senderCap"] });
+    expect(gate(c, gateCtx())).toMatchObject({ verdict: "say", render: "attributed" });
+  });
+});
+
+describe("finding 15: an asked S2 recall goes to a card until the screen ask exists", () => {
+  it("cards the opened-topic owner recall in both builds, behind one constant", () => {
+    expect(S2_SCREEN_ASK_BUILT).toBe(false);
+    const c = gateCand({ sens: "S2", topic: work, queryTerms: ["work"] });
+    const asked = { trigger: "recall" as const, ownerTurn: ownerSaid("how is work"), openedTopics: [WORK] };
+    expect(gate(c, gateCtx(asked))).toMatchObject({ verdict: "card", carveOut: "openedTopicRecall" });
+    // In +200 too: an asked recall is answered as asked (finding 17), not by the door.
+    expect(gate(c, gateCtx({ ...asked, build: "plus200" }))).toMatchObject({ verdict: "card", carveOut: "openedTopicRecall" });
+  });
+});
+
+describe("finding 17: an asked recall is answered as asked, not by an unprompted path", () => {
+  it("does not let company open what rushed held (the committed subtract-only property, seed 2120965385)", () => {
+    const c = gateCand({ sens: "S2", topic: { ...work, terms: [] }, aliases: ["biopsy"] });
+    const wide = gateCtx({ build: "plus200", modifiers: { rushed: true, crisis: false }, trigger: "recall", ownerTurn: ownerSaid("biopsy"), openedTopics: [WORK] });
+    const w = gate(c, wide);
+    const n = gate(c, { ...wide, audience: "company" });
+    expect(w).toMatchObject({ verdict: "card", carveOut: "openedTopicRecall" });
+    expect(n.verdict).toBe("card");
+  });
+});
+
+describe("finding 3: only the owner's words against the candidate's own terms ask", () => {
+  it("does not count the model's query terms as asked", () => {
+    const c = gateCand({ sens: "S1", queryTerms: ["long day mom"], aliases: ["mom"] });
+    const recall = { trigger: "recall" as const };
+    expect(gate(c, gateCtx({ ...recall, ownerTurn: ownerSaid("Long day") })).verdict).toBe("silent");
+    expect(gate(c, gateCtx({ ...recall, ownerTurn: ownerSaid("How's my mom?") })).verdict).toBe("say");
+    expect(gate({ ...c, queryTerms: [] }, gateCtx({ ...recall, ownerTurn: ownerSaid("How's my mom?") })).verdict).toBe("say");
+  });
+
+  it("asks through the candidate's own topic, never a third-party label", () => {
+    const c = gateCand({ sens: "S1", topic: work });
+    expect(gate(c, gateCtx({ trigger: "recall", ownerTurn: ownerSaid("how is work") })).verdict).toBe("say");
+    expect(gate({ ...c, topic: { ...work, labelClass: "T" } }, gateCtx({ trigger: "recall", ownerTurn: ownerSaid("how is work") })).verdict).toBe("silent");
+  });
+});
+
+describe("finding 18: a label opens only on all of its words", () => {
+  it("does not drop a label's function words before matching (the committed ceiling property, seed 555205424)", () => {
+    const c = gateCand({ sourceClass: "M", topic: { ...work, label: "is biopsy", terms: [] } });
+    expect(gate(c, gateCtx({ ownerTurn: ownerSaid("biopsy") })).verdict).toBe("silent");
+    expect(gate(c, gateCtx({ ownerTurn: ownerSaid("is it the biopsy") })).verdict).toBe("say");
+    // A label of function words alone never opens.
+    expect(gate({ ...c, topic: { ...work, label: "it is", terms: [] } }, gateCtx({ ownerTurn: ownerSaid("it is") })).verdict).toBe("silent");
+  });
+});
+
+describe("findings 4 and 5: unknown, missing or malformed values are silence, never a throw", () => {
+  const invalid = { verdict: "silent", reasons: ["invalidInput"] };
+  const bad = <T>(v: unknown) => v as T;
+
+  it("does not fail open on an unknown or missing value (finding 4)", () => {
+    expect(gate(gateCand({ act: bad(undefined) }), gateCtx())).toMatchObject(invalid);
+    expect(gate(gateCand({ topic: { ...work, quiet: bad("ALL_OUTPUT") } }), gateCtx())).toMatchObject(invalid);
+    expect(gate(gateCand({ gravity: 3 }), gateCtx({ counts: bad({}) }))).toMatchObject(invalid);
+    expect(gate(gateCand(), gateCtx({ modifiers: { rushed: false, crisis: bad("true") } }))).toMatchObject(invalid);
+    const asked = gateCtx({ trigger: "recall", ownerTurn: ownerSaid("how is mom"), modifiers: { rushed: false, crisis: true } });
+    expect(gate(gateCand({ purpose: bad("Suggest"), aliases: ["mom"] }), asked)).toMatchObject(invalid);
+    expect(gate(gateCand({ sens: "S2", allergy: bad("no") }), gateCtx())).toMatchObject(invalid);
+    expect(gate(gateCand({ offerUsed: bad(undefined), sourceClass: "M", attestedPremises: 2 }), gateCtx())).toMatchObject(invalid);
+    expect(gate(gateCand({ checkInUsed: bad(undefined) }), gateCtx())).toMatchObject(invalid);
+  });
+
+  it("does not throw on malformed shapes (finding 5)", () => {
+    expect(gate(gateCand({ purpose: "insight" }), gateCtx({ recentTurns: bad([null]) }))).toMatchObject(invalid);
+    expect(gate(gateCand({ queryTerms: bad([1]) }), gateCtx({ trigger: "recall", ownerTurn: ownerSaid("mom") }))).toMatchObject(invalid);
+    expect(gate(gateCand({ aliases: bad([1]) }), gateCtx({ trigger: "recall", ownerTurn: ownerSaid("mom") }))).toMatchObject(invalid);
+    expect(gate(gateCand({ topic: bad({ ...work, terms: undefined }) }), gateCtx({ ownerTurn: ownerSaid("work") }))).toMatchObject(invalid);
+    expect(gate(gateCand({ sens: "S2" }), gateCtx({ build: "plus200", authorization: bad(undefined) }))).toMatchObject(invalid);
+  });
+});
+
+describe("finding 7: an idle S1+ line needs a private audience", () => {
+  it("holds an idle S1 line unless the audience is private", () => {
+    const c = gateCand({ sens: "S1" });
+    expect(gate(c, gateCtx({ audience: "unknown", moment: "idle" }))).toMatchObject({ verdict: "hold", reasons: ["audience"] });
+    expect(gate(c, gateCtx({ audience: "private", moment: "idle" }))).toMatchObject({ verdict: "say", render: "free" });
+  });
+
+  it("gives a Franki-started opener S1 by code template only", () => {
+    const c = gateCand({ sens: "S1" });
+    expect(gate(c, gateCtx({ audience: "unknown", moment: "opener" }))).toMatchObject({ verdict: "say", render: "template" });
+    expect(gate(c, gateCtx({ audience: "private", moment: "opener" }))).toMatchObject({ verdict: "say", render: "template" });
+    expect(gate(gateCand(), gateCtx({ audience: "unknown", moment: "opener" }))).toMatchObject({ verdict: "say", render: "free" });
+  });
+
+  it("treats an unprompted context with no moment as invalid input", () => {
+    expect(gate(gateCand(), gateCtx({ moment: null }))).toMatchObject({ verdict: "silent", reasons: ["invalidInput"] });
+    expect(gate(gateCand(), gateCtx({ moment: "Idle" as unknown as "idle" }))).toMatchObject({ verdict: "silent", reasons: ["invalidInput"] });
+    expect(gate(gateCand({ aliases: ["mom"] }), gateCtx({ moment: null, trigger: "recall", ownerTurn: ownerSaid("mom") })).verdict).toBe("say");
+  });
+});
+
+describe("finding 19 (the lead's item 17): quiet hours on an unreadable instant", () => {
+  it("counts a non-finite instant as quiet, never throwing", () => {
+    expect(inQuietHours(Number.NaN, "America/Los_Angeles")).toBe(true);
+    expect(inQuietHours(Number.POSITIVE_INFINITY, "America/Los_Angeles")).toBe(true);
+    expect(localMinute(Number.NaN, "America/Los_Angeles")).toBeNull();
+  });
+});

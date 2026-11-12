@@ -9,8 +9,12 @@
  *     the answer carries the care Permit (`postCommitControl`, scope `ack`, no notes, under the new revisions).
  *   - An open that names a narrowed Session as `previousSessionId` answers with the swap line in `proactive`: a
  *     `postCommitControl` Permit over the COMPANY ack note, as `routes/open.ts` will in task 50.
+ *   - `openEarly`: an open sent before the `blocked` answer may have been handled before the narrowing committed,
+ *     and then answers as a plain open (brief 031, finding 1). `arbSwapCall` never generates it; `arbEarlyOpenCall`
+ *     does.
  *
  * `swapCalls(trace)` labels each step with the call it belongs to: call n opens at the n-th `connect` command.
+ * `openedAt(driver)` labels each step with the step that sent the open of the call it belongs to.
  */
 import fc from "fast-check";
 import { payloadHash } from "../../admission";
@@ -18,11 +22,19 @@ import { tsFromMs } from "../../schema/primitives";
 import type { Infer } from "../../schema/v";
 import type { Permit, Proactive, Stamp, TurnResponse } from "../../schema/wire";
 import { COMPANY_LINE, ackNote } from "../lines";
-import type { TurnBody } from "../machine";
+import { OPEN_LIMIT_MS, type TurnBody } from "../machine";
 import type { Trace } from "./arb-call";
 import { type WideAction, WideDriver, type WideStep, arbFastOScene, arbSetup, arbSlowScene, arbWideNoise, judged } from "./arb-call-wide";
 
-export type SwapAction = WideAction | { k: "blocked"; pick: number; care: boolean };
+export type SwapAction =
+  | WideAction
+  | { k: "blocked"; pick: number; care: boolean }
+  /**
+   * The oldest open answered as the server handled it before the narrowing of its `previousSessionId` committed: a
+   * new Session with the old audience and no swap line. Only an open sent before that Session's `blocked` answer can
+   * be answered so; any other plays as `openOk` (brief 031, finding 1).
+   */
+  | { k: "openEarly" };
 
 export interface SwapStep {
   action: SwapAction;
@@ -35,12 +47,40 @@ const w = (action: SwapAction, dt = 0): SwapStep => ({ action, dt });
 export class SwapDriver extends WideDriver {
   /** Sessions a `blocked` answer narrowed. */
   narrowed = new Set<string>();
-  /** The `previousSessionId` of every open sent and not yet answered, oldest first. */
-  private opensPrev: (string | null)[] = [];
+  /** The step at which each narrowed Session's first `blocked` answer was played. */
+  narrowedAt = new Map<string, number>();
+  /** For each `openOk` event, by its step index: the step that sent the open it answers. */
+  openOf = new Map<number, number>();
+  /** The `previousSessionId` of every open sent and not yet answered, oldest first, with the step that sent it. */
+  private opensPrev: { prev: string | null; at: number }[] = [];
   private seenOpens = 0;
+  /**
+   * When set, an open with no answer this long after it was sent is answered `openFailed` at that moment, before the
+   * next step, as the Voice_Client's own open timeout (OPEN_TIMEOUT_MS) does. Null, as `arbSwapCall` is played,
+   * answers an open whenever a step asks.
+   */
+  openTimeoutMs: number | null = null;
+
+  /** Fails every open that reaches the timeout before `dt` from now, at its timeout; returns what is left of `dt`. */
+  private expireOpens(dt: number): number {
+    let left = dt;
+    for (;;) {
+      const o = this.opensPrev[0];
+      if (this.openTimeoutMs === null || o === undefined || this.opensWaiting === 0) return left;
+      const due = this.trace.steps[o.at]!.now + this.openTimeoutMs;
+      if (due > this.now + left) return left;
+      const wait = Math.max(0, due - this.now);
+      this.opensPrev.shift();
+      this.opensWaiting -= 1;
+      this.ev({ type: "openFailed" }, wait);
+      left -= wait;
+      this.sync();
+      this.syncOpens();
+    }
+  }
 
   private syncOpens(): void {
-    for (const st of this.trace.steps.slice(this.seenOpens)) for (const c of st.commands) if (c.kind === "open") this.opensPrev.push(c.body.previousSessionId);
+    for (const st of this.trace.steps.slice(this.seenOpens)) for (const c of st.commands) if (c.kind === "open") this.opensPrev.push({ prev: c.body.previousSessionId, at: st.i });
     this.seenOpens = this.trace.steps.length;
   }
 
@@ -53,15 +93,22 @@ export class SwapDriver extends WideDriver {
   override play(step: SwapStep | WideStep | Parameters<WideDriver["play"]>[0]): void {
     this.sync();
     this.syncOpens();
+    const dt = this.expireOpens(step.dt);
+    if (dt !== step.dt) step = { ...step, dt };
     const a = step.action as SwapAction;
     if (a.k === "blocked") {
       this.blocked(a.pick, a.care, step.dt);
-    } else if (a.k === "openOk" && this.opensWaiting > 0 && this.narrowed.has(this.opensPrev[0] ?? "")) {
-      this.opensPrev.shift();
-      this.opensWaiting -= 1;
-      this.swapOpen(step.dt);
-    } else {
-      if ((a.k === "openOk" || a.k === "openFailed") && this.opensWaiting > 0) this.opensPrev.shift();
+    } else if ((a.k === "openOk" || a.k === "openEarly") && this.opensWaiting > 0) {
+      const o = this.opensPrev.shift()!;
+      this.openOf.set(this.trace.steps.length, o.at);
+      const narrowedAt = this.narrowedAt.get(o.prev ?? "");
+      const early = a.k === "openEarly" && narrowedAt !== undefined && o.at < narrowedAt;
+      if (narrowedAt !== undefined && !early) {
+        this.opensWaiting -= 1;
+        this.swapOpen(step.dt);
+      } else super.play({ action: { k: "openOk" }, dt: step.dt });
+    } else if (a.k !== "openEarly") {
+      if (a.k === "openFailed" && this.opensWaiting > 0) this.opensPrev.shift();
       super.play(step as WideStep);
     }
     this.sync();
@@ -76,6 +123,7 @@ export class SwapDriver extends WideDriver {
     p.answered = true;
     const at = this.now + dt;
     this.narrowed.add(p.body.sessionId);
+    if (!this.narrowedAt.has(p.body.sessionId)) this.narrowedAt.set(p.body.sessionId, this.trace.steps.length);
     this.serverDeck = this.deckNow(at, { policyRev: this.serverDeck.policyRev + 1 });
     const deck = this.serverDeck;
     const body = p.body;
@@ -123,6 +171,15 @@ export class SwapDriver extends WideDriver {
   }
 }
 
+/** Plays a call of `arbEarlyOpenCall`: every open is bound by the Voice_Client's timeout (brief 031, finding 1). */
+export function runEarlyOpenCall(steps: readonly SwapStep[]): SwapDriver {
+  const d = new SwapDriver();
+  d.openTimeoutMs = OPEN_LIMIT_MS;
+  d.start();
+  for (const st of steps) d.play(st);
+  return d;
+}
+
 /** Plays a whole swap call and returns its driver. */
 export function runSwapCall(steps: readonly SwapStep[]): SwapDriver {
   const d = new SwapDriver().start();
@@ -143,6 +200,20 @@ export function swapCalls(trace: Trace): number[] {
   for (const st of trace.steps) {
     n += st.commands.filter((c) => c.kind === "connect").length;
     out.push(n);
+  }
+  return out;
+}
+
+/**
+ * For each step, the step that sent the open of the call it belongs to: -1 before the first `connect`, then, from the
+ * step that sent a `connect`, the step of the open that step's `openOk` answered.
+ */
+export function openedAt(d: SwapDriver): number[] {
+  const out: number[] = [];
+  let at = -1;
+  for (const st of d.trace.steps) {
+    if (st.commands.some((c) => c.kind === "connect")) at = d.openOf.get(st.i) ?? st.i;
+    out.push(at);
   }
   return out;
 }
@@ -246,4 +317,35 @@ export const arbSwapCall: fc.Arbitrary<SwapStep[]> = fc
     const scenes = swapFirst ? [first, ...rest] : [...rest, first];
     return [...(setup as SwapStep[]), ...scenes.flat()].slice(0, 100);
   });
+
+/**
+ * A drop with a post outstanding, the reconnect's open sent, then that post answered `blocked` and the open answered
+ * as the server handled it before the narrowing committed (`openEarly`), in either order; then the call as if that
+ * open's Session were live, and the fresh call (brief 031, finding 1).
+ */
+const arbEarlyOpenScene: fc.Arbitrary<SwapStep[]> = fc
+  .record({
+    lead: fc.constantFrom("typed", "spoken"),
+    earlyFirst: fc.boolean(),
+    answerMs: fc.integer({ min: 50, max: 1_500 }),
+    openMs: fc.integer({ min: 50, max: 900 }),
+    then: fc.oneof(arbFastOScene, arbSlowScene) as fc.Arbitrary<SwapStep[]>,
+    fresh: arbFresh,
+    noise: fc.array(fc.tuple(fc.nat({ max: 20 }), arbWideNoise), { maxLength: 1 }),
+  })
+  .map(({ lead, earlyFirst, answerMs, openMs, then, fresh, noise }) => {
+    const head: SwapStep[] =
+      lead === "typed" ? [w({ k: "typed" }, 300)] : [...judged(1), w({ k: "transcript", pick: 0, fail: false, empty: false }, 300)];
+    const drop = [w({ k: "connectionLost" }, 200), w({ k: "fire", name: "reconnect" })];
+    const blocked = w({ k: "blocked", pick: 0, care: false }, answerMs);
+    const early = w({ k: "openEarly" }, openMs);
+    const out: SwapStep[] = [...head, ...drop, ...(earlyFirst ? [early, blocked] : [blocked, early]), w({ k: "channelOpen" }, 200), w({ k: "stateOk", variant: "fresh" }, 100), ...then, ...fresh];
+    for (const [at, n] of noise) out.splice(Math.min(at, out.length), 0, ...n);
+    return out;
+  });
+
+/** Setup, then an early-open scene and at most one more scene; at most 110 steps. */
+export const arbEarlyOpenCall: fc.Arbitrary<SwapStep[]> = fc
+  .tuple(arbSetup, arbEarlyOpenScene, fc.array(fc.oneof(arbSwapScene, arbFastOScene as fc.Arbitrary<SwapStep[]>), { maxLength: 1 }))
+  .map(([setup, early, rest]) => [...(setup as SwapStep[]), ...early, ...rest.flat()].slice(0, 110));
 
