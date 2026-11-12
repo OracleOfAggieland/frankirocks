@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import { type FakeOpenAI, type OpenAIPort, ok } from "../openai/fake";
 import { completed } from "../openai/responses";
 import { paths } from "../store/paths";
-import { type Reader, type StorePort, readSnapshot } from "../store/port";
+import { type QuerySpec, type Reader, type StorePort, readSnapshot } from "../store/port";
 import { commitUserTurnForTest, extractOutput, factItem } from "../testing/extract-fixtures";
 import { type TestRig, callRoute, patchRecord, settle, testRig } from "../testing/fakes";
 import { resetAs } from "../testing/seed";
@@ -67,9 +67,9 @@ function distantStore(rig: TestRig, inner: StorePort, rttMs: number, at: number[
             known.add(path);
             return tx.get(path);
           },
-          query: async (spec) => {
+          query: async <T,>(spec: QuerySpec) => {
             await rtt();
-            const rows = await tx.query(spec);
+            const rows = await tx.query<T>(spec);
             for (const d of rows) known.add(d.path);
             return rows;
           },
