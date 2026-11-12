@@ -46,6 +46,7 @@ import {
   type Deck,
   type OpenResponse,
   type Permit,
+  PHONE_TOOL,
   RECALL_TOOL,
   type ReceiptRequest,
   type SafeTurn,
@@ -236,7 +237,7 @@ export type ReplyPurpose = "speech" | "recovery" | "tool";
 
 export interface ToolCallItem {
   callId: string;
-  name: "recall";
+  name: "recall" | "make_phone_call";
   arguments: string;
 }
 
@@ -251,7 +252,7 @@ export interface PendingReply {
 export interface ActiveReply extends PendingReply {
   responseId: string | null;
   audioStarted: boolean;
-  /** The recall call this reply made, while TOOL_WAIT waits on `/api/tool`. */
+  /** The function call this reply made, while TOOL_WAIT waits on `/api/tool`. */
   pendingTool: ToolCallItem | null;
   /** The client `event_id` of the `response.create` this reply waits on; matched against `metadata.eventId`. */
   eventId?: string | null;
@@ -516,7 +517,7 @@ export function sessionUpdate(instructions: string, transcribeModel: string): Re
       type: "realtime",
       tracing: null,
       instructions,
-      tools: [RECALL_TOOL],
+      tools: [RECALL_TOOL, PHONE_TOOL],
       audio: {
         input: {
           noise_reduction: { type: "near_field" },
@@ -582,7 +583,8 @@ export function replyCreate(st: VoiceState, reply: PendingReply, eventId: string
   const notes = reply.notes.length === 0 ? "" : `\n\nNotes:\n${reply.notes.map((n) => `- ${n.text}`).join("\n")}`;
   const input = replyInput(st, reply);
   // Scope `ack` (the crisis care reply) has no tools (R12.6; question 88).
-  const tools = reply.permit.scope === "ack" ? { tools: [] } : { tools: [RECALL_TOOL], tool_choice: "auto" };
+  const tools = reply.permit.scope === "ack" || reply.toolOutput?.name === "make_phone_call"
+    ? { tools: [] } : { tools: [RECALL_TOOL, PHONE_TOOL], tool_choice: "auto" };
   return tag({
     type: "response.create",
     response: { conversation: "none", instructions: deck.head.text + notes, input, ...tools, metadata },
@@ -595,7 +597,7 @@ export function specCreate(st: VoiceState, eventId: string): RealtimeClientEvent
   return withEventId(
     {
       type: "response.create",
-      response: { conversation: "none", instructions: st.deck!.head.text, input: replyInput(st, { toolCall: null, toolOutput: null }), tools: [RECALL_TOOL], tool_choice: "auto", metadata },
+      response: { conversation: "none", instructions: st.deck!.head.text, input: replyInput(st, { toolCall: null, toolOutput: null }), tools: [RECALL_TOOL, PHONE_TOOL], tool_choice: "auto", metadata },
     },
     eventId,
   );
@@ -1506,7 +1508,7 @@ function admit(s: Step, reply: PendingReply): void {
   s.set({ pending: null, admittedTurnId: turnId, unadmitted: s.st.unadmitted.filter((f) => f.commitSeq > maxSeq) });
   const spec = s.st.spec;
   const fastO = reply.permit.kind === "fastO";
-  const fits = spec !== null && spec.turnId === turnId && !spec.failed && reply.purpose === "speech" && reply.notes.length === 0 && reply.toolOutput === null && spec.hash === reply.permit.approvedPayloadHash;
+  const fits = spec !== null && spec.turnId === turnId && !spec.failed && reply.purpose === "speech" && reply.permit.scope === "reply" && reply.notes.length === 0 && reply.toolOutput === null && spec.hash === reply.permit.approvedPayloadHash;
   const phase: VoicePhase = s.st.phase === "RECOVERY" ? "RECOVERY" : "HELD";
   // Stray audio since the last clear rules out the "fits" branch: clear and regenerate instead (review item 12).
   if (fits && !spec.mutedStarted && (!spec.done || spec.heldCall !== null) && s.st.strayAudio !== true) {
@@ -1546,7 +1548,7 @@ function replyKnown(s: Step, a: ActiveReply): void {
   if (a.permit.kind === "fastO") receipt(s, a, "admitted");
 }
 
-/** KV02: a recall call of an admitted reply goes to `/api/tool`. */
+/** KV02: a function call of an admitted reply goes to `/api/tool`. */
 function dispatchTool(s: Step, a: ActiveReply, call: ToolCallItem): void {
   let args: unknown;
   try {
@@ -1556,7 +1558,7 @@ function dispatchTool(s: Step, a: ActiveReply, call: ToolCallItem): void {
   }
   // While its lead-in audio plays the reply stays SPEAKING; TOOL_WAIT starts when the audio stops (R6.1).
   s.set({ phase: a.audioStarted ? "SPEAKING" : "TOOL_WAIT", active: { ...a, pendingTool: call } });
-  s.push({ kind: "tool", body: { stamp: a.permit.stamp, callId: call.callId, tool: { name: "recall", args } as Infer<typeof ToolRequest>["tool"] } });
+  s.push({ kind: "tool", body: { stamp: a.permit.stamp, callId: call.callId, tool: { name: call.name, args } as Infer<typeof ToolRequest>["tool"] } });
   s.arm("tool", s.now + TOOL_LIMIT_MS);
 }
 
@@ -1753,17 +1755,18 @@ function onRealtime(s: Step, ev: RealtimeServerEvent, freshId: string, lastLoudA
       return;
     }
     case "response.function_call_arguments.done": {
+      if (ev.name !== "recall" && ev.name !== "make_phone_call") return;
       const sp = st.spec;
       if (sp !== null && sp.responseId === ev.response_id) {
         // KV02, R6.3: a call inside an unadmitted speculative reply is held, never dispatched yet.
-        if (ev.name === "recall") s.set({ spec: { ...sp, heldCall: { callId: ev.call_id, name: "recall", arguments: ev.arguments } } });
+        s.set({ spec: { ...sp, heldCall: { callId: ev.call_id, name: ev.name, arguments: ev.arguments } } });
         return;
       }
       const a = st.active;
-      if (a === null || a.responseId !== ev.response_id || ev.name !== "recall" || a.purpose === "recovery") return;
+      if (a === null || a.responseId !== ev.response_id || a.purpose === "recovery" || a.permit.scope !== "reply") return;
       // KV02: no tool dispatch without a Permit that still holds.
       if (permitProblem(st, a, null, s.now, false) !== null) return;
-      dispatchTool(s, a, { callId: ev.call_id, name: "recall", arguments: ev.arguments });
+      dispatchTool(s, a, { callId: ev.call_id, name: ev.name, arguments: ev.arguments });
       return;
     }
     case "error": {

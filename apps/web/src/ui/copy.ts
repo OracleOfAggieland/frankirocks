@@ -23,6 +23,26 @@ export const AVATAR_LABELS: Record<AvatarState, string> = {
 
 /** Every Surface and control string (R16, R17.4). */
 export const COPY = {
+  /** The phone on Franki's wall: the words under it, and what it is to a screen reader. */
+  phone: {
+    dialing: "Dialing",
+    ringing: "Ringing",
+    talking: "On the phone",
+    ended: "Call ended",
+    missed: {
+      busy: "Line busy",
+      noAnswer: "No answer",
+      failed: "No connection",
+      unconfirmed: "Unconfirmed",
+    },
+    label: {
+      dialing: "Franki is dialing a phone call",
+      ringing: "The phone Franki called is ringing",
+      talking: "Franki is on the phone",
+      ended: "Franki’s phone call ended",
+      missed: "Franki’s phone call didn’t connect",
+    },
+  },
   card: {
     yes: "Yes",
     notNow: "Not now",

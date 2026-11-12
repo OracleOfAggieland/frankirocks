@@ -39,14 +39,14 @@ stateDiagram-v2
   SPECULATING --> WAIT_ITEM : another commit
   HELD --> WAIT_ITEM : another commit
   HELD --> SPEAKING : admitted reply's audio starts
-  HELD --> TOOL_WAIT : recall call before any audio
+  HELD --> TOOL_WAIT : tool call before any audio
   HELD --> LISTENING : no reply, or the reply ended silent
   HELD --> RECOVERY : permit limit, recoveryOnly Permit, or the reply's create refused
   SPEAKING --> LISTENING : audio stopped, or the 45 s cap
-  SPEAKING --> TOOL_WAIT : lead-in ended, recall pending
-  SPEAKING --> HELD : recall result ready, or a higher Deck
-  TOOL_WAIT --> HELD : recall result ready
-  TOOL_WAIT --> LISTENING : recall failed, not ready, or the tool limit
+  SPEAKING --> TOOL_WAIT : lead-in ended, tool pending
+  SPEAKING --> HELD : tool result ready, or a higher Deck
+  TOOL_WAIT --> HELD : tool result ready
+  TOOL_WAIT --> LISTENING : tool failed, not ready, or the tool limit
   RECOVERY --> CONNECTING : reconnect timer or retryPressed
   RECOVERY --> SPEAKING : neutral line's audio starts
   RECOVERY --> LISTENING : line done

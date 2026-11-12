@@ -33,5 +33,6 @@ export * from "./intents/regex";
 export * from "./intents/route";
 export * from "./audio/wav";
 export * from "./recall";
+export * from "./phone";
 export * from "./memory-text";
 export * from "./writes";

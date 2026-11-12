@@ -27,6 +27,46 @@ stateDiagram-v2
 
 The shell is `MainScreen` in `apps/web/src/components/screen/MainScreen.tsx`. It holds the layout in `useState`, starting from `dockLayoutInit`, and sends the `cards` event during render, so the column is there on the very render that brings the first card. The Card_Dock is always mounted (it renders nothing without a card) and its `onExitComplete`, fired by its outer `AnimatePresence` once the dock has left, sends `exitComplete`.
 
+### `ui.phoneCall`
+
+| Field | Value |
+|---|---|
+| Status | explicit |
+| File | `apps/web/src/ui/phone/phone-call.ts` |
+| Decides | `phoneStep`, `phonePolls`, `phoneShows` |
+| States | `PhonePhase` |
+| Events | `PhoneEvent` |
+| Tests | `apps/web/src/ui/phone/phone-call.test.ts`, `apps/web/src/client/phone-watch.test.ts`, `apps/web/src/components/phone/RetroPhone.test.tsx` |
+
+The phone on Franki's wall during an outbound phone call. `absent` while no call is on the screen; `dialing`, `ringing` and `talking` while one is live; `ended` after a conversation and `missed` (busy, no answer, failed, or unconfirmed) after a call without one. Both stay for `PHONE_LINGER_MS`, then the phone leaves.
+
+There are two ways in. A spoken request is certain once the voice reducer has dispatched `make_phone_call`, so `requested` shows the phone at once, in `dialing`. A typed turn only might have placed a call, so `probe` tracks it in `absent` and the phone shows only when the server reports a call; a call that is already over when first read never shows. While a tool call is still out, the status `none` means the dial is not claimed yet; after `settled` it means this turn placed no call. A status for any other turn is ignored, an ended call never comes back for a late status, and a probe never replaces a live call. `PHONE_UNKNOWN_LIMIT` unreadable statuses in a row, or `PHONE_DIAL_LIMIT_MS` without leaving `dialing`, end the wait as `missed`. `phoneStep` is total, and `reset` returns to the initial state from anywhere.
+
+```mermaid
+stateDiagram-v2
+  [*] --> absent
+  absent --> dialing : requested, or a probe's call is with the carrier
+  absent --> ringing : a probe's call is ringing
+  absent --> talking : a probe's call is answered
+  dialing --> ringing : status
+  dialing --> talking : status
+  ringing --> talking : status
+  talking --> ringing : status
+  dialing --> ended : status
+  ringing --> ended : status
+  talking --> ended : status
+  dialing --> missed : busy, no answer, failed, or the limits
+  ringing --> missed : busy, no answer, failed, or unreadable
+  talking --> missed : failed, or unreadable
+  dialing --> absent : none after the tool settled
+  ended --> absent : linger over
+  missed --> absent : linger over
+  ended --> dialing : a new request
+  missed --> dialing : a new request
+```
+
+The shell is `PhoneWatch` in `apps/web/src/client/phone-watch.ts`, one per signed-in user. It sends `requested` and `settled` from each voice snapshot (`pendingPhoneCall`), `probe` from each answered typed turn, and `status` from `GET /api/phone/status`, read once at the start and then every `PHONE_POLL_MS` while `phonePolls` is true; a failed or malformed read counts as `unknown`. It keeps one timer: the next read, or the tick that ends the linger. The drawing is `RetroPhone` in `apps/web/src/components/phone/RetroPhone.tsx`, hung on the Stage by `PhoneOnStage`. The server's side of the status is `phoneStatus` in `packages/server/src/phone/status.ts`.
+
 ### `ui.cardSource`
 
 | Field | Value |

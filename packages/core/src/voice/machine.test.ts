@@ -477,7 +477,7 @@ describe("voice state machine", () => {
     });
     expect(update.session).not.toHaveProperty("model");
     expect(update.session).not.toHaveProperty("voice");
-    expect((update.session as { tools: { name: string }[] }).tools.map((t) => t.name)).toEqual(["recall"]);
+    expect((update.session as { tools: { name: string }[] }).tools.map((t) => t.name)).toEqual(["recall", "make_phone_call"]);
     r.timer("ack", ACK_LIMIT_MS);
     expect(r.st.phase).toBe("RECOVERY");
     expect(r.log.some((c) => c.kind === "unmuteOutput")).toBe(false);
@@ -532,16 +532,18 @@ describe("voice state machine", () => {
     expect(r.ev({ type: "mutePressed" })).toEqual([{ kind: "setMic", enabled: true }]);
   });
 
-  it("recall call → TOOL_WAIT → /api/tool; a ready result with a Permit continues with function_call_output", () => {
+  it.each(["recall", "make_phone_call"] as const)("dispatches %s and continues with its admitted function output", (name) => {
     const r = speaking();
     const turnId = localStamp(r.st)!.turnId;
-    const args = JSON.stringify({ purpose: "answer", query: "dog", entityRefs: [], roleTuple: null, predicate: null, asOf: null, anchorId: null, sourceMode: "canonical" });
-    const cmds = r.rt({ type: "response.function_call_arguments.done", response_id: "resp_1", call_id: "call_1", name: "recall", arguments: args });
+    const args = JSON.stringify(name === "recall" ? { purpose: "answer", query: "dog", entityRefs: [], roleTuple: null, predicate: null, asOf: null, anchorId: null, sourceMode: "canonical" } : {});
+    const cmds = r.rt({ type: "response.function_call_arguments.done", response_id: "resp_1", call_id: "call_1", name, arguments: args });
     // The lead-in audio is still playing, so the phase stays SPEAKING until it stops (R6.1); the call is dispatched.
     expect(r.st.phase).toBe("SPEAKING");
     expect(r.st.active!.pendingTool).toMatchObject({ callId: "call_1" });
-    expect(cmds).toContainEqual(expect.objectContaining({ kind: "tool", body: expect.objectContaining({ callId: "call_1", tool: { name: "recall", args: JSON.parse(args) } }) }));
-    const result = { name: "recall" as const, notes: [], coverage: { state: "complete" as const, from: null, to: null, missingRanges: [], generation: 0 }, truncated: false, cursor: null, pendingId: null, snapshot: null, cards: [] };
+    expect(cmds).toContainEqual(expect.objectContaining({ kind: "tool", body: expect.objectContaining({ callId: "call_1", tool: { name, args: JSON.parse(args) } }) }));
+    const result = name === "recall"
+      ? { name, notes: [], coverage: { state: "complete" as const, from: null, to: null, missingRanges: [], generation: 0 }, truncated: false, cursor: null, pendingId: null, snapshot: null, cards: [] }
+      : { name, requestId: testId("tool"), message: "Twilio accepted the call request." };
     const stamp = localStamp(r.st)!;
     const deck = r.st.deck!;
     const hash = payloadHash({ stamp, head: deck.head, notes: [], turns: deck.turns, audioIds: ["item_1"], toolOutput: result }, hasher);
@@ -884,7 +886,7 @@ describe("turn responses, cuts and tools by scope (task 26)", () => {
       return (replyCreate(r.st, { permit: res.permit!, purpose: "speech", notes, toolCall: null, toolOutput: null }).response as Ev).tools as unknown[];
     };
     expect(tools("ack")).toEqual([]);
-    expect(tools("reply")).toHaveLength(1);
+    expect(tools("reply")).toHaveLength(2);
     const r = listening();
     speak(r);
     const note = { noteId: testId("n"), rev: 1, kind: "ack" as const, text: "I can't forget things yet.", rootKeys: [], dependsOn: [], sens: "S0" as const, expiresAt: tsFromMs(r.now + 10_000), unprompted: false, momentId: null, tokens: [] };

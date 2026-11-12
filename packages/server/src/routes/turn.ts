@@ -45,6 +45,8 @@ import { extractJobId, extractJobRecord } from "../worker/extract-jobs";
 import { barrierError, parseError, scopeError, staleError } from "./errors";
 import { Unrecorded, mutation } from "./mutation";
 import { typedReplyNote } from "./typed-reply";
+import { finishTypedPhoneCall } from "../phone/typed";
+import { phoneId } from "../phone/outbound";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 
 type TurnReq = Infer<typeof TurnRequest>;
@@ -143,11 +145,11 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
   // A request that fails before it awaits the parse must not leave an unhandled rejection behind.
   slowP.catch(() => {});
   await ensureCoreDocs(uid, deps);
-  return mutation(ctx, "turn", req.requestId, req, async (key) => {
+  const result = await mutation<TurnRes>(ctx, "turn", req.requestId, req, async (key) => {
     if (req.supersedesRequestId !== null) return postSupersede(ctx, req, req.supersedesRequestId, key);
     const [slow, reply] = await Promise.all([
       slowP,
-      typedReplyNote(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx)),
+      typedReplyNote(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx), cls.cls === "U" && req.source === "typed"),
     ]);
     for (let attempt = 1; ; attempt++) {
       try {
@@ -202,7 +204,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           // With no call open the typed reply is kept on a hit too: the rule decides its notes, and a Fixed_Line
           // replaces it (review of wave A, item 17). With a call, typedReplyNote makes no reply. A pasted (T) turn
           // never carries an S1+ note.
-          const candidateNotes = reply === null ? [] : [reply];
+          const candidateNotes = reply === null || reply === "make_phone_call" ? [] : [reply];
           const coreVals = { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev };
           const { turn: turn0, evidence } = userTurnRecords({ uid, sessionId: req.sessionId, req, text, cls, clock: pair, core: coreVals, hasher: deps.hasher });
 
@@ -298,6 +300,9 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           );
           const status = statusOf(admitted.outcome);
           const response: TurnRes = admitted.kind === "permit" ? { ...base, status, deck, notes: admitted.notes, permit: admitted.permit } : { ...base, status, deck, permit: null };
+          if (reply === "make_phone_call" && admitted.kind === "permit" && admitted.permit.scope === "reply" && admitted.permit.kind !== "recoveryOnly") {
+            response.pendingId = phoneId(ctx, stamp);
+          }
           await completeRequest(tx, key, response, ops);
           return { kind: "committed" as const, response, jobId, repair };
         });
@@ -316,6 +321,9 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
       }
     }
   });
+  // The original turn and its admission must commit before any external dial. Replays
+  // can resume this step if the process stopped between the commit and the HTTP response.
+  return result.pendingId !== null && result.pendingId === phoneId(ctx, result.stamp) ? finishTypedPhoneCall(ctx, result) : result;
 }
 
 /**

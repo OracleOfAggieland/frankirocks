@@ -13,7 +13,7 @@ import type { ResponsesResult } from "./responses";
 interface SdkResponse {
   status?: string | null;
   output_text?: string | null;
-  output?: { type: string; content?: { type: string; text?: string; refusal?: string }[] }[];
+  output?: { type: string; name?: string; arguments?: string; status?: string; content?: { type: string; text?: string; refusal?: string }[] }[];
   usage?: { input_tokens?: number; output_tokens?: number } | null;
 }
 
@@ -25,6 +25,10 @@ export function normalizeResponse(r: SdkResponse): ResponsesResult {
   const status = r.status === "completed" ? "completed" : r.status === "incomplete" ? "incomplete" : "failed";
   const text = typeof r.output_text === "string" && r.output_text.length > 0 ? r.output_text : null;
   return {
+    ...(r.output?.some((item) =>
+      item.type === "function_call" && item.name === "make_phone_call" &&
+      (item.status === undefined || item.status === "completed") && /^\s*\{\s*\}\s*$/.test(item.arguments ?? "")
+    ) ? { phoneCallRequested: true } : {}),
     status,
     outputText: refusal === null ? text : null,
     refusal,

@@ -50,6 +50,10 @@ describe("parsePlainEnv", () => {
     expect(parsePlainEnv("runConfig:\n  cpu: 1\n")).toEqual([]);
   });
 
+  it("leaves blank deployment settings to .env.local", () => {
+    expect(parsePlainEnv('env:\n  - variable: TWILIO_PHONE_NUMBER\n    value: ""')).toEqual([]);
+  });
+
   it("prints no values", () => {
     fc.assert(
       fc.property(fc.array(fc.stringMatching(/^v-[A-Za-z0-9]{6,20}$/), { maxLength: 10 }), (values) => {

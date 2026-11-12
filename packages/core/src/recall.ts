@@ -17,7 +17,7 @@ import { type JsonSchema, jsonSchemaOf } from "./schema/json-schema";
 import { type Class, Cov, ID, type RecallArgs, Ref, type Sens, Span } from "./schema/primitives";
 import type { Evidence, Memory } from "./schema/records";
 import { type Infer, arr, obj, oneOf, str, union, validate } from "./schema/v";
-import type { ToolResult, W } from "./schema/wire";
+import type { RecallResult, W } from "./schema/wire";
 import { spokenGrade } from "./spoken";
 import { tokenize } from "./text";
 
@@ -293,6 +293,6 @@ export function recallExcerpts(query: string, turnText: string | null, used: rea
 const coverage = (state: Infer<typeof Cov>["state"]): Infer<typeof Cov> => ({ state, from: null, to: null, missingRanges: [], generation: 0 });
 
 /** The `recall` ToolResult (R27.5, R27.7). */
-export function recallResult(notes: W[], state: "complete" | "partial" | "unknown", truncated: boolean): Infer<typeof ToolResult> {
+export function recallResult(notes: W[], state: "complete" | "partial" | "unknown", truncated: boolean): Infer<typeof RecallResult> {
   return { name: "recall", notes, coverage: coverage(state), truncated, cursor: null, pendingId: null, snapshot: null, cards: [] };
 }

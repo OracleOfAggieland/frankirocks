@@ -9,6 +9,7 @@
 @import "../components/surfaces/instruments.css";
 @import "../components/surfaces/controls.css";
 @import "../components/screen/screen.css";
+@import "../components/phone/phone.css";
 @import "../components/landing/landing.css";
 @import "../components/landing/stage.css";
 @import "../components/landing/lower.css";

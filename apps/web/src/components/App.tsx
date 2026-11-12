@@ -16,6 +16,7 @@ import { debugVisible } from "../ui/debug-flag";
 import { browserScheduler } from "../ui/hooks/frame-loop";
 import { browserVisibility } from "../ui/hooks/page-visible";
 import { browserWatcher } from "../ui/hooks/reduced-motion";
+import { ABSENT_PHONE, type PhoneView } from "../ui/phone/phone-call";
 import { ScreenController, type ScreenSnapshot } from "../ui/hooks/screen-controller";
 import { createLevelMeter } from "../ui/levels/level-meter";
 import { createSoundEngine } from "../ui/sound/engine";
@@ -27,6 +28,7 @@ import { Stage } from "./avatar/Stage";
 import { CALL_ERRORS, CallScreen } from "./CallScreen";
 import { DebugPanel } from "./DebugPanel";
 import { LiveRegion } from "./LiveRegion";
+import { PhoneOnStage } from "./phone/RetroPhone";
 import { ReplyLine } from "./ReplyLine";
 import { MainScreen } from "./screen/MainScreen";
 import { SoundToggle, soundPreference } from "./SoundToggle";
@@ -38,6 +40,8 @@ const noSubscribe = () => noop;
 const signedOutVoice = () => SIGNED_OUT_VOICE;
 /** The typed snapshot while signed out: there is no typed Session to read. */
 const noTyped = (): TypedState | null => null;
+/** The phone while signed out: nothing hangs on the wall. */
+const noPhone = (): PhoneView => ABSENT_PHONE;
 
 /** The output audio element: muted until a verified Permit unmutes it (KV02). */
 function outputAudio(): AudioLike {
@@ -120,6 +124,18 @@ export function App() {
     screen.setSources(signedIn !== null, signedIn?.voice ?? null);
   }, [screen, signedIn]);
 
+  // The phone follows the voice reducer's tool calls; it stops reading when the user signs out.
+  useEffect(() => {
+    if (signedIn === null) return;
+    const { voice, phone } = signedIn;
+    phone.start();
+    const off = voice === null ? noop : voice.subscribe(() => phone.onVoice(voice.getSnapshot()));
+    return () => {
+      off();
+      phone.stop();
+    };
+  }, [signedIn]);
+
   const snap = useSyncExternalStore(screen.subscribe, screen.getSnapshot, screen.getSnapshot);
   const forget = () => setCopies((c) => onForgetComplete(signedIn?.typed ?? null, c));
 
@@ -161,9 +177,9 @@ export function App() {
   );
 }
 
-function StageFor({ snap }: { snap: ScreenSnapshot }) {
+function StageFor({ snap, phone }: { snap: ScreenSnapshot; phone: PhoneView }) {
   return (
-    <Stage reduced={snap.input.reducedMotion}>
+    <Stage reduced={snap.input.reducedMotion} aside={<PhoneOnStage view={phone} />}>
       <Avatar look={snap.look} input={snap.input} frameTime={snap.frameTime} />
     </Stage>
   );
@@ -191,8 +207,11 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
   const getTyped = typed?.getSnapshot ?? noTyped;
   const t = useSyncExternalStore(subscribeTyped, getTyped, getTyped);
   const inCall = v.phase !== "CLOSED";
+  const subscribePhone = controllers?.phone.subscribe ?? noSubscribe;
+  const getPhone = controllers?.phone.getSnapshot ?? noPhone;
+  const phone = useSyncExternalStore(subscribePhone, getPhone, getPhone);
 
-  const stage = <StageFor snap={snap} />;
+  const stage = <StageFor snap={snap} phone={phone} />;
   const live = <LiveRegion message={snap.live.message} seq={snap.live.seq} />;
 
   if (typed === null || t === null) {

@@ -54,6 +54,7 @@ Every piece of code that holds state and moves it between named states is listed
 | `ui.frameLoop` | documented | When the three.js engine requests and cancels frames | `apps/web/src/components/avatar/three/loop.ts` | [ui-electricity](ui-electricity.md) |
 | `ui.acting` | explicit | The three.js engine's pose and one-shot edges | `apps/web/src/ui/avatar/acting.ts` | [ui-electricity](ui-electricity.md) |
 | `ui.dockLayout` | explicit | Whether the Main_Screen's grid has the Card_Dock's column, through the last card's exit | `apps/web/src/ui/dock-layout.ts` | [ui-surfaces](ui-surfaces.md) |
+| `ui.phoneCall` | explicit | Whether the phone hangs beside Franki, and which part of an outbound phone call it acts | `apps/web/src/ui/phone/phone-call.ts` | [ui-surfaces](ui-surfaces.md) |
 | `ui.cardSource` | explicit | Which source's rows show under a Card | `apps/web/src/components/surfaces/Card.tsx` | [ui-surfaces](ui-surfaces.md) |
 | `ui.ruleForget` | explicit | Which hard rule's Forget is armed for its second tap | `apps/web/src/components/surfaces/WhatIKnowSheet.tsx` | [ui-surfaces](ui-surfaces.md) |
 | `ui.spider` | explicit | The lab spider's springs, rest and travel, one frame at a time | `apps/web/src/ui/cursor/spider.ts` | [ui-surfaces](ui-surfaces.md) |

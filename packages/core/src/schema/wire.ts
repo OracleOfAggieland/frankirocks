@@ -197,10 +197,11 @@ const StripView = obj({
 });
 
 // ---------------------------------------------------------------------------------------------
-// Tools (only `recall` is built in this slice)
+// Agent tools
 
 export const RecallCall = obj({ name: literal("recall"), args: RecallArgs });
-export const ToolCall = tagged("name", { recall: RecallCall });
+export const PhoneCall = obj({ name: literal("make_phone_call"), args: obj({}) });
+export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall });
 export type ToolCall = Infer<typeof ToolCall>;
 
 export const RecallResult = obj({
@@ -213,8 +214,17 @@ export const RecallResult = obj({
   snapshot: nullable(SnapshotView),
   cards: arr(Card, 2),
 });
-export const ToolResult = tagged("name", { recall: RecallResult });
+export const PhoneResult = obj({ name: literal("make_phone_call"), requestId: ID, message: str(512) });
+export const ToolResult = tagged("name", { recall: RecallResult, make_phone_call: PhoneResult });
 export type ToolResult = Infer<typeof ToolResult>;
+
+// The server reads the destination and assignment from the owner's turn.
+export const PHONE_TOOL = {
+  type: "function",
+  name: "make_phone_call",
+  description: "Place one outbound phone call for the signed-in user. Use only when the user explicitly asks you to dial now and gives one phone number in their current message. If the number is missing, ask for it with its country code. Never guess a number or call for a hypothetical, future, quoted or negated request. Report the tool's actual result.",
+  parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
+} as const;
 
 const nullableJson = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: "null" }] });
 const EID_JSON = { type: "string", maxLength: 43 };

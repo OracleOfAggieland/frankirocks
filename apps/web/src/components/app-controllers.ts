@@ -4,6 +4,7 @@
 import type { ApiClient } from "../client/api";
 import type { BrowserClock } from "../client/clock";
 import { DebugPanelModel } from "../client/debug-panel";
+import { PhoneWatch } from "../client/phone-watch";
 import { TypedTurns } from "../client/typed-turns";
 import { type AudioLike, type PeerLike, type StreamLike, VoiceClient } from "../client/voice-client";
 import type { TurnCopies } from "../ui/surface-props";
@@ -28,6 +29,8 @@ export interface SignedInControllers {
   typed: TypedTurns;
   debug: DebugPanelModel | null;
   voice: VoiceClient | null;
+  /** Follows an outbound phone call for the phone on the screen. Reads only. */
+  phone: PhoneWatch;
 }
 
 export function createSignedInControllers(deps: ControllerDeps): SignedInControllers {
@@ -45,7 +48,8 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
           onStreams: deps.onStreams,
           ...(deps.inputLevel === undefined ? {} : { inputLevel: deps.inputLevel }),
         });
-  return { typed: new TypedTurns({ api, clock }), debug: deps.debug ? new DebugPanelModel({ api, clock }) : null, voice };
+  const phone = new PhoneWatch({ api, now: () => clock.mono() });
+  return { typed: new TypedTurns({ api, clock, onTurn: (turn) => phone.onTypedTurn(turn) }), debug: deps.debug ? new DebugPanelModel({ api, clock }) : null, voice, phone };
 }
 
 export const EMPTY_COPIES: TurnCopies = { reply: null, caption: null, typedText: "", cards: [], jarItems: [] };

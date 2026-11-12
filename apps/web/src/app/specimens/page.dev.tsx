@@ -10,6 +10,7 @@ import { InstrumentExtrasSection } from "./_sections/InstrumentExtrasSection";
 import { MainScreenSection } from "./_sections/MainScreenSection";
 import { MaterialsSection } from "./_sections/MaterialsSection";
 import { MemoryExtrasSection } from "./_sections/MemoryExtrasSection";
+import { PhoneSection } from "./_sections/PhoneSection";
 import { SurfaceSections } from "./_sections/SurfaceSections";
 import { ThreeSection } from "./_sections/ThreeSection";
 
@@ -23,6 +24,7 @@ export default function SpecimensPage() {
       <AvatarSection />
       <ThreeSection />
       <MainScreenSection />
+      <PhoneSection />
       <MaterialsSection />
       <SurfaceSections />
       <CardExtrasSection />

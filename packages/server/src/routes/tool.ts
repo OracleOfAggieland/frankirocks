@@ -1,5 +1,6 @@
 /**
- * POST /api/tool, the single-read recall tool (R27; R28.1–R28.3; KC06, KC09, KS01; Q28; design "Tool turn").
+ * POST /api/tool. Both tools check the session and wait for its committed turn before acting.
+ * Phone calls use a per-turn dial record. The recall path follows R27 and R28.1–R28.3:
  *
  *   1. The closed body, including the closed `recall` args, or PARSE (R27.11). The Session must be this Owner's
  *      (SCOPE).
@@ -49,6 +50,7 @@ import { completeRequest } from "../ledger/request";
 import { admitRule } from "../admission/seam";
 import { effectiveAudience, hasParseGap } from "../audience";
 import type { ResponsesResult } from "../openai/responses";
+import { placePhoneCall } from "../phone/outbound";
 import { paths } from "../store/paths";
 import { barrierError, scopeError } from "./errors";
 import { Unrecorded, mutation } from "./mutation";
@@ -96,9 +98,8 @@ const MIN_READ_MS = 400;
  * The recall read (steps 4 and 5). Never throws for model problems: a failed, refused, unparsable or late read
  * gives code-ranked excerpts of the same supplied lines (partial coverage), and empty notes only when none match.
  */
-async function readRecall(ctx: RouteContext, req: ToolReq, turn: Turn, deadlineAt: number): Promise<Result> {
+async function readRecall(ctx: RouteContext, req: ToolReq, args: Extract<ToolReq["tool"], { name: "recall" }>["args"], turn: Turn, deadlineAt: number): Promise<Result> {
   const { uid, deps } = ctx;
-  const args = req.tool.args;
   if (!explicitRequest(turn.text, args)) return recallResult([], "unknown", false);
   // `inspect` is snapshot() in the contract, which this slice does not build.
   if (args.purpose === "inspect" || deadlineAt <= deps.clock.read().opsClock.now) return recallResult([], "unknown", false);
@@ -157,7 +158,9 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
     if (check.kind === "stale") throw new Unrecorded<ToolRes>({ ...empty, status: "stale" });
     if (check.kind === "wait") throw new Unrecorded<ToolRes>({ ...empty, status: "hold" });
 
-    const result = await readRecall(ctx, req, check.turn, start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS);
+    const result: Result = req.tool.name === "make_phone_call"
+      ? { name: "make_phone_call", requestId: req.requestId, message: await placePhoneCall(ctx, req.stamp) }
+      : await readRecall(ctx, req, req.tool.args, check.turn, start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS);
 
     return deps.store.transaction(uid, async (tx) => {
       const doc = await tx.get<Session>(paths.session(uid, req.stamp.sessionId));
@@ -194,7 +197,7 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
         wave: "A",
       };
       const planned = serverRule(rule);
-      const output: typeof result = planned.kind === "permit" && planned.notes !== "all" ? { ...result, notes: result.notes.filter((n) => n.sens === "S0") } : result;
+      const output = result.name === "recall" && planned.kind === "permit" && planned.notes !== "all" ? { ...result, notes: result.notes.filter((n) => n.sens === "S0") } : result;
       const admitted = admitRule(
         tx,
         {

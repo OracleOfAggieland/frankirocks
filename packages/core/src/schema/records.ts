@@ -322,7 +322,7 @@ export type Turn = Infer<typeof Turn>;
 // ---------------------------------------------------------------------------------------------
 // ledger/{entryId}
 
-const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt"] as const;
+const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall"] as const;
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
 /**
@@ -336,7 +336,17 @@ export function setWireResultFor(lookup: (route: RouteName) => Schema<unknown>):
   wireResultFor = lookup;
 }
 
+const phoneCallFields = {
+  sessionId: ID,
+  turnId: ID,
+  twilioSid: nullable(str(34)),
+  realtimeCallId: nullable(s128),
+  accepted: bool,
+};
+
 export const LEDGER_PAYLOADS = {
+  // Earlier calls have no indexed call ID. Their receipts remain readable and replayable.
+  phoneCall: union(obj({ ...phoneCallFields, phoneCallId: ID }), obj(phoneCallFields)),
   request: obj({
     route: RouteName,
     keyHash: ID,
