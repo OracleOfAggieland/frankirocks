@@ -45,7 +45,7 @@ export const W = {
 
 export type WaitKey = keyof typeof W;
 /** The key of a wait text, for the summary's grouping. */
-export const waitKey = (text: string): string => (Object.entries(W).find(([, v]) => v === text)?.[0] ?? "other");
+export const waitKey = (text: string): string => (Object.entries(W).find(([, v]) => text === v || text.startsWith(`${v};`))?.[0] ?? "other");
 
 // ---------------------------------------------------------------------------------------------
 // FastSlots answers. Spans are built over the step's own text, which the script knows.
