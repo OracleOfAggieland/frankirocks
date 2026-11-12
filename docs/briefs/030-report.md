@@ -116,3 +116,95 @@ These ran after merging `build/plan-stages` (`b1085d6`):
 - On a real call: the receipt route's moment calls and the spoken false-gone ask. No route puts a moment on the wire yet, so `momentIds` stay empty in practice.
 - Signed in: the strip's "$115 less" label on screen, the rule motes, and a stale visit tab.
 - The added moment and block scans on Firestore, and their latency.
+
+## Phase two, part A
+
+Built by Claude Code on `lane/wire`. No commit ends `Built-with: Kiro`. `build/plan-stages` was merged three times: `9f615b4` (brief 037), `8208c80` (brief 035) and `9e5d68f` (the last).
+
+### Seams, one per commit
+
+| Seam | Commit | Test first |
+|---|---|---|
+| Delivery's choice is the open's `Proactive` (`routes/delivery-wire.ts`, plus a few lines in `open.ts`). The Gate runs inside `chooseNow` with the stored session's audience and modifiers; nothing gates a second time. It runs only for a `connecting` open with no swap line. A replayed open carries no `Proactive`. A failed choice says nothing and never fails the open. | `a01dc44` | beat 1's wish step; `delivery-wire.test.ts` |
+| An offer is recorded as shown when its line starts playing (`receipt-moments.ts`). A `playbackStarted` receipt for a moment admitted on that response writes `pendingRendered`. The pending ID is the moment's own for an `offer` or `ask` moment. For the hero it is recomputed from the rows, and written only when the offer's line is still the one rendered. The pending ID never goes on the wire. The runner gains a `play` step (admitted, playback, transcript). | `6eeea88` | beat 3's yes, with the `showOffer` setup removed |
+| Food F24's wait is dropped, since brief 037 turned it green. The summary reads 39 green and 1 waiting. | `c521ff6` | the summary test |
+| The state route offers an idle whisper, after its ack checks. Nothing is read until `IDLE_SILENCE_MS` of quiet. A line still under an earlier poll's Permit is not sent again. The runner gains an `idle` step. | `c4c2bbf` | beat 3's Friday variant and food F34 and F35, which now play the wish, then the offer as an idle whisper, with no setup |
+| V-181: the tool route narrows as the turn route does. It reads `narrowedHere` from the Session and issues no Deck on a Session narrowed here. | `2d7a9eb` | new `routes/audience-tool-door.property.test.ts`, 1,000 runs. Red first on `{"kind":"crisisLive","cls":"company","p":0.3,"judge":"H"}`, "answer": a Head with the S1 line. It calls with the browser's stamp and with the current stamp, so a stale answer can't pass it by saying nothing. |
+| The Gate stands in front of a recall's notes above S0 on the tool route (`routes/gate-tool.ts`, one call in `tool.ts`). Each note it doesn't say writes a Gate row. | `be1a4e0` | `gate-tool.test.ts` |
+| A typed open's `Proactive` is shown on the screen: `TypedTurns.onProactive` puts it in the `ProactiveShelf`. The browser then sends an `admitted` and a `pendingRendered` receipt naming the moment (`client/proactive-shown.ts`). The server records each offer moment admitted on that response as shown. | `fb84ce1` | `typed-proactive.test.ts`, against the real routes |
+| `writeSaid` computes its match from what was heard (033 finding 12). | `cd257d9` | the finding 12 case in `said.test.ts` |
+| The Lab counts the Gate's held, steered, declined and blocked rows. `steered` and `declined` leave `LAB_UNCOUNTED`. | `b0aa01f` | `memory-views.lab-gates.test.ts` |
+| A said `celebrate` moment marks its loop `celebrated` (`markCelebrated`), in the receipt's transaction. | `43d7e63` | a new beat 3 step, red first with the state still `eligible` |
+
+### Script steps turned green
+
+- Beat 1: "the wish for the interview at 2 is said first" (`a01dc44`), and "the next open does not wish again" once the wish is played (`6eeea88`).
+- Beat 3, both main variants: "the offer plays after the bolt, with $186" (`a01dc44`) and "Franki speaks first: $71, down from $186" (`6eeea88`). The yes, the list and the strip now pass with no setup standing in.
+- Beat 3, Friday variant: the yes after an idle whisper, and "Franki speaks first: $71" (`c4c2bbf`).
+- Food F24 (`c521ff6`). F34 and F35 went red at the brief 037 merge, because a yes with no shown offer answers `clarify`. They are green again through the idle whisper (`c4c2bbf`). The coordinator asked that a conflict here take the `build/plan-stages` side (`eef2b14`, which records the offer by setup). The last merge didn't conflict, so these scripts still play the offer.
+- The runner binds `occasion.wish` to the code's wording, `wishLine` in `moments/words.ts`.
+
+### Still waiting, and on what
+
+- Beat 1, the wish's texture: the line names only the occasion, and nothing joins the gap-year answer to it (brief 036's folder).
+- Beat 1's card on open, and beat 3's offer card: no route returns a card. `S2_SCREEN_ASK_BUILT` is false, and the lead ruled out a card route.
+- Beat 2's check-in has two problems, both in brief 036's folder. At Thursday 18:00 delivery chooses the hero offer over the check-in. And the check-in's line is `checkInLine` ("How did it go: ...?"), not the `checkIn` whisper template the runner binds. The step's reason now says both.
+- Beat 4's three steps and beat 5's forget steps are unchanged: persona, the recruiter line, the walked-in tap, and forget unwired.
+
+### Not wired, and why
+
+- **No Gate `held` row for delivery.** `chooseNow` runs the Gate but returns only the choice, so a moment the Gate cards or holds writes no row. The smallest fix is in `time/proactive.ts` (brief 036's folder): call `writeGateDecision` with the moment's ID for each verdict other than `say`, in the render transaction.
+- **A `card` verdict isn't recorded as `held`.** `gateOutcome` in `core/gate/ledger.ts` maps `card` to `steered`, and the lead's ruling says `held`. The gate folder is off limits, so the tool route's rows say `steered` for a card.
+- **The nine W-166 decision rows** (brief 032's Outcome) aren't built. They need the plan's outcome and the difference in the rules from the onturn write, in one transaction with `core/rules`.
+- **The Gate doesn't see whispers outside delivery other than recall.** The typed reply's note and the turn's notes are the model's words over the Head, not one Memory's line, so no candidate fits. The Head is compiled for the audience.
+- **`inspect` recall lines aren't gated.** The owner asked for everything, and the Server_Rule limits them.
+- **`writeSaid` still uses the caller's Gate result.** No stored result is read back, and no route calls `writeSaid` yet.
+
+### Findings
+
+1. **Crisis and a confirmed reminder.** A hold doesn't drop a held reminder. It goes back to pending each time its lease runs out, and opens again at the next opening. It is dropped once its `closeAt` (due + 30 days) passes, as `expired`, with no row saying a hold caused it. Smallest fix (brief 036's folder): in `planTick`, keep a never-admitted `commitmentDue` past `closeAt` as `pending` while crisis holds, or write a held row.
+2. **An answered offer whose moment was never said is offered again.** The Friday variant showed this while its setup stood in for the shown offer. After the yes, the pattern moment stayed open, and three weeks on it was offered ahead of the comparison. Nothing in the moment's verdict ends an offer moment whose pending ID was answered (`time/verdict.ts`).
+3. **`pendingRendered` is written once per pending ID, ever** (`renderedEntryId(pendingId)`). If an offer is shown in one session and again in a later one, the first row stays. H-168's "recorded during this session" then fails, and the yes answers `clarify`. Smallest fix: key the row by session too (`time/reminder.ts`).
+4. **The stash is shared between worktrees.** A `git stash push` of `tool.ts` here crossed with another lane's stash. This worktree received `routes/tool-food.ts` and `food/prefs-read.ts` from `lane/fix6`. They are back in the stash, under a name that says they belong to that lane (`stash@{0}`, "lane/fix6 (hero worktree) work-in-progress ..."). Nothing was dropped. The hero worktree still shows its own copies. No more stash use here.
+
+### Rulings needed (each one constant or rule)
+
+- `OPEN_DELIVERY_RESERVE_MS` = 600: what the open holds back from its tick for the choice and the render.
+- `CHECKIN_TURNS_READ_MAX` = 50: past it, turns since a check-in answer read as 0, which holds the insight.
+- The open's `Proactive` is not in the request ledger's replay, so a lost answer's line is not sent twice from one render.
+- Idle: a line rendered for one poll is not sent again while its Permit lives (`PERMIT_TTL_MS`). An open always renders afresh.
+- `GATE_S0_RECALL` = false: S0 recall notes pass as the Server_Rule lets them. The Gate silences every recall nobody asked for, S0 included, and an ask needs a certain speaker, so gating S0 would end recall on voice turns where the judge timed out.
+- `RECALL_ALIASES` = "ownValueWords": nothing builds entity names (033 ruling 1), so a Memory's aliases are its own words when its class is U, C or O.
+- A Gate `say` whose render isn't `free` drops the recall note, since the note's words are the recall model's, not the template's.
+- Evidence has no class: calendar and bank rows read as O, and anything else as T.
+- A typed line shown on the screen is admitted on `shown_<turnId>` and stays `admitted`. It is never `said`.
+
+### Existing assertions and inputs changed
+
+- `routes/receipt-moments.test.ts`: the wish said on the receipt now matches `idTagged`, not `exactTemplate`. The open renders it now, and `idTagged` comes first in contracts §6's order.
+- `routes/memory.test.ts` pinned `uncounted:steered`. It now pins `steered: 0` and `declined: 0` as counted, and `uncounted:falseHolds`. The specimen fixture's `limits` follow.
+- `ledger/said.test.ts` and `said.review-033.test.ts` pass what was heard instead of a match, with the same expectations.
+- Beat 3: `showOffer` is removed. The main variants play the offer; the Friday variant plays the wish, then the idle offer. Food F34 and F35 gain the same play and idle steps. Waits whose reason changed now say what they wait on. No assertion was softened, and no committed `*.property.test.ts` was edited.
+
+### Hot files touched in part A
+
+- `routes/open.ts`: an import and three lines. `routes/state.ts`: an import and two lines. `routes/receipt.ts`: one call's arguments. `routes/tool.ts`: two imports, three lines for the narrowing and one Gate call. `routes/memory.ts`: one line.
+- New: `routes/delivery-wire.ts`, `routes/gate-tool.ts`, `client/proactive-shown.ts` and their tests, and `routes/audience-tool-door.property.test.ts`.
+- Changed: `routes/receipt-moments.ts`, `ledger/said.ts`, `core/memory-views.ts`, `testing/script-runner.ts`, `scripts/gate-kit.ts` (the stale `NARROW_TOOL` reason removed), `client/typed-turns.ts`, `components/app-controllers.ts`.
+- Not touched: `core/voice/**`, the golden corpus, `core/gate/**`, `whisper/**`, `moments/**`, `server/time/**`, `server/food/**`, `answerTool`, `admission.ts`, `audience-swap.ts` and `intents/repair.ts`.
+
+### Checks for part A
+
+These ran after the last merge of `build/plan-stages` (`9e5d68f`):
+- `npx vitest run --maxWorkers=3`: 480 files; 4,117 passed, 31 expected-fail, 4 failed, all in `scripts/gate-friend.test.ts` (Friend Tests 3, 8 and 10). Each typed transition line ("My mom passed away last night.", "Sam and I broke up...", "I was diagnosed with cancer last week.") now makes 2 `responses.create` calls where the script declares 1. The calls came in with the brief 025 merge (`1aeafb9`: the transition and memory routes on the turn, `onturn/memory-route.ts`). This lane didn't touch `onturn/**` or `turn.ts`, and the scripts were green at `8208c80`. Not checked on `build/plan-stages` alone, and not fixed here.
+- `npm run typecheck`: exit 0.
+- `npm run lint`: exit 0, with the one earlier warning (`avatar/three/brass.ts`).
+- `npm run build`: exit 0.
+- `copy-check`, `token-check`, `ui-boundaries`, `import-boundaries`, `clock-check` and `model-literals`: exit 0.
+
+### Not verified in part A
+
+- A live call: the `Proactive` on open and as an idle whisper through the voice machine, and its receipts. The runner's `play` stands in for the voice client.
+- A signed-in browser: the typed `Proactive` on the screen and its two receipts.
+- The hero's `pendingRendered` from a typed line shown on the screen. The server path is written, but the typed test only shows the wish.
+- Firestore: the idle path's reads on each poll after 8 s of quiet, and the recall Gate's read of every Memory.

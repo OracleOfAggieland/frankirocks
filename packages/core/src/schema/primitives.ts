@@ -118,7 +118,8 @@ export const FIELD_PATHS = [
 export const FP = oneOf(FIELD_PATHS);
 export type FP = Infer<typeof FP>;
 
-export const ERROR_CODES = ["STALE", "BARRIER", "PARSE", "AUTH", "SCOPE", "LIMIT", "DEPENDENCY", "CONFIG", "HASH"] as const;
+// LIVE (brief 038 finding 1): the seed reset's answer for a real account, which is never reset.
+export const ERROR_CODES = ["STALE", "BARRIER", "PARSE", "AUTH", "SCOPE", "LIMIT", "DEPENDENCY", "CONFIG", "HASH", "LIVE"] as const;
 export const ErrorCode = oneOf(ERROR_CODES);
 export type ErrorCode = Infer<typeof ErrorCode>;
 

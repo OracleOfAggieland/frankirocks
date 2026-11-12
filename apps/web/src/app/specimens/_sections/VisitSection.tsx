@@ -91,9 +91,9 @@ function LiveVisit() {
         <VisitBar
           {...bar(s)}
           onBolt={(toMs) => send({ kind: "boltPressed", toMs })}
-          onRetry={() => send({ kind: "retry" })}
+          onRetry={() => send({ kind: "retry", newVisitId: "specimen-retry" })}
           onStartOver={() => send({ kind: "startOverAsked" })}
-          onConfirm={() => send({ kind: "startOverConfirmed", inCall: false })}
+          onConfirm={() => send({ kind: "startOverConfirmed", inCall: false, newVisitId: "specimen-again" })}
           onCancel={() => send({ kind: "startOverCancelled" })}
         />
       )}

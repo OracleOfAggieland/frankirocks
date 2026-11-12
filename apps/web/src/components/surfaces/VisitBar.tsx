@@ -41,6 +41,8 @@ function boltStatus(p: VisitBarProps): string {
 }
 
 export function VisitBar(p: VisitBarProps) {
+  // Brief 038 finding 1: a real account has no visit: no start over, no bolt, nothing to show.
+  if (p.phase === "live") return null;
   if (p.phase === "none" || p.phase === "cloning" || p.phase === "resetting") {
     const text = p.phase === "resetting" ? (p.endingCall ? COPY.visit.endingCall : COPY.visit.resetting) : COPY.visit.cloning;
     return (

@@ -14,7 +14,6 @@
  * The memory-off control (spec §13 line 358): the same steps with an empty store; nothing about takeout is said.
  */
 import { type CoreState, type Evidence, type ID, type Ledger, type Memory, tsFromMs } from "@franki/core";
-import { recordPendingRendered } from "../time/reminder";
 import { relInstant } from "../seed/clock";
 import { type BankLine, type RelTime, at } from "../seed/fixture";
 import { paths } from "../store/paths";
@@ -24,8 +23,7 @@ import { BISCUIT_LINE } from "./lines";
 
 const SIGN_WAITS =
   "a fit between briefs 019 and 022: the seed writes a purchase as a negative amountCents (seed/build.ts buildBank) and the detector counts only positive ones (core/patterns/spend.ts spendRows), so the seeded pattern is `insufficient` with 0 orders";
-const HERO_WAITS = "brief 023 (the offer's moment, due after the bolt, and delivery) and a route calling brief 024's Gate; nothing calls heroOffer today";
-const COMPARE_WAITS = "brief 023 (the comparison moment at checkAt, delivery) and a route calling brief 024's Gate; nothing calls compareLoop or markCelebrated today";
+const HERO_WAITS = "a card on open: the offer is said as the Proactive (brief 030 part A), but no route returns its card (S2_SCREEN_ASK_BUILT is false; no card route)";
 // LINEAGE_WAITS and WINDOW_WAITS were fixed by brief 030 (P1-2 and P1-1); no step waits for them now.
 const LINEAGE_WAITS =
   "a fit between brief 022 and the lineage check: the loop Memory's root Slices are the rows' typed Slices (routes/tool-food.ts loopMemory prefers bank.amount and calendar.time), and W-LINEAGE (core/lineage.ts) fails every Slice with a null range as sliceHashMismatch, so the yes's write is refused and the route answers 400 PARSE";
@@ -45,6 +43,12 @@ const AFTER: BankLine[] = [
 
 const offerOf = (w: World, name = "offer") => (w.vars.get(name) as HeroOffer | null | undefined) ?? null;
 const loopIdOf = (w: World) => (w.vars.get("loopId") as string | undefined) ?? "";
+/** The hero loop Memory's state, as stored. */
+const loopState = (want: string) => async (w: World): Promise<true | string> => {
+  const loop = (await allMemories(w)).find((m) => m.data.kind === "loop");
+  const got = loop?.data.loop?.state ?? "no loop";
+  return got === want ? true : `loop state ${got}`;
+};
 
 async function probeOffer(w: World): Promise<unknown> {
   const offer = await heroOffer(w.ctx, w.stamp?.generation ?? 1);
@@ -106,23 +110,6 @@ function coveredThrough(label: string, to: RelTime): Step {
   };
 }
 
-/**
- * Test setup (brief 037, finding 4): a yes acts only on an offer recorded as shown just before it. Nothing sends the
- * hero offer's `pendingRendered` receipt yet (the offer reaches no call until brief 030's second phase), so the
- * script records it, as the receipt route would, right before the owner's yes.
- */
-function showOffer(name: string): Step {
-  return {
-    label: `setup: the offer (${name}) is shown`,
-    do: "setup",
-    what: "the pendingRendered receipt for the hero offer, recorded as routes/receipt-moments.ts records it; no client sends it for the hero yet",
-    run: async (w) => {
-      const o = offerOf(w, name);
-      if (o === null) return;
-      await w.ctx.deps.store.transaction(w.ctx.uid, (tx) => recordPendingRendered(tx, w.ctx.uid, o.pendingId as ID, w.ctx.deps.clock.read().opsClock.now, w.ctx.deps.hasher));
-    },
-  };
-}
 
 const biscuitSteps: Step[] = [
   { label: "open a session", do: "open", expect: [{ neverSay: ["$186"] }] },
@@ -181,7 +168,7 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
       label: "the offer plays after the bolt, with $186",
       do: "check",
       of: "open after the bolt",
-      ...needsOffer(HERO_WAITS),
+      ...needsOffer(),
       expect: [{ mustSay: { template: "hero.offer", has: ["$186"], channel: "proactive" } }],
     },
     {
@@ -191,7 +178,7 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
       ...needsOffer(HERO_WAITS),
       expect: [{ mustSay: { card: "Takeout and late meetings" } }],
     },
-    showOffer("offerAfterBolt"),
+    { label: "the offer plays on the call", do: "play", of: "open after the bolt" },
     { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
     {
       label: "Franki writes the list and the loop",
@@ -240,7 +227,7 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
       label: "Franki speaks first: $71, down from $186",
       do: "check",
       of: "open three weeks on",
-      ...needsOffer(COMPARE_WAITS),
+      ...needsOffer(),
       expect: [{ mustSay: { template: "hero.comparison", has: ["$71", "$186"], channel: "proactive" } }],
     },
     {
@@ -254,6 +241,12 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
         },
         { mustSay: { has: ["$115 less"], channel: "read" } },
       ],
+    },
+    {
+      label: "the comparison plays, and the loop is celebrated",
+      do: "play",
+      of: "open three weeks on",
+      expect: [{ store: "the loop Memory's state is celebrated", check: loopState("celebrated") }],
     },
   ];
   return { name: `beat 3: the hero, ${variant}`, scores: "spec §15 0:50–1:30, spec §10, Friend Test 20", steps };
@@ -273,7 +266,9 @@ function beat3YesOnFriday(): Script {
     ...biscuitSteps,
     pick("probe: the offer on the clone's Friday says $186"),
     { label: "open on Friday", do: "open" },
-    showOffer("offer"),
+    { label: "the wish plays on Friday's call", do: "play", of: "open on Friday" },
+    { label: "a quiet moment on the call", do: "idle", expect: [{ mustSay: { template: "hero.offer", has: ["$186"], channel: "proactive" } }] },
+    { label: "the offer plays as an idle whisper", do: "play", of: "a quiet moment on the call" },
     { label: "the owner says yes", do: "say", text: "Yes, let's do it", answers: [parse()] },
     {
       label: "Franki writes the list and the loop",
@@ -291,6 +286,7 @@ function beat3YesOnFriday(): Script {
     pick("open three weeks on"),
     pick("Franki speaks first: $71, down from $186"),
     pick("the strip fills: $115 less"),
+    pick("the comparison plays, and the loop is celebrated"),
   ];
   return { name: "beat 3: the hero, yes on the clone's Friday (past the seed mismatches)", scores: "spec §15 0:50–1:30, spec §10", steps };
 }

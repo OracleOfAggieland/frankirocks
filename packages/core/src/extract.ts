@@ -25,6 +25,7 @@ import {
   type ReasonCode,
   type Value,
   msFromTs,
+  tsFromMs,
 } from "./schema/primitives";
 import type { Evidence, Memory } from "./schema/records";
 import { type JsonSchema, jsonSchemaOf } from "./schema/json-schema";
@@ -48,7 +49,7 @@ import {
   union,
   validate,
 } from "./schema/v";
-import { civilDateAt, looksLikeTime, resolveSpoken, spokenOnLabel, timeRow } from "./dates";
+import { civilDateAt, looksLikeTime, resolvePeriod, resolveSpoken, spokenOnLabel, timeRow } from "./dates";
 import { MEMORY_TEXT_CHARS, claimText } from "./memory-text";
 import { checkRange, tokenize, utf8 } from "./text";
 import { lookupAllergen } from "./writes/gazetteer";
@@ -1060,6 +1061,8 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
   const spokenAtMs = msFromTs(verified[0]!.evidence.occurredAt);
   // An episode already happened, and the resolver reads forward, so its words keep the day they were said instead.
   const resolved = timeWords === null || item.predicate === "episode" ? null : resolveSpoken(timeWords, spokenAtMs, zone);
+  // Brief 039: a preference said with a period ("this month") ends with it. validTo is end-exclusive.
+  const period = kind === "preference" && spokenWhen !== null && item.when.appliesTo === "valid_to" ? resolvePeriod(spokenWhen, spokenAtMs, zone) : null;
   const occasionDay = resolved !== null ? resolved.civilStart.slice(0, 10) : timeWords !== null ? `${norm(timeWords)}@${civilDateAt(spokenAtMs, zone)}` : null;
 
   const scopeId = scopeIdOf(item.predicate, item.scope, args, value, ctx.hasher, occasionDay);
@@ -1148,7 +1151,7 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
     flow: item.flow,
     assertedAt: saidAt,
     validFrom: saidAt,
-    validTo: null,
+    validTo: period === null ? null : tsFromMs(period.endMs + 1),
     validFromKey: saidAt,
     validFromKnown: true,
     when: spokenWhen === null ? { kind: "none" } : { kind: "spoken", spoken: spokenWhen },

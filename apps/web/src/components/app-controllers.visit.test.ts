@@ -7,14 +7,16 @@ import type { PeerLike, StreamLike } from "../client/voice-client";
 import { createSignedInControllers } from "./app-controllers";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
+let staleOpen = false;
 
-function build() {
+function build(reset: () => Promise<ApiResult<unknown>> = async () => ({ ok: true, status: 200, body: RESET_ANSWER })) {
   const calls: string[] = [];
   const api: ApiClient = {
     async call<T>(path: string) {
       calls.push(path);
-      if (path === "/api/seed/reset") return { ok: true, status: 200, body: RESET_ANSWER } as ApiResult<T>;
+      if (path === "/api/seed/reset") return (await reset()) as ApiResult<T>;
       if (path === "/api/seed/advance") return { ok: true, status: 200, body: ADVANCE_ANSWER } as ApiResult<T>;
+      if (path === "/api/session/open" && staleOpen) return { ok: false, kind: "http", status: 409, error: "STALE", retryAfterMs: 0 } as ApiResult<T>;
       return { ok: false, kind: "http", status: 503, error: "DEPENDENCY", retryAfterMs: 0 } as ApiResult<T>;
     },
   };
@@ -54,5 +56,43 @@ describe("signed-in controllers: the visit (brief 027)", () => {
     expect(calls.filter((p) => p === "/api/seed/reset")).toHaveLength(2);
     expect(c.proactive.getSnapshot()).toBeNull();
     expect(c.typed.getSnapshot().entries).toEqual([]);
+  });
+
+  // Brief 038 finding 1: nothing a visitor does reaches the fresh account before its clone.
+  it("while the clone is being made, or has failed, a chip or a typed line opens no Session and sends no turn", async () => {
+    let answer: (r: ApiResult<unknown>) => void = () => {};
+    const { c, calls } = build(() => new Promise((r) => (answer = r)));
+    c.visit.enter();
+    expect(c.visit.getSnapshot().phase).toBe("cloning");
+    await c.typed.sendLine("What do you know about me?");
+    expect(calls.filter((p) => p === "/api/session/open" || p === "/api/turn")).toEqual([]);
+    answer({ ok: false, kind: "timeout" });
+    await flush();
+    expect(c.visit.getSnapshot().phase).toBe("failed");
+    await c.typed.sendLine("What do you know about me?");
+    expect(calls.filter((p) => p === "/api/session/open" || p === "/api/turn")).toEqual([]);
+  });
+
+  it("a real account (LIVE) takes input as it does without a visit", async () => {
+    const { c, calls } = build(async () => ({ ok: false, kind: "http", status: 409, error: "LIVE", retryAfterMs: 0 }));
+    c.visit.enter();
+    await flush();
+    expect(c.visit.getSnapshot().phase).toBe("live");
+    await c.typed.sendLine("What do you know about me?");
+    expect(calls).toContain("/api/session/open");
+  });
+
+  it("a typed open answered STALE reloads the visit (brief 038 finding 4)", async () => {
+    const { c, data } = build();
+    c.visit.enter();
+    await flush();
+    const mine = c.visit.getSnapshot().visit!.visitId;
+    data.set("franki.visit.u1", JSON.stringify({ visitId: "other-tab-visit", fixtureNamespace: "ns-other", worldClockMs: Date.parse(THURSDAY_WORLD) }));
+    // The fake answers every open with DEPENDENCY; this one answers STALE.
+    staleOpen = true;
+    await c.typed.sendLine("Hello");
+    staleOpen = false;
+    expect(mine).not.toBe("other-tab-visit");
+    expect(c.visit.getSnapshot()).toMatchObject({ phase: "ready", visit: { visitId: "other-tab-visit" } });
   });
 });

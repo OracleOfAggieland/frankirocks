@@ -342,3 +342,86 @@ export function addCivilDays(civilDate: string, n: number): string {
   const c = addDays({ y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) }, n);
   return `${c.y}-${pad(c.m)}-${pad(c.d)}`;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Brief 039: a period has an end.
+
+export type PeriodKind = "week" | "month" | "year" | "day";
+
+export interface ResolvedPeriod {
+  /** The last instant of the period, in UTC ms: the next millisecond is outside it. */
+  endMs: number;
+  /** The civil date (`YYYY-MM-DD`) the period ends on, in `zone`. */
+  civilEnd: string;
+  /** What the period was: a week, a month (with its number), a year, or a span of days ending on a day. */
+  kind: PeriodKind;
+  month: number | null;
+  year: number;
+  zone: string;
+}
+
+/** The most days and weeks "for N days" and "for N weeks" may say. */
+export const PERIOD_MAX_DAYS = MAX_DAYS_AHEAD;
+
+const PERIOD_THIS = /^(?:for )?this (week|month|year)$/;
+const PERIOD_MONTH = new RegExp(`^(?:for|in) (${Object.keys(MONTHS).join("|")})$`);
+const PERIOD_COUNT = new RegExp(`^for ([0-9]{1,3}|${Object.keys(COUNTS).join("|")}) (days?|weeks?)$`);
+const PERIOD_UNTIL = /^until (.+)$/;
+
+/** The last instant of a civil day in `zone`: the next day's first instant, less 1 ms. */
+function dayEndUtc(c: Civil, zone: string): number | null {
+  for (let n = 1; n <= 3; n++) {
+    const start = dayStartUtc(addDays(c, n), zone);
+    if (start !== null) return start - 1;
+  }
+  return null;
+}
+
+/**
+ * The end of a period said at `spokenAtMs` in `zone`, from a closed list of phrases (brief 039): "this week" (weeks
+ * run Monday to Sunday), "this month", "this year" (each with an optional leading "for"), "for <month>" and
+ * "in <month>" (the month while it lasts, else its next coming), "until <a day resolveSpoken reads>" (that day
+ * included), "for N days" and "for N weeks" (today is the first day; N up to 270 days). Periods read the calendar
+ * day, not the social day. Anything else is null: no end.
+ */
+export function resolvePeriod(spoken: string, spokenAtMs: number, zone: string): ResolvedPeriod | null {
+  const words = spoken.normalize("NFKC").toLowerCase().replace(/[.!?,]+$/g, "").replace(/\s+/g, " ").trim();
+  if (words === "") return null;
+  const now = partsAt(spokenAtMs, zone);
+  const today: Civil = { y: now.y, m: now.m, d: now.d };
+  let last: Civil | null = null;
+  let kind: PeriodKind = "day";
+  let month: number | null = null;
+  const t = PERIOD_THIS.exec(words);
+  const m = PERIOD_MONTH.exec(words);
+  const n = PERIOD_COUNT.exec(words);
+  const u = PERIOD_UNTIL.exec(words);
+  if (t !== null) {
+    kind = t[1] as PeriodKind;
+    if (kind === "week") last = addDays(today, (7 - weekdayOf(today)) % 7);
+    else if (kind === "year") last = { y: today.y, m: 12, d: 31 };
+    else last = addDays({ y: today.m === 12 ? today.y + 1 : today.y, m: today.m === 12 ? 1 : today.m + 1, d: 1 }, -1);
+  } else if (m !== null) {
+    kind = "month";
+    month = MONTHS[m[1]!]!;
+    const y = month >= today.m ? today.y : today.y + 1;
+    last = addDays({ y: month === 12 ? y + 1 : y, m: month === 12 ? 1 : month + 1, d: 1 }, -1);
+  } else if (n !== null) {
+    const count = /^\d+$/.test(n[1]!) ? Number(n[1]) : COUNTS[n[1]!]!;
+    const days = n[2]!.startsWith("week") ? count * 7 : count;
+    if (count < 1 || days > PERIOD_MAX_DAYS) return null;
+    last = addDays(today, days - 1);
+  } else if (u !== null) {
+    const r = resolveSpoken(u[1]!, spokenAtMs, zone);
+    if (r === null) return null;
+    const [y, mo, d] = r.civilStart.slice(0, 10).split("-").map(Number) as [number, number, number];
+    last = { y, m: mo, d };
+    if (before(last, today)) return null;
+  } else {
+    return null;
+  }
+  if (kind === "month" && month === null) month = last.m;
+  const endMs = dayEndUtc(last, zone);
+  if (endMs === null) return null;
+  return { endMs, civilEnd: `${last.y}-${pad(last.m)}-${pad(last.d)}`, kind, month, year: last.y, zone };
+}

@@ -12,6 +12,7 @@ import { type ClockPair, type ClockPort, type CoreDocs, type Hasher, type ID, ts
 import { initialCoreDocs } from "../core-docs";
 import type { StorePort } from "../store/port";
 import { type SeedRows, buildSeed } from "./build";
+import { assertBarrier } from "./clear";
 import { localInstant } from "./clock";
 import type { SeedFixture } from "./fixture";
 
@@ -32,6 +33,8 @@ export interface LoadInput {
   worldStart: number;
   /** The epoch and policyRev the rows are written under. */
   core: { epoch: number; policyRev: number };
+  /** The reset holding the barrier: each write transaction checks it still does (brief 038 finding 8). */
+  opId?: ID;
 }
 
 /** Builds and writes the seed. Throws `SeedLoadError` (nothing written) or a store error. */
@@ -48,6 +51,7 @@ export async function loadSeed(deps: LoadDeps, uid: string, input: LoadInput): P
   for (let i = 0; i < rows.groups.length; i += SEED_LINES_PER_TX) {
     const chunk = rows.groups.slice(i, i + SEED_LINES_PER_TX);
     await deps.store.transaction(uid, async (tx) => {
+      await assertBarrier(tx, uid, input.opId);
       for (const g of chunk) for (const w of g.writes) tx.create(w.path, w.record);
     });
   }
@@ -67,15 +71,16 @@ export interface SeedCoreInput {
 
 /**
  * The five core documents of a fresh clone: fixture clock mode at the clone's Friday 08:40, the namespace and visit
- * ID stored (they persist across a reload), coverage over the hero window, rules and bundle empty. The epoch rises,
- * so work captured before the reset fails STALE; the rules and bundle revisions rise too, so no older Deck is taken
- * for newer. policyRev is kept: only a late control hit raises it (brief 014, S6).
+ * ID stored (they persist across a reload), coverage over the hero window, rules and bundle empty. The epoch is the
+ * one the reset's fence already raised (brief 038 finding 2), so work captured before the reset fails STALE; the rules
+ * and bundle revisions rise here, so no older Deck is taken for newer. policyRev is kept: only a late control hit
+ * raises it (brief 014, S6).
  */
 export function seedCoreDocs(uid: string, input: SeedCoreInput): CoreDocs {
   const pair: ClockPair = { worldClock: { now: input.worldStart, zone: input.zone }, opsClock: { now: input.opsNow } };
   const fresh = initialCoreDocs(uid, pair, input.zone);
   const { prior } = input;
-  const epoch = prior.epoch.epoch + 1;
+  const epoch = prior.epoch.epoch;
   const policyRev = prior.epoch.policyRev;
   const keep = <T extends { epoch: number; policyRev: number; createdAt: string }>(doc: T, was: { createdAt: string }): T => ({ ...doc, epoch, policyRev, createdAt: was.createdAt });
   const rulesRev = prior.rules.rulesRev + 1;

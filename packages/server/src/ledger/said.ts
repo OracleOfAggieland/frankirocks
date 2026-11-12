@@ -17,11 +17,15 @@ import {
   type ID,
   type Ledger,
   type SaidMatch,
+  type SaidReceipt,
   type TS,
+  type W,
   type WhyAnswer,
   Ledger as LedgerSchema,
   gateRowPayload,
+  matchSaid,
   saidRowPayload,
+  saidTokens,
   validate,
   whyBroughtUp,
 } from "@franki/core";
@@ -67,13 +71,30 @@ export async function writeGateDecision(tx: Tx, hasher: Hasher, at: GateWriteAt,
   return p === null ? null : writeOnce(tx, hasher, at, p);
 }
 
+/** What was heard for one note: the transcript receipt, and the note as it went on the wire. */
+export interface Heard {
+  receipt: SaidReceipt;
+  note: Pick<W, "noteId" | "text" | "momentId">;
+}
+
+/**
+ * The match for one note in what was heard (brief 033 finding 12): computed here with the time lane's matcher, never
+ * taken from the caller. `idTagged` needs the receipt to name the note and the transcript to hold the line's tokens;
+ * `exactTemplate` needs the note's line, normalized, in the transcript.
+ */
+export function noteMatch(h: Heard): SaidMatch {
+  if (h.receipt.kind !== "transcript") return "none";
+  return matchSaid(h.receipt, { momentId: h.note.momentId ?? "", noteId: h.note.noteId, tokens: saidTokens(h.note.text), template: h.note.text, candidate: null });
+}
+
 /**
  * The `said` row for one note matched in the assistant transcript. `row.turnId` is the assistant Turn and
- * `row.noteIds[0]` the note. No match, no row.
+ * `row.noteIds[0]` the note, which must be the note heard. The match is computed from what was heard. No match, no
+ * row. The Gate result is still the caller's: no stored result is read back here.
  */
-export async function writeSaid(tx: Tx, hasher: Hasher, at: GateWriteAt, r: GateResult, row: GateRowInput, match: SaidMatch): Promise<ID | null> {
-  if (row.turnId === null || row.noteIds.length !== 1) return null;
-  const p = saidRowPayload(r, row, match);
+export async function writeSaid(tx: Tx, hasher: Hasher, at: GateWriteAt, r: GateResult, row: GateRowInput, heard: Heard): Promise<ID | null> {
+  if (row.turnId === null || row.noteIds.length !== 1 || row.noteIds[0] !== heard.note.noteId) return null;
+  const p = saidRowPayload(r, row, noteMatch(heard));
   return p === null ? null : writeOnce(tx, hasher, at, p);
 }
 

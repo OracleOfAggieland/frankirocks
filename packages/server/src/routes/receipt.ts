@@ -34,7 +34,7 @@ import { cFields } from "../records";
 import { SESSION_IDLE_MS } from "../sessions";
 import { evidenceId } from "../store/evidence";
 import { paths } from "../store/paths";
-import { parseError, scopeError } from "./errors";
+import { barrierError, parseError, scopeError } from "./errors";
 import { mutation } from "./mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 import { retryStale } from "./state";
@@ -61,6 +61,7 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
         if (doc === null) throw scopeError();
         const s = doc.data;
         const core = await readCoreDocs(tx, uid);
+        if (core.epoch.data.barrier !== null) throw barrierError(); // Brief 038 finding 2: nothing lands during a reset or forget.
         const pair = ownerClock(core.state.data, deps.clock);
         const ops = pair.opsClock.now;
         const now = tsFromMs(ops);
@@ -177,7 +178,7 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
         }
         if (live) tx.update(doc.path, { ...s, lastTurnAt: now, expiresAt: tsFromMs(ops + SESSION_IDLE_MS), updatedAt: now });
         // Brief 030 P1-6: the moments this receipt names (admitted, said, rendered).
-        await receiptMoments(tx, uid, req, ops, deps);
+        await receiptMoments(tx, ctx, req, ops);
         // A browser-issued fastO is recorded by the seam from its `admitted` receipt (R9.1).
         if (req.kind === "admitted" && req.permitKind === "fastO") {
           const coreVals = { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev };
