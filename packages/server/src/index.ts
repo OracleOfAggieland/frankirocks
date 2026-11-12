@@ -21,3 +21,5 @@ export { debugMemoryRoute } from "./routes/debug-memory";
 // Brief 020: GET /api/memory.
 export { memoryRoute } from "./routes/memory";
 export { TAKE_MAX_BYTES, listTakes, liveTakesDeps, saveTake } from "./dev/takes";
+// Brief 024: the Gate's ledger writers, for the turn and receipt routes.
+export { gateRowId, readWhySaid, writeGateDecision, writeSaid } from "./ledger/said";

@@ -66,6 +66,17 @@ import {
   tagged,
   union,
 } from "./v";
+// Brief 024: the Gate's closed codes, for its ledger rows.
+import {
+  DECISION_ISSUERS,
+  DECISION_JUDGES,
+  GATE_CARVE_OUTS,
+  GATE_FORMS,
+  GATE_OUTCOMES,
+  GATE_REASONS,
+  GATE_RENDERS,
+  GATE_VERDICTS,
+} from "../gate/reasons";
 
 const s128 = str(128);
 
@@ -322,7 +333,7 @@ export type Turn = Infer<typeof Turn>;
 // ---------------------------------------------------------------------------------------------
 // ledger/{entryId}
 
-const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall"] as const;
+const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate"] as const;
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
 /**
@@ -344,6 +355,43 @@ const phoneCallFields = {
   accepted: bool,
 };
 
+// Brief 024: what the Gate said, held, steered, declined or blocked, as IDs and codes, never words.
+const GatePayload = obj({
+  outcome: oneOf(GATE_OUTCOMES),
+  candidateId: ID,
+  refs: arr(Ref, 8),
+  noteIds: arr(ID, 4),
+  momentId: nullable(ID),
+  sessionId: nullable(ID),
+  turnId: nullable(ID),
+  verdict: oneOf(GATE_VERDICTS),
+  form: nullable(oneOf(GATE_FORMS)),
+  render: nullable(oneOf(GATE_RENDERS)),
+  carveOut: nullable(oneOf(GATE_CARVE_OUTS)),
+  reasonCodes: arr(oneOf(GATE_REASONS), 16),
+  audience: Au,
+  permitKind: nullable(PermitKind),
+  match: nullable(oneOf(SAID_MATCH)),
+});
+
+// Brief 024 (first-spoken-call questions 16 and 17, voice-control question 57): who issued the admission, its
+// Permit kind, the judge's answer and whether it was a false hold. Decisions written before these fields have none
+// of them; `decisionFields` reads either shape, filling nulls.
+const DECISION_SHAPE = {
+  purpose: Purpose,
+  acceptedRefs: arr(Ref, 8),
+  heldRefs: arr(Ref, 32),
+  reasonCodes: arr(ReasonCode, 32),
+  audience: Au,
+};
+const DECISION_ADMISSION_FIELDS = {
+  issuer: nullable(oneOf(DECISION_ISSUERS)),
+  permitKind: nullable(PermitKind),
+  judge: nullable(oneOf(DECISION_JUDGES)),
+  falseHold: nullable(bool),
+};
+export const DecisionPayload = union(obj({ ...DECISION_SHAPE, ...DECISION_ADMISSION_FIELDS }), obj(DECISION_SHAPE));
+
 export const LEDGER_PAYLOADS = {
   // Earlier calls have no indexed call ID. Their receipts remain readable and replayable.
   phoneCall: union(obj({ ...phoneCallFields, phoneCallId: ID }), obj(phoneCallFields)),
@@ -354,13 +402,7 @@ export const LEDGER_PAYLOADS = {
     response: nullable(plainObject),
     error: nullable(ErrorCode),
   }),
-  decision: obj({
-    purpose: Purpose,
-    acceptedRefs: arr(Ref, 8),
-    heldRefs: arr(Ref, 32),
-    reasonCodes: arr(ReasonCode, 32),
-    audience: Au,
-  }),
+  decision: DecisionPayload,
   action: obj({
     pendingId: ID,
     executor: oneOf(["makeReminder", "draftNote", "makeList", "holdTime"]),
@@ -388,6 +430,7 @@ export const LEDGER_PAYLOADS = {
     touched: arr(obj({ collection: SC, count: nat() }), 32),
     withdrawnCount: nat(),
   }),
+  gate: GatePayload,
 } satisfies Record<LedgerKind, Schema<unknown>>;
 
 const LedgerBase = obj({
