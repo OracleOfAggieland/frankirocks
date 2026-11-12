@@ -8,6 +8,8 @@ import { canonicalJSON, type Hasher } from "../../ids";
 import { tsFromMs, type Time } from "../../schema/primitives";
 import type { Memory } from "../../schema/records";
 import { sampleMemory, testId } from "../../testing/samples";
+import type { TickRow } from "../tick";
+import type { MomentPlan } from "../types";
 
 function fnv(bytes: Uint8Array, seed: number): string {
   let h = (0x811c9dc5 ^ seed) >>> 0;
@@ -116,3 +118,8 @@ export function moved(old: Memory, id: string, s: OccasionSpec): Memory {
 }
 
 export const memId = (n: number) => testId(`occasion-${n}`);
+
+/** Tick rows for plans, as the server stores them (pending, no lease). */
+export function rowsOf(plans: readonly MomentPlan[]): TickRow[] {
+  return plans.map((p) => ({ id: p.momentId, kind: p.kind, status: "pending" as const, dueAt: p.dueAt, closeAt: p.closeAt, leaseUntil: null }));
+}
