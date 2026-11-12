@@ -14,6 +14,7 @@ import { MemoryExtrasSection } from "./_sections/MemoryExtrasSection";
 import { PhoneSection } from "./_sections/PhoneSection";
 import { SurfaceSections } from "./_sections/SurfaceSections";
 import { ThreeSection } from "./_sections/ThreeSection";
+import { VisitSection } from "./_sections/VisitSection";
 
 export const metadata: Metadata = { title: "Franki specimens" };
 
@@ -26,6 +27,7 @@ export default function SpecimensPage() {
       <ThreeSection />
       <MainScreenSection />
       <MemoryScreenSection />
+      <VisitSection />
       <PhoneSection />
       <MaterialsSection />
       <SurfaceSections />

@@ -6,6 +6,10 @@ import type { BrowserClock } from "../client/clock";
 import { DebugPanelModel } from "../client/debug-panel";
 import { MemoryModel } from "../client/memory-model";
 import { PhoneWatch } from "../client/phone-watch";
+import { randomId } from "../client/ids";
+import { ProactiveShelf } from "../client/proactive-shelf";
+import { SheetModel } from "../client/sheet-model";
+import { type StorageLike, VisitModel } from "../client/visit-model";
 import { TypedTurns } from "../client/typed-turns";
 import { type AudioLike, type PeerLike, type StreamLike, VoiceClient } from "../client/voice-client";
 import type { TurnCopies } from "../ui/surface-props";
@@ -24,6 +28,9 @@ export interface ControllerDeps {
   onStreams: (s: { mic: StreamLike | null; output: unknown | null }) => void;
   /** The mic's unsmoothed level, for the Latency_Clock's last loud frame (voice-control R18.5). */
   inputLevel?: () => number;
+  /** Brief 027: the signed-in user, whose visit is kept in `storage` across reloads. */
+  uid?: string;
+  storage?: StorageLike | null;
 }
 
 export interface SignedInControllers {
@@ -34,6 +41,12 @@ export interface SignedInControllers {
   phone: PhoneWatch;
   /** The jar, the Lab, the strip, the receipt and the readout, from GET /api/memory (brief 020). Reads only. */
   memory: MemoryModel;
+  /** Brief 027: the visit's clone, time bolt and start over. */
+  visit: VisitModel;
+  /** Brief 027: the What I know sheet, from GET /api/memory. Reads only. */
+  sheet: SheetModel;
+  /** Brief 027: the last proactive line the time bolt brought. */
+  proactive: ProactiveShelf;
 }
 
 export function createSignedInControllers(deps: ControllerDeps): SignedInControllers {
@@ -53,12 +66,36 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
         });
   const phone = new PhoneWatch({ api, now: () => clock.mono() });
   const memory = new MemoryModel({ api });
+  const typed = new TypedTurns({ api, clock, onTurn: (turn) => phone.onTypedTurn(turn), onReply: (reply) => memory.onReply(reply) });
+  const sheet = new SheetModel({ api });
+  const proactive = new ProactiveShelf();
+  const visit = new VisitModel({
+    api,
+    uid: deps.uid ?? "",
+    storage: deps.storage ?? null,
+    newId: () => randomId(),
+    call: voice === null ? null : { inCall: () => voice.getSnapshot().phase !== "CLOSED", hangUp: () => voice.hangUp(), subscribe: voice.subscribe },
+    sessionId: () => voice?.getSnapshot().session?.sessionId ?? typed.getSnapshot().sessionId,
+    onShow: (p) => proactive.show(p, typed.getSnapshot().entries.length),
+    onAfterReset: () => {
+      // A new month: nothing said or shown in the old one stays on the screen.
+      typed.dropSession();
+      typed.dropTurnCopies();
+      proactive.clear();
+      sheet.clear();
+      memory.clear();
+      void memory.refresh();
+    },
+  });
   return {
-    typed: new TypedTurns({ api, clock, onTurn: (turn) => phone.onTypedTurn(turn), onReply: (reply) => memory.onReply(reply) }),
+    typed,
     debug: deps.debug ? new DebugPanelModel({ api, clock }) : null,
     voice,
     phone,
     memory,
+    visit,
+    sheet,
+    proactive,
   };
 }
 

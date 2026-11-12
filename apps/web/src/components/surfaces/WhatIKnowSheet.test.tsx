@@ -342,3 +342,33 @@ describe("What I know, brief 015 review", () => {
     expect(closesOnForget("sheet", ["a"], "x")).toBe(false);
   });
 });
+
+describe("What_I_Know_Sheet on real data (brief 027)", () => {
+  const unsorted: KnownItem[] = [
+    { id: "u1", area: null, text: "Biscuit has surgery Thursday", from: "You said", guessed: false, hardRule: false },
+    { id: "g2", area: "Goals", text: "Run a 10k", from: "You said", guessed: false, hardRule: false },
+  ];
+
+  it("puts items with no area last, under Other things", () => {
+    expect(sheetOrder(unsorted)).toEqual(["g2", "u1"]);
+    const html = render({ items: unsorted });
+    expect(html).toContain('data-group="unsorted"');
+    expect(html).toContain(COPY.sheetData.unsorted);
+    expect(html.indexOf('data-group="Goals"')).toBeLessThan(html.indexOf('data-group="unsorted"'));
+  });
+
+  it("read-only shows each item and where it came from, with no actions", () => {
+    const html = render({ items: unsorted, readOnly: true });
+    expect(html).toContain("Biscuit has surgery Thursday");
+    expect(html).toContain(`${COPY.sheet.from} You said`);
+    expect(html).not.toContain("data-actions");
+    expect(html).not.toContain('data-action="forget"');
+    expect(render({ items: unsorted })).toContain('data-action="forget"');
+  });
+
+  it("draws its footer under the items", () => {
+    const html = render({ items: unsorted, footer: <p data-test-footer="">slip</p> });
+    expect(html).toContain("data-sheet-footer");
+    expect(html.indexOf("data-test-footer")).toBeGreaterThan(html.indexOf("Biscuit"));
+  });
+});
