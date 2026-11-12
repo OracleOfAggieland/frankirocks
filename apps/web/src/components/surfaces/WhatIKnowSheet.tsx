@@ -31,10 +31,14 @@ export type WhatIKnowSheetProps = WhatIKnowProps & {
 
 // ---- Pure rules, tested in WhatIKnowSheet.test.tsx ----
 
-/** The order items are shown in: hard rules first, then each area that has items, in COPY.areas order. */
-export function sheetGroups(items: readonly KnownItem[]): { rules: KnownItem[]; groups: { area: Area; items: KnownItem[] }[] } {
+/**
+ * The order items are shown in: hard rules first, then each area that has items, in COPY.areas order, then the
+ * items no view has given an area yet (`area: null`, brief 027), under "Other things".
+ */
+export function sheetGroups(items: readonly KnownItem[]): { rules: KnownItem[]; groups: { area: Area | null; items: KnownItem[] }[] } {
   const rules = items.filter((i) => i.hardRule);
-  const groups = COPY.areas.map((area) => ({ area, items: items.filter((i) => !i.hardRule && i.area === area) })).filter((g) => g.items.length > 0);
+  const areas: (Area | null)[] = [...COPY.areas, null];
+  const groups = areas.map((area) => ({ area, items: items.filter((i) => !i.hardRule && (i.area ?? null) === area) })).filter((g) => g.items.length > 0);
   return { rules, groups };
 }
 
@@ -148,7 +152,16 @@ const AREA_GLYPH: Record<Area, ReactNode> = {
   Goals: <path d="M4 13.75 V2.5 M4 3 H12.25 L10.25 5.6 L12.25 8.2 H4" />,
 };
 
-type ItemActions = Pick<WhatIKnowProps, "onWrong" | "onQuiet"> & { forget: (item: KnownItem, el: HTMLElement | null) => void; onRuleBlur: (id: string) => void };
+/** Items no view has sorted yet: three loose dots. */
+const UNSORTED_GLYPH: ReactNode = (
+  <>
+    <circle cx={4} cy={8} r={1.25} />
+    <circle cx={8} cy={8} r={1.25} />
+    <circle cx={12} cy={8} r={1.25} />
+  </>
+);
+
+type ItemActions = Pick<WhatIKnowProps, "onWrong" | "onQuiet"> & { forget: (item: KnownItem, el: HTMLElement | null) => void; onRuleBlur: (id: string) => void; readOnly: boolean };
 
 /** One item: a specimen tag with an eyelet, its text, where it came from, then the three quiet actions. */
 function itemTag(item: KnownItem, armed: string | null, reduced: boolean, a: ItemActions) {
@@ -177,6 +190,7 @@ function itemTag(item: KnownItem, armed: string | null, reduced: boolean, a: Ite
       <p className="font-mono text-xs text-ink-dim">
         {COPY.sheet.from} {item.from}
       </p>
+      {a.readOnly ? null : (
       <div data-actions="" className={ACTION_ROW}>
         <button type="button" data-action="wrong" className={`${ACTION} border-ink-dim/70 text-ink`} onClick={() => a.onWrong(item.id)}>
           {COPY.sheet.wrong}
@@ -204,6 +218,7 @@ function itemTag(item: KnownItem, armed: string | null, reduced: boolean, a: Ite
           {COPY.sheet.quiet}
         </button>
       </div>
+      )}
       {/* The whole warning, in words, while the rule waits for its second tap. The sheet's status
           region announces it, so this visible copy is hidden from assistive tech to avoid a double read. */}
       {isArmed ? (
@@ -251,6 +266,7 @@ export function WhatIKnowView({ headingRef, panelRef, onKeyDown, onClose, ...p }
     onWrong: p.onWrong,
     onQuiet: p.onQuiet,
     onRuleBlur: p.onRuleBlur,
+    readOnly: p.readOnly === true,
     forget: (item, el) => {
       if (item.hardRule && !ruleForgetPress(armed, item.id).forget) {
         // Some browsers don't focus a clicked button; focusing it here gives every browser a blur to disarm on.
@@ -297,8 +313,8 @@ export function WhatIKnowView({ headingRef, panelRef, onKeyDown, onClose, ...p }
         ) : null}
         {groups.map((g) => (
           <motion.div
-            key={g.area}
-            data-group={g.area}
+            key={g.area ?? "unsorted"}
+            data-group={g.area ?? "unsorted"}
             layout={reduced ? false : "position"}
             variants={materializeVariants(reduced)}
             initial="hidden"
@@ -306,7 +322,7 @@ export function WhatIKnowView({ headingRef, panelRef, onKeyDown, onClose, ...p }
             exit="gone"
             transition={{ ...materializeTransition(reduced), layout: glide }}
           >
-            {groupHead(<Glyph>{AREA_GLYPH[g.area]}</Glyph>, g.area, "dim")}
+            {groupHead(<Glyph>{g.area === null ? UNSORTED_GLYPH : AREA_GLYPH[g.area]}</Glyph>, g.area ?? COPY.sheetData.unsorted, "dim")}
             <ul className="relative flex flex-col gap-2">
               <AnimatePresence initial={false} mode="popLayout">
                 {g.items.map((i) => itemTag(i, armed, reduced, actions))}
@@ -315,6 +331,7 @@ export function WhatIKnowView({ headingRef, panelRef, onKeyDown, onClose, ...p }
           </motion.div>
         ))}
       </AnimatePresence>
+      {p.footer ? <div data-sheet-footer="">{p.footer}</div> : null}
     </div>
   );
   // Announces the second-tap warning, since a changed label on the focused button is not reliably read out.

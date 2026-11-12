@@ -53,7 +53,8 @@ export type Area = "Time and work" | "Food and health" | "Money" | "People" | "G
 
 export interface KnownItem {
   id: string;
-  area: Area;
+  /** Null while no view names the item's area (brief 027): it shows under "Other things". */
+  area: Area | null;
   text: string;
   from: string;
   guessed: boolean;
@@ -66,6 +67,10 @@ export interface WhatIKnowProps {
   onForget: (id: string) => void;
   onQuiet: (id: string) => void;
   onClose: () => void;
+  /** Brief 027: no Wrong, Forget or Don't bring it up, while no control route reaches the browser. */
+  readOnly?: boolean;
+  /** Brief 027: drawn under the items, such as the receipt slip. */
+  footer?: import("react").ReactNode;
 }
 
 export interface LabProps {
