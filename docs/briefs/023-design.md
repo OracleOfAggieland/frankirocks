@@ -92,7 +92,7 @@ Heavy (`isHeavy`): a moment whose source has gravity ≥ 2, or kind `griefAsk`, 
 | 3 | A moment has `memoryId` xor `rollupId`, and a reminder has neither | A third source, `actionId`, and the xor is over three | `Moment` |
 | 4 | An instant occasion with no end | End = start + 60 min (`OCCASION_DEFAULT_MINUTES`), so the check-in can't come while it's still on | derive |
 | 5 | "A check-in never precedes its end" against 18:00 for a day-only date | For a day-only date the rule is the table's 18:00; the property checks instant occasions against their end, and day-only ones against their start | property |
-| 6 | Local 08:00 inside a DST gap | Shifted forward to the first instant after the gap; a repeated hour takes the first | `localMinuteAt` |
+| 6 | Local 08:00 inside a DST gap | Shifted forward by the gap's length (02:30 in a 02:00 to 03:00 gap reads 03:30); a repeated hour takes the first | `localMinuteAt` |
 | 7 | What "open" is as a status | `leased`, with an ops lease (`OPEN_LEASE_MS` 15 min); an expired lease returns it to `pending` | tick |
 | 8 | The jump "waits for a forget" | It answers BARRIER 423 with a retry hint; the client's retry is the wait | `ADVANCE_RETRY_MS` |
 | 9 | A backward jump | Refused, PARSE 400; an equal `to` moves nothing and still ticks | `planAdvance` |
@@ -100,6 +100,8 @@ Heavy (`isHeavy`): a moment whose source has gravity ≥ 2, or kind `griefAsk`, 
 | 11 | No pending collection | Pending IDs are hashes; rendering is a ledger `decision` row | reminder |
 | 12 | Where a day's proactive count lives | `core/counters`: `speech` counts proactive lines, `heavy` heavy ones, both reset when `day` changes | `countDelivery` |
 | 13 | A day-only reminder | Due at 09:00 local (`REMINDER_DAY_MINUTE`), as the commitment row's "due 09:00" | reminder |
-| 14 | Spoken words for moments | Code templates in `moments/words.ts`: "Good luck with {x} at {time}.", "How did {x} go?" | words |
+| 14 | Spoken words for moments | Code templates in `moments/words.ts`: "Good luck at 2 PM: {value}.", "How did it go: {value}?" | words |
 | 15 | Quiet hours or a cap | The moment is offered as a card, never spoken | delivery |
 | 16 | The demo's "the takeout moment is due after the bolt" | The insight is due at local midnight after the window; ordering against the check-in is delivery's rank and the two-turn rule. The demo script (brief 029) decides the clock steps | report |
+| 17 | Moments, effects and blocks have no declared index for the tick's queries (Q15, Q16, Q35, Q25) | Paged ID scans (Q28) filtered in code, capped (`MOMENT_SCAN_MAX`, `MEMORY_SCAN_MAX`); a full page of effects fails closed | `time/tick.ts` |
+| 18 | A tick on a tenant with no core documents | Skipped (`noCore`), nothing written | `memoryTick` |
