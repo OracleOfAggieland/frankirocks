@@ -1490,7 +1490,9 @@ function onState(s: Step, res: Infer<typeof StateResponse>, sentAt?: number): vo
   const st = s.st;
   const sent = sentAt ?? st.stateSentAt ?? s.now;
   s.set({ stateSentAt: null });
-  if (st.session === null || res.stamp.sessionId !== st.session.sessionId) return;
+  // Brief 045, finding 3: a line in an answer for no Session or another one (after a lost connection, a hang-up, a
+  // failed open or visitGone) ends by name, never in silence.
+  if (st.session === null || res.stamp.sessionId !== st.session.sessionId) return dropLine(s, res.proactive, "session");
   // A poll sent before the last turn answer carries an older Deck's safe turns: only a higher Deck is taken from it
   // (review of wave A, item 2).
   const asked = sentAt ?? st.stateSentAt;
@@ -1516,14 +1518,22 @@ function onState(s: Step, res: Infer<typeof StateResponse>, sentAt?: number): vo
     // R14.3: the first thing heard on a fresh call that inherited a narrowed audience is the swap line. An opening
     // line from delivery plays the same way, on the call it opened (brief 045, finding 3).
     playProactive(s);
+    // A state answer's own line can't play during setup (brief 045, finding 3): it ends by name.
+    dropLine(s, res.proactive, "phase");
   } else if (!configuring && res.proactive !== null) {
     offerProactive(s, res.proactive, sent);
   } else if (configuring && ackDropped) {
+    dropLine(s, res.proactive, "phase");
     // The ack was dropped only because a turn answer (often an earlier Session's) landed after the request went
     // out. Ask once more rather than wait out the ack limit; a request sent now is younger than that answer (V1
     // step 5). The ack limit still bounds CONFIGURING.
     postState(s);
-  }
+  } else if (configuring) dropLine(s, res.proactive, "phase");
+}
+
+/** A state answer's line that can't be offered at all ends here, by name (brief 045, finding 3). */
+function dropLine(s: Step, p: Infer<typeof Proactive> | null, reason: ProactiveDrop): void {
+  if (p !== null) s.set({ proactiveDropped: { turnId: p.turnId, reason } });
 }
 
 function onStateFailed(s: Step): void {

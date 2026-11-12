@@ -97,7 +97,7 @@ describe("Property: a real account is never reset, and a visitor is never locked
         const input = async () => {
           // The input gate: a chip, a typed line or a call reaches the server only when the screen takes input.
           if (!inputAllowed(s)) return;
-          const res = await callRoute(rig, openRoute, { requestId: testId(`open-${++ids}`), initiator: "user", previousSessionId: null, clientZone: ZONE, visitId: null }, { token: `token:${UID}` });
+          const res = await callRoute(rig, openRoute, { requestId: testId(`open-${++ids}`), initiator: "user", previousSessionId: null, clientZone: ZONE, visitId: s.visit !== null && s.visit.fixtureNamespace !== null ? s.visit.visitId : null }, { token: `token:${UID}` });
           expect(res.status).toBe(200);
           // A chip or a typed line: the owner's own words, one Evidence row.
           const d = res.body.deck;

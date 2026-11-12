@@ -11,7 +11,7 @@ import { TypedInput } from "./TypedInput";
 const SESSION = testId("session");
 const SS0: SS = { sessionId: SESSION, epoch: 0, policyRev: 0, bundleRev: 1, rulesRev: 0, generation: 1 };
 const ACK = { stamp: SS0, issuedOpsAt: "2026-11-03T12:00:00.000Z", expiresOpsAt: "2026-11-03T12:00:10.000Z" };
-const OPEN_OK = { sessionId: SESSION, generation: 1, deck: null, state: "connecting", ack: ACK, proactive: null };
+const OPEN_OK = { sessionId: SESSION, generation: 1, deck: null, state: "connecting", ack: ACK, proactive: null, audience: "private" };
 
 const note = (text: string): W => ({
   noteId: testId(`note-${text.length}`),

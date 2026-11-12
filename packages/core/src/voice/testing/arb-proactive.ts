@@ -64,10 +64,10 @@ export class ProactiveDriver extends CallDriver {
     this.serverDeck = deckAt(this.now + 100, { policyRev: this.serverDeck.policyRev });
     const p = this.line(this.serverDeck, this.now + 100, "ok");
     this.delivered.push({ p, variant: "open", step: this.trace.steps.length, sentAt: this.now + 100 });
-    this.ev({ type: "openOk", response: { sessionId: SID, generation: 1, deck: this.serverDeck, state: "connecting", ack: ackOf(this.serverDeck, this.now + 100), proactive: p } }, 100);
+    this.ev({ type: "openOk", response: { sessionId: SID, generation: 1, deck: this.serverDeck, state: "connecting", ack: ackOf(this.serverDeck, this.now + 100), proactive: p, audience: null } }, 100);
     this.ev({ type: "channelOpen" }, 200);
     const sent = this.pending.states.shift() ?? this.now;
-    this.ev({ type: "stateOk", response: { stamp: ssOf(this.serverDeck), state: "LISTENING", deck: this.serverDeck, ack: ackOf(this.serverDeck, this.now + 50), barrierReceiptId: null, proactive: null }, sentAt: sent }, 50);
+    this.ev({ type: "stateOk", response: { stamp: ssOf(this.serverDeck), state: "LISTENING", deck: this.serverDeck, ack: ackOf(this.serverDeck, this.now + 50), barrierReceiptId: null, proactive: null, audience: null }, sentAt: sent }, 50);
   }
 
   override play(s: Step | PStep): void {
@@ -81,7 +81,7 @@ export class ProactiveDriver extends CallDriver {
     this.serverDeck = d;
     const p = this.line(d, at, a.variant);
     this.delivered.push({ p, variant: a.variant, step: this.trace.steps.length, sentAt });
-    this.ev({ type: "stateOk", response: { stamp: ssOf(d), state: "LISTENING", deck: d, ack: ackOf(d, at), barrierReceiptId: null, proactive: p }, sentAt }, s.dt);
+    this.ev({ type: "stateOk", response: { stamp: ssOf(d), state: "LISTENING", deck: d, ack: ackOf(d, at), barrierReceiptId: null, proactive: p, audience: null }, sentAt }, s.dt);
   }
 
   /** The `response.create`s sent for a delivered line's Turn, with their steps. */

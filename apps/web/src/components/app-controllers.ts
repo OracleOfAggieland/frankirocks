@@ -104,6 +104,8 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
           onControlCheck: () => memory.askGone(),
           // Brief 044, item 1: a tool answer's cards that fit the call go to the Card_Dock.
           onToolCards: (cards, stamp) => callCards.show(cards, stamp),
+          // Brief 045 part S: the toggle shows the audience the call's answers confirm.
+          onAudience: (stamp, audience) => company.adopt(stamp, audience),
         });
   const phone = new PhoneWatch({ api, now: () => clock.mono() });
   const memory = new MemoryModel({ api });
@@ -118,6 +120,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
       return v !== null && v.fixtureNamespace !== null ? v.visitId : null;
     },
     // Brief 030 part A: the open's line is shown, and the server is told it was.
+    onAudience: (stamp, audience) => company.adopt(stamp, audience),
     onProactive: (p: Proactive): void => {
       // Brief 045 finding 7: a line that asks for an answer stays for a call.
       if (!showsOnScreen(p)) return;

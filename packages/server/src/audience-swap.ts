@@ -29,6 +29,7 @@ import {
   OPEN_LIMIT_MS,
   SWAP_LIMIT_MS,
   type Session,
+  REGEX_TABLE,
   crisisFires,
   msFromTs,
   narrowsAudience,
@@ -211,6 +212,67 @@ export function inheritedAudience(prev: Session | null, opsNow: number): { audie
   // Brief 035 (finding 6): an expired wait never yields private. It yields unknown, the S0 Head with no swap line.
   const expired = prev.waitDeadline !== null && msFromTs(prev.waitDeadline) < opsNow;
   return { audience: expired ? "unknown" : audience, crisis: prev.modifiers.crisis !== null, crisisAt: prev.modifiers.crisis };
+}
+
+/** Brief 045 (finding 5): how long a crisis or life-change turn holds unprompted insights, celebrations and asks. */
+export const HOLD_CARRY_MS = 24 * 60 * 60_000;
+const HOLD_REGEX = new Set(REGEX_TABLE.filter((r) => r.family === "crisis" || r.family === "lifeChange").map((r) => r.id));
+
+/**
+ * Brief 045 (finding 5): whether a turn starts the hold. A crisis or life-change regex hit, or a crisis or transition
+ * candidate in the parse, whoever said it and whether or not it fired (fails closed).
+ */
+export function holdsOnTurn(parse: RuleParse, regex: readonly string[]): boolean {
+  return regex.some((id) => HOLD_REGEX.has(id)) || (parse.kind === "hit" && (parse.candidates.includes("crisis") || parse.candidates.includes("transition")));
+}
+
+/**
+ * The hold's mark: `core/state.modifiers.crisis`, the owner's, holds the world time of the latest such turn (a reset
+ * starts it over). The turn's own Session also holds, through `transitionCandidateSeq`, for the rest of that Session.
+ */
+export const holdMark = (state: CoreState, worldNow: number): CoreState => ({ ...state, modifiers: { ...state.modifiers, crisis: tsFromMs(worldNow) } });
+
+/** Whether the owner's hold still runs at `worldNow`: inside `HOLD_CARRY_MS` of the mark, whatever the audience. */
+export const holdCarried = (state: CoreState, worldNow: number): boolean =>
+  state.modifiers.crisis !== null && worldNow - msFromTs(state.modifiers.crisis) < HOLD_CARRY_MS;
+
+/** Brief 045 (finding 2): the most recent Sessions an open reads, by last turn, for the latest closing or closed one. */
+export const RECENT_SESSIONS_READ = 3;
+
+/**
+ * Brief 045 (finding 2): the Sessions an open inherits from, read in one round trip (three reads in parallel): the one
+ * it names, the Owner's active one, and the most recent closing or closed one. An open with no name (the typed bar,
+ * voice after a reload) still finds a narrowed room.
+ */
+export async function inheritCandidates(tx: Pick<Tx, "get" | "query">, uid: string, x: { named: string | null; active: string | null; sessionId: string }): Promise<Session[]> {
+  const get = (id: string | null) => (id === null || id === x.sessionId ? Promise.resolve(null) : tx.get<Session>(paths.session(uid, id)));
+  const [named, active, recent] = await Promise.all([
+    get(x.named),
+    get(x.active === x.named ? null : x.active),
+    tx.query<Session>({ collection: paths.collection(uid, "sessions"), where: [], orderBy: { field: "lastTurnAt", dir: "desc" }, limit: RECENT_SESSIONS_READ }),
+  ]);
+  // Newest by last turn; a tie (one instant) goes to the narrower Session, which fails closed.
+  const closed = recent
+    .filter((d) => d.id !== x.sessionId && (d.data.status === "closing" || d.data.status === "closed"))
+    .sort((a, b) => (a.data.lastTurnAt === b.data.lastTurnAt ? AU_RANK[b.data.audience] - AU_RANK[a.data.audience] : a.data.lastTurnAt < b.data.lastTurnAt ? 1 : -1));
+  const latestClosed = closed[0];
+  return [named, active, latestClosed ?? null].filter((d): d is NonNullable<typeof d> => d !== null).map((d) => d.data);
+}
+
+/** How narrow an audience is: `company` is the narrowest, since the Gate allows an S1 template under `unknown`. */
+const AU_RANK: Readonly<Record<Au, number>> = { private: 0, unknown: 1, company: 2 };
+
+/**
+ * Brief 045 (finding 2): the narrowest of what each candidate passes on (`inheritedAudience`): `company` over
+ * `unknown` over private (`AU_RANK`), and a crisis from any of them. Only the Owner's own hang-up (`userCloseCarry`) or an
+ * `alone` line, which make that Session private, widen.
+ */
+export function narrowestInherited(candidates: readonly Session[], opsNow: number): ReturnType<typeof inheritedAudience> {
+  const all = candidates.map((c) => inheritedAudience(c, opsNow)).filter((i): i is NonNullable<typeof i> => i !== null);
+  if (all.length === 0) return null;
+  const crisisAt = all.map((i) => i.crisisAt).filter((t): t is NonNullable<typeof t> => t !== null).sort().at(-1) ?? null;
+  const audience = all.map((i) => i.audience).reduce((a, b) => (AU_RANK[b] > AU_RANK[a] ? b : a));
+  return { audience, crisis: all.some((i) => i.crisis), crisisAt };
 }
 
 /** The inheriting Session: the fresh one with the inherited audience and, brief 035 (finding 13), the crisis modifier. */

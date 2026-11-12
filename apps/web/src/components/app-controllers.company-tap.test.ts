@@ -14,14 +14,14 @@ const flush = async (n = 5) => {
 const ID = (c: string) => c.repeat(43);
 const SS = { sessionId: ID("s"), epoch: 1, policyRev: 1, bundleRev: 1, rulesRev: 1, generation: 1 };
 
-function build() {
+function build(openAudience: "private" | "company" | "unknown" = "private") {
   const sent: { path: string; body: any }[] = [];
   const api: ApiClient = {
     async call<T>(path: string, init?: { body?: unknown }) {
       sent.push({ path, body: init?.body });
       if (path === "/api/seed/reset") return { ok: true, status: 200, body: RESET_ANSWER } as ApiResult<T>;
       if (path === "/api/session/open")
-        return { ok: true, status: 200, body: { sessionId: SS.sessionId, generation: 1, deck: null, state: "connecting", ack: { stamp: SS, issuedOpsAt: "2026-11-03T12:00:00.000Z", expiresOpsAt: "2026-11-03T12:00:10.000Z" }, proactive: null } } as ApiResult<T>;
+        return { ok: true, status: 200, body: { sessionId: SS.sessionId, generation: 1, deck: null, state: "connecting", ack: { stamp: SS, issuedOpsAt: "2026-11-03T12:00:00.000Z", expiresOpsAt: "2026-11-03T12:00:10.000Z" }, proactive: null, audience: openAudience } } as ApiResult<T>;
       if (path === "/api/turn") {
         const b = init?.body as { requestId: string; turnId: string };
         return {
@@ -66,5 +66,16 @@ describe("signed-in controllers: the company tap (brief 044, item 3)", () => {
     await c.company.tap("company");
     expect(sent.filter((s) => s.path === "/api/turn" || s.path === "/api/session/open")).toEqual([]);
     expect(c.company.getSnapshot().company).toBe(false);
+  });
+
+  it("an inherited company open shows company before any tap (brief 045 part S)", async () => {
+    const { c, sent } = build("company");
+    c.visit.enter();
+    await flush();
+    expect(c.company.getSnapshot().company).toBe(false);
+    await c.typed.sendLine("What's on tonight?");
+    await flush();
+    expect(sent.filter((s) => s.path === "/api/turn" && s.body?.source === "trustedTap")).toEqual([]);
+    expect(c.company.getSnapshot().company).toBe(true);
   });
 });

@@ -155,7 +155,7 @@ export function userTurnRecords(init: UserTurnInit): { turn: Turn; evidence: { e
 export function safeTurn(turnId: ID, turn: Turn, evidence: Evidence, eid: ID, hasher: Hasher): SafeTurn | null {
   const slice = evidence.fieldSlices[0];
   if (turn.text === null || slice === undefined || slice.sens === "S2") return null;
-  // Brief 045, finding 1 (V-183): third-party text never reaches the model, so a T Turn is never in a Deck's `turns`.
+  // Brief 045, finding 1 (V-193): third-party text never reaches the model, so a T Turn is never in a Deck's `turns`.
   if (turn.sourceClass === "T") return null;
   return {
     turnId,

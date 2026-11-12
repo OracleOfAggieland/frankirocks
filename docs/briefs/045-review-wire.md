@@ -101,7 +101,7 @@ Built on `lane/voice-c` from `a974866`. Findings 1, 3 and 8 are fixed, one commi
 ### Finding 1: third-party text never reaches the voice model (`e653a58`)
 
 - **Fix.** A pasted line, or typed text the server would class T (`isThirdPartyLine` in `core/src/voice/third-party.ts`, which mirrors `classifyTyped`), is still posted to `/api/turn` as written and stored as third-party text. The reply's `response.create` carries `THIRD_PARTY_STAND_IN`, worded by code, never the text. `safeTurn` (`server/src/turns.ts`) returns null for a class-T Turn, so no Deck's `turns` holds it.
-- **Ruling changed:** question V-183. It reverses brief 040 item 3, which passed the pasted text to the model.
+- **Ruling changed:** question V-193. It reverses brief 040 item 3, which passed the pasted text to the model.
 - **Property 2, machine half** (`core/src/voice/third-party-never-to-model.property.test.ts`): red with seed 1006022383, path `1:0:0:0:0:0:0:0`, which shrank to setup, a pasted line, `turnOk` ready, hash, created; "step 6 sent zq0marker".
 - **Property 2, Deck half** (`server/src/turns.third-party.property.test.ts`): red with seed -1483023018, path `1:0:0:1`, counterexample `[" ","T","S0","user"]`, where a SafeTurn came back.
 - **Assertion changed:** in `machine.test.ts`, the brief 040 item 3 test now expects the reply not to contain the pasted text, and to contain the stand-in. It also gained a test that a typed line with a URL gets the stand-in.
@@ -161,6 +161,11 @@ No trace moved in any of the three commits. At the merge of `build/plan-stages` 
 - **Delivery.** In `delivery-wire.ts`, `open.ts` and `state.ts`, plan-stages' deadlines, budgets and verdict rows are kept, and the Deck parameter is still threaded through as before. In `proactive.ts`, `lineOf` keeps brief 042 item 3's late text for a held reminder, and its sensitivity now comes from the Gate's source facts, as for any line.
 - **Store calls.** `time/life-cost.test.ts` was red at 43 calls against its bound of 38. The extra 5 came from finding 8's `sensOf`, not from Deck hashing, which reads nothing. `sensOf` had read the core docs for a world time that sensitivity never uses, so it now calls `candidateSensOf` (`gate-candidate.ts`), which makes the same source read as `gateCandidateOf`. The pass is back within 38, and the bound is unchanged. The "beat 3 on a live call" script passed under finding 6 with no change to its inputs.
 
+### Every line has a named end (after 03ea738)
+
+- Property 1 failed on build/plan-stages with seed 1243384230, path `263:2:1:2:2:5:5:6:6:6:6`. After a poll and a lost connection, `onState` returned early and ignored a state answer's line without a word, and setup ignored one the same way. Now `onState` sets `proactiveDropped` with the existing reasons: `session` for an answer with no Session or another Session's (a lost connection, a hang-up, a failed open, visitGone), and `phase` for every branch during setup. No reason value was added, and no new way to play a line.
+- `proactive-drop.test.ts` is red on 03ea738 and green now. The property at that seed and path passes, and so do six fresh-seed runs of both machine properties. No golden trace moved. The voice client sends no receipt for any dropped line, so nothing changed there.
+
 ## Outcome, part D
 
 Lane `wire`. Findings 6 and 9 are done; findings 7, 10 and 12, and the open's tail reserve, are not started and go to a fresh builder. Brief 042's items 1 to 5 were built in the same lane; see that brief's "Outcome".
@@ -202,3 +207,81 @@ Left at two scans per delivery pass: the choice reads the verdict on the store's
 
 - A barge-in after one word of the hero offer, then "Okay?": nothing written.
 - The voice client's `playbackEnded` arriving for an uncut line (the server counts it; the machine's receipts are part V's).
+
+## Outcome, part S
+
+Lane `fix9`, cut from `build/plan-stages` at `a974866`, merged with it at `11236b5` before the last item, at `27936b1`, and at `03ea738` (part V) before the final checks (`83bba8b`). The rulings are V-183 to V-192 in `026-report.md`.
+
+**Merging part V.**
+- `open.ts`: the opener now needs both a Deck (part V, finding 3) and no inherited audience (finding 4). Part V's Deck parameter into delivery and the deadlines from `1d1618c` are kept.
+- `state.ts` and `delivery-wire.ts` merged cleanly. The poll passes its Deck, and its answer carries the audience.
+- Part V's `testing/arb-proactive.ts` fixtures gain `audience: null`.
+- The script runner's `call` step now names the world's visit (`visitSet` before the press): otherwise a clone's call open is STALE (finding 11).
+
+**Through part V's call steps:** `routes/audience-call-again.test.ts` (`61e1fa6`).
+- A typed company line on a live call on the clone, then a second call. Its open is company, and nothing plays but the swap line (`COMPANY_LINE`). The S1 wish that the first call said is never heard.
+- After the Owner's own hang-up, the next call is private (V-172).
+- `ScriptCall` numbers its request IDs from 1, so a second call in one rig replays the first call's open from the request ledger. The test starts the second call's numbering higher (V-192).
+
+**Finding 2: an open inherits the narrowest of three Sessions.** Commit `30771d9`. Test: `routes/open-audience-any.test.ts`, "finding 2" (four cases: active company, a typed company line, a company hit that hung up the call, and the owner's own hang-up still widening). An open now reads the Session it names, the owner's active Session and the latest closing or closed Session (`inheritCandidates` in `audience-swap.ts`), and takes the narrowest (`narrowestInherited`). Rulings V-183, V-184.
+- Reads added: the open's one get of the named Session becomes three reads in one parallel round trip inside its transaction: the named get, the active get (skipped when it is the named one) and a query of the last three Sessions by `lastTurnAt` (new index shape Q45 in `store/indexes.ts`, a single-field index). Run in parallel, they still cost one round trip, about 75 ms, as the single get did. The query is the read added. Transaction reads have no deadline of their own (V-185). At 75 ms a store call, the open-budget test still answers inside 3,500 ms.
+
+**Finding 4: an open that inherits a non-private audience says the swap line or nothing.** Commit `4b70282`. Test: "finding 4" in the same file. The open skips delivery's opener whenever it inherited (`narrow`). The Gate is untouched. Ruling V-186.
+
+**Finding 5: a crisis or life-change hold crosses a hang-up for `HOLD_CARRY_MS`.** Commit `9aba570`. Test: "finding 5" (16 minutes after a hang-up the next Session holds; past 24 world hours it does not).
+- What sets it: a turn whose regex hits crisis or life change, or whose parse has a crisis or transition candidate. `holdMark` in `turn.ts` stamps `core/state.modifiers.crisis` with world time.
+- What it does: an open inside the window starts its Session with `transitionCandidateSeq: 0`. Delivery's signals and the Gate's `recentTurns` already read that as a hold.
+- `delivery-wire.ts` is unchanged: `signalsOf` already passes the hold.
+
+Rulings V-187, V-188.
+
+**Finding 11: an open with no visit on a fixture-clock account is STALE.** Commit `9b14765`. Tests: "finding 11" in the same file, and `open-visit.test.ts`. Callers checked:
+- The typed bar and the voice open: unchanged. Both send the visit once its reset has answered, and send none only on a live account, which still opens with none. A tab that opens before its reset answers gets STALE, and the controller's gate already reloads the visit on STALE.
+- The script runner's `open` step: now sends the visit its last seed step made (`World.visitId`).
+- Tests: `openTestSession` names the tenant's current visit (`currentVisit`). These also name it: `seed-reset.test.ts`, `receipt-moments.test.ts`, the input step of the brief 038 live-or-clone property (by the visit model's own rule), and, after the merges, `open-budget.test.ts` (`5949d0c`) and brief 042's `time/held-reminder.test.ts`. Setup only.
+
+Ruling V-189.
+
+**The confirmed audience on the open's and the state poll's answers.** Commit: the one that adds this section. Tests first:
+- `routes/audience-on-answers.test.ts`:
+  - a company line in words, then the next state answer says company;
+  - an inherited open says company;
+  - the owner's hang-up widens;
+  - another owner's poll carries none.
+- `client/company-tap.test.ts`:
+  - the state answer moves the toggle;
+  - an inherited open shows company before any tap;
+  - a stale answer does not move it back, nor does one older than a tap's answer.
+- `components/app-controllers.company-tap.test.ts`: an inherited company open shows company before any tap.
+- `client/voice-client.test.ts`: the open and each state answer of the call's own Session tell the toggle.
+
+What changed:
+- `OpenResponse` and `StateResponse` gain `audience: nullable(Au)`. The open sends the new Session's audience (null when blocked). The poll sends `effectiveAudience` of the Session it already reads. No store call was added to either.
+- `TurnResponse` has no state ack, so it gets no field (V-190).
+- `CompanyTap.adopt` takes an answer's audience when its stamp is not older than the last one taken, tap answers included. On the same Session it compares epoch, then generation, then policyRev. A new Session moves on, and the old one's late answers move nothing (V-191).
+- The voice client tells it only for answers of the call's own Session and generation. The typed open tells it for the typed Session.
+- In `state.ts` and `open.ts` the only change is the field.
+
+**Properties, 1,000 runs each, red first:**
+- **S1, company outlives any open** (`routes/audience-any-open.property.test.ts`, `a432cf2`).
+  - Red at `a974866`: seed 1608292008, path `0:5:6:6:0:1:1:1`, `["typed",[{"kind":"open","named":"none"},{"kind":"jobs"}]]`. The unnamed open was private.
+  - After finding 2 alone: seed -1399990621, path `13:5:4:3`, `["live",[{"kind":"clock","ms":61000},{"kind":"open","named":"none"}]]`. An `unknown` open said the S1 wish (finding 4).
+- **S2, an inherited audience opens silent** (`routes/audience-open-silent.property.test.ts`, `3772e17`). Red before finding 4: seed -396261716, path `0:1:1:1:1:1`, `[{"audience":"unknown","status":"active","wait":"none","crisis":false,"named":false,"clockMs":0}]`.
+- **S3, a hold outlives a hang-up** (`routes/hold-carry.property.test.ts`, `60958fc`). Red before finding 5: seed -149232403, path `1:1:1`, `["insight",{"text":"My mom passed away last night.","probs":{}},[{"kind":"open","named":false},{"kind":"idle"}]]`.
+- **S4, a clone's open names its visit** (`routes/clone-open-visit.property.test.ts`, `138f7c2`). Red before finding 11: seed 1479511074, path `10:0:0`, `[1,null,false,false]`. It answered 200, not 409.
+
+**Existing assertions changed:** one. In `open-visit.test.ts`, "a null visit opens on whatever clone" now expects 409 STALE (finding 11).
+
+Setup-only changes, no assertion touched:
+- `audience-review.test.ts` (`narrowedThenSwapped`) and `machine-close.test.ts` (the owner's hang-up) advance the clock 1 s before opening B, because a frozen clock tied `lastTurnAt`.
+- The callers above now name a visit.
+- The voice machine's fixtures (`machine.test.ts`, `testing/arb-call.ts`, `arb-call-wide.ts`, `arb-swap.ts`) and the controller test's open answer carry `audience`, which the closed schema requires. So do the valid and invalid cases of `OpenResponse` and `StateResponse` in `wire.test.ts` and `TypedInput.test.tsx`'s open answer.
+- The voice reducer's golden corpus was re-recorded (`VOICE_GOLDEN=record`). 600 of 600 `arbCall` calls and 458 of 500 `arbCallWide` calls moved, because every `openOk` and `stateOk` event now carries `audience: null` and the digest hashes each event. Before re-recording, a throwaway check stripped `audience` from those events and found every digest equal to the recorded one, so no command or view moved.
+
+**Outside the hot files:**
+- `routes/turn.ts`: the hold mark.
+- `store/indexes.ts`: Q45.
+- `testing/script-runner.ts` and `testing/session-fixtures.ts`: the visit.
+- `packages/core/src/schema/wire.ts` and the web client files: the audience field.
+
+**Only a live call can show:** the three reads' real latency against Firestore, and the toggle flipping on a real call's poll. No live call, paid model call or emulator run was made.

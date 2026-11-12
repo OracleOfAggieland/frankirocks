@@ -46,7 +46,7 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 026: a narrowed audience carried into the fresh call, with the swap line (voice-control task 50).
 import { type Proactive, type Session, turnRef } from "@franki/core";
 import { admitRule } from "../admission/seam";
-import { inheritedAudience, inheritedSession, speaksSwapLine, swapLineRule, swapLineTurnId } from "../audience-swap";
+import { holdCarried, inheritCandidates, inheritedSession, narrowestInherited, speaksSwapLine, swapLineRule, swapLineTurnId } from "../audience-swap";
 import { checkOpenVisit } from "./open-visit";
 import { openingProactive } from "./delivery-wire";
 
@@ -137,13 +137,13 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
     times.lap("drainMs");
 
     const sessionId = deps.hasher.id(idParts.session(uid, req.requestId));
-    const { response, prior, stamp, session } = await deps.store.transaction(uid, async (tx) => {
+    const { response, prior, stamp, session, narrow } = await deps.store.transaction(uid, async (tx) => {
       const core = await readCoreDocs(tx, uid);
       const ops = deps.clock.read().opsClock.now;
       if (core.epoch.data.barrier !== null) {
-        const blocked: OpenRes = { sessionId, generation: 0, deck: null, state: "blocked", ack: null, proactive: null };
+        const blocked: OpenRes = { sessionId, generation: 0, deck: null, state: "blocked", ack: null, proactive: null, audience: null };
         await completeRequest(tx, key, blocked, ops);
-        return { response: blocked, prior: null, stamp: null, session: null };
+        return { response: blocked, prior: null, stamp: null, session: null, narrow: false };
       }
 
       checkOpenVisit(core.state.data, req.visitId); // Brief 030 P1-8: a named visit opens only on its clone.
@@ -155,8 +155,9 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       if (applied.changed) tx.update(paths.core(uid, "rules"), rules);
       // Brief 026 (R14.2, R14.8): the Session this open replaces, read under the Owner's uid, passes on a narrowed
       // audience while its waitDeadline holds; the Head is compiled for that audience. Otherwise private, as before.
-      const previous = req.previousSessionId === null ? null : await tx.get<Session>(paths.session(uid, req.previousSessionId));
-      const inherited = inheritedAudience(previous?.data ?? null, ops);
+      // Brief 045 (finding 2): also the Owner's active Session and the latest closing or closed one; the narrowest wins.
+      const candidates = await inheritCandidates(tx, uid, { named: req.previousSessionId, active: core.epoch.data.activeSessionId, sessionId });
+      const inherited = narrowestInherited(candidates, ops);
       const compiled = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: core.epoch.data, rules }, pair, 1, inherited?.audience));
       if (!compiled.ok) throw configError(500, "head fixed sections exceed the token cap");
       const head = compiled.head;
@@ -181,7 +182,9 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
 
       const stamp = currentStamp(sessionId, 1, { epoch: core.epoch.data, rules, bundle });
       const fresh = newSession(uid, { stamp, now: ops, startedBy: req.initiator });
-      const created = inherited === null ? fresh : inheritedSession(fresh, inherited);
+      // Brief 045 (finding 5): inside the owner's hold, the new Session holds insights, celebrations and asks too.
+      const held = holdCarried(state, pair.worldClock.now) ? { ...fresh, transitionCandidateSeq: 0 } : fresh;
+      const created = inherited === null ? held : inheritedSession(held, inherited);
       tx.create(paths.session(uid, sessionId), created);
       const epoch: CoreEpoch = { ...core.epoch.data, activeSessionId: sessionId, activeCallId: null, updatedAt: now };
       tx.update(paths.core(uid, "epoch"), epoch);
@@ -199,9 +202,9 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
         );
         if (admitted.kind === "permit" && admitted.notes.length === 1) proactive = { turnId, permit: admitted.permit, whisper: admitted.notes[0]!, cards: [] };
       }
-      const opened: OpenRes = { sessionId, generation: 1, deck: issueDeck(stamp, head, ops), state: "connecting", ack: stateAck(stamp, ops), proactive };
+      const opened: OpenRes = { sessionId, generation: 1, deck: issueDeck(stamp, head, ops), state: "connecting", ack: stateAck(stamp, ops), proactive, audience: created.audience };
       await completeRequest(tx, key, opened, ops);
-      return { response: opened, prior: prior === null ? null : { id: priorId!, ...prior }, stamp, session: created };
+      return { response: opened, prior: prior === null ? null : { id: priorId!, ...prior }, stamp, session: created, narrow: inherited !== null };
     });
     times.lap("txMs");
 
@@ -220,8 +223,9 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       times.lap("priorMs");
     }
     // Brief 030 part A: delivery's opening line, gated inside `chooseNow`, only where no swap line was spoken.
+    // Brief 045 (finding 4): an open that inherited a narrowed audience says the swap line or nothing.
     // Brief 045, finding 3: no Deck, no line (its Permit binds the Deck's Head and safe turns).
-    if (stamp === null || response.state !== "connecting" || response.proactive !== null || response.deck === null) return response;
+    if (stamp === null || response.state !== "connecting" || response.proactive !== null || narrow || response.deck === null) return response;
     // The budget is the contract; the line is optional: delivery gets what is left of it, as one deadline.
     const proactive = await openingProactive(ctx, stamp, OPEN_BUDGET_MS - times.elapsed(), session ?? undefined, response.deck);
     times.lap("deliveryMs");

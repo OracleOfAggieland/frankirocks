@@ -167,7 +167,7 @@ export class SwapDriver extends WideDriver {
     const hash = payloadHash({ stamp, head: deck.head, notes: [whisper], turns: deck.turns, audioIds: [], toolOutput: null }, this.hasher);
     const permit: Permit = { permitId: this.fresh("p"), stamp, kind: "postCommitControl", scope: "ack", approvedPayloadHash: hash, noteIds: [whisper.noteId], momentIds: [], expiresAt: tsFromMs(at + 10_000) };
     const proactive: Infer<typeof Proactive> = { turnId, permit, whisper, cards: [] };
-    this.ev({ type: "openOk", response: { sessionId, generation: 1, deck, state: "connecting", ack: this.ackFor(sessionId, deck, at), proactive } }, dt);
+    this.ev({ type: "openOk", response: { sessionId, generation: 1, deck, state: "connecting", ack: this.ackFor(sessionId, deck, at), proactive, audience: null } }, dt);
   }
 }
 

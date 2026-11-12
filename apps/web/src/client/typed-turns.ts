@@ -15,6 +15,7 @@
 import {
   OpenResponse,
   type Proactive,
+  type Au,
   type SS,
   TurnResponse,
   type TurnRequest,
@@ -82,6 +83,8 @@ export interface TypedDeps {
   visitId?: () => string | null;
   /** Brief 030 part A: the line an open returned, to show on the screen. Never changes what is sent. */
   onProactive?: (p: Proactive) => void;
+  /** Brief 045 part S: the audience the open's answer confirms for the typed Session, with its stamp. */
+  onAudience?: (stamp: SS, audience: Infer<typeof Au> | null) => void;
 }
 
 /** Pure: whether the text may be sent (R18.1, R18.8). */
@@ -253,6 +256,7 @@ export class TypedTurns {
     this.pending = null;
     this.set({ sessionId: open.sessionId, lastClientSeq: 0 });
     if (open.proactive !== null) this.deps.onProactive?.(open.proactive);
+    this.deps.onAudience?.(open.ack.stamp, open.audience);
     return open.ack.stamp;
   }
 
