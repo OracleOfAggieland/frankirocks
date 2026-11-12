@@ -15,6 +15,11 @@ export interface RowContext {
   epoch: number;
   policyRev: number;
   clockMode: "live" | "fixture";
+  /**
+   * The owner's world time, when the caller knows it. Brief 036 finding 12: only with it may a wish skipped because
+   * its start passed be revived by a move that puts the start ahead again. Without it nothing is revived.
+   */
+  worldNow?: number;
 }
 
 /** contracts `deliveryKey = H(moment, occurrence, channel)`; the floor keys one delivery per occurrence. */
@@ -78,11 +83,28 @@ export function momentRow(p: MomentPlan, c: RowContext, hasher: Hasher): Moment 
 const planned = (m: Moment) =>
   canonicalJSON([m.scheduleRev, m.dueAt, m.closeAt, m.nextReviewAt, m.payload, m.subjectIds, m.domain, m.rootKeys, m.rootSlices, m.dependsOn]);
 
+/**
+ * A wish skipped because its start passed (by a move, or by time), never admitted or said, whose new plan puts the
+ * start ahead of the world time again (brief 036 finding 12). Each occurrence is still admitted at most once.
+ */
+function revivable(existing: Moment, p: MomentPlan, c: RowContext): boolean {
+  return (
+    existing.status === "skipped" &&
+    existing.kind === "wish" &&
+    p.kind === "wish" &&
+    existing.admittedAt === null &&
+    existing.saidAt === null &&
+    c.worldNow !== undefined &&
+    Number.isFinite(c.worldNow) &&
+    p.closeAt > c.worldNow
+  );
+}
+
 /** The row to write for a plan, or null when nothing changes. */
 export function mergeMoment(existing: Moment | null, p: MomentPlan, c: RowContext, hasher: Hasher): Moment | null {
   const fresh = momentRow(p, c, hasher);
   if (existing === null) return fresh;
-  if (existing.status !== "pending" && existing.status !== "leased") return null;
+  if (existing.status !== "pending" && existing.status !== "leased" && !revivable(existing, p, c)) return null;
   if (planned(existing) === planned(fresh)) return null;
   return {
     ...existing,

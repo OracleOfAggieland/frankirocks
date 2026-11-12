@@ -203,3 +203,20 @@ describe("admitMoments shares admitMoment's checks (brief 030's receipt seam)", 
     expect(await tx(rig, (t) => admitMoments(t, UID, ids, { responseId: "resp_y", noteIds }, rig.deps))).toHaveLength(1);
   });
 });
+
+describe("finding 12: a wish retired by a move is revived when the occasion moves back ahead", () => {
+  it("interview moved to 07:00 (wish skipped), then back to 14:00: the wish opens again for 2 PM", async () => {
+    const { rig, ctx } = await clone();
+    await memoryTick(ctx);
+    const first = await interviewId(rig);
+    const start = msFromTs((await rig.store.get<Memory>(UID, paths.memory(UID, first)))!.data.time!.start);
+    const early = await moveOccasion(rig, UID, first, testId("interview-early"), start - 7 * HOUR);
+    await memoryTick(ctx);
+    expect(ofKind(await momentsOf(rig, UID), "wish")[0]![1].status).toBe("skipped");
+    await moveOccasion(rig, UID, early, testId("interview-back"), start);
+    await memoryTick(ctx);
+    const [[, wish]] = ofKind(await momentsOf(rig, UID), "wish") as [[string, Moment]];
+    expect(wish.status).toBe("leased");
+    expect(wish.payload).toMatchObject({ template: { text: "Good luck at 2 PM: Tessellate Labs final interview." } });
+  });
+});

@@ -141,9 +141,10 @@ async function derivePlans(ctx: RouteContext, reader: Reader, zone: string): Pro
   return { plans, retired, rollupLive };
 }
 
-const rowContext = (uid: string, core: { epoch: CoreDocs["epoch"]; state: CoreDocs["state"] }, opsNow: number): RowContext => ({
+const rowContext = (uid: string, core: { epoch: CoreDocs["epoch"]; state: CoreDocs["state"] }, opsNow: number, worldNow?: number): RowContext => ({
   uid,
   opsNow,
+  ...(worldNow === undefined ? {} : { worldNow }),
   epoch: core.epoch.epoch,
   policyRev: core.epoch.policyRev,
   clockMode: core.state.clockMode,
@@ -158,14 +159,15 @@ async function writePlan(ctx: RouteContext, plan: MomentPlan | null, retiredId: 
   const seen = await getMoment({ get: (p) => deps.store.get(uid, p), query: (q) => deps.store.query(uid, q) }, path);
   const ops = deps.clock.read().opsClock.now;
   // Brief 036 finding 1: a leased row is re-planned too, so a moved occasion never speaks its old time.
-  const movable = (m: Moment | undefined) => m?.status === "pending" || m?.status === "leased";
+  // Finding 12: a skipped wish may be revived by a move that puts its start ahead again (merge decides).
+  const movable = (m: Moment | undefined) => m?.status === "pending" || m?.status === "leased" || (plan !== null && m?.status === "skipped" && m.kind === "wish");
   const peek = plan !== null ? seen === null || movable(seen.data) : movable(seen?.data);
   if (!peek) return false;
   return deps.store.transaction(uid, async (tx) => {
     const core = await readCoreDocs(tx, uid);
     if (core.epoch.data.barrier !== null) return false;
     const doc = await getMoment(tx, path);
-    const c = rowContext(uid, { epoch: core.epoch.data, state: core.state.data }, ops);
+    const c = rowContext(uid, { epoch: core.epoch.data, state: core.state.data }, ops, ownerClock(core.state.data, deps.clock).worldClock.now);
     const next = plan !== null ? mergeMoment(doc?.data ?? null, plan, c, deps.hasher) : retireMoment(doc?.data ?? null, c);
     if (next === null) return false;
     if (doc === null) tx.create(path, next);
