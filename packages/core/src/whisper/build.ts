@@ -41,8 +41,9 @@ function render(id: WhisperTemplateId, tokens: readonly string[]): { text: strin
   const used: string[] = [];
   for (let i = 0; i < tokens.length; i++) {
     const k = tokens[i];
-    if (typeof k !== "string" || k.trim() === "" || k.length > WHISPER_TOKEN_CHARS || !ONE_LINE.test(k)) return null;
-    used.push(t.names.includes(i) ? safeName(k) : k.trim());
+    // A token is carried exactly as the note holds it, so one with space around it is refused, not trimmed.
+    if (typeof k !== "string" || k.trim() === "" || k !== k.trim() || k.length > WHISPER_TOKEN_CHARS || !ONE_LINE.test(k)) return null;
+    used.push(t.names.includes(i) ? safeName(k) : k);
   }
   // One pass over the template only, so a token that looks like a slot is never filled in turn.
   const text = t.text.replace(/\{(\d|\*)\}/g, (_m, d: string) => (d === "*" ? used.join(", ") : (used[Number(d)] ?? "")));
