@@ -185,6 +185,33 @@ describe("switch blade: viewBox mapping", () => {
     expect(toViewBox(rect, view, { x: 110, y: 0 }).x).toBeCloseTo(0);
   });
 
+  it("maps the same share of the box to the same viewBox point at any size, 220 px to 320 px and beyond", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 100, max: 600, noNaN: true }),
+        fc.double({ min: -1000, max: 1000, noNaN: true }),
+        fc.double({ min: -1000, max: 1000, noNaN: true }),
+        fc.double({ min: -0.5, max: 1.5, noNaN: true }),
+        fc.double({ min: -0.5, max: 1.5, noNaN: true }),
+        (size, left, top, u, v) => {
+          const p = toViewBox({ left, top, width: size, height: size }, view, { x: left + u * size, y: top + v * size });
+          expect(p.x).toBeCloseTo(u * view.width, 6);
+          expect(p.y).toBeCloseTo(v * view.height, 6);
+        },
+      ),
+    );
+  });
+
+  it("puts the drag angle in the same place on a 220 px and a 320 px box", () => {
+    fc.assert(
+      fc.property(fc.double({ min: 0, max: 1, noNaN: true }), fc.double({ min: 0, max: 1, noNaN: true }), angle, (u, v, at) => {
+        const small = toViewBox({ left: 0, top: 0, width: 220, height: 220 }, view, { x: u * 220, y: v * 220 });
+        const large = toViewBox({ left: 40, top: 900, width: 320, height: 320 }, view, { x: 40 + u * 320, y: 900 + v * 320 });
+        expect(dragAngle(PIVOT, large, at)).toBeCloseTo(dragAngle(PIVOT, small, at), 6);
+      }),
+    );
+  });
+
   it("maps a zero box to the origin", () => {
     expect(toViewBox({ left: 0, top: 0, width: 0, height: 0 }, view, { x: 5, y: 5 })).toEqual({ x: 0, y: 0 });
   });

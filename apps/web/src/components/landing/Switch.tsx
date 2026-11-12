@@ -25,8 +25,14 @@ import { FOCUS, TARGET } from "../surfaces/classes";
 
 export { PIVOT, SPARK_MS };
 
-/** The drawing's viewBox: a 240 unit square, shown about 220 px tall. */
+/** The drawing's viewBox: a 240 unit square. */
 export const VIEW = { x: 0, y: 0, width: 240, height: 240 } as const;
+/**
+ * The drawing's box: 220 px on phones, growing with the viewport to 320 px from lg (1024 px, where 31.25vw
+ * is 320 px). Everything inside is placed in percentages or viewBox units, and a drag reads the box it
+ * measures when the press starts, so nothing depends on the size.
+ */
+export const SWITCH_BOX = "size-[clamp(220px,31.25vw,320px)]";
 
 /** The blade, drawn standing closed (straight up from the pivot); the whole group rotates about the pin. */
 const BLADE = { half: 6, top: 78, tail: 214 } as const;
@@ -318,7 +324,7 @@ export function Switch({ href, onThrown, reduced }: SwitchProps) {
   const sparking = view.phase === "spark" && !reduced;
   const sparkSeed = boltSeed(sparkAt ?? 0, SPARK_SEED);
   return (
-    <section id="wake" aria-labelledby="wake-title" className="flex flex-col items-center gap-8 py-24 text-center">
+    <section id="wake" aria-labelledby="wake-title" className="flex flex-col items-center gap-6 pt-16 pb-8 text-center">
       <h2 id="wake-title" className="font-display text-title text-ink">
         {wake.title}
       </h2>
@@ -345,7 +351,7 @@ export function Switch({ href, onThrown, reduced }: SwitchProps) {
         onFocus={() => dispatch({ type: "near", key: "focused", on: true })}
         onBlur={() => dispatch({ type: "near", key: "focused", on: false })}
       >
-        <span aria-hidden="true" className="relative block size-[220px]">
+        <span aria-hidden="true" className={`relative block ${SWITCH_BOX}`}>
           <span data-base-plate="" className="mat-glass absolute block rounded-control" style={PLATE_BOX}>
             <Rivet className="absolute top-1.5 left-1.5" />
             <Rivet className="absolute top-1.5 right-1.5" />

@@ -6,7 +6,7 @@ import { LANDING } from "../../ui/copy-landing";
 import { OPEN_DEG } from "../../ui/landing/switch-blade";
 import { DUR } from "../../ui/motion";
 import { FOCUS } from "../surfaces/classes";
-import { PIVOT, SPARK_MS, Switch } from "./Switch";
+import { PIVOT, SPARK_MS, SWITCH_BOX, Switch } from "./Switch";
 
 const CSS = readFileSync(join(__dirname, "lower.css"), "utf8");
 const { wake } = LANDING.sections;
@@ -37,13 +37,29 @@ describe("Switch", () => {
     expect(out).toContain('data-phase="open"');
   });
 
-  it("draws a glass base plate with four rivets, about 220 px tall, all decorative", () => {
+  it("draws a glass base plate with four rivets, 220 px on phones up to 320 px from lg, all decorative", () => {
     const out = html();
     const plate = out.split('data-base-plate=""')[1].split("</span><svg")[0];
     expect(out).toMatch(/data-base-plate=""[^>]*class="mat-glass /);
     expect(plate.match(/data-rivet=""/g)).toHaveLength(4);
-    expect(out).toMatch(/<span aria-hidden="true" class="relative block size-\[220px\]">/);
+    expect(SWITCH_BOX).toBe("size-[clamp(220px,31.25vw,320px)]");
+    expect(out).toContain(`<span aria-hidden="true" class="relative block ${SWITCH_BOX}">`);
+    // 31.25vw reaches 320 px exactly at lg (1024 px), and 220 px at 704 px, so every phone gets 220.
+    expect(1024 * 0.3125).toBe(320);
+    expect(704 * 0.3125).toBe(220);
     expect(out).toContain(`data-plate="brass"`);
+  });
+
+  it("places everything inside the box by share or viewBox unit, never by pixel", () => {
+    const out = html();
+    const box = out.split(`class="relative block ${SWITCH_BOX}">`)[1].split("</svg>")[0];
+    // The base plate is placed in percentages of the box; the drawing fills it.
+    expect(box).toMatch(/data-base-plate=""[^>]*style="left:20%;top:25%;width:30%;height:71.667%"/);
+    expect(box).toMatch(/<svg[^>]*viewBox="0 0 240 240"[^>]*class="absolute inset-0 size-full/);
+    // No pixel placement or size inside the box; the rivets keep their own 6 px dome, pinned to the plate's corners.
+    expect(box).not.toMatch(/\[\d+(\.\d+)?px\]/);
+    expect(box).not.toMatch(/(?:^|[;"])(?:left|top|right|bottom|width|height):\s*\d+(\.\d+)?px/);
+    expect(box.match(/data-rivet=""[^>]*class="[^"]*absolute (?:top|bottom|left|right)-1\.5 (?:top|bottom|left|right)-1\.5"/g)).toHaveLength(4);
   });
 
   it("gives the handle a light rim and a brass end cap, so it reads on the night behind it", () => {
