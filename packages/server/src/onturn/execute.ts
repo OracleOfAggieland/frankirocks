@@ -81,6 +81,40 @@ export interface HardRuleResult {
 const SUBJECT_LABELS_MAX = 256;
 const RULE_KEYS_MAX = 32;
 
+type CompileRun = Pick<HardRuleRun, "uid" | "epoch" | "bundle" | "context" | "clock" | "audience" | "generation" | "hasher">;
+
+/** The bundle after a rules change: the Head compiled from the context plus the new rules (G16), else `dirty`. */
+function recompiled(run: CompileRun, rules: CoreRules): CoreBundle {
+  const ec = foregroundEC(run.uid, run.epoch, run.clock, run.generation);
+  const compiled = compileHead({ memories: run.context.memories, ec, snapshot: run.context.snapshot, rules, audience: run.audience, clock: run.clock });
+  const at = tsFromMs(run.clock.opsClock.now);
+  if (!compiled.ok) return { ...run.bundle, state: "dirty", rulesRev: rules.rulesRev, updatedAt: at };
+  const head = compiled.head;
+  return {
+    ...run.bundle,
+    state: "clean",
+    bundleRev: run.bundle.bundleRev + 1,
+    rulesRev: rules.rulesRev,
+    head,
+    headHash: run.hasher.sha256(utf8(head.text)),
+    selectedRefs: head.selectedRefs,
+    compiledAt: at,
+    expiresAt: tsFromMs(run.clock.opsClock.now + DECK_TTL_MS),
+    updatedAt: at,
+  };
+}
+
+/**
+ * Open proposals on a turn the route didn't run on (G39): applied first, the Head recompiled when a rule was added.
+ * No route note: nothing was said on this turn.
+ */
+export function applyOpenProposals(run: CompileRun & { rules: CoreRules }): { rules: CoreRules; rulesChanged: boolean; bundle: CoreBundle | null } | null {
+  const applied = applyProposals(run.rules);
+  if (!applied.changed) return null;
+  const rulesChanged = applied.rules.rulesRev !== run.rules.rulesRev;
+  return { rules: applied.rules, rulesChanged, bundle: rulesChanged ? recompiled(run, applied.rules) : null };
+}
+
 export function executeHardRule(run: HardRuleRun): HardRuleResult {
   const { hasher: H } = run;
   const applied = applyProposals(run.rules);
@@ -143,28 +177,9 @@ export function executeHardRule(run: HardRuleRun): HardRuleResult {
   let bundle: CoreBundle | null = null;
   let kinds = plan.note;
   if (rulesChanged) {
-    const ec = foregroundEC(run.uid, run.epoch, run.clock, run.generation);
-    const compiled = compileHead({ memories: run.context.memories, ec, snapshot: run.context.snapshot, rules, audience: run.audience, clock: run.clock });
-    const at = tsFromMs(run.clock.opsClock.now);
-    if (compiled.ok) {
-      const head = compiled.head;
-      bundle = {
-        ...run.bundle,
-        state: "clean",
-        bundleRev: run.bundle.bundleRev + 1,
-        rulesRev: rules.rulesRev,
-        head,
-        headHash: H.sha256(utf8(head.text)),
-        selectedRefs: head.selectedRefs,
-        compiledAt: at,
-        expiresAt: tsFromMs(run.clock.opsClock.now + DECK_TTL_MS),
-        updatedAt: at,
-      };
-    } else {
-      // G16: the rules commit, the old Head stays, and nothing says anything was saved.
-      bundle = { ...run.bundle, state: "dirty", rulesRev: rules.rulesRev, updatedAt: at };
-      kinds = [];
-    }
+    bundle = recompiled(run, rules);
+    // G16: a failed compile keeps the old Head, and nothing says anything was saved.
+    if (bundle.state === "dirty") kinds = [];
   }
 
   const cut = plan.outcome.kind === "ruleKept" && plan.outcome.why === "denied";

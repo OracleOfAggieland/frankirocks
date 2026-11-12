@@ -20,6 +20,9 @@
  */
 import {
   type CoreEpoch,
+  type CoreRules,
+  backstopProposal,
+  withRulesDefaults,
   type CoreState,
   type ErrorCode,
   EXTRACT_DEADLINE_MS,
@@ -73,6 +76,8 @@ import type { Log } from "../routes/runtime";
 import { paths } from "../store/paths";
 import type { StorePort, Tx } from "../store/port";
 import { turnOrder } from "../turns";
+import { backstopItems, withBackstop } from "../onturn/backstop";
+import { turnEvidence } from "../onturn/context";
 import { type Lease, claimJob } from "./jobs";
 
 export interface ExtractDeps {
@@ -307,7 +312,12 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
     }
     if (!call.ok) return failAttempt(tx, leased.path, leased.job, call.error, ops);
 
+    // What the on-turn route handled for this Evidence (brief 012 section 5): its allergy slots are skipped.
+    const rulesDoc = await tx.get<CoreRules>(paths.core(uid, "rules"));
+    const rules = rulesDoc === null ? null : (withRulesDefaults(rulesDoc.data) as CoreRules);
+    const handled = (rules?.handled ?? []).filter((h) => h.eid === eid).flatMap((h) => h.entries.flatMap((e) => e.ruleKeys));
     const ctx: PlanContext = {
+      handled,
       uid,
       jobId,
       packet: new Map([[eid, { evidence, fields: ["text"] }]]),
@@ -322,6 +332,12 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
       zone: stateDoc?.data.currentZone ?? stateDoc?.data.homeZone ?? "UTC",
     };
     const plans = call.items.map((raw, index) => planItem(raw, index, ctx));
+    // The allergy backstop (G18, G39): held allergy items the route didn't handle become a pending proposal.
+    if (rules !== null) {
+      const held = new Set(plans.flatMap((p) => (p.kind === "hold" ? [p.index] : [])));
+      const proposal = backstopProposal(turnEvidence(evidence, eid, deps.hasher), backstopItems(call.items.filter((_, i) => held.has(i))), handled, (evidence.turnId as ID | null) ?? null, deps.hasher);
+      if (proposal !== null) tx.update(rulesDoc!.path, withBackstop(rules, proposal));
+    }
     const revs = new Map([[eid, evidence.rev]]);
     const core = { epoch: job.epoch, policyRev: job.policyRev };
     const written: { id: ID; memory: Memory }[] = [];

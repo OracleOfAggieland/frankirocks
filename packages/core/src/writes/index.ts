@@ -19,3 +19,4 @@ export * from "./rules-section";
 export * from "./rules-doc";
 export * from "./notes";
 export * from "./pending";
+export * from "./backstop";

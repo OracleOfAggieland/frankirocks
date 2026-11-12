@@ -51,7 +51,9 @@ import { extractJobId, extractJobRecord } from "../worker/extract-jobs";
 import { barrierError, parseError, scopeError, staleError } from "./errors";
 import { Unrecorded, mutation } from "./mutation";
 import { typedReplyNote } from "./typed-reply";
-import { type HardRuleResult, type HardRuleRun, executeHardRule } from "../onturn/execute";
+import { type HardRuleResult, type HardRuleRun, applyOpenProposals, executeHardRule } from "../onturn/execute";
+import { readOnTurnContext } from "../onturn/context";
+import { readSnapshot } from "../store/port";
 import { type TypedPlan, planTypedReply, readPreRoute, runHardRuleSlots, typedRouteNote } from "../onturn/route";
 import { askedHere, candidateOpens, regexOpens, routeEligible, speakerCertain } from "../onturn/trigger";
 import { planKey } from "../onturn/typed";
@@ -178,6 +180,9 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
         ? Promise.resolve(null)
         : runHardRuleSlots(ctx, { eid, text: typedText, typed: req.source !== "asr", regex, askedRuleId: askedAtArrival?.ruleId ?? null, asked: askedAtArrival !== null, pre, generation: req.generation, slowP });
     const [slow, route] = await Promise.all([slowP, routeP]);
+    // Open proposals (G39) are applied by every turn transaction; with no route, the context is read for them here.
+    const proposalContext =
+      route === null && pre !== null && pre.rules.proposals.length > 0 ? await readSnapshot(deps.store, uid, (reader) => readOnTurnContext(reader, uid, pre.epoch, req.generation)) : null;
     const reply = route === null ? await replyP : null;
     const routeSource = req.source === "asr" ? ("asr" as const) : ("typed" as const);
     const hardRuleRun = (evidence: { eid: string; record: Evidence }, audience: Au): Omit<HardRuleRun, "rules" | "epoch" | "bundle" | "clock"> => ({
@@ -278,8 +283,19 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             }
             write = hr.write.kind === "none" ? hr.write : { ...hr.write, note };
           }
-          const stampOut = hr?.rulesChanged ? { ...currentStamp(req.sessionId, s0.generation, { epoch: core.epoch.data, rules: hr.rules, bundle: hr.bundle ?? core.bundle.data }), turnId: req.turnId } : stamp;
-          const headOut = hr?.bundle?.head ?? head;
+          let proposed: { rules: CoreRules; rulesChanged: boolean; bundle: typeof core.bundle.data | null } | null = null;
+          if (hr === null && proposalContext !== null) {
+            proposed = applyOpenProposals({ uid, rules: core.rules.data as CoreRules, epoch: core.epoch.data, bundle: core.bundle.data, context: proposalContext, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher });
+            if (proposed !== null) {
+              tx.update(paths.core(uid, "rules"), proposed.rules);
+              if (proposed.bundle !== null) tx.update(paths.core(uid, "bundle"), proposed.bundle);
+              // A higher Deck cuts what is playing (G1), so the reply is made from the Head that lists the rules.
+              if (proposed.rulesChanged) write = { kind: "committed", routes: ["hardRule"], note: null, deckRaised: true };
+            }
+          }
+          const changed = hr ?? proposed;
+          const stampOut = changed?.rulesChanged ? { ...currentStamp(req.sessionId, s0.generation, { epoch: core.epoch.data, rules: changed.rules, bundle: changed.bundle ?? core.bundle.data }), turnId: req.turnId } : stamp;
+          const headOut = changed?.bundle?.head ?? head;
 
           // The parse and the verdict go on the Turn (R13.2; question 57); its Slice says its Sensitivity (question 61).
           const parsed = slow !== null && slow.parse.kind !== "failed";
