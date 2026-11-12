@@ -18,6 +18,7 @@ import {
   type SafeTurn,
   type Sens,
   type Session,
+  type Turn,
   type TurnRequest,
   type W,
   maxSens,
@@ -28,12 +29,26 @@ import { requireModel } from "../config/models";
 import type { ResponsesResult } from "../openai/responses";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
+import { classifyTurn } from "../turns";
 import type { RouteContext } from "./runtime";
 
 export const TYPED_REPLY_DEADLINE_MS = 4_000;
 export const NOTE_TTL_MS = 60_000;
 
 type Reader = Pick<Tx, "get" | "query">;
+
+/**
+ * W-232: what the brain model reads in place of class-T text (a pasted line, or typed text the server classes T), on
+ * the turn itself or an earlier one. Worded by code; the third-party text itself is never sent, since no typed line
+ * needs it (the reply only acknowledges the paste).
+ */
+export const PASTED_STAND_IN = "(The owner pasted some text from elsewhere. It isn't shown here. Don't guess what it says; ask what they'd like done with it.)";
+
+/** The earlier turns with every class-T owner turn's text replaced by `PASTED_STAND_IN`; a Turn that can't be read counts as T. */
+export async function ownerSafeTurns(reader: Pick<Tx, "get">, uid: string, sessionId: string, turns: readonly SafeTurn[]): Promise<SafeTurn[]> {
+  const rows = await Promise.all(turns.map((t) => (t.role === "user" ? reader.get<Turn>(paths.turn(uid, sessionId, t.turnId)) : Promise.resolve(null))));
+  return turns.map((t, i) => (t.role !== "user" || rows[i]?.data.sourceClass === "U" ? t : { ...t, text: PASTED_STAND_IN }));
+}
 
 /** The Responses request for a typed reply. */
 export function typedReplyRequest(model: string, instructions: string, turns: readonly SafeTurn[], text: string, allowPhone: boolean) {
@@ -63,11 +78,13 @@ export async function typedReplyNote(
   const head = bundle?.data.head ?? null;
   if (head === null) return null;
   const reader: Reader = { get: (p) => deps.store.get(uid, p), query: (q) => deps.store.query(uid, q) };
-  const turns = await safeTurns(reader);
+  const turns = await ownerSafeTurns(reader, uid, req.sessionId, await safeTurns(reader));
+  // W-232: a class-T turn's own text never goes in as the owner's message.
+  const said = classifyTurn(req).cls === "T" ? PASTED_STAND_IN : text;
 
   let result: ResponsesResult;
   try {
-    const body = typedReplyRequest(requireModel("brain", deps.env), head.text, turns, text, allowPhone);
+    const body = typedReplyRequest(requireModel("brain", deps.env), head.text, turns, said, allowPhone && said === text);
     result = (await withDeadline(deps.openai.call("responses.create", body), TYPED_REPLY_DEADLINE_MS, deps.timers)) as ResponsesResult;
   } catch {
     return null;
