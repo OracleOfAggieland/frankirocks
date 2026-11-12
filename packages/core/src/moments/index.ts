@@ -5,3 +5,5 @@ export * from "./derive";
 export * from "./merge";
 export * from "./tick";
 export * from "./applicability";
+export * from "./delivery";
+export * from "./said";
