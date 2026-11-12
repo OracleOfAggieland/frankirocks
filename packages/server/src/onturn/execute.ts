@@ -231,10 +231,22 @@ export function executeHardRule(run: HardRuleRun): HardRuleResult {
  * then the hardRule route and the rest through `executeHardRule`, then writes the Memory Commands in `tx`.
  */
 export async function executeOnTurn(tx: Tx, run: HardRuleRun): Promise<HardRuleResult> {
+  const memory = await planOnTurnMemory(tx, run);
+  const result = executeHardRule({ ...run, memory });
+  // A failed compile still commits the writes (design 3.0 step 6).
+  writeMemoryCommands(tx, run.uid, memory.commands);
+  return result;
+}
+
+/**
+ * The correct and transition routes' plan, with reads through `reader`: the turn's transaction, or (brief 043,
+ * finding 2) the store outside it, for the typed reply's plan, so that plan is the one the transaction commits.
+ */
+export async function planOnTurnMemory(reader: Pick<Tx, "get" | "query">, run: Omit<HardRuleRun, "memory">): Promise<MemoryOutcome> {
   const routes = run.context.memoryRoutes;
   let memory: MemoryOutcome = NO_MEMORY;
   if (routes !== undefined && (routes.correct || routes.transition) && run.slots.kind === "valid") {
-    memory = await planMemoryRoutes(tx, {
+    memory = await planMemoryRoutes(reader, {
       uid: run.uid,
       routes,
       out: run.slots.out,
@@ -254,8 +266,5 @@ export async function executeOnTurn(tx: Tx, run: HardRuleRun): Promise<HardRuleR
     const none = (route: "correct" | "transition"): OnTurnHandled => ({ route, outcome: "deferred", keys: [], refs: [], ruleKeys: [] });
     memory = { ...NO_MEMORY, entries: [...(routes.correct ? [none("correct")] : []), ...(routes.transition ? [none("transition")] : [])] };
   }
-  const result = executeHardRule({ ...run, memory });
-  // A failed compile still commits the writes (design 3.0 step 6).
-  writeMemoryCommands(tx, run.uid, memory.commands);
-  return result;
+  return memory;
 }

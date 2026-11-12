@@ -11,6 +11,7 @@ import {
   FAST_SLOTS_DEADLINE_MS,
   type FastSlotsResult,
   ROUTE_NOTE_TTL_MS,
+  type RouteNoteKind,
   type SafeTurn,
   type W,
   initialSlots,
@@ -25,9 +26,10 @@ import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 import { readSnapshot } from "../store/port";
 import { type OnTurnContext, correctionTargets, entitiesFor, packetTargets, readOnTurnContext, subjectIndex, truthOrderTargets } from "./context";
-import { type HardRuleRun, executeHardRule } from "./execute";
+import { type HardRuleRun, executeHardRule, planOnTurnMemory } from "./execute";
+import { storeReader } from "../head-build";
 import { anyMemoryRoute, candidateOpens, memoryCandidates, memoryRegexOpens, orRoutes } from "./trigger";
-import { TYPED_ROUTE_BUDGET_MS, planKey, typedLineNote, typedRouteReply } from "./typed";
+import { TYPED_ROUTE_BUDGET_MS, planKey, typedCareNote, typedLineNote, typedRouteReply } from "./typed";
 
 /** Time the typed path keeps for the transaction after its reply (G17's budget). */
 const TYPED_COMMIT_RESERVE_MS = 1_000;
@@ -99,6 +101,8 @@ export async function runHardRuleSlots(
 
 export interface TypedPlan {
   key: string;
+  /** The note kinds of the plan the reply was written from. */
+  kinds: readonly RouteNoteKind[];
   reply: W | null;
 }
 
@@ -112,18 +116,34 @@ export async function planTypedReply(
 ): Promise<TypedPlan> {
   const { deps } = ctx;
   const clock = ownerClock(pre.state, deps.clock);
-  const planned = executeHardRule({ ...run, rules: pre.rules, epoch: pre.epoch, bundle: pre.bundle, clock });
+  const full = { ...run, rules: pre.rules, epoch: pre.epoch, bundle: pre.bundle, clock };
+  // Brief 043, finding 2: the correct and transition routes are planned too, so the key matches the committed plan.
+  const memory = await planOnTurnMemory(storeReader(deps.store, ctx.uid), full);
+  const planned = executeHardRule({ ...full, memory });
   const head = planned.bundle?.head ?? pre.bundle.head;
   const key = planKey(planned.entry, planned.kinds);
-  if (head === null) return { key, reply: null };
+  if (head === null) return { key, kinds: planned.kinds, reply: null };
   const note = routeNote(planned.kinds, { noteId: deps.hasher.id(["routeNote", run.sessionId, run.turnId]), expiresAt: tsFromMs(clock.opsClock.now + ROUTE_NOTE_TTL_MS), privateAudience: run.audience === "private" });
   const left = TYPED_ROUTE_BUDGET_MS - TYPED_COMMIT_RESERVE_MS - (deps.clock.read().opsClock.now - startedAt);
   const reply = await typedRouteReply(ctx, { sessionId: run.sessionId, turnId: run.turnId }, head, note?.text ?? null, turns, run.evidence.record.text?.kind === "inline" ? run.evidence.record.text.text : "", left);
-  return { key, reply };
+  return { key, kinds: planned.kinds, reply };
 }
 
-/** The one Franki line of a typed route turn: the reply if its plan committed, else the closed line. */
-export function typedRouteNote(ctx: RouteContext, plan: TypedPlan, committed: { key: string; kinds: Parameters<typeof typedLineNote>[0] }, at: { sessionId: string; turnId: string; opsNow: number }): W | null {
+/**
+ * The one Franki line of a typed route turn (brief 043, finding 2: there is always exactly one). A committed correction
+ * gets its closed line (W-199). Otherwise the reply if its plan is the committed one; else the closed line for what
+ * committed; else, when neither plan claims anything, the reply as an ordinary one (a deferral); else the closed care
+ * line, which claims nothing.
+ */
+export function typedRouteNote(ctx: RouteContext, plan: TypedPlan, committed: { key: string; kinds: Parameters<typeof typedLineNote>[0] }, at: { sessionId: string; turnId: string; opsNow: number }): W {
+  const noteId = ctx.deps.hasher.id(["note", at.sessionId, at.turnId]);
+  const expiresAt = tsFromMs(at.opsNow + ROUTE_NOTE_TTL_MS);
+  const closed = typedLineNote(committed.kinds, noteId, expiresAt);
+  if (closed !== null && committed.kinds.some((k) => CORRECTION_KINDS.has(k))) return closed;
   if (plan.reply !== null && plan.key === committed.key) return plan.reply;
-  return typedLineNote(committed.kinds, ctx.deps.hasher.id(["note", at.sessionId, at.turnId]), tsFromMs(at.opsNow + ROUTE_NOTE_TTL_MS));
+  if (closed !== null) return closed;
+  if (plan.reply !== null && plan.kinds.length === 0 && committed.kinds.length === 0) return plan.reply;
+  return typedCareNote(noteId, expiresAt);
 }
+
+const CORRECTION_KINDS: ReadonlySet<RouteNoteKind> = new Set(["corrected", "renamed", "retracted"]);

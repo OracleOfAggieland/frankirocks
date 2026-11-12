@@ -5,7 +5,7 @@
  * and the note kinds); otherwise, or with no reply, the response carries one closed owner-facing line
  * (`typedLine`, `writes/notes.ts`). The whole route stays under `TYPED_ROUTE_BUDGET_MS`, under the page's 10 s.
  */
-import { type Head, type ID, type Memory, type OnTurnHandled, type RouteNoteKind, type SafeTurn, type Sens, type W, canonicalJSON, maxSens, tsFromMs, typedLine } from "@franki/core";
+import { type Head, type ID, type Memory, type OnTurnHandled, type RouteNoteKind, type SafeTurn, type Sens, TYPED_LINES, type W, canonicalJSON, maxSens, tsFromMs, typedLine } from "@franki/core";
 import { withDeadline } from "../clock/timers";
 import { requireModel } from "../config/models";
 import type { ResponsesResult } from "../openai/responses";
@@ -64,4 +64,12 @@ export function typedLineNote(kinds: readonly RouteNoteKind[], noteId: ID, expir
   const text = typedLine(kinds);
   if (text === null) return null;
   return { noteId, rev: 1, kind: "result", text, rootKeys: [], dependsOn: [], sens: "S0", expiresAt, unprompted: false, momentId: null, tokens: [] };
+}
+
+/**
+ * The closed care line (brief 043, finding 2): the one line a typed turn gets when no reply can be used and nothing
+ * committed has a closed line of its own (a life change, a care-only turn). It claims nothing was saved.
+ */
+export function typedCareNote(noteId: ID, expiresAt: string): W {
+  return { noteId, rev: 1, kind: "result", text: TYPED_LINES.care, rootKeys: [], dependsOn: [], sens: "S0", expiresAt, unprompted: false, momentId: null, tokens: [] };
 }
