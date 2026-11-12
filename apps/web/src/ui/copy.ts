@@ -101,6 +101,8 @@ export const COPY = {
     errors: {
       open: "Franki couldn't connect. Press call to try again.",
       close: "You've hung up. The line will close on its own.",
+      // Brief 044, item 2: the server said this visit is over (a reset made a new one); the visit reloads.
+      visit: "This visit has ended. Loading the current one.",
     },
     notSetUp: "Calls aren't set up here yet.",
   },

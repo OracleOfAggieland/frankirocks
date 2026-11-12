@@ -137,6 +137,9 @@ function parsed<T>(schema: Schema<T>, r: ApiResult<unknown>): T | null {
   return v.ok ? v.value : null;
 }
 
+/** The server's answer that the visit an open named is gone (brief 038: 409 with ErrorCode STALE). */
+const isStale = (r: ApiResult<unknown>): boolean => !r.ok && r.kind === "http" && r.error === "STALE";
+
 export class VoiceClient {
   private state: VoiceState;
   private readonly listeners = new Set<() => void>();
@@ -333,6 +336,9 @@ export class VoiceClient {
   private async postOpen(body: Extract<VoiceCommand, { kind: "open" }>["body"]): Promise<void> {
     const sentAt = this.deps.clock.mono();
     const r = await this.deps.api.call<unknown>("/api/session/open", { body: { requestId: this.newId(), ...body }, timeoutMs: OPEN_TIMEOUT_MS });
+    // Brief 044, item 2: STALE names an old visit (a reset made a new one). The call ends with no retry; the
+    // controller's gate has already told the visit model to reload.
+    if (isStale(r)) return this.dispatch({ type: "visitGone", visitId: body.visitId });
     const res = parsed(OpenResponse, r) as Infer<typeof OpenResponse> | null;
     if (res === null) return this.dispatch({ type: "openFailed" });
     if (res.deck !== null) this.deps.clock.syncToServer(msFromTs(res.deck.issuedAt), sentAt, this.deps.clock.mono());
