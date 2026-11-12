@@ -74,7 +74,7 @@ stateDiagram-v2
 | `deadlines` | `openWait` disarmed, `connect` armed, others kept | cleared, then `retryUi` armed unless "Try again" already shows, and `reconnect` while an attempt remains | cleared |
 | `recovery` | kept | `connection`, attempts kept | null |
 | `retryVisible` | kept | kept | false |
-| `stateFailures`, `stateRetryVisible` | cleared | kept | cleared |
+| `stateFailures`, `stateRetryVisible` | cleared | cleared: with no Session the state retry can't act, so its "Try again" goes | cleared |
 | `micMuted` | as set by `startOpen` | kept | false |
 | `lastSessionId` | the new Session | the Session that ended | the Session that ended |
 

@@ -991,8 +991,8 @@ function openFailed(s: Step): void {
  *                                                                                                      reconnect; else null
  *   retryVisible              false                     keep                           -               retrying: keep;
  *                                                                                                      else false
- *   stateFailures             null                      keep                           null            -
- *   stateRetryVisible         false                     keep                           false           -
+ *   stateFailures             null                      null                           null            -
+ *   stateRetryVisible         false                     false                          false           -
  *   micMuted                  false                     keep                           -               retrying: keep;
  *                                                                                                      else false
  *   outputMuted               true                      true (mute)                    -               -
@@ -1066,6 +1066,10 @@ function connectionRecovery(s: Step, closeSession: boolean): void {
     judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null, 
     deadlines: {},
     recovery: { kind: "connection", since, attempts: st.recovery?.kind === "connection" ? st.recovery.attempts : 0 },
+    // With no Session there is no state to ask for, so the state-retry control goes: no "Try again" shows that a
+    // press can't act on (V1 step 4). The connection's own "Try again" comes at retryUi.
+    stateFailures: null,
+    stateRetryVisible: false,
   });
   if (!s.st.retryVisible) s.arm("retryUi", since + RETRY_UI_MS);
   scheduleReconnect(s);

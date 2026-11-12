@@ -496,7 +496,7 @@ export const WIDE_SITUATIONS = [
   "hold with a retry hint for an admitted Turn",
   "stale answer to a Superseding_Post",
   "permit wait ended while a Permit was being checked",
-  "retryPressed in connection recovery while only the state-retry flag shows Try again",
+  "retryPressed in connection recovery that began while the state-retry flag showed Try again",
 ] as const;
 export type WideSituation = (typeof WIDE_SITUATIONS)[number];
 
@@ -513,6 +513,8 @@ export function wideReach(trace: Trace): Set<WideSituation> {
   if (first?.event.type === "callPressed" && trace.steps.some((x) => x.after.phase === "LISTENING")) out.add(WIDE_SITUATIONS[0]);
   // Whether a state answer was handled since CONFIGURING was entered: a gap is only what comes before it.
   let answeredInConfiguring = false;
+  // Whether the current connection recovery began while the state-retry flag showed Try again (V1 step 4 clears it).
+  let recoveryFromStateOutage = false;
   for (const st of trace.steps) {
     const b: VoiceState = st.before;
     const a: VoiceState = st.after;
@@ -543,7 +545,9 @@ export function wideReach(trace: Trace): Set<WideSituation> {
     }
     if (e.type === "turnOk" && e.response.status === "stale" && lastPostWasSupersede.get(e.turnId) === true) out.add(WIDE_SITUATIONS[15]);
     if (e.type === "timer" && e.name === "permit" && b.deadlines.permit !== undefined && b.deadlines.permit <= st.now && b.pending !== null) out.add(WIDE_SITUATIONS[16]);
-    if (e.type === "retryPressed" && b.phase === "RECOVERY" && b.recovery?.kind === "connection" && !b.retryVisible && b.stateRetryVisible) out.add(WIDE_SITUATIONS[17]);
+    if (e.type === "retryPressed" && b.phase === "RECOVERY" && b.recovery?.kind === "connection" && !b.retryVisible && recoveryFromStateOutage) out.add(WIDE_SITUATIONS[17]);
+    if (a.recovery?.kind !== "connection") recoveryFromStateOutage = false;
+    else if (b.recovery?.kind !== "connection" && b.stateRetryVisible) recoveryFromStateOutage = true;
     for (const c of st.commands) {
       if (c.kind === "turn") {
         postSession.set(c.body.turnId, c.body.sessionId);
