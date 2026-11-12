@@ -16,8 +16,10 @@ describe("POST /api/session/open: the visit (brief 030 P1-8)", () => {
     const stale = await open(rig, "o2", testId("visit-v0"));
     expect(stale.status).toBe(409);
     expect(stale.body.error).toBe("STALE");
-    // The voice machine still sends null; a null visit opens on whatever clone the account holds.
-    expect((await open(rig, "o3", null)).body.state).toBe("connecting");
+    // Brief 045 (finding 11): on a clone, an open that names no visit is STALE too, and opens nothing.
+    const unnamed = await open(rig, "o3", null);
+    expect(unnamed.status).toBe(409);
+    expect(unnamed.body.error).toBe("STALE");
   });
 
   it("an account that is not a clone refuses any named visit", async () => {

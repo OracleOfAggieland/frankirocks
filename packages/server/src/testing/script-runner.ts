@@ -81,6 +81,8 @@ export interface World {
   zone: string;
   /** Set by the `seed` step. */
   namespace: ID | null;
+  /** The visit the last seed reset made, which the browser names on every open (brief 045, finding 11). */
+  visitId: string | null;
   /** The clone's Friday as a local date (from the seed's world start). */
   friday: string | null;
   sessionId: string | null;
@@ -311,6 +313,7 @@ export function newWorld(): World {
     uid: SCRIPT_UID,
     zone: SCRIPT_ZONE,
     namespace: null,
+    visitId: null,
     friday: null,
     sessionId: null,
     stamp: null,
@@ -419,13 +422,14 @@ async function act(step: Step, w: World): Promise<Res> {
       const res = await callRoute(rig, seedResetRoute, { requestId: nextId(w, "reset"), sessionId: null, fixtureId: PERSONA_FIXTURE_ID, visitId: testId(`visit-${step.visit}`), clientZone: w.zone });
       if (res.status === 200) {
         w.namespace = res.body.fixtureNamespace;
+        w.visitId = testId(`visit-${step.visit}`);
         const state = (await rig.store.get<CoreState>(w.uid, paths.core(w.uid, "state")))!.data;
         w.friday = localDateOf(msFromTs(state.worldClock!), w.zone);
       }
       return { status: res.status, body: res.body };
     }
     case "open": {
-      const res = await callRoute(rig, openRoute, { requestId: nextId(w, "open"), initiator: "user", previousSessionId: w.sessionId, clientZone: w.zone, visitId: null });
+      const res = await callRoute(rig, openRoute, { requestId: nextId(w, "open"), initiator: "user", previousSessionId: w.sessionId, clientZone: w.zone, visitId: w.visitId });
       if (res.status === 200 && res.body.deck !== null) {
         const deck = res.body.deck;
         w.sessionId = res.body.sessionId;

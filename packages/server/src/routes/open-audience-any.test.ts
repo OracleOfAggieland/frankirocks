@@ -119,3 +119,15 @@ describe("finding 5: a crisis or life-change hold crosses a hang-up", () => {
     expect(holdsOf(signalsOf(await sessionOf(rig, b.body.sessionId), rig.clock.read().opsClock.now, null)).transition).toBe(false);
   });
 });
+
+describe("finding 11: on a clone, an open that names no visit is STALE", () => {
+  it("a fresh tab on a clone, before its own reset answers, opens nothing and answers STALE", async () => {
+    const rig = testRig();
+    await resetAs(rig, UID, "v1", "r1", "America/Chicago");
+    const res = await callRoute(rig, openRoute, { requestId: testId("open-fresh"), initiator: "user", previousSessionId: null, clientZone: "America/Chicago", visitId: null });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("STALE");
+    const sessions = await rig.store.query<Session>(UID, { collection: paths.collection(UID, "sessions"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: 100 });
+    expect(sessions).toEqual([]);
+  });
+});

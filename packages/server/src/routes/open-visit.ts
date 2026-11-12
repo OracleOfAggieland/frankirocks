@@ -4,13 +4,18 @@
  * A visitor's clone, fixture clock and rows live under their own uid (`core/state.visitId`), so an open already runs
  * on the clone. What the visit ID adds is a check. Ruling (fails closed): an open that names a visit runs only on
  * that visit's clone; a tab of an earlier visit, or one naming a visit on an account that is not a clone, is STALE
- * and opens nothing. A null visit is accepted, since the voice machine still sends null.
+ * and opens nothing. Brief 045 (finding 11): on an account that runs the fixture clock, an open with no visit is STALE
+ * too (a fresh tab, opened before its own reset answers, would open on the previous visitor's clone). A null visit
+ * opens only on a live account.
  */
 import type { CoreState } from "@franki/core";
 import { type RouteError, scopeError, staleError } from "./errors";
 
 export function checkOpenVisit(state: CoreState, visitId: string | null): void {
-  if (visitId === null) return;
+  if (visitId === null) {
+    if (state.clockMode === "fixture") throw staleError("visit");
+    return;
+  }
   if (state.clockMode !== "fixture" || state.visitId !== visitId) throw staleError("visit");
 }
 

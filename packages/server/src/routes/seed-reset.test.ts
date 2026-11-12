@@ -13,12 +13,13 @@ import { resetAs, stateOf } from "../testing/seed";
 import { hangupJobId } from "../worker/hangup";
 import { openRoute } from "./open";
 import { seedResetRoute } from "./seed-reset";
+import { currentVisit } from "../testing/session-fixtures";
 
 const UID = "owner-1";
 const ZONE = "America/Chicago";
 
 async function openWithCall(rig: ReturnType<typeof testRig>, callIds: string[]) {
-  const res = await callRoute(rig, openRoute, { requestId: testId("open1"), initiator: "user", previousSessionId: null, clientZone: ZONE, visitId: null });
+  const res = await callRoute(rig, openRoute, { requestId: testId("open1"), initiator: "user", previousSessionId: null, clientZone: ZONE, visitId: await currentVisit(rig) });
   const sessionId: string = res.body.sessionId;
   await patchRecord<Session>(rig.store, UID, paths.session(UID, sessionId), { status: "active", registeredCallIds: callIds, callId: callIds.at(-1)! });
   return sessionId;
