@@ -57,6 +57,7 @@ describe("actingFor: the §2.2 table, row by row", () => {
               mic: follows === "input",
               voice: follows === "output",
               electric,
+              followPointer: false,
             };
             expect(actingFor(look(name, ghost, follows, electric))).toEqual(expected);
           });
@@ -69,13 +70,13 @@ describe("actingFor: the §2.2 table, row by row", () => {
 describe("actingFor over the Look_Mapper", () => {
   it("Dormant: idle under the dormant overlay, both gates shut", () => {
     expect(actingFor(lookFor(input({ state: "closed" })))).toEqual({
-      name: "Dormant", pose: "idle", overlay: "dormant", oneShot: null, ghost: false, mic: false, voice: false, electric: false,
+      name: "Dormant", pose: "idle", overlay: "dormant", oneShot: null, ghost: false, mic: false, voice: false, electric: false, followPointer: false,
     });
   });
 
   it("Waking: the wake one-shot over idle, electric", () => {
     expect(actingFor(lookFor(input({ state: "connecting", firstConnecting: true, event: "wake" })))).toEqual({
-      name: "Waking", pose: "idle", overlay: "none", oneShot: "wake", ghost: false, mic: false, voice: false, electric: true,
+      name: "Waking", pose: "idle", overlay: "none", oneShot: "wake", ghost: false, mic: false, voice: false, electric: true, followPointer: false,
     });
   });
 
@@ -196,5 +197,38 @@ describe("oneShotStep", () => {
     s = entered.state;
     expect(oneShotStep(s, null, true).command).toEqual({ wake: "cut", celebrate: "none" });
     expect(oneShotStep(s, null, false).command).toEqual({ wake: "cut", celebrate: "none" });
+  });
+});
+
+describe("actingFor: attend (brief 015)", () => {
+  it("Listening with attend pointer follows the pointer; nothing else changes", () => {
+    const look = lookFor(input({ state: "listening" }));
+    const plain = actingFor(look);
+    expect(plain.followPointer).toBe(false);
+    expect(actingFor(look, "pointer")).toEqual({ ...plain, followPointer: true });
+  });
+
+  it("attend camera, or absent, never follows", () => {
+    for (const state of ["closed", "connecting", "listening", "thinking", "speaking", "recovery"] as const) {
+      const look = lookFor(input({ state }));
+      expect(actingFor(look, "camera")).toEqual(actingFor(look));
+      expect(actingFor(look).followPointer).toBe(false);
+    }
+  });
+
+  it("only the Listening look follows: every other state and every event look stays on its own gaze", () => {
+    for (const state of ["closed", "connecting", "thinking", "speaking", "recovery"] as const) {
+      expect(actingFor(lookFor(input({ state })), "pointer").followPointer).toBe(false);
+    }
+    for (const event of ["wake", "present-card", "await-approval", "celebrate"] as const) {
+      const a = actingFor(lookFor(input({ state: "listening", event })), "pointer");
+      expect(a.name).not.toBe("Listening");
+      expect(a.followPointer).toBe(false);
+    }
+  });
+
+  it("the ghost overlay over Listening still follows, and still reads as ghost", () => {
+    const a = actingFor(lookFor(input({ state: "listening", micMuted: true })), "pointer");
+    expect(a).toMatchObject({ name: "Listening", ghost: true, followPointer: true });
   });
 });

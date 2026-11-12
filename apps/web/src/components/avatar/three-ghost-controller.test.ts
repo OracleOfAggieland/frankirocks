@@ -619,6 +619,53 @@ describe("ThreeGhostController: start and stop (Strict Mode, Fast Refresh, unmou
   });
 });
 
+describe("ThreeGhostController: attend reaches the engine (brief 015)", () => {
+  const LISTENING_POINTER = look({ state: "listening", attend: "pointer" });
+
+  it("Listening with attend pointer: createEngine, settle and the last setTargets all carry followPointer true", async () => {
+    const h = harness();
+    await h.toBuilding(LISTENING_POINTER);
+    expect(h.builds[0].initial).toMatchObject({ name: "Listening", followPointer: true });
+    const e = await h.ready();
+    expect(e.settled.at(-1)).toMatchObject({ name: "Listening", followPointer: true });
+    h.ctl.fadeDone();
+    expect(h.phase()).toBe("three");
+    expect(e.targets.at(-1)!.acting).toMatchObject({ name: "Listening", followPointer: true });
+  });
+
+  it("the same look without attend pushes followPointer false", async () => {
+    const h = harness();
+    await h.toBuilding(LISTENING);
+    expect(h.builds[0].initial.followPointer).toBe(false);
+    const e = await h.ready();
+    expect(e.settled.at(-1)!.followPointer).toBe(false);
+    h.ctl.fadeDone();
+    expect(e.targets.at(-1)!.acting).toMatchObject({ name: "Listening", followPointer: false });
+  });
+
+  it("a change of attend alone re-pushes the targets, on and off again", async () => {
+    const h = harness();
+    const e = await h.toThree(LISTENING);
+    const before = e.targets.length;
+    h.set(LISTENING_POINTER);
+    expect(e.targets).toHaveLength(before + 1);
+    expect(e.targets.at(-1)!.acting).toMatchObject({ name: "Listening", followPointer: true });
+    h.set(LISTENING);
+    expect(e.targets).toHaveLength(before + 2);
+    expect(e.targets.at(-1)!.acting).toMatchObject({ name: "Listening", followPointer: false });
+  });
+
+  it("Thinking with attend pointer pushes followPointer false", async () => {
+    const h = harness();
+    const e = await h.toThree(look({ attend: "pointer" }));
+    expect(h.builds[0].initial).toMatchObject({ name: "Thinking", followPointer: false });
+    expect(e.targets.at(-1)!.acting).toMatchObject({ name: "Thinking", followPointer: false });
+    h.set(LISTENING_POINTER);
+    h.set(look({ attend: "pointer" }));
+    expect(e.targets.at(-1)!.acting).toMatchObject({ name: "Thinking", followPointer: false });
+  });
+});
+
 describe("ThreeGhostController: the Electricity grant", () => {
   it("is held only while the three.js ghost is on screen and the look is electric", async () => {
     const h = harness();

@@ -3,6 +3,9 @@
 // edits of design note §2.3: `doze: new Chan(0, 4)` and `approve: new Chan(0, 6)` appended to CH (they join
 // CH_LIST, not BODY_CH), and `pointerWin` added to `gaze` (2564). The blink, celebrate and wake playback state is
 // kept as the prototype has it: it is animation, and its exact beats are part of the look.
+// Brief 015 adds one contract edit to updateGaze: with `targets.followPointer` (the Listening look with attend
+// "pointer") and a pointer that moved in the last 2.5 s, the listening pose takes the idle pose's pointer path; once
+// the pointer is still it is the prototype's listening gaze again. Without followPointer every line runs as before.
 import * as THREE from "three";
 import type { Pose } from "../../../ui/avatar/acting";
 import type { CharacterPart } from "./character";
@@ -111,7 +114,7 @@ export interface RigPart {
 }
 
 export function createRig(rc: HostPart & ConfigPart & RandomPart & ProbesPart & StagePart & CharacterPart): RigPart {
-  const { clock, STILL, REDUCED, rnd, rr, audio, camera, eyes, head, content } = rc;
+  const { clock, targets, STILL, REDUCED, rnd, rr, audio, camera, eyes, head, content } = rc;
 
 /* =====================================================================
    9. RIG: spring channels, expression table, eye, blink, celebrate, wake and mouth controllers
@@ -206,18 +209,22 @@ function headLookAt(world: THREE.Vector3 | null) {
 }
 function updateGaze(t: number, state: Pose, muted: boolean) {
   gazeToward(camera.position, _camG);
-  const camLook = state === 'listening' || state === 'speaking';
+  const follow = !STILL && state === 'listening' && targets.followPointer === true && t - gaze.lastPointer < 2.5;   // contract: brief 015, Listening follows a moving pointer
+  const camLook = (state === 'listening' || state === 'speaking') && !follow;   // contract: `&& !follow`
   if (STILL) {                                                              // still frames hold the state's signature look, head share included
     headLookAt(camLook ? camera.position : null);
     if (state === 'thinking') { CH.gazeX.t = -0.6; CH.gazeY.t = 0.6; } else { CH.gazeX.t = _camG.x; CH.gazeY.t = _camG.y; }
     return;
   }
   const slow = muted ? 1.5 : 1;
+  if (follow && !gaze.ptrLook) {                                            // contract: a pointer that starts moving is picked up on this frame (gaze.next = t);
+    gaze.tx = _camG.x + gaze.ox; gaze.ty = _camG.y + gaze.oy; gaze.next = t;   // contract: tx/ty fall back to the camera gaze, so the eyes hold the camera if the ray misses
+  }                                                                         // contract
   if (t >= gaze.next) {
     // Old and new targets in the same terms, so a jump is measured where the eyes really were.
     const ox = camLook ? _camG.x + gaze.ox : gaze.tx, oy = camLook ? _camG.y + gaze.oy : gaze.ty;
     gaze.ox = gaze.oy = 0;
-    if (state === 'listening') { gaze.next = t + rr(1.2, 2.2); }
+    if (state === 'listening' && !follow) { gaze.next = t + rr(1.2, 2.2); }   // contract: `&& !follow`, so a followed pointer takes the idle branch below
     else if (state === 'thinking') {
       gaze.thinkSide ^= 1;
       gaze.tx = gaze.thinkSide ? -0.6 : -0.42; gaze.ty = gaze.thinkSide ? 0.6 : 0.74;
@@ -240,8 +247,8 @@ function updateGaze(t: number, state: Pose, muted: boolean) {
     if (big && !REDUCED && rnd() < 0.7) triggerBlink(false);
     if (rnd() < 0.4) CH.headSac.t = clamp((nx - ox) * 2.4, -1.5, 1.5);    // micro head turn, lagging via its slower spring
   }
-  if (!(state === 'idle' && t - gaze.lastPointer < 2.5)) gaze.ptrLook = false;
-  const ptr = state === 'idle' && gaze.ptrLook;
+  if (!(state === 'idle' && t - gaze.lastPointer < 2.5) && !follow) gaze.ptrLook = false;   // contract: `&& !follow`
+  const ptr = (state === 'idle' || follow) && gaze.ptrLook;                // contract: `|| follow`
   if (ptr) {                                                                // live every frame: eyes and head follow the same point as it moves
     _ray.setFromCamera(gaze.pointer, camera); _ray.ray.intersectPlane(_plane, _ptrW);
     gazeToward(_ptrW, _ptrG); gaze.tx = _ptrG.x; gaze.ty = _ptrG.y;

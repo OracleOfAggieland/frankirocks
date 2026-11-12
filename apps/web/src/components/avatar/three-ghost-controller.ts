@@ -140,7 +140,7 @@ export class ThreeGhostController {
     this.publish();
   }
 
-  /** actingFor, then oneShotStep with seesOneShots, then engine.setTargets; also the `reduced` event. */
+  /** actingFor (with the input's attend), then oneShotStep with seesOneShots, then engine.setTargets; also the `reduced` event. */
   setLook(look: AvatarLook, input: AvatarInput): void {
     this.look = look;
     this.input = input;
@@ -189,7 +189,7 @@ export class ThreeGhostController {
 
   private applyLook(look: AvatarLook, input: AvatarInput): void {
     // The acting is set first, so a settle that the reduced or one-shot event leads to shows this look.
-    this.acting = actingFor(look);
+    this.acting = actingFor(look, input.attend);
     this.send({ kind: "reduced", value: input.reducedMotion });
     const step = oneShotStep(this.edge, this.acting.oneShot, seesOneShots(this.state));
     this.edge = step.state;

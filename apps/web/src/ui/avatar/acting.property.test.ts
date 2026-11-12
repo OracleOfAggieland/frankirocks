@@ -15,7 +15,7 @@ describe("actingFor over Look_Mapper outputs", () => {
       fc.property(arbInput, (input) => {
         const look = lookFor(input);
         const a = actingFor(look);
-        expect(Object.keys(a).sort()).toEqual(["electric", "ghost", "mic", "name", "oneShot", "overlay", "pose", "voice"]);
+        expect(Object.keys(a).sort()).toEqual(["electric", "followPointer", "ghost", "mic", "name", "oneShot", "overlay", "pose", "voice"]);
         expect(POSES).toContain(a.pose);
         expect(OVERLAYS).toContain(a.overlay);
         expect([null, "wake", "celebrate"]).toContain(a.oneShot);
@@ -169,6 +169,44 @@ describe("oneShotStep", () => {
           s = out.state;
         }
       }),
+    );
+  });
+});
+
+describe("actingFor with attend (brief 015)", () => {
+  const arbAttend = fc.constantFrom(undefined, "camera" as const, "pointer" as const);
+
+  it("followPointer is true exactly for the Listening look with attend pointer", () => {
+    fc.assert(
+      fc.property(arbInput, arbAttend, (input, attend) => {
+        const look = lookFor({ ...input, attend });
+        expect(actingFor(look, attend).followPointer).toBe(attend === "pointer" && look.name === "Listening");
+      }),
+      { numRuns: 400 },
+    );
+  });
+
+  it("attend never changes anything but followPointer, and absent equals camera", () => {
+    fc.assert(
+      fc.property(arbInput, arbAttend, (input, attend) => {
+        const look = lookFor({ ...input, attend });
+        const { followPointer, ...rest } = actingFor(look, attend);
+        const { followPointer: off, ...plain } = actingFor(look);
+        expect(rest).toEqual(plain);
+        expect(off).toBe(false);
+        expect(actingFor(look, "camera")).toEqual(actingFor(look));
+        if (attend !== "pointer") expect(followPointer).toBe(false);
+      }),
+      { numRuns: 400 },
+    );
+  });
+
+  it("attend never changes the look itself", () => {
+    fc.assert(
+      fc.property(arbInput, arbAttend, (input, attend) => {
+        expect(lookFor({ ...input, attend })).toEqual(lookFor(input));
+      }),
+      { numRuns: 400 },
     );
   });
 });

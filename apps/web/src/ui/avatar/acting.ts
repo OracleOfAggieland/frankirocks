@@ -1,7 +1,7 @@
 // The acting mapper and the one-shot edge machine for the three.js renderer (brief 013, design note
 // docs/briefs/013-design.md §2.2 and §2.5). Pure. The Look_Mapper decides the look; this maps it onto the
 // engine's pose, overlay, one-shot and the two audio gates. The engine decides only how to animate.
-import type { AvatarLook, LookName } from "./types";
+import type { AvatarInput, AvatarLook, LookName } from "./types";
 
 /** A row of the engine's expression table. */
 export type Pose = "idle" | "listening" | "thinking" | "speaking";
@@ -22,6 +22,12 @@ export interface Acting {
   mic: boolean;
   voice: boolean;
   electric: boolean;
+  /**
+   * The eyes and head follow the pointer while it moves, and return to the camera once it has been still for 2.5 s.
+   * True only for the Listening look with `attend: "pointer"`. Optional so hand-written Acting literals stay valid;
+   * actingFor always sets it, so every look change overwrites the engine's copy.
+   */
+  followPointer?: boolean;
 }
 
 /** The §2.2 table for the state looks. `null` pose: the look is an event look, whose pose comes from `follows`. */
@@ -50,8 +56,10 @@ const FOLLOWS_POSE: Record<AvatarLook["follows"], Pose> = { input: "listening", 
 /**
  * Pose from the name for state looks; for Presenting, Awaiting_Approval and Celebrate from `look.follows`
  * (input: listening, output: speaking, none: thinking). Overlay, one-shot and the gates as in §2.2.
+ * `attend` is the input's: "pointer" turns on followPointer for the Listening look only. An event look (Presenting,
+ * Awaiting_Approval, Celebrate) never follows, and absent or "camera" leaves every look exactly as before.
  */
-export function actingFor(look: AvatarLook): Acting {
+export function actingFor(look: AvatarLook, attend?: AvatarInput["attend"]): Acting {
   const row = ROWS[look.name];
   return {
     name: look.name,
@@ -64,7 +72,13 @@ export function actingFor(look: AvatarLook): Acting {
     mic: look.follows === "input",
     voice: look.follows === "output",
     electric: look.electric,
+    followPointer: followsPointer(look, attend),
   };
+}
+
+/** Listening with attend "pointer": the one look whose gaze may leave the camera for the pointer. */
+export function followsPointer(look: AvatarLook, attend?: AvatarInput["attend"]): boolean {
+  return attend === "pointer" && look.name === "Listening";
 }
 
 /** What the engine must do with its one-shot playback at this look change. */
