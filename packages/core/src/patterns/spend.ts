@@ -104,7 +104,8 @@ export function spendRows(rows: readonly BankRow[], ask: SpendAsk): SpendResult 
       const reason: ExcludeReason | null = b.amountCents >= 0 ? "amount" : b.pending ? "pending" : b.postedAt === null ? "unposted" : b.currency !== ask.currency ? "currency" : refundSeen.has(b.providerKey) ? "duplicate" : null;
       if (reason !== null) {
         excluded.push({ id: row.id, reason });
-        if (reason !== "amount" && reason !== "duplicate") looseRefunds.push(row);
+        // A pending refund that a posted refund replaces is that refund, not a loose one (brief 037, finding 7).
+        if (reason !== "amount" && reason !== "duplicate" && !(reason === "pending" && superseded.has(row.id))) looseRefunds.push(row);
         continue;
       }
       refundSeen.add(b.providerKey);
