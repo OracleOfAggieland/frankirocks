@@ -313,6 +313,12 @@ export interface MissingTurn {
   until: number;
 }
 
+/** A Superseding_Post in flight (R7.8): its body, for one resend after a `stale` answer (V2 step 7). */
+export interface SupersedingPost {
+  body: TurnBody;
+  resent: boolean;
+}
+
 export interface VoiceState {
   phase: VoicePhase;
   config: VoiceConfig;
@@ -359,7 +365,7 @@ export interface VoiceState {
    * Outstanding_Turns: posted, no answer yet, until the 5 s wait ends. A reconnect keeps them: the server may still
    * commit a post sent before it, so it refuses fastO on the new connection too (Property 7; R4; KV13).
    */
-  outstanding: { turnId: string; sessionId: string; deadline: number }[];
+  outstanding: { turnId: string; sessionId: string; deadline: number; supersede?: SupersedingPost }[];
   missing: MissingTurn[];
   /** An admitted Turn whose reply ended before its transcript came; posted `final` or `missing` (review item 7). */
   heldBack: VoiceTurn | null;
@@ -857,9 +863,14 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
       // The client already retried the same requestId; the Session's clientSeq is unknown now, so reconnect,
       // which opens a fresh Session (design "Session timing"). That holds for any post of this Session, current
       // or not, and whether or not the permit wait fired first (review of wave A, item 6).
-      const ours = state.outstanding.some((o) => o.turnId === event.turnId && o.sessionId === state.session?.sessionId) || (state.turn?.turnId === event.turnId && state.turn.posted !== null);
-      s.set({ outstanding: state.outstanding.filter((o) => o.turnId !== event.turnId), lastTurnResponseAt: now });
+      const { entry: was, rest } = answerOf(state, event.turnId);
+      const ownSession = was !== undefined && was.sessionId === state.session?.sessionId;
+      const ours = ownSession || (state.turn?.turnId === event.turnId && state.turn.posted !== null);
+      s.set({ outstanding: rest, lastTurnResponseAt: now });
       if (s.st.ack !== null) s.set({ ack: null, ackDroppedStale: true });
+      // A Superseding_Post reuses its `missing` post's clientSeq, so its failure leaves the Session's clientSeq
+      // where it was: the late transcript is lost, the call goes on (V2 step 7).
+      if (ownSession && was.supersede !== undefined) break;
       if (ours && state.session !== null) connectionRecovery(s, true);
       break;
     }
@@ -1298,21 +1309,54 @@ function postTurn(s: Step, transcriptState: "final" | "missing" | "failed"): voi
 }
 
 /** Sends a TurnRequest: the request is outstanding. The held StateAck stays: it vouches for every earlier Turn (R4.3; review of wave A, item 1). */
-function pushTurn(s: Step, body: TurnBody, supersedesTurnId: string | null = null): void {
+function pushTurn(s: Step, body: TurnBody, supersedesTurnId: string | null = null, resent = false): void {
   s.push(supersedesTurnId === null ? { kind: "turn", body } : { kind: "turn", body, supersedesTurnId });
+  const entry = { turnId: body.turnId, sessionId: body.sessionId, deadline: s.now + TURN_RESPONSE_LIMIT_MS };
+  // A Superseding_Post sits beside its Turn's ordinary post while that one is still unanswered; a Turn's answers
+  // are matched to the ordinary post first (answerOf).
+  const replaced = (o: VoiceState["outstanding"][number]) => o.turnId === body.turnId && (supersedesTurnId === null || o.supersede !== undefined);
   s.set({
-    outstanding: [...s.st.outstanding.filter((o) => o.turnId !== body.turnId && o.deadline > s.now), { turnId: body.turnId, sessionId: body.sessionId, deadline: s.now + TURN_RESPONSE_LIMIT_MS }],
+    outstanding: [
+      ...s.st.outstanding.filter((o) => !replaced(o) && o.deadline > s.now),
+      supersedesTurnId === null ? entry : { ...entry, supersede: { body, resent } },
+    ],
   });
+}
+
+/**
+ * Which outstanding post of `turnId` an answer belongs to: its ordinary post while that one is unanswered, else its
+ * Superseding_Post. Answers carry only the turnId; the server takes a Superseding_Post after its `missing` post
+ * (the Voice_Client resends one that came first), so the ordinary post is answered first.
+ */
+function answerOf(st: VoiceState, turnId: string): { entry: VoiceState["outstanding"][number] | undefined; rest: VoiceState["outstanding"] } {
+  const entry = st.outstanding.find((o) => o.turnId === turnId && o.supersede === undefined) ?? st.outstanding.find((o) => o.turnId === turnId);
+  return { entry, rest: st.outstanding.filter((o) => o !== entry) };
+}
+
+/**
+ * The answer to a Superseding_Post (R7.8). It reuses the `missing` post's clientSeq, so the Session's clientSeq is
+ * never behind and no answer to it reconnects, and it never speaks a reply. A `stale` answer resends it once under
+ * the answer's revisions, as a Superseding_Post again; any other answer, or a second `stale`, ends it (V2 step 7).
+ */
+function onSupersedingAnswer(s: Step, turnId: string, post: SupersedingPost, res: Infer<typeof TurnResponse> | null): void {
+  if (res === null) return;
+  adoptDeck(s, res.deck);
+  if (res.status !== "stale" || res.error !== null || post.resent) return;
+  const body: TurnBody = { ...post.body, epoch: res.stamp.epoch, policyRev: res.stamp.policyRev, bundleRev: res.stamp.bundleRev, rulesRev: res.stamp.rulesRev };
+  pushTurn(s, body, turnId, true);
 }
 
 function onTurn(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void {
   // Every answer ends its request's wait and dates the next StateAck: an ack requested before it can't grant fastO.
-  const wasOutstanding = s.st.outstanding.some((o) => o.turnId === turnId);
-  s.set({ outstanding: s.st.outstanding.filter((o) => o.turnId !== turnId), lastTurnResponseAt: s.now });
+  const { entry: was, rest } = answerOf(s.st, turnId);
+  const wasOutstanding = was !== undefined;
+  s.set({ outstanding: rest, lastTurnResponseAt: s.now });
   if (s.st.ack !== null) s.set({ ack: null, ackDroppedStale: true });
   const st = s.st;
   const turn = st.turn;
   if (st.session === null || res.stamp.sessionId !== st.session.sessionId || res.stamp.generation !== st.session.generation) return;
+  // The latest post of this Turn was a Superseding_Post: the answer is its own, whether or not the Turn is current.
+  if (was?.supersede !== undefined && was.sessionId === st.session.sessionId) return onSupersedingAnswer(s, turnId, was.supersede, res);
   const current = turn !== null && turn.turnId === turnId && turn.posted !== null && res.stamp.turnId === turnId;
   if (!current) {
     // An answer for a turn that is no longer current still carries a Deck (design rows), and if nothing was

@@ -164,7 +164,7 @@ describe("post transitions", () => {
     return { turnId, cmds };
   }
 
-  it.fails("LISTENING + turnOk stale for a Superseding_Post -> LISTENING (resent once as a Superseding_Post, no reconnect)", () => {
+  it("LISTENING + turnOk stale for a Superseding_Post -> LISTENING (resent once as a Superseding_Post, no reconnect)", () => {
     const d = live();
     const { turnId, cmds } = superseding(d, true);
     expect(cmds.some((c) => c.kind === "teardown"), "the call is not torn down").toBe(false);
@@ -173,7 +173,7 @@ describe("post transitions", () => {
     expect(resend[0]).toMatchObject({ supersedesTurnId: turnId, body: { transcriptState: "final", policyRev: d.serverDeck.policyRev } });
   });
 
-  it.fails("RECOVERY + turnOk stale for a Superseding_Post -> RECOVERY (the resend is the Superseding_Post, never the missing post)", () => {
+  it("RECOVERY + turnOk stale for a Superseding_Post -> RECOVERY (the resend is the Superseding_Post, never the missing post)", () => {
     const d = live();
     const { turnId, cmds } = superseding(d, false);
     expect(cmds.some((c) => c.kind === "teardown"), "the call is not torn down").toBe(false);
