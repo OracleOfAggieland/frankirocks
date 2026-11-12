@@ -111,4 +111,20 @@ export const COPY = {
   /** The backdrop's fig label words, after "FIG. n ·". */
   scenery: { mains: "the mains", specimens: "specimens", slab: "the slab", bench: "the bench" },
   areas: ["Time and work", "Food and health", "Money", "People", "Goals"] as const,
+  /** Brief 020: the screen on real memory data. */
+  memory: {
+    /** Chips are code constants; a chip's words go down the typed path as the owner's own (spec §15). */
+    chips: { whatDoYouKnow: "What do you know about me?" },
+    readout: { title: "What I know", empty: "Nothing yet. Tell me something and I'll keep it." },
+    lab: {
+      read: "Read emails",
+      guessed: "Guessed private things",
+      said: "Said",
+      /** Spec §11: the floor reads every line at once, and the Lab says so. */
+      floorRecall: "I read every line I keep at once, up to 200, instead of searching.",
+    },
+    /** The strip's last terminal while no comparison figure has a source. */
+    stripResult: "Compared",
+    goneAsk: { title: "A quick check", question: "Did you want that deleted?", yes: "Yes", no: "No" },
+  },
 } as const;

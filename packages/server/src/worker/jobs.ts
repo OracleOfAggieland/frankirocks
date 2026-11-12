@@ -113,3 +113,57 @@ export async function dueJobs(store: StorePort, uid: string, opsNow: number, kin
   }
   return ids;
 }
+
+// ---------------------------------------------------------------------------------------------
+// The forget job (brief 021). Written by the fence at phase `close`; advanced by `advanceForget`.
+
+export interface ForgetJobInit {
+  uid: string;
+  now: number;
+  /** The stamps the fence raised to. */
+  epoch: number;
+  policyRev: number;
+  opId: ID;
+  sessionId: ID;
+  requestTurnIds: ID[];
+  deadItems: { sessionId: ID; itemId: string }[];
+}
+
+export function forgetJob(init: ForgetJobInit): Job {
+  const now = tsFromMs(init.now);
+  return {
+    ...cFields(init.uid, now, init.epoch, init.policyRev),
+    kind: "forget",
+    status: "queued",
+    priority: "control",
+    nextAttemptAt: now,
+    leaseUntil: null,
+    leaseToken: null,
+    generation: 0,
+    attempts: 0,
+    // sourceIds[0] is the request's Session; the rest are its request turns.
+    sourceIds: [init.sessionId, ...init.requestTurnIds].slice(0, 8),
+    inputRevs: [],
+    connectorId: null,
+    syncGeneration: null,
+    payload: {
+      kind: "forget",
+      phase: "close",
+      opId: init.opId,
+      manifestComplete: false,
+      scopePending: false,
+      scopePendingId: null,
+      requestTurnIds: init.requestTurnIds.slice(0, 8),
+      candidateRefs: [],
+      deadItems: init.deadItems.slice(0, 64),
+      blockedKeys: [],
+      stagedSanitizedEids: [],
+      cursor: { collection: "memories", lastId: null },
+      closeCalls: [],
+      trustedRuleDeletes: [],
+    },
+    resultRefs: [],
+    error: null,
+    retainUntil: null,
+  };
+}

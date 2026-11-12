@@ -656,3 +656,95 @@ export const CORE_DOCS = {
   bundle: CoreBundle,
 } satisfies Record<CoreDocId, Schema<unknown>>;
 export type CoreDocs = { epoch: CoreEpoch; state: CoreState; counters: CoreCounters; rules: CoreRules; bundle: CoreBundle };
+
+// ---------------------------------------------------------------------------------------------
+// effects/{effectId}, blocks/{blockId}, overlays/{overlayId} (contracts §1; forget, brief 021)
+
+export const EFFECT_KINDS = ["exclude", "quiet", "careHold", "celebrationHold", "softPreference", "attentionBoost", "withdrawnHold"] as const;
+export const HOLD_KINDS = ["exclude", "quiet", "careHold"] as const;
+
+export const Effect = refine(
+  obj({
+    ...C_SHAPE,
+    premiseIds: arr(Ref, 16),
+    target: Ref,
+    kind: oneOf(EFFECT_KINDS),
+    scope: obj({
+      domain: oneOf(["all", "food", "calendar", "care", "travel", "work"]),
+      topicId: nullable(ID),
+      subjectId: nullable(EID),
+    }),
+    state: oneOf(["active", "retracted", "expired", "blocked"]),
+    createdBy: oneOf(["direct", "guess", "habit", "transition", "boundary"]),
+    expiresAt: nullable(TS),
+    nextReviewAt: TS,
+    boundaryMode: nullable(oneOf(["unsolicited", "all_output"])),
+    holdKind: nullable(oneOf(HOLD_KINDS)),
+    contentFree: bool,
+    minSens: Sens,
+  }),
+  (e, path) => {
+    if (e.kind === "withdrawnHold") {
+      if (!e.contentFree) return issue(`${path}.contentFree`, "a withdrawnHold is content-free");
+      if (e.holdKind === null) return issue(`${path}.holdKind`, "a withdrawnHold names its hold kind");
+      if (e.premiseIds.length > 0 || e.rootKeys.length > 0 || e.rootSlices.length > 0 || e.dependsOn.length > 0) {
+        return issue(`${path}.premiseIds`, "a withdrawnHold has no premises, roots or dependencies");
+      }
+      return null;
+    }
+    if (e.contentFree) return issue(`${path}.contentFree`, "only a withdrawnHold is content-free");
+    if (e.premiseIds.length === 0) return issue(`${path}.premiseIds`, "an effect names its premises");
+    return null;
+  },
+);
+export type Effect = Infer<typeof Effect>;
+
+export const BLOCK_KINDS = ["root", "provider", "semantic", "topic", "negativeAssertion"] as const;
+
+export const Block = obj({
+  ...C_SHAPE,
+  kind: oneOf(BLOCK_KINDS),
+  state: oneOf(["active", "review"]),
+  opId: ID,
+  key: ID,
+  boundaryMode: nullable(oneOf(["unsolicited", "all_output"])),
+  rootKey: nullable(ID),
+  providerKey: nullable(ID),
+  entityId: nullable(EID),
+  predicate: nullable(Pred),
+  topicId: nullable(ID),
+  claimSimHash: nullable(str(16)),
+  allowedEvidenceId: nullable(ID),
+  createdFrom: nullable(Ref),
+  reviewAt: nullable(TS),
+});
+export type Block = Infer<typeof Block>;
+
+export const Overlay = refine(
+  obj({
+    ...C_SHAPE,
+    opId: ID,
+    verb: oneOf(["redact", "replaceRole", "replaceTime", "withhold"]),
+    targetRef: Ref,
+    fieldPath: nullable(FP),
+    start: nullable(nat()),
+    end: nullable(nat()),
+    replacementRef: nullable(Ref),
+    sanitizedEid: nullable(ID),
+    state: oneOf(["active", "materialized"]),
+    minSens: Sens,
+  }),
+  (o, path) => {
+    if ((o.start === null) !== (o.end === null)) return issue(`${path}.end`, "start and end must both be null or both set");
+    if (o.start !== null && o.end !== null && o.start > o.end) return issue(`${path}.end`, "end is before start");
+    if (o.verb === "redact" && (o.fieldPath === null || o.start === null)) return issue(`${path}.fieldPath`, "a redact names its range");
+    return null;
+  },
+);
+export type Overlay = Infer<typeof Overlay>;
+
+// Brief 022 (lane hero): the loop's window, exported for the money patterns.
+
+export const LoopWindow = Window;
+export type LoopWindow = Infer<typeof Window>;
+export type LoopRecord = Infer<typeof Loop>;

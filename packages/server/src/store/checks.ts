@@ -3,6 +3,9 @@
  * R24.3). Error details name paths and check names only, never record content (R28.1).
  */
 import {
+  Block,
+  Effect,
+  Overlay,
   CORE_DOCS,
   type CoreDocId,
   EVIDENCE_CONTENT_FIELDS,
@@ -42,6 +45,13 @@ export function schemaFor(p: ParsedPath): Schema<unknown> {
       return Ledger;
     case "core":
       return CORE_DOCS[p.id as CoreDocId];
+    // Forget rows (brief 021).
+    case "blocks":
+      return Block;
+    case "overlays":
+      return Overlay;
+    case "effects":
+      return Effect;
   }
 }
 

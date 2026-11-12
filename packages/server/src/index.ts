@@ -18,4 +18,14 @@ export { toolRoute } from "./routes/tool";
 export { phoneWebhook } from "./phone/webhook";
 export { phoneStatusRoute } from "./phone/status";
 export { debugMemoryRoute } from "./routes/debug-memory";
+// Brief 020: GET /api/memory.
+export { memoryRoute } from "./routes/memory";
 export { TAKE_MAX_BYTES, listTakes, liveTakesDeps, saveTake } from "./dev/takes";
+// Forget, part one (brief 021). No route calls these yet.
+export * from "./forget/fence";
+export * from "./forget/executor";
+export * from "./forget/resolve-port";
+
+// Brief 019: the seeded persona, clone and reset.
+export { seedResetRoute } from "./routes/seed-reset";
+export { PERSONA_FIXTURE_ID } from "./seed/persona";

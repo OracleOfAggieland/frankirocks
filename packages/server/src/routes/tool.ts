@@ -14,6 +14,7 @@
  *      failed or late read gives code-ranked excerpts of the same lines (contracts §5 Recall readers), and empty
  *      notes with coverage `unknown` only when none match (R27.7). Statements without supplied citations are
  *      dropped (R27.6).
+ *      The `inspect` purpose reads snapshot() instead, with no model call (`recall-inspect.ts`, brief 020).
  *   6. In one transaction, the Admission_Seam (`admitRule`) issues the tool continuation's Permit over a payload that
  *      includes the tool output, its decision is written to the ledger, and the response is recorded (R27.8).
  * The response is sent within TOOL_RESULT_LIMIT_MS (R27.5): the read's deadline shrinks by whatever the parse wait and reads used.
@@ -40,7 +41,10 @@ import {
   serverRule,
   tsFromMs,
   turnRef,
+  type ID,
+  limitSnapshot,
 } from "@franki/core";
+import { inspectRecall } from "./recall-inspect";
 import { withDeadline } from "../clock/timers";
 import { requireModel } from "../config/models";
 import { ensureCoreDocs, ownerClock, readCoreDocs } from "../core-docs";
@@ -51,6 +55,7 @@ import { admitRule } from "../admission/seam";
 import { effectiveAudience, hasParseGap } from "../audience";
 import type { ResponsesResult } from "../openai/responses";
 import { placePhoneCall } from "../phone/outbound";
+import { answerTool, suggestTool } from "./tool-food";
 import { paths } from "../store/paths";
 import { barrierError, scopeError } from "./errors";
 import { Unrecorded, mutation } from "./mutation";
@@ -101,8 +106,7 @@ const MIN_READ_MS = 400;
 async function readRecall(ctx: RouteContext, req: ToolReq, args: Extract<ToolReq["tool"], { name: "recall" }>["args"], turn: Turn, deadlineAt: number): Promise<Result> {
   const { uid, deps } = ctx;
   if (!explicitRequest(turn.text, args)) return recallResult([], "unknown", false);
-  // `inspect` is snapshot() in the contract, which this slice does not build.
-  if (args.purpose === "inspect" || deadlineAt <= deps.clock.read().opsClock.now) return recallResult([], "unknown", false);
+  if (deadlineAt <= deps.clock.read().opsClock.now) return recallResult([], "unknown", false);
 
   const reader = storeReader(deps.store, uid);
   const core = await readCoreDocs(reader, uid);
@@ -114,6 +118,8 @@ async function readRecall(ctx: RouteContext, req: ToolReq, args: Extract<ToolReq
     if (r.collection === "evidence") evidence.set(r.id, snapshot.rows[i] as Evidence);
   });
   const ec = { ...foregroundEC(uid, core.epoch.data, pair, req.stamp.generation), explicitRequest: true, turnId: req.stamp.turnId, purpose: args.purpose === "plan" ? ("plan" as const) : ("answer" as const) };
+  // Brief 020: `inspect` ("What do you know about me?") is snapshot() with its two recent told lines, no model call.
+  if (args.purpose === "inspect") return inspectRecall(rows, { ec: { ...ec, purpose: "inspect" }, snapshot, noteFor: (id) => deps.hasher.id(["note", req.stamp.sessionId, req.stamp.turnId, req.callId, id]) as ID, expiresAt: tsFromMs(deps.clock.read().opsClock.now + NOTE_TTL_MS) });
   const { lines, eligibleCount } = recallLines(rows, ec, snapshot, evidence);
   if (lines.length === 0) return recallResult([], "complete", false);
   const { input, used, truncated } = packRecall(lines, eligibleCount, args.query, args.purpose);
@@ -160,6 +166,8 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
 
     const result: Result = req.tool.name === "make_phone_call"
       ? { name: "make_phone_call", requestId: req.requestId, message: await placePhoneCall(ctx, req.stamp) }
+      : req.tool.name === "suggest" ? await suggestTool(ctx, req.stamp, req.tool.args)
+      : req.tool.name === "answer" ? await answerTool(ctx, req.stamp, req.tool.args, check.turn)
       : await readRecall(ctx, req, req.tool.args, check.turn, start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS);
 
     return deps.store.transaction(uid, async (tx) => {
@@ -197,7 +205,7 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
         wave: "A",
       };
       const planned = serverRule(rule);
-      const output = result.name === "recall" && planned.kind === "permit" && planned.notes !== "all" ? { ...result, notes: result.notes.filter((n) => n.sens === "S0") } : result;
+      const output = result.name === "recall" && planned.kind === "permit" && planned.notes !== "all" ? { ...result, notes: result.notes.filter((n) => n.sens === "S0"), snapshot: result.snapshot === null ? null : limitSnapshot(result.snapshot, "S0") } : result;
       const admitted = admitRule(
         tx,
         {

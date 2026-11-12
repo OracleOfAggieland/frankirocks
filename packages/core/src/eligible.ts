@@ -9,6 +9,8 @@
 import { type Infer, type Schema, arr, bool, isPlainObject, nat, nullable, obj, oneOf, plainObject, str, validate } from "./schema/v";
 import { Au, Cov, ID, Purpose, SC, TS, msFromTs } from "./schema/primitives";
 import { CoreEpoch, Evidence, Job, Memory, Session } from "./schema/records";
+import { Block, Overlay } from "./schema/records";
+import { forgetDenies } from "./forget/blocks";
 
 export const ELIGIBILITY_STAGES = ["input", "read", "project", "commit", "toolReturn", "speech"] as const;
 export const EligibilityStage = oneOf(ELIGIBILITY_STAGES);
@@ -51,7 +53,9 @@ export type DocRef = Infer<typeof DocRef>;
 
 /** Rows this slice reads through `eligible`. */
 export type Row = Memory | Evidence;
-const ROW_SCHEMAS: Partial<Record<string, Schema<unknown>>> = { memories: Memory, evidence: Evidence };
+const ROW_SCHEMAS: Partial<Record<string, Schema<unknown>>> = { memories: Memory, evidence: Evidence, overlays: Overlay };
+/** A Snapshot row: a Row, or an Overlay carried by collection `overlays` (brief 021, design note gap 3). */
+export type SnapshotRow = Row | Overlay;
 
 export const Snapshot = obj({
   uid: str(128, { min: 1 }),
@@ -65,7 +69,7 @@ export const Snapshot = obj({
   coverage: Cov,
   complete: bool,
 });
-export type Snapshot = Omit<Infer<typeof Snapshot>, "rows"> & { rows: Row[] };
+export type Snapshot = Omit<Infer<typeof Snapshot>, "rows" | "blocks"> & { rows: SnapshotRow[]; blocks: Block[] };
 
 export interface Dependent {
   ref: DocRef;
@@ -103,10 +107,11 @@ const validSnapshots = new WeakSet<object>();
 const validRows = new WeakSet<object>();
 const validContexts = new WeakSet<object>();
 
-function snapshotIndex(s: Snapshot): Map<string, Row> | null {
+function snapshotIndex(s: Snapshot): Map<string, SnapshotRow> | null {
   if (!validSnapshots.has(s)) {
     if (!validate(Snapshot, s).ok || s.refs.length !== s.rows.length) return null;
     for (let i = 0; i < s.rows.length; i++) if (!rowOk(s.refs[i]!, s.rows[i])) return null;
+    for (const b of s.blocks) if (!validate(Block, b).ok || b.uid !== s.uid) return null;
     validSnapshots.add(s);
   }
   let index = indexes.get(s);
@@ -117,9 +122,9 @@ function snapshotIndex(s: Snapshot): Map<string, Row> | null {
   }
   return index;
 }
-const indexes = new WeakMap<object, Map<string, Row>>();
+const indexes = new WeakMap<object, Map<string, SnapshotRow>>();
 
-function rowOk(ref: DocRef, row: unknown): row is Row {
+function rowOk(ref: DocRef, row: unknown): row is SnapshotRow {
   if (!isPlainObject(row)) return false;
   if (validRows.has(row)) return true;
   const schema = ROW_SCHEMAS[ref.collection];
@@ -168,6 +173,7 @@ function depBlocked(ref: { collection: string }, row: Row): boolean {
 export function eligible(x: Dependent, c: EC, s: Snapshot): ER {
   try {
     if (!isPlainObject(x) || !isPlainObject(x.ref) || !validate(DocRef, x.ref).ok || !rowOk(x.ref, x.row)) return deny("ineligible");
+    if (x.ref.collection !== "memories" && x.ref.collection !== "evidence") return deny("ineligible");
     if (!contextOk(c)) return deny("ineligible");
     const index = snapshotIndex(s);
     if (index === null) return deny("ineligible");
@@ -206,11 +212,14 @@ export function eligible(x: Dependent, c: EC, s: Snapshot): ER {
     // 10: the row itself blocked or purged.
     if (rowBlocked(x.ref, row)) return deny("blocked");
 
+    // 10b: forget blocks and overlays on the row itself (brief 021). Dependencies are closure's, not read here.
+    if (forgetDenies(x.ref, row, s)) return deny("blocked");
+
     // 11: dependencies. An older @rev alone is provenance and passes.
     for (const dep of row.dependsOn) {
       const parsed = parseDep(dep);
       if (parsed === null) return deny("blocked");
-      const target = index.get(refKey(parsed.collection, parsed.id));
+      const target = index.get(refKey(parsed.collection, parsed.id)) as Row | undefined;
       if (target === undefined || target.uid !== c.uid) return deny("blocked");
       if (target.dirty) return deny("dirty");
       if (depBlocked(parsed, target)) return deny("blocked");

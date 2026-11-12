@@ -45,6 +45,15 @@ export interface MainScreenProps {
   paused: boolean;
   /** Cards for the Card_Dock. No card source reaches the Main_Screen yet; the Specimens_Page passes some. */
   cards?: CardProps[];
+  // Brief 020: the memory surfaces, each from GET /api/memory or nothing. Each slot renders what it is given.
+  /** The Strip, while a loop is open. */
+  strip?: ReactNode;
+  /** The Chips. */
+  chips?: ReactNode;
+  /** The Jar. */
+  jar?: ReactNode;
+  /** The Lab, with its receipt slip. */
+  lab?: ReactNode;
 }
 
 export const GRID_AREAS = ["header", "strip", "stage", "dock", "chips", "controls", "reply", "corners"] as const;
@@ -84,7 +93,7 @@ function Glide({ name, reduced, className, children }: { name: "stage" | "contro
   );
 }
 
-export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed, reply, debug, live, reduced, paused, cards = [] }: MainScreenProps) {
+export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed, reply, debug, live, reduced, paused, cards = [], strip, chips, jar, lab }: MainScreenProps) {
   // The dock column stays from the first card until the last one has dematerialized (ui.dockLayout). The
   // cards event runs during render, so the column is there on the very render that brings the first card.
   const present = cards.some(cardHasContent);
@@ -115,8 +124,8 @@ export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed
             <Seam />
           </div>
         </header>
-        {/* Strip slot: no open-loop source yet. */}
-        <div data-area="strip" className="[grid-area:strip]" />
+        {/* Strip slot: the open loop from GET /api/memory?view=strip (brief 020). */}
+        <div data-area="strip" className="flex justify-center [grid-area:strip]">{strip}</div>
         {/* gap-6 is the 24 px between the signed-out Wordmark and the avatar box that globals.css masks the canvas by. */}
         <section data-area="stage" aria-label="Franki" className="flex min-w-0 flex-col items-center justify-center gap-6 py-4 [grid-area:stage]">
           {/* Outside the glide wrapper: the word needs more width than the stage, and never wraps. */}
@@ -131,8 +140,8 @@ export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed
           {/* Always mounted: it renders nothing without a card, and keeps the last one while it leaves. */}
           <CardDock cards={cards} onExitComplete={onExitComplete} />
         </div>
-        {/* Chips slot: chips show only when the server offers them. */}
-        <div data-area="chips" className="[grid-area:chips]" />
+        {/* Chips slot: the code-constant chips while signed in (brief 020). */}
+        <div data-area="chips" className="flex justify-center [grid-area:chips]">{chips}</div>
         <div data-area="controls" className="flex min-w-0 flex-col items-center [grid-area:controls]">
           {/* The controls glide with Franki, on the same spring, so both keep one axis. */}
           <Glide name="controls" reduced={reduced} className="flex w-full max-w-xl flex-col items-center gap-3">
@@ -145,10 +154,10 @@ export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed
             {reply}
           </Glide>
         </div>
-        {/* Jar and Lab slots: no memory or count source yet. */}
+        {/* Jar and Lab slots: from GET /api/memory (brief 020); empty until there is something true to show. */}
         <div data-area="corners" className="flex flex-col items-center gap-3 sm:flex-row sm:items-end sm:justify-between [grid-area:corners]">
-          <div data-slot="jar" />
-          <div data-slot="lab" />
+          <div data-slot="jar">{jar}</div>
+          <div data-slot="lab">{lab}</div>
         </div>
       </div>
       {debug ? <div className="w-full max-w-6xl px-4 pb-4">{debug}</div> : null}

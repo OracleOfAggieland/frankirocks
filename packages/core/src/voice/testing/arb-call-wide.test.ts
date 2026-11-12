@@ -24,7 +24,7 @@ const FLOORS: Record<WideSituation, number> = {
   "hold with a retry hint for an admitted Turn": 12,
   "stale answer to a Superseding_Post": 30,
   "permit wait ended while a Permit was being checked": 12,
-  "retryPressed in connection recovery while only the state-retry flag shows Try again": 25,
+  "retryPressed in connection recovery that began while the state-retry flag showed Try again": 25,
 };
 
 describe("wide call generator and driver", () => {

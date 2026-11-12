@@ -1,7 +1,7 @@
 /**
  * The tick (`worker/tick.ts`), pinned as it behaves today: the once-per-minute gate, the order of its steps, and
- * what a lost compare-and-set race does in each step. One case is written red first (`it.fails`): the behaviour
- * wanted later, that maintenance losing a race inside a session open does not fail the open.
+ * what a lost compare-and-set race does in each step. Maintenance losing a race inside a session open does not fail
+ * the open (B2).
  *
  * Every store here is the rig's Memory_Store, or a wrapper around it that records queries or lets a rival writer
  * commit between a transaction's reads and its commit.
@@ -248,17 +248,7 @@ describe("Q13 inside a session open", () => {
     expect(await status()).toBe("closed");
   });
 
-  // Today's side of the red case "a stale Q13 does not fail open": the change that removes its `.fails` deletes this case.
-  it("today: a Q13 close that loses its race fails the open with 409 STALE", async () => {
-    const { res, raced, status } = await staleQ13Open();
-    expect(raced()).toBe(true);
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe("STALE");
-    // Q13's transaction did not commit: the expired Session is still live.
-    expect(await status()).toBe("minting");
-  });
-
-  it.fails("a stale Q13 does not fail open", async () => {
+  it("a stale Q13 does not fail open", async () => {
     const { res, raced } = await staleQ13Open();
     expect(raced()).toBe(true);
     expect(res.status).toBe(200);

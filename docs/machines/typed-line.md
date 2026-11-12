@@ -40,7 +40,7 @@ stateDiagram-v2
 - One press sends at most one request: `submit` returns false while `sending`.
 - A line keeps its identity across retries: the same text reuses its `requestId`, `turnId` and `clientSeq` (`pendingFor`), so a request the server committed is replayed. Changed text keeps the `clientSeq` with new IDs. A new line after an answered one gets `lastClientSeq + 1`.
 - Inside one submit, a `stale` answer is sent once more with the answer's Stamp, and a `hold` with a retry hint is retried up to eight times; after that the line fails with a message and stays in the box.
-- The body is rebuilt on every attempt: `utteredWorldAt` is read from the world clock each time.
+- `utteredWorldAt` is read once, when the line is first sent, and kept with its IDs, so a retry of the same text sends the same body even when the clock moved on. Only a `stale` answer's new Stamp changes the body, and the server recorded nothing for that attempt.
 - `dropSession` forgets the Session without a request (a call open closes it on the server); `closeSession` posts a close and waits at most its timeout.
 - `dropTurnCopies` clears every line and reply this client holds, after a completed forget.
 

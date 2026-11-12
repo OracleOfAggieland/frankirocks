@@ -13,6 +13,7 @@ import {
   rulesWaveBDefaults,
   withRulesDefaults,
   isZone,
+  msFromTs,
   tsFromMs,
   withZone,
 } from "@franki/core";
@@ -112,17 +113,26 @@ export async function readCoreDocs(tx: Pick<Tx, "get">, uid: string): Promise<{ 
   return { epoch, state, counters, rules, bundle };
 }
 
-/** Thrown when core/state is in fixture clock mode, which this slice does not support (R6.7). */
+/**
+ * Thrown when core/state names fixture clock mode without a world clock. The record schema already refuses that
+ * state; this is the fail-closed answer for a record read without validation.
+ */
 export class UnsupportedClockModeError extends Error {
   readonly code = "unsupported" as const;
   constructor() {
-    super("unsupported: fixture clock mode is not available in this slice");
+    super("unsupported: fixture clock mode needs core/state.worldClock");
     this.name = "UnsupportedClockModeError";
   }
 }
 
-/** The ClockPair for an Owner: worldClock.zone is core/state.currentZone; fixture mode is rejected (R6.7). */
+/**
+ * The ClockPair for an Owner (contracts §1 Clocks; brief 019 task 6). worldClock.zone is core/state.currentZone.
+ * Live mode: world = ops, one wall-clock reading. Fixture mode (a seeded clone): world is core/state.worldClock and
+ * stands still until the seed advance moves it; ops stays live, because leases, deadlines and expiries are real.
+ */
 export function ownerClock(state: CoreState, clock: ClockPort): ClockPair {
-  if (state.clockMode !== "live") throw new UnsupportedClockModeError();
-  return withZone(clock.read(), state.currentZone);
+  const pair = withZone(clock.read(), state.currentZone);
+  if (state.clockMode === "live") return pair;
+  if (state.worldClock === null) throw new UnsupportedClockModeError();
+  return { worldClock: { now: msFromTs(state.worldClock), zone: state.currentZone }, opsClock: pair.opsClock };
 }

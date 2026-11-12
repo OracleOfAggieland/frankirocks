@@ -56,7 +56,8 @@ export async function expireSessions(ctx: RouteContext): Promise<number> {
     expired.push(...rows.map((r) => r.id));
   }
   for (const sessionId of expired) {
-    const begun = await deps.store.transaction(uid, (tx) => beginCloseInTx(tx, uid, sessionId, now));
+    // A close that loses its compare-and-set race is left to the next tick, so Q13 never fails a session open (B2).
+    const begun = await lostRaceAsNull(ctx, "expiry", () => deps.store.transaction(uid, (tx) => beginCloseInTx(tx, uid, sessionId, now)));
     if (begun === null) continue;
     if (begun.closed) {
       await afterClosed(ctx, sessionId);
@@ -107,6 +108,17 @@ async function racing(ctx: RouteContext, step: string, run: () => Promise<unknow
   } catch (error) {
     if (!isStoreError(error, "staleRevision")) throw error;
     ctx.deps.log?.("tick.lostRace", { step });
+  }
+}
+
+/** As `racing`, for a step whose value is used: a lost race answers null. */
+async function lostRaceAsNull<T>(ctx: RouteContext, step: string, run: () => Promise<T | null>): Promise<T | null> {
+  try {
+    return await run();
+  } catch (error) {
+    if (!isStoreError(error, "staleRevision")) throw error;
+    ctx.deps.log?.("tick.lostRace", { step });
+    return null;
   }
 }
 

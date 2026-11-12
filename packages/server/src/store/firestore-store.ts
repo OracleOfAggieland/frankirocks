@@ -90,6 +90,7 @@ export class FirestoreStore implements StorePort {
     const reads = new Map<string, number | null>();
     let rereadConflict: string | null = null;
     const writes = new Map<string, PendingWrite>();
+    const deletes = new Set<string>();
     // Every document this transaction has read, by path. The transaction holds what it read until it commits, so
     // a second read of the same path, and the commit's own checks, use this snapshot instead of another round trip
     // (each one cost ~75 ms from a laptop to us-central1, and a close or turn made a dozen).
@@ -134,9 +135,15 @@ export class FirestoreStore implements StorePort {
         }
         writes.set(path, { parsed, kind: "update", record: structuredClone(record as Data), expectRev });
       },
+      delete: (path) => {
+        parseDocPath(uid, path);
+        if (writes.has(path) || deletes.has(path)) throw new StoreError("invalidInput", "record written twice in one transaction", path);
+        deletes.add(path);
+      },
     };
 
     const result = await fn(tx);
+    for (const path of deletes) if (writes.has(path)) throw new StoreError("invalidInput", "record written twice in one transaction", path);
 
     for (const w of writes.values()) checkRecord(uid, w.parsed, { ...w.record, rev: 1 });
 
@@ -158,6 +165,7 @@ export class FirestoreStore implements StorePort {
         w.record as unknown as Memory,
         async (eid) => {
           const path = `users/${uid}/evidence/${eid}`;
+          if (deletes.has(path)) return null;
           const pending = writes.get(path);
           if (pending !== undefined) return pending.record as unknown as Evidence;
           const snap = await readDoc(path);
@@ -169,6 +177,14 @@ export class FirestoreStore implements StorePort {
     }
 
     if (rereadConflict !== null) throw new StoreError("staleRevision", "record changed between two reads", rereadConflict);
+    // A deleted path read in this transaction must still hold the rev that was read (Firestore's own read set
+    // aborts the commit if it changed since; this check covers the cached snapshot).
+    for (const path of deletes) {
+      if (!reads.has(path)) continue;
+      const snap = snaps.get(path);
+      const now = snap?.exists === true ? ((snap.data() as Data).rev as number) : null;
+      if (now !== reads.get(path)) throw new StoreError("staleRevision", "record changed since it was read", path);
+    }
     const finals: [PendingWrite, Data][] = [];
     for (const w of writes.values()) {
       const now = current.get(w.parsed.path);
@@ -194,6 +210,7 @@ export class FirestoreStore implements StorePort {
       if (w.kind === "create") t.create(ref, final);
       else t.set(ref, final);
     }
+    for (const path of deletes) t.delete(this.db.doc(path));
     return result;
   }
 }

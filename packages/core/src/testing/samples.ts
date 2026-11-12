@@ -4,6 +4,7 @@
  */
 import type { Evidence, Job, Ledger, Memory, Session, Turn, CoreDocs } from "../schema/records";
 import type { Head, Slice } from "../schema/primitives";
+import type { Block, Effect, Overlay } from "../schema/records";
 
 /** A deterministic 43-character base64url ID for tests. */
 export function testId(label: string | number): string {
@@ -340,5 +341,64 @@ export function sampleCoreDocs(): CoreDocs {
       compiledAt: null,
       expiresAt: null,
     },
+  };
+}
+
+// Forget rows (brief 021).
+
+export function sampleEffect(overrides: Partial<Effect> = {}): Effect {
+  return {
+    ...commonFields(),
+    premiseIds: [{ type: "memory", id: testId("m1"), rev: 1 }],
+    target: { type: "memory", id: testId("m2"), rev: 1 },
+    kind: "exclude",
+    scope: { domain: "food", topicId: null, subjectId: null },
+    state: "active",
+    createdBy: "direct",
+    expiresAt: null,
+    nextReviewAt: T0,
+    boundaryMode: null,
+    holdKind: null,
+    contentFree: false,
+    minSens: "S0",
+    ...overrides,
+  };
+}
+
+export function sampleBlock(overrides: Partial<Block> = {}): Block {
+  return {
+    ...commonFields(),
+    kind: "root",
+    state: "active",
+    opId: testId("op"),
+    key: testId("bkey"),
+    boundaryMode: null,
+    rootKey: testId("root"),
+    providerKey: null,
+    entityId: null,
+    predicate: null,
+    topicId: null,
+    claimSimHash: null,
+    allowedEvidenceId: null,
+    createdFrom: null,
+    reviewAt: null,
+    ...overrides,
+  };
+}
+
+export function sampleOverlay(overrides: Partial<Overlay> = {}): Overlay {
+  return {
+    ...commonFields(),
+    opId: testId("op"),
+    verb: "withhold",
+    targetRef: { type: "memory", id: testId("m1"), rev: 1 },
+    fieldPath: null,
+    start: null,
+    end: null,
+    replacementRef: null,
+    sanitizedEid: null,
+    state: "active",
+    minSens: "S0",
+    ...overrides,
   };
 }

@@ -8,7 +8,9 @@
  * stays in the box with an error and no reply.
  *
  * Retrying a failed line: the same text reuses the same requestId, turnId and clientSeq, so a request the server
- * did commit is replayed rather than written twice (R19.3). Changed text reuses the clientSeq with new IDs.
+ * did commit is replayed rather than written twice (R19.3). The line's `utteredWorldAt` is read once, when it is first
+ * sent, so a retry on a clock that moved on is byte-identical. Changed text reuses the clientSeq with new IDs and a new
+ * `utteredWorldAt`.
  */
 import {
   OpenResponse,
@@ -48,6 +50,8 @@ interface Pending {
   requestId: string;
   turnId: string;
   transcript: string;
+  /** Read once, when the line is first sent: every retry of the line sends the same body (B4, R19.3). */
+  utteredWorldAt: string;
 }
 
 export interface TypedDeps {
@@ -58,6 +62,8 @@ export interface TypedDeps {
   sleep?: (ms: number) => Promise<void>;
   /** Told the turn each answered typed line was, for the phone on the screen. Never changes what is sent. */
   onTurn?: (turn: { sessionId: string; turnId: string }) => void;
+  /** Told each answered line's words, Franki's reply lines and the turn's forget receipt (brief 020). Never changes what is sent. */
+  onReply?: (reply: { transcript: string; lines: string[]; receiptId: string | null }) => void;
 }
 
 /** Pure: whether the text may be sent (R18.1, R18.8). */
@@ -109,7 +115,19 @@ export class TypedTurns {
   /** One press of send or Enter. Returns false when nothing was sent. */
   async submit(): Promise<boolean> {
     if (!this.canSend()) return false;
-    const transcript = this.state.text;
+    return this.send(this.state.text, true);
+  }
+
+  /**
+   * Sends a chip's words down the same typed path, as the owner's own (spec §15), and leaves the box as it is. A
+   * chip is a code constant, never pasted text. Returns false when nothing was sent.
+   */
+  async sendLine(text: string): Promise<boolean> {
+    if (this.state.sending || !canSendText(text)) return false;
+    return this.send(text, false);
+  }
+
+  private async send(transcript: string, fromBox: boolean): Promise<boolean> {
     this.set({ sending: true, error: null });
     try {
       const stamp = this.stamp ?? (await this.openSession());
@@ -123,8 +141,9 @@ export class TypedTurns {
       const entries = [...this.state.entries, { key: pending.turnId, role: "user" as const, text: transcript }];
       // No call is open in this path, so the reply shows as text and no audio plays (R18.6).
       for (const note of result.notes) entries.push({ key: note.noteId, role: "franki", text: note.text });
-      this.set({ text: "", sending: false, error: null, entries });
+      this.set({ ...(fromBox ? { text: "" } : {}), sending: false, error: null, entries });
       this.deps.onTurn?.({ sessionId: result.stamp.sessionId, turnId: result.stamp.turnId });
+      this.deps.onReply?.({ transcript, lines: result.notes.map((n) => n.text), receiptId: result.receiptId });
       return true;
     } catch {
       return this.fail("Not sent: something went wrong in the browser.");
@@ -170,7 +189,8 @@ export class TypedTurns {
     if (this.pending !== null && this.pending.transcript === transcript) return this.pending;
     // The clientSeq stays the one assigned to the unsent line; a new line gets last + 1 (R18.1).
     const clientSeq = this.pending?.clientSeq ?? this.state.lastClientSeq + 1;
-    this.pending = { clientSeq, requestId: this.newId(), turnId: this.newId(), transcript };
+    const utteredWorldAt = tsFromMs(this.deps.clock.read().worldClock.now);
+    this.pending = { clientSeq, requestId: this.newId(), turnId: this.newId(), transcript, utteredWorldAt };
     if (clientSeq !== this.state.lastClientSeq) this.set({ lastClientSeq: clientSeq });
     return this.pending;
   }
@@ -195,7 +215,7 @@ export class TypedTurns {
   }
 
   private async sendTurn(stamp: SS, pending: Pending): Promise<Infer<typeof TurnResponse> | string> {
-    const { api, clock } = this.deps;
+    const { api } = this.deps;
     let current = stamp;
     for (let attempt = 0; ; attempt++) {
       const body: Infer<typeof TurnRequest> = {
@@ -205,7 +225,7 @@ export class TypedTurns {
         clientSeq: pending.clientSeq,
         source: "typed",
         items: [],
-        utteredWorldAt: tsFromMs(clock.read().worldClock.now),
+        utteredWorldAt: pending.utteredWorldAt,
         transcript: pending.transcript,
         transcriptState: "final",
         judge: "typed",

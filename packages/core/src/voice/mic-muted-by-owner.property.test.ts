@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { arbWideCall, runWideCall } from "./testing/arb-call-wide";
 
 describe("only the Owner changes the mic mute", () => {
-  it.fails("micMuted changes only on mutePressed or when the call ends", () => {
+  it("micMuted changes only on mutePressed or when the call ends", () => {
     fc.assert(
       fc.property(arbWideCall, (steps) => {
         for (const s of runWideCall(steps).trace.steps) {

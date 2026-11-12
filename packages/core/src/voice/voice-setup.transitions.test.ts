@@ -75,7 +75,7 @@ describe("call setup transitions", () => {
     expect(d.st.recovery?.kind).toBe("connection");
   });
 
-  it.fails("CONFIGURING + stateOk (ack dropped by an earlier Session's turn answer) -> asks once more -> LISTENING", () => {
+  it("CONFIGURING + stateOk (ack dropped by an earlier Session's turn answer) -> asks once more -> LISTENING", () => {
     // Session A posts a typed line; the Owner hangs up and calls again at once; A's answer lands while B waits
     // for its first state answer, so B's ack is dropped as older than the last turn answer.
     const d = live();
@@ -97,7 +97,7 @@ describe("call setup transitions", () => {
     expect(d.st.session?.sessionId).toBe(d.sessions[1]);
   });
 
-  it.fails("CONFIGURING + stateOk (ack dropped by a turn answer from before the reconnect) -> asks once more -> LISTENING", () => {
+  it("CONFIGURING + stateOk (ack dropped by a turn answer from before the reconnect) -> asks once more -> LISTENING", () => {
     const d = live();
     play(d, { k: "typed" }, 300);
     play(d, { k: "connectionLost" }, 300);
