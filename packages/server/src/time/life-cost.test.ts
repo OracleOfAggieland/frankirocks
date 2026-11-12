@@ -93,11 +93,13 @@ async function aboutMom(): Promise<TestRig> {
 }
 
 describe("the life check's cost in one delivery pass (W-229)", () => {
-  it("the seeded persona: 36 calls, at most one Memory scan per reader", async () => {
+  // 38, not W-229's 36: brief 042 item 2 reads the two answer rows a moment's kind can have, together, so an
+  // answered offer is never offered again. Two calls a pass, and no scan.
+  it("the seeded persona: 38 calls (36 for the life check, 2 for the answered-offer check), at most one Memory scan per reader", async () => {
     const { all, choice } = await pass(await seeded(), "seeded");
     expect(choice.scans).toBeLessThanOrEqual(1);
     expect(all.scans).toBeLessThanOrEqual(2);
-    expect(all.calls).toBeLessThanOrEqual(36);
+    expect(all.calls).toBeLessThanOrEqual(38);
   });
 
   it("three moments about Mom: 38 calls (44 before), one Memory scan in chooseNow (3 before)", async () => {

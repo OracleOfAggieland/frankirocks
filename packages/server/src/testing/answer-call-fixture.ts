@@ -53,7 +53,7 @@ export async function answerCallSetup(opts: { turns: readonly string[]; present:
       await rig.store.transaction(UID, (tx) => recordPendingRendered(tx, UID, offer.pendingId as never, rig.deps.clock.read().opsClock.now, rig.deps.hasher));
       rig.clock.advance(10);
     }
-    const res = await callRoute(rig, turnRoute, asrTurn(s.stamp, i + 1, text, [{ itemId: `item_${i + 1}`, commitSeq: i + 1 }]));
+    const res = await callRoute(rig, turnRoute, { ...asrTurn(s.stamp, i + 1, text, [{ itemId: `item_${i + 1}`, commitSeq: i + 1 }]), judge: "O" });
     if (res.status !== 200) throw new Error(JSON.stringify(res.body));
   }
   const stamp = { ...s.stamp, turnId: testId(`turn-${opts.turns.length}`) };

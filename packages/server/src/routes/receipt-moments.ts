@@ -12,20 +12,26 @@
  * Brief 030 part A adds what playback and a matched transcript mean for the moment's own record:
  *
  *   - a `celebrate` moment said moves its loop from `eligible` to `celebrated` (`markCelebrated`);
- *   - an offer that starts playing, or a `pendingRendered` receipt naming its moment (shown on the screen), is shown (`pendingRendered` for its pending ID). The hero offer's pending ID is
+ *   - brief 042 item 5: a transcript of a response that admitted a moment's whisper writes its Gate `said` row
+ *     (`writeSaid`, whose matcher decides; no match, no row; one row per turn and note, so never twice);
+ *   - an offer whose playback ended uncut or whose transcript matched, or a `pendingRendered` receipt naming its
+ *     moment (shown on the screen), is shown (`recordShowing`, per Session; a cancel revokes it). The hero offer's pending ID is
  *     data for the server, never words for the model: it is recomputed from the rows now, and written only when the
  *     offer's line is still the one the moment rendered (fails closed: a changed offer is not shown);
  *
  * Ruling (fails closed): only a `proactive` Permit admits a moment, since moments travel only under one
  * (`time/proactive.ts`); the delivery row of a matched transcript names that kind.
  */
-import { type ClockPort, type Hasher, type ID, type Infer, type Memory, type Moment, type ReceiptRequest, falseGone, markCelebrated, tsFromMs } from "@franki/core";
+import { type ClockPort, type GateResult, type Hasher, type ID, type Infer, type Memory, type Moment, type ReceiptRequest, type Session, falseGone, markCelebrated, tsFromMs } from "@franki/core";
+import { gateAudience } from "../audience";
+import { readCoreDocs } from "../core-docs";
+import { writeSaid } from "../ledger/said";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import { getMoment } from "../time/verdict";
 import { heroOffer } from "./tool-food";
 import type { RouteContext } from "./runtime";
-import { recordPendingRendered } from "../time/reminder";
+import { recordShowing, revokeShowing } from "../time/reminder";
 import { admitMoments, recordPlayback, recordSaid } from "../time/said";
 
 export const MOMENT_PERMIT_KIND = "proactive" as const;
@@ -33,28 +39,54 @@ export const MOMENT_PERMIT_KIND = "proactive" as const;
 export async function receiptMoments(tx: Tx, ctx: RouteContext, req: Infer<typeof ReceiptRequest>, opsNow: number): Promise<void> {
   const { uid, deps } = ctx;
   const ids = req.momentIds as ID[];
+  // Brief 042 item 1: each offer is recorded as shown at most once per receipt, per Session. Brief 045 finding 6: an
+  // offer is shown when its playback ended uncut or its transcript matched (once per response), and a cancel
+  // revokes its latest showing in this Session.
+  const shown = new Set<ID>();
+  const show = async (pendingId: ID): Promise<void> => {
+    if (shown.has(pendingId)) return;
+    shown.add(pendingId);
+    await recordShowing(tx, uid, pendingId, req.stamp.sessionId, opsNow, deps.hasher, req.responseId);
+  };
+  const revoke = async (pendingId: ID): Promise<void> => {
+    if (shown.has(pendingId)) return;
+    shown.add(pendingId);
+    await revokeShowing(tx, uid, pendingId, req.stamp.sessionId, opsNow, deps.hasher);
+  };
   if (req.kind === "admitted" && req.permitKind === MOMENT_PERMIT_KIND) await admitMoments(tx, uid, ids, { responseId: req.responseId, noteIds: req.noteIds }, deps);
   // Brief 036 finding 14: a playback start is recorded, and a cancel before the line was said ends the moment.
   else if (req.kind === "playbackStarted" || req.kind === "cancelled") {
     for (const id of new Set(ids)) {
-      const before = req.kind === "playbackStarted" ? await getMoment(tx, paths.moment(uid, id)) : null;
-      const played = await recordPlayback(tx, uid, id, { kind: req.kind, responseId: req.responseId }, deps.clock);
-      if (played && before !== null) await offerShown(tx, ctx, before.data, opsNow);
+      const before = req.kind === "cancelled" ? await getMoment(tx, paths.moment(uid, id)) : null;
+      // The moment as it stood before the cancel, for the offer it carried.
+      const pendingId = before === null ? null : await shownPendingId(ctx, before.data);
+      await recordPlayback(tx, uid, id, { kind: req.kind, responseId: req.responseId }, deps.clock);
+      if (pendingId !== null && before!.data.responseId === req.responseId) await revoke(pendingId);
+    }
+  } else if (req.kind === "playbackEnded") {
+    // Brief 045 finding 6: played to the end, uncut, on this response.
+    for (const id of new Set(ids)) {
+      const doc = await getMoment(tx, paths.moment(uid, id));
+      if (doc === null || doc.data.responseId !== req.responseId || doc.data.playbackAt === null) continue;
+      if (doc.data.status === "admitted" || doc.data.status === "delivered") await offerShown(ctx, doc.data, show);
     }
   } else if (req.kind === "transcript") {
     const receipt = { kind: req.kind, responseId: req.responseId, momentIds: req.momentIds, noteIds: req.noteIds, text: req.text };
     for (const id of new Set(ids)) {
       const before = await getMoment(tx, paths.moment(uid, id));
+      const pendingId = before === null ? null : await shownPendingId(ctx, before.data);
       const match = await recordSaid(tx, uid, id, receipt, MOMENT_PERMIT_KIND, deps.clock, deps.hasher);
+      if (before !== null) await saidRow(tx, ctx, req, id, before.data, opsNow);
       if (match !== null && before !== null) await celebrated(tx, uid, before.data, opsNow);
+      if (match !== null && pendingId !== null) await show(pendingId);
     }
-  } else if (req.kind === "pendingRendered" && req.pendingId !== null) await recordPendingRendered(tx, uid, req.pendingId as ID, opsNow, deps.hasher);
+  } else if (req.kind === "pendingRendered" && req.pendingId !== null) await show(req.pendingId as ID);
   else if (req.kind === "pendingRendered") {
     // Brief 030 part A: a line shown on the screen (a typed session's Proactive) names its moments, not a pending ID;
     // each one admitted on this response is shown, as a played one is.
     for (const id of new Set(ids)) {
       const doc = await getMoment(tx, paths.moment(uid, id));
-      if (doc !== null && doc.data.status === "admitted" && doc.data.responseId === req.responseId) await offerShown(tx, ctx, doc.data, opsNow);
+      if (doc !== null && doc.data.status === "admitted" && doc.data.responseId === req.responseId) await offerShown(ctx, doc.data, show);
     }
   }
 }
@@ -67,9 +99,28 @@ export async function shownPendingId(ctx: RouteContext, m: Moment): Promise<ID |
   return offer !== null && offer.line === m.rendered.text ? (offer.pendingId as ID) : null;
 }
 
-async function offerShown(tx: Tx, ctx: RouteContext, m: Moment, opsNow: number): Promise<void> {
+async function offerShown(ctx: RouteContext, m: Moment, show: (pendingId: ID) => Promise<void>): Promise<void> {
   const pendingId = await shownPendingId(ctx, m);
-  if (pendingId !== null) await recordPendingRendered(tx, ctx.uid, pendingId, opsNow, ctx.deps.hasher);
+  if (pendingId !== null) await show(pendingId);
+}
+
+/**
+ * Brief 042 item 5: the `said` row for a moment's whisper heard on the response that admitted it. The Gate result is
+ * the one delivery acted on: the line went out under a `proactive` Permit only after a `say` (`chooseNow`), so it is
+ * recorded as that `say` (ruling: no stored result is read back). The row's turn is the line's own (the Permit's).
+ */
+async function saidRow(tx: Tx, ctx: RouteContext, req: Infer<typeof ReceiptRequest>, momentId: ID, m: Moment, opsNow: number): Promise<void> {
+  if (req.kind !== "transcript" || m.rendered === null || m.responseId !== req.responseId || m.admittedAt === null) return;
+  if (!req.noteIds.includes(m.rendered.noteId)) return;
+  const { uid, deps } = ctx;
+  const core = await readCoreDocs(tx, uid);
+  const session = await tx.get<Session>(paths.session(uid, req.stamp.sessionId));
+  const audience = session === null ? "unknown" : gateAudience(session.data, opsNow).audience;
+  const said: GateResult = { verdict: "say", form: null, render: "free", carveOut: null, mustSay: null, fixedLine: null, reasons: ["ok"], candidateId: momentId, sens: null };
+  const at = { uid, now: tsFromMs(opsNow), epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev };
+  const row = { candidateId: momentId, refs: [{ type: "moment" as const, id: momentId, rev: m.rev }], noteIds: [m.rendered.noteId as ID], momentId, sessionId: req.stamp.sessionId as ID, turnId: req.stamp.turnId as ID, audience, permitKind: MOMENT_PERMIT_KIND };
+  const receipt = { kind: req.kind, responseId: req.responseId, momentIds: req.momentIds, noteIds: req.noteIds, text: req.text };
+  await writeSaid(tx, deps.hasher, at, said, row, { receipt, note: { noteId: m.rendered.noteId as ID, text: m.rendered.text, momentId } });
 }
 
 /** A `celebrate` moment said: its loop moves from `eligible` to `celebrated` (`markCelebrated`), in this transaction. */
