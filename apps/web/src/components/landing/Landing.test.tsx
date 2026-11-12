@@ -74,13 +74,34 @@ describe("the front door page (brief 015 H1)", () => {
     expect(typeof props.onYes).toBe("function");
   });
 
-  it("lays out two columns from 1024 px with the stage spanning both rows, sticky under the bar", () => {
+  it("lays out two columns from 1024 px with the stage spanning both rows, sticky and inset under the bar", () => {
     const html = renderToStaticMarkup(<Landing />);
     expect(html).toMatch(/data-door-grid="" class="grid grid-cols-1 lg:grid-cols-\[minmax\(0,5fr\)_minmax\(0,6fr\)\]/);
     const stage = /data-stage-column="" class="([^"]*)"/.exec(html)![1]!.split(" ");
-    for (const cls of ["sticky", "top-14", "md:top-16", "h-[44svh]", "self-start", "lg:col-start-2", "lg:row-start-1", "lg:row-span-2", "lg:h-[calc(100svh-4rem)]"]) {
+    for (const cls of ["sticky", "top-14", "md:top-16", "sm:h-[44svh]", "self-start", "lg:col-start-2", "lg:row-start-1", "lg:row-span-2"]) {
       expect(stage, cls).toContain(cls);
     }
+    // From 1024 px the frame clears the bar by 1rem and the window's bottom edge by 1rem: top = 4rem + 1rem,
+    // height = 100svh - 4rem - 2rem.
+    expect(stage).toContain("lg:top-20");
+    expect(stage).toContain("lg:h-[calc(100svh-6rem)]");
+    expect(stage).not.toContain("lg:h-[calc(100svh-4rem)]");
+  });
+
+  it("below 1024 px draws the stage first, right under the bar, while the h1 stays first in the DOM", () => {
+    const html = renderToStaticMarkup(<Landing />);
+    const stage = /data-stage-column="" class="([^"]*)"/.exec(html)![1]!.split(" ");
+    // Visually first, through `order`, so Franki is on a phone's first screen.
+    expect(stage).toContain("max-lg:order-first");
+    // Its margin is the bar's height, so at the top of the page it already sits where it pins and covers no text.
+    expect(stage).toContain("max-lg:mt-14");
+    expect(stage).toContain("md:max-lg:mt-16");
+    // A little shorter on a phone, so the headline and the brass button fit under it.
+    expect(stage).toContain("h-[40svh]");
+    expect(stage).not.toContain("h-[44svh]");
+    expect(html.indexOf("<h1")).toBeLessThan(html.indexOf("data-stage-column"));
+    // The hero takes no order of its own, so the stage's `order-first` is what moves it.
+    expect(/<section id="top"[^>]*class="([^"]*)"/.exec(html)![1]).not.toMatch(/(^|\s)(max-lg:)?order-/);
     // Below 1024 px the pinned stage has a night-0 ground, and so does the story passing under it.
     expect(stage).toContain("max-lg:bg-night-0");
     expect(/id="story" data-story="" class="([^"]*)"/.exec(html)![1]).toContain("max-lg:bg-night-0");

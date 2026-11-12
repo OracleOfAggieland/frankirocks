@@ -46,6 +46,18 @@ describe("stepAt", () => {
     expect(stepAt(later, { height: VH, scrollY: 1300 })).toBe("noticed");
   });
 
+  it("on a phone, with the stage drawn above the hero, is hero at the top and talk next", () => {
+    // 375x812: the bar (56) and the stage (40svh, 325) sit above the hero; the hero is about 420 tall and the
+    // talk block 70svh.
+    const phone = 812;
+    const heights = [420, 568, 568];
+    const at = (y: number) => stepAt(stack(heights, y, 381), { height: phone, scrollY: y });
+    expect(at(0)).toBe("hero");
+    expect(at(30)).toBe("hero");
+    const firstTalk = Array.from({ length: 2000 }, (_, y) => y).find((y) => at(y) !== "hero")!;
+    expect(at(firstTalk)).toBe("talk");
+  });
+
   it("gives a tie to the earlier block", () => {
     // A zero-height viewport puts the focus line at 0 exactly, so the two distances are equal in floating point.
     const blocks: BlockBox[] = [

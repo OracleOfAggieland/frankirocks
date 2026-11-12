@@ -3,9 +3,12 @@
 // the switch has been thrown, and composes the page in order.
 //
 // Layout. From 1024 px a two-column grid: the hero and then the story on the left; the stage on the right,
-// spanning both rows, sticky under the bar and as tall as the viewport minus the bar. Below 1024 px one column:
-// the stage comes right after the hero and pins under the bar at 44svh, on a night-0 ground, while the story
-// passes beneath it. No ancestor of the stage clips, because Franki's canvas spills past its box.
+// spanning both rows, sticky 1rem under the bar and 2rem shorter than the viewport below the bar, so its frame
+// never touches the window's edge. Below 1024 px one column: the stage is drawn first (CSS `order`; the hero and
+// its h1 stay first in the DOM), sits right under the bar and pins there at 40svh (44svh from 640 px) on a night-0
+// ground, while the hero and then the story pass beneath it. Its top margin is the bar's height, so at the top of
+// the page it already sits where it pins and covers nothing. No ancestor of the stage clips, because Franki's
+// canvas spills past its box.
 //
 // Step. The page measures its blocks and sections on scroll and resize, inside one frame callback, and the pure
 // functions in ui/landing/scroll-step.ts turn the numbers into the step, the bar's state and the rail's marks.
@@ -139,7 +142,7 @@ export function Landing() {
           <Hero className="lg:col-start-1 lg:row-start-1" />
           <div
             data-stage-column=""
-            className="sticky top-14 z-10 grid h-[44svh] self-start max-lg:-mx-4 max-lg:bg-night-0 max-lg:px-4 max-lg:after:pointer-events-none max-lg:after:absolute max-lg:after:inset-x-0 max-lg:after:top-full max-lg:after:h-6 max-lg:after:bg-linear-to-b max-lg:after:from-night-0 max-lg:after:to-transparent sm:max-lg:-mx-6 sm:max-lg:px-6 md:top-16 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:h-[calc(100svh-4rem)]"
+            className="sticky top-14 z-10 grid h-[40svh] self-start max-lg:order-first max-lg:mt-14 max-lg:-mx-4 max-lg:bg-night-0 max-lg:px-4 max-lg:after:pointer-events-none max-lg:after:absolute max-lg:after:inset-x-0 max-lg:after:top-full max-lg:after:h-6 max-lg:after:bg-linear-to-b max-lg:after:from-night-0 max-lg:after:to-transparent sm:h-[44svh] sm:max-lg:-mx-6 sm:max-lg:px-6 md:top-16 md:max-lg:mt-16 lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:h-[calc(100svh-6rem)]"
           >
             <DemoStage step={view.step} toy={toy} onToy={setToy} onYes={onYes} reduced={reduced} />
           </div>

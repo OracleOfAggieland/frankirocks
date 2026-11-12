@@ -1,10 +1,11 @@
-// The hero block: the eyebrow, the page's only h1, the lede and the two ways in. The headline's words
+// The hero block: the eyebrow, the page's only h1, the lede, the two ways in and a plain cue to scroll (not a
+// figure: the stage's caption is FIG. 1). Below 1024 px it sits under the pinned stage, so its gaps are tight
+// enough to show the headline and the brass button on a phone's first screen. The headline's words
 // materialize one after another on the stagger, and a stitched underline draws itself under "stitched". Both are
 // CSS animations in landing.css, so the words are in the HTML and show with scripting off; under reduced motion
 // they simply fade in.
 import type { CSSProperties } from "react";
 import { LANDING } from "../../ui/copy-landing";
-import { FigLabel } from "../lab/FigLabel";
 import { FOCUS, TARGET } from "../surfaces/classes";
 import { BoltGlyph } from "./TopBar";
 
@@ -39,7 +40,7 @@ export function Hero({ className = "" }: { className?: string }) {
       id="top"
       data-step-block="hero"
       aria-labelledby="hero-title"
-      className={`flex flex-col items-start justify-center gap-6 pb-12 pt-24 text-left md:pt-28 lg:min-h-svh lg:py-24 ${className}`.trim()}
+      className={`flex flex-col items-start justify-center gap-3 pb-12 pt-4 text-left max-lg:scroll-mt-[44svh] sm:gap-4 sm:pt-6 lg:min-h-svh lg:gap-6 lg:py-24 ${className}`.trim()}
     >
       <p className="font-mono text-xs tracking-[0.08em] text-brass">{hero.eyebrow}</p>
       <h1 id="hero-title" className="font-display text-hero text-ink">
@@ -62,7 +63,7 @@ export function Hero({ className = "" }: { className?: string }) {
         ))}
       </h1>
       <p className="max-w-[30rem] text-lg text-ink-dim">{hero.lede}</p>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 pt-2">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 lg:pt-2">
         <a
           href="/lab"
           className={`${TARGET} ${FOCUS} mat-brass inline-flex min-h-12 items-center gap-2 rounded-control px-6 text-base font-medium transition-transform duration-(--dur-quick) ease-ecto active:translate-y-0.5`}
@@ -78,9 +79,10 @@ export function Hero({ className = "" }: { className?: string }) {
           <DownGlyph />
         </a>
       </div>
-      <div className="pt-6">
-        <FigLabel n="1">{hero.scroll}</FigLabel>
-      </div>
+      <p data-scroll-cue="" className="inline-flex items-center gap-2 pt-3 font-mono text-xs text-ink-dim lg:pt-6">
+        {hero.scroll}
+        <DownGlyph />
+      </p>
     </section>
   );
 }

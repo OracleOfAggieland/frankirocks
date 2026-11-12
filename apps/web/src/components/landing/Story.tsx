@@ -11,6 +11,9 @@ const SECTION_INTRO = { loop: LANDING.sections.loop, memory: LANDING.sections.me
 /** Below 1024 px an anchor jump lands under the pinned stage, not behind it. */
 const UNDER_STAGE = "max-lg:scroll-mt-[44svh]";
 
+/** From this width the stage shows Franki's line itself, so the story's quote goes visually hidden. */
+const SAYS_ON_STAGE = "min-[472px]:sr-only";
+
 /** A small arrow for a hint. Decorative. */
 function HintGlyph() {
   return (
@@ -37,7 +40,9 @@ function Block({ id, copy, active, dim, level }: { id: StepId; copy: StepCopy; a
       </Title>
       <p className="max-w-[30rem] text-lg text-ink-dim">{copy.body}</p>
       {copy.says !== undefined ? (
-        <blockquote data-says="" className="door-says max-w-[30rem] text-lg text-ink">
+        // The one accessible copy of Franki's line. From 472 px the stage prints the same line under Franki (as
+        // inert text), so here it is hidden visually only: screen readers still read it, sighted visitors read it once.
+        <blockquote data-says="" className={`door-says max-w-[30rem] text-lg text-ink ${SAYS_ON_STAGE}`}>
           <p>{copy.says}</p>
         </blockquote>
       ) : null}

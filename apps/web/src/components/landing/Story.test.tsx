@@ -56,9 +56,20 @@ describe("the story", () => {
 
   it("quotes what Franki says with a stitched edge, and shows hints in mono", () => {
     const html = renderToStaticMarkup(<Story step="hero" />);
-    expect(html).toContain(`<blockquote data-says="" class="door-says max-w-[30rem] text-lg text-ink"><p>${LANDING.steps.suggested.says}</p></blockquote>`);
+    expect(html).toContain(`<blockquote data-says="" class="door-says max-w-[30rem] text-lg text-ink min-[472px]:sr-only"><p>${LANDING.steps.suggested.says}</p></blockquote>`);
     expect(html.match(/<blockquote/g)).toHaveLength(1);
     expect(html).toMatch(new RegExp(`font-mono text-xs text-ink-dim"><svg[^>]*aria-hidden="true"[\\s\\S]*?</svg>${LANDING.steps.approve.hint}</p>`));
+  });
+
+  it("keeps the quote as the one accessible copy, hidden visually only from 472 px where the stage shows the line", () => {
+    const html = renderToStaticMarkup(<Story step="suggested" dim />);
+    const quote = /<blockquote data-says="" class="([^"]*)"/.exec(html)![1]!.split(" ");
+    expect(quote).toContain("min-[472px]:sr-only");
+    // Never removed from the accessibility tree, and never hidden below 472 px.
+    expect(quote).not.toContain("sr-only");
+    expect(quote).not.toContain("hidden");
+    expect(html).not.toMatch(/<blockquote[^>]*(aria-hidden|inert)/);
+    expect(html).toContain(LANDING.steps.suggested.says);
   });
 
   it("keeps headings in order: the first step under the hero is an h2, the rest sit under their section's h2", () => {
