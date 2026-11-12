@@ -125,6 +125,6 @@ export const COPY = {
     },
     /** The strip's last terminal while no comparison figure has a source. */
     stripResult: "Compared",
-    goneAsk: { title: "Did you want that deleted?", question: "Did you want that deleted?", yes: "Yes", no: "No" },
+    goneAsk: { title: "A quick check", question: "Did you want that deleted?", yes: "Yes", no: "No" },
   },
 } as const;
