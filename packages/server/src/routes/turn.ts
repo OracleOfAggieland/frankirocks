@@ -67,7 +67,7 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 026: company, quiet and alone (voice-control tasks 48, 49).
 import { audienceEffect, narrowedHere, precompileAudienceHead } from "../audience-swap";
 // Brief 035: the review of the audience wave.
-import { carryNarrowing, deckAllowed, lateNarrowing, narrowsHere, replacedNarrowing, swapWindowCare, withNarrowHead } from "../audience-swap";
+import { carryNarrowing, deckAllowed, lateNarrowing, narrowsHere, replacedNarrowing, swapWindowCare, turnEndAudience, withNarrowHead } from "../audience-swap";
 import { afterClosed } from "../sessions";
 import { driveHangupJob, ensureHangupJob } from "../worker/hangup";
 
@@ -308,7 +308,8 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           const { turn: turn0, evidence } = userTurnRecords({ uid, sessionId: req.sessionId, req, text, cls, clock: pair, core: coreVals, hasher: deps.hasher });
 
           // The executor (design 3.0): on the rules this transaction read, before anything is admitted.
-          const audienceNow = effectiveAudience(s0, ops);
+          // Brief 035 (finding 10): the rule's Head compiles with the audience the turn ends with.
+          const audienceNow = turnEndAudience(effectiveAudience(s0, ops), slow?.parse ?? null, fastO !== null ? "O" : req.judge);
           let hr: HardRuleResult | null = null;
           let write: TurnWrite = { kind: "none" };
           let note: W | null = null;

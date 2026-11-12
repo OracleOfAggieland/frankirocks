@@ -315,3 +315,28 @@ describe("finding 12: a typed reply's note takes the sensitivity of the earlier 
     expect(typeof note === "object" && note !== null ? note.sens : null).toBe("S1");
   });
 });
+
+describe("finding 10: a company line and a hard rule in one typed turn compile the Head for company", () => {
+  it("typed, no call, company and an allergy: no S1 line in the Deck or core/bundle, which say Audience: company", async () => {
+    const { rig, s } = await doorRig(false);
+    const text = "My cousin is reading over my shoulder. I'm allergic to peanuts.";
+    const tpl = template("self", "peanuts", "peanuts");
+    rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9, hardRule: 0.9 })));
+    // The allergy's span, moved to where its phrase sits in this turn's text.
+    rig.fastSlots.script((input) => ({
+      kind: "valid",
+      out: { items: tpl.items(input.turn.eid).map((it) => ({ ...it, span: { ...it.span, start: text.indexOf(it.span.quote), end: text.indexOf(it.span.quote) + it.span.quote.length } })), need: "none" },
+      ms: 120,
+    }));
+    const res = await postTurn(rig, typedTurn(s.stamp, 1, text));
+    expect(res.status).toBe(200);
+    expect((await sessionOf(rig, s.sessionId)).audience).toBe("company");
+    const rules = (await rig.store.get<CoreRules>(UID, paths.core(UID, "rules")))!.data;
+    expect(rules.allergies.some((r) => "peanuts".startsWith(r.code))).toBe(true);
+    const bundle = (await rig.store.get<CoreBundle>(UID, paths.core(UID, "bundle")))!.data;
+    expect(bundle.head?.text ?? "").not.toContain(PERSONAL_FACT);
+    expect(bundle.head?.text ?? "").toContain("Audience: company.");
+    expect(headText(res.body)).not.toContain(PERSONAL_FACT);
+    expect(headText(res.body)).toContain("Audience: company.");
+  });
+});

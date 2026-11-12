@@ -329,6 +329,14 @@ export async function withNarrowHead(
 }
 
 /**
+ * The audience a turn ends with, for the Head the hard-rule executor compiles before the Server_Rule runs (finding
+ * 10): company when a company or quiet candidate fires, as every audience row then narrows; else the audience it
+ * began with. An `alone` line is left out, so its Head stays narrow until the next compile (fails closed).
+ */
+export const turnEndAudience = (now: Au, parse: RuleParse | null, judge: RuleInput["judge"]): Au =>
+  parse !== null && parse.kind === "hit" && narrowsAudience(parse, judge) ? "company" : now;
+
+/**
  * Whether the answer narrows the Session here (finding 11): it hangs up (row 8) or sets the swap wait (row 6). Its
  * answer is `blocked`, every later one is held, so it carries no Deck.
  */
