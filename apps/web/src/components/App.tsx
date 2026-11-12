@@ -309,16 +309,15 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
   };
   const submit = () => {
     if (!inCall || voice === null) return void typed.submit();
-    // Brief 012 G34 (task B10): the call's typed line can't carry `pasted`, so pasted text waits for the call to end.
-    if (t.pasted) return typed.refuse(COPY.typed.pastedInCall);
-    if (voice.sendTyped(t.text)) typed.setText("");
+    // Brief 040, item 3 (replaces the hold of W-179): a pasted line goes into the call as pasted text.
+    if (voice.sendTyped(t.text, t.pasted ? "pasted" : "typed")) typed.setText("");
   };
 
   // Brief 020: a chip's words go down the typed path as the owner's own; in a call, over the call's typed line.
   const memory = controllers.memory;
   const chip = (text: string) => {
     if (text === MAIN_CHIPS[0]) void memory.openReadout();
-    if (inCall && voice !== null) voice.sendTyped(text);
+    if (inCall && voice !== null) voice.sendTyped(text, "typed");
     else void typed.sendLine(text);
   };
   const memoryCards = [

@@ -1,6 +1,6 @@
 # Typed line
 
-A typed line with no call open goes through `TypedTurns` in `apps/web/src/client/typed-turns.ts`. A typed line during a call goes through the voice reducer instead (`typedSubmitted`, see [voice-call](voice-call.md)); `VoiceClient.sendTyped` accepts one only in LISTENING.
+A typed line with no call open goes through `TypedTurns` in `apps/web/src/client/typed-turns.ts`. A typed line during a call goes through the voice reducer instead (`typedSubmitted`, see [voice-call](voice-call.md)); `VoiceClient.sendTyped` accepts one only in LISTENING. The event carries the line's source, `typed` or `pasted` (a paste event supplied it), and the post carries it on, so a pasted line in a call is third-party text on the server as it is with no call open (brief 040).
 
 ### `typed.line`
 

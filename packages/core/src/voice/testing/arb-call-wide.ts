@@ -199,7 +199,7 @@ export class WideDriver extends CallDriver {
       }
       case "typed":
         if (this.st.phase !== "LISTENING") return;
-        this.ev({ type: "typedSubmitted", turnId: this.fresh("t"), text: "Remind me about the dentist" }, dt);
+        this.ev({ type: "typedSubmitted", turnId: this.fresh("t"), text: "Remind me about the dentist", source: "typed" }, dt);
         break;
       case "stateOk": {
         const q = this.states.shift();

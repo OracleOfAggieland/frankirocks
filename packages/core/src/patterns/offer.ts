@@ -53,12 +53,30 @@ const PLAIN_YES = new Set<string>(PLAIN_YES_AFFIRMATIVES.flatMap((a) => [a, ...P
  * tomorrow", "Yeah right" and "Yes. Actually, hmm" don't. Fails closed.
  */
 export function isPlainYes(text: string | null): boolean {
-  if (text === null) return false;
-  const t = text
+  return text !== null && PLAIN_YES.has(plainWords(text));
+}
+
+/** Lower case, apostrophes dropped, every run of other characters that are not letters or digits one space. */
+function plainWords(text: string): string {
+  return text
     .normalize("NFKC")
     .toLowerCase()
     .replace(/['‘’]/g, "")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
-  return PLAIN_YES.has(t);
+}
+
+/**
+ * Brief 040, item 2: the closed list of plain noes, beside the yes list. In a call `answer` takes no arguments, and
+ * code reads the choice from the owner's own words: a plain no declines, a plain yes accepts, anything else asks
+ * again. A negative, with at most one of PLAIN_NO_TAILS after it, as the whole utterance.
+ */
+export const PLAIN_NO_NEGATIVES = ["no", "nope", "nah", "not now", "not today", "no way"] as const;
+export const PLAIN_NO_TAILS = ["thanks", "thank you"] as const;
+
+const PLAIN_NO = new Set<string>(PLAIN_NO_NEGATIVES.flatMap((a) => [a, ...PLAIN_NO_TAILS.map((t) => `${a} ${t}`)]));
+
+/** True when the owner's own words are, as a whole, one plain no from the closed list. "No, but maybe later" isn't. Fails closed. */
+export function isPlainNo(text: string | null): boolean {
+  return text !== null && PLAIN_NO.has(plainWords(text));
 }

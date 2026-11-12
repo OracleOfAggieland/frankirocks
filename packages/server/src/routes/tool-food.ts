@@ -52,6 +52,7 @@ import {
   heroWindow,
   ingredient,
   NO_PREFS,
+  isPlainNo,
   isPlainYes,
   loopPredicate,
   moreSourcesLine,
@@ -552,14 +553,39 @@ async function answerDiet(ctx: RouteContext, stamp: Stamp, args: AnswerArgs, tur
   return { result: answer("applied"), write };
 }
 
-export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerArgs, turn: Turn): Promise<FoodOutcome> {
+/**
+ * Brief 040, item 2 (H-186): `answer` from a call carries both IDs null, and code decides. The offer is the one whose
+ * `pendingRendered` row brief 037's binding accepts for this turn; the choice comes from the owner's own final words
+ * in that turn: a plain yes is the yes, a plain no is the no, anything else is `clarify`. One null and one ID is
+ * `clarify`, and so is no offer bound to this turn. Returns the IDs the path with IDs then checks, unloosened, or
+ * null for `clarify`.
+ */
+async function choiceByCode(ctx: RouteContext, stamp: Stamp, args: AnswerArgs, turn: Turn, offer: HeroOffer): Promise<{ pendingId: string; choiceId: string } | null> {
+  if (args.pendingId !== null || args.choiceId !== null) return null;
+  if (turn.role !== "user" || turn.sourceClass !== "U" || !turn.final) return null;
+  const choiceId = isPlainYes(turn.text) ? offer.yesId : isPlainNo(turn.text) ? offer.noId : null;
+  if (choiceId === null) return null;
+  if (!(await yesFollowsOffer(ctx, offer.pendingId, stamp.turnId, turn))) return null;
+  return { pendingId: offer.pendingId, choiceId };
+}
+
+export async function answerTool(ctx: RouteContext, stamp: Stamp, callArgs: AnswerArgs, turn: Turn): Promise<FoodOutcome> {
   const { uid, deps } = ctx;
+  const byCode = callArgs.pendingId === null || callArgs.choiceId === null;
+  let args: { pendingId: string | null; choiceId: string | null } = callArgs;
   const answer = (state: "applied" | "declined" | "clarify" | "stale", receiptId: string | null = null, cards: Card[] = []): Result => ({ name: "answer", state, receiptId, pendingId: args.pendingId, cards });
   const only = (state: "declined" | "clarify" | "stale"): FoodOutcome => ({ result: answer(state), write: null });
-  const dietAnswered = await answerDiet(ctx, stamp, args, turn);
+  // A diet question is answered by its pending ID; a call's null IDs never match one, so they fall to the hero offer
+  // below and are `clarify` when no offer is bound (brief 040, H-186).
+  const dietAnswered = await answerDiet(ctx, stamp, callArgs, turn);
   if (dietAnswered !== null) return dietAnswered;
   const rows = await readMoneyRows(ctx, stamp.generation, heroScope);
   const offer = rows === null ? null : offerFrom(ctx, rows);
+  if (byCode) {
+    const chosen = rows === null || offer === null ? null : await choiceByCode(ctx, stamp, callArgs, turn, offer);
+    if (chosen === null) return only("clarify");
+    args = chosen;
+  }
   if (rows === null || offer === null || args.pendingId !== offer.pendingId) return only("stale");
   if (args.choiceId === offer.noId) return only("declined");
   // Code decides the owner said yes: the choice must be "yes", the owner's own words a plain yes, and the yes the

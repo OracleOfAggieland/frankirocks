@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { heroOfferParts, heroWindow, isPlainYes } from "./offer";
+import { heroOfferParts, heroWindow, isPlainNo, isPlainYes } from "./offer";
 import { takeoutLateMeetingV1 } from "./takeout";
 import { HERO_ORDERS, bankRow, heroInput } from "./testing/hero-fixture";
 import type { ReceiptRow } from "./types";
@@ -46,4 +46,8 @@ describe("the hero offer", () => {
     expect(isPlainYes(t)).toBe(false),
   );
   it.each(["Yes, let's do it", "Yes please", "Okay, thanks", "Yep!", "Let's do it."])("%s is a plain yes (finding 4)", (t) => expect(isPlainYes(t)).toBe(true));
+  // Brief 040, item 2: the closed no list beside the yes list.
+  it.each(["No", "No.", "Nope!", "Nah, thanks", "Not now", "no thank you", "Not today."])("%s is a plain no (brief 040)", (t) => expect(isPlainNo(t)).toBe(true));
+  it.each(["No, but maybe later", "Not yet", "I don't think so", "Yes", "No yes", "Nothing", "", "Not now, ask me tonight"])("%s is not a plain no (brief 040)", (t) => expect(isPlainNo(t)).toBe(false));
+  it("no words are not a no", () => expect(isPlainNo(null)).toBe(false));
 });
