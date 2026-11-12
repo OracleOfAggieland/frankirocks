@@ -131,8 +131,8 @@ export const extract = (why: string, items: (w: World) => unknown[]): Answer => 
 // Assertions.
 
 /**
- * Spoken templates, by ID. A template is matched on its fixed words, never on loose wording; `numbers` then pins the
- * figures. A template the build has no wording for yet is `null`: a script that asks for it fails, naming the wait.
+ * Spoken templates, by ID. A template is matched on its fixed words, never on loose wording; `has` then pins the
+ * figures and names. A template the build has no wording for yet is `null`: a script that asks for it fails, naming the wait.
  */
 export const TEMPLATES = {
   /** patterns/words.ts heroOfferLine. */
@@ -143,6 +143,8 @@ export const TEMPLATES = {
   "hero.less": /\$[\d,.]+ less on takeout\./,
   /** The Lab's sentence (spec §15 beat 4): read {n} emails, guessed {g} private things, said {s}. No server wording. */
   "lab.line": null,
+  /** The card under an occasion that moved ("moved from yesterday", spec §15 beat 1). No card source yet. */
+  "occasion.moved": null,
   /** An occasion's wish on open (spec §15 beat 1). No moment wording on the server yet (brief 023, 024). */
   "occasion.wish": null,
   /** The check-in after an occasion (spec §15 beat 2). No moment wording yet (brief 023, 024). */
@@ -155,8 +157,9 @@ export const TEMPLATES = {
 export type TemplateId = keyof typeof TEMPLATES;
 
 export type Say =
-  | { template: TemplateId; numbers?: string[]; channel?: Channel; times?: number }
-  | { numbers: string[]; channel?: Channel; times?: number }
+  /** `has`: figures or names the line must hold ("$186", "2"). `times`: how often; 0 means never. */
+  | { template: TemplateId; has?: string[]; channel?: Channel; times?: number }
+  | { has: string[]; channel?: Channel; times?: number }
   | { note: true }
   | { card: string };
 
@@ -167,6 +170,8 @@ export type Expectation =
   | { mustSay: Say }
   | { neverSay: Never[]; channels?: Channel[] }
   | { mayUse: { what: string; pick: (m: Memory, id: string) => boolean } }
+  /** At least one output of the step names a Memory the selector picks (the line is about those words). */
+  | { mustUse: { what: string; pick: (m: Memory, id: string) => boolean }; channel?: Channel }
   | { store: string; check: (w: World) => Promise<true | string> }
   | { lab: Partial<Record<LabField, number | ((w: World) => number)>> }
   | { status: number };
@@ -191,6 +196,8 @@ export type Action =
   | { do: "calendar"; lines: CalendarLine[] }
   | { do: "work" }
   | { do: "read"; view: "overview" | "lab" | "strip" | "receipt" | "item" | "why"; id?: (w: World) => string }
+  /** No action: assertions on what an earlier step said (so one route call can carry green and waiting checks). */
+  | { do: "check"; of: string }
   /** A built function that no route calls yet. Each probe is a finding: the seam is built and unwired. */
   | { do: "probe"; name: string; run: (w: World) => Promise<unknown> }
   /** Setup that stands in for a missing writer. Each is named in the report. */
@@ -304,7 +311,7 @@ async function runStep(script: Script, step: Step, w: World, checked: boolean): 
     }
   }
   if (!checked) return;
-  const mine = w.outputs.slice(outputsBefore);
+  const mine = step.do === "check" ? w.outputs.filter((o) => o.step === step.of) : w.outputs.slice(outputsBefore);
   if (res !== null && !(step.expect ?? []).some((e) => "status" in e) && res.status !== 200) {
     fail(script, step, "HTTP 200", `${res.status} ${canonicalJSON(res.body)}`);
   }
@@ -404,6 +411,8 @@ async function act(step: Step, w: World): Promise<Res> {
     case "setup":
       await step.run(w);
       return null;
+    case "check":
+      return w.answers.get(step.of) ?? null;
     default:
       step satisfies never;
       return null;
@@ -530,6 +539,13 @@ async function assertOne(script: Script, step: Step, w: World, mine: Output[], r
     if (extra.length > 0) fail(script, step, `outputs draw only on ${e.mayUse.what}`, `also on ${extra.map((id) => memoryLabel(memories, id)).join("; ")}`);
     return;
   }
+  if ("mustUse" in e) {
+    const memories = (await allMemories(w)).filter((m) => e.mustUse.pick(m.data, m.id));
+    const pool = mine.filter((o) => o.channel !== "model" && (e.channel === undefined || o.channel === e.channel));
+    if (memories.length === 0) fail(script, step, `an output drawing on ${e.mustUse.what}`, "no such Memory is stored");
+    if (!pool.some((o) => memories.some((m) => o.json.includes(m.id)))) fail(script, step, `an output${e.channel === undefined ? "" : ` on ${e.channel}`} drawing on ${e.mustUse.what}`, summary(mine));
+    return;
+  }
   if ("store" in e) {
     const r = await e.check(w);
     if (r !== true) fail(script, step, e.store, r);
@@ -563,9 +579,9 @@ function mustSay(script: Script, step: Step, mine: Output[], say: Say): void {
     matcher = TEMPLATES[say.template];
     if (matcher === null) fail(script, step, `template ${say.template}`, `the build has no wording for ${say.template} yet; ${summary(mine)}`);
   }
-  const hits = pool.filter((o) => (matcher === null || matcher.test(o.text)) && (say.numbers ?? []).every((n) => o.text.includes(n)));
+  const hits = pool.filter((o) => (matcher === null || matcher.test(o.text)) && (say.has ?? []).every((n) => o.text.includes(n)));
   const want = say.times ?? null;
-  const label = `${"template" in say ? `template ${say.template}` : "a line"}${say.numbers === undefined ? "" : ` with ${say.numbers.join(", ")}`}${say.channel === undefined ? "" : ` on ${say.channel}`}${want === null ? "" : `, ${want} time(s)`}`;
+  const label = `${"template" in say ? `template ${say.template}` : "a line"}${say.has === undefined ? "" : ` with ${say.has.join(", ")}`}${say.channel === undefined ? "" : ` on ${say.channel}`}${want === null ? "" : `, ${want} time(s)`}`;
   if (want === null ? hits.length === 0 : hits.length !== want) fail(script, step, label, summary(mine));
 }
 
