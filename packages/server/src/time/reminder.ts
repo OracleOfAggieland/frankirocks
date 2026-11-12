@@ -18,6 +18,12 @@ import {
   type Ledger,
   type Time,
   type Turn,
+  type Evidence,
+  type Hasher as CoreHasher,
+  type Memory,
+  type Slice,
+  rootKey,
+  sourceVerdict,
   msFromTs,
   deriveReminder,
   isPlainYes,
@@ -108,8 +114,12 @@ export async function confirmReminder(ctx: RouteContext, offer: ReminderOffer, c
     const ops = deps.clock.read().opsClock.now;
     const now = tsFromMs(ops);
     const { epoch, policyRev } = core.epoch.data;
+    // Brief 036 finding 10: the reminder keeps its source's ID and lineage; a source that no longer stands refuses.
+    const source = await reminderSource(tx, uid, offer.sourceId, deps.hasher);
+    if (source === null) return { state: "stale" };
     const action: Extract<Ledger, { kind: "action" }> = {
       ...cFields(uid, now, epoch, policyRev),
+      ...source,
       kind: "action",
       state: "complete",
       at: now,
@@ -150,4 +160,20 @@ async function declineReminder(ctx: RouteContext, pendingId: ID): Promise<Remind
     tx.create(paths.ledger(uid, id), entry);
     return { state: "declined" };
   });
+}
+
+/**
+ * The lineage a reminder keeps (brief 036 finding 10): its source Memory, which must still stand, or its source
+ * Evidence, which must not be purged. Anything else, or a missing row, is null (fails closed).
+ */
+async function reminderSource(tx: Tx, uid: string, sourceId: string, hasher: CoreHasher): Promise<{ rootKeys: string[]; rootSlices: Slice[]; dependsOn: string[] } | null> {
+  const m = await tx.get<Memory>(paths.memory(uid, sourceId));
+  if (m !== null) {
+    if (sourceVerdict(m.data) !== "ok") return null;
+    return { rootKeys: m.data.rootKeys.slice(0, 128), rootSlices: m.data.rootSlices.slice(0, 128), dependsOn: [`m:${m.data.logicalId}@${m.data.rev}`] };
+  }
+  const e = await tx.get<Evidence>(paths.evidence(uid, sourceId));
+  if (e === null || e.data.purgedAt !== null) return null;
+  const slices = e.data.fieldSlices.slice(0, 128);
+  return { rootKeys: slices.map((s) => rootKey(s, hasher)), rootSlices: slices, dependsOn: [`e:${e.id}`] };
 }

@@ -137,7 +137,9 @@ describe("delivery, said and the reminder", () => {
   it("\"Want a reminder Thursday?\" then \"yes\": one action and one moment, only after the offer rendered", async () => {
     const { rig, ctx } = await clone();
     const world = msFromTs((await stateOf(rig.store, UID)).worldClock!);
-    const offer = offerReminder(rig.deps.hasher, { sourceId: testId("jordan-thread"), note: "Reply to Jordan about the platform role", spoken: "Thursday", worldNow: world, zone: ZONE })!;
+    // Brief 036 finding 10: a reminder's source must be a stored row that still stands: the seeded Jordan email.
+    const jordan = (await listTenantRows(rig.store, UID)).find((r) => r.path.includes("/evidence/") && JSON.stringify(r.data).includes("Jordan"))!;
+    const offer = offerReminder(rig.deps.hasher, { sourceId: jordan.id, note: "Reply to Jordan about the platform role", spoken: "Thursday", worldNow: world, zone: ZONE })!;
     expect(offer.line).toMatch(/^Want a reminder on Thursday/);
     expect(offerReminder(rig.deps.hasher, { sourceId: testId("x"), note: "x", spoken: "sometime soon", worldNow: world, zone: ZONE })).toBeNull();
     // Brief 036 finding 9: the yes must come after the render.

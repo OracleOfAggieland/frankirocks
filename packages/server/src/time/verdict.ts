@@ -109,13 +109,44 @@ export async function getMoment(r: Reader, path: string): Promise<StoredDoc<Mome
   return doc === null ? null : { ...doc, data: withMomentDefaults(doc.data) };
 }
 
+/**
+ * A reminder's source, reread like any other moment's (brief 036 finding 10): every row the action depends on must
+ * still stand. An action with no source (written before the fix) fails closed.
+ */
+async function reminderSourceVerdict(r: Reader, uid: string, moment: Moment, dependsOn: readonly string[], core: Core, clock: ClockPort): Promise<MomentVerdict> {
+  if (dependsOn.length === 0) return "gone";
+  for (const dep of dependsOn) {
+    const parsed = parseDep(dep);
+    if (parsed === null) return "gone";
+    if (parsed.collection === "memories") {
+      const current = (await r.get<Memory>(paths.memory(uid, parsed.id)))?.data ?? null;
+      const plain = sourceVerdict(current);
+      if (plain !== "ok" || current === null) return plain;
+      const v = await rowVerdict(r, uid, moment, current, parsed.id, [parsed.id], core, clock);
+      if (v !== "ok") return v;
+    } else {
+      const e = await r.get<Evidence>(paths.evidence(uid, parsed.id));
+      if (e === null || e.data.purgedAt !== null) return "gone";
+      const blocks = await r.query<Block>({ collection: paths.collection(uid, "blocks"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: REREAD_MAX });
+      const pair = ownerClock(core.state.data, clock);
+      const ref = docRef("evidence", e.id, e.data.rev);
+      const ec = { ...foregroundEC(uid, core.epoch.data, pair, 0), stage: "read" as const, purpose: "proactive" as const };
+      const snapshot: Snapshot = { uid, epoch: core.epoch.data, session: null, job: null, localGeneration: 0, refs: [ref], rows: [e.data], blocks: blocks.map((b) => b.data), coverage: core.state.data.coverage, complete: blocks.length < REREAD_MAX };
+      const er = eligible({ ref, row: e.data }, ec, snapshot);
+      if (!er.allow) return er.reason === "blocked" ? "forgotten" : "gone";
+    }
+  }
+  return "ok";
+}
+
 /** What a reread says about `moment`'s source now. `r` is a transaction when the caller writes on the answer. */
 export async function momentVerdict(r: Reader, uid: string, moment: Moment, core: Core, clock: ClockPort, opts: VerdictOptions): Promise<MomentVerdict> {
   if (moment.memoryId !== null) return memoryVerdict(r, uid, moment, moment.memoryId, core, clock);
   if (moment.rollupId !== null) return opts.rollupLive === false ? "gone" : "ok";
   if (moment.actionId !== null) {
     const action = await r.get<Ledger>(paths.ledger(uid, moment.actionId));
-    return action !== null && action.data.kind === "action" && action.data.state === "complete" ? "ok" : "gone";
+    if (action === null || action.data.kind !== "action" || action.data.state !== "complete") return "gone";
+    return reminderSourceVerdict(r, uid, moment, action.data.dependsOn, core, clock);
   }
   return "gone";
 }

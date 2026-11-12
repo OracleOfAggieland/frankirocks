@@ -224,7 +224,8 @@ export function deriveReminder(actionId: string, action: Extract<Ledger, { kind:
         subjectIds: ["self"],
         payload: { kind: "cue", noteRef: ref, template: { text: reminderLine(action.payload.note ?? "your reminder"), entityRefs: [], timeFields: [] } },
         noteRef: ref,
-        lineage: { rootKeys: action.rootKeys.slice(0, 128), rootSlices: action.rootSlices.slice(0, 128), dependsOn: [] },
+        // Brief 036 finding 10: the reminder keeps its source's lineage, and open rereads it.
+        lineage: { rootKeys: action.rootKeys.slice(0, 128), rootSlices: action.rootSlices.slice(0, 128), dependsOn: action.dependsOn.slice(0, 256) },
       },
     ],
     retired: [],

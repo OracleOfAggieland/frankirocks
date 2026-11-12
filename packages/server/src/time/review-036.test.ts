@@ -165,3 +165,23 @@ describe("finding 9: a reminder's confirmation is bound to its rendered offer", 
     expect(await confirmReminder(ctx, offer, offer.yesId, yesAt(ops + 2 * MINUTE))).toEqual({ state: "stale" });
   });
 });
+
+describe("finding 10: a reminder never fires after its source is corrected", () => {
+  it("the action keeps its source's lineage; corrected before it is due, the reminder is cancelled at open", async () => {
+    const { rig, ctx } = await clone();
+    await memoryTick(ctx);
+    const world = msFromTs((await stateOf(rig.store, UID)).worldClock!);
+    const sourceId = await interviewId(rig);
+    const offer = offerReminder(rig.deps.hasher, { sourceId, note: "Bring the portfolio", spoken: "tomorrow at 9", worldNow: world, zone: ZONE })!;
+    await tx(rig, (t) => recordPendingRendered(t, UID, offer.pendingId, rig.clock.read().opsClock.now, rig.deps.hasher));
+    rig.clock.advance(MINUTE);
+    const applied = await confirmReminder(ctx, offer, offer.yesId, sampleTurn({ text: "Yes.", sourceClass: "U", final: true, role: "user", committedAt: tsFromMs(rig.clock.read().opsClock.now) }));
+    if (applied.state !== "applied") throw new Error(applied.state);
+    const action = await rig.store.get<{ dependsOn: string[] }>(UID, paths.ledger(UID, applied.actionId));
+    expect(action?.data.dependsOn).toEqual([`m:${sourceId}@1`]);
+    await patchRecord<Memory>(rig.store, UID, paths.memory(UID, sourceId), { status: "wrong" });
+    await setWorld(rig, UID, msFromTs(offer.time.start));
+    await memoryTick(ctx);
+    expect((await momentsOf(rig, UID)).get(applied.momentId)).toMatchObject({ status: "cancelled" });
+  });
+});
