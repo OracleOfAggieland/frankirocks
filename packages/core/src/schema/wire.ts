@@ -259,7 +259,7 @@ export type ToolResult = Infer<typeof ToolResult>;
 export const PHONE_TOOL = {
   type: "function",
   name: "make_phone_call",
-  description: "Place one outbound phone call for the signed-in user. Use only when the user explicitly asks you to dial now and gives one phone number in their current message. If the number is missing, ask for it with its country code. Never guess a number or call for a hypothetical, future, quoted or negated request. Report the tool's actual result.",
+  description: "Place one outbound phone call for the signed-in user. Use only when the user explicitly asks you to dial now and gives one phone number in their current message. A ten-digit US number is complete as given: never ask for a country code or a +1. If no number was given, ask only for the number. Never guess a number or call for a hypothetical, future, quoted or negated request. Report the tool's actual result.",
   parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
 } as const;
 
