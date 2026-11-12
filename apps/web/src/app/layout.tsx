@@ -26,7 +26,8 @@ const fraunces = Fraunces({
 
 export const metadata: Metadata = {
   title: "Franki",
-  description: "An avatar-first, voice-first assistant for your whole life.",
+  description:
+    "A friendly Frankenstein ghost you talk to, with one powerful memory for your whole life.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -84,7 +84,7 @@
   }
 }
 
-/* The hero's "Watch a loop close" arrow nudges down on hover. */
+/* The hero's "Watch a win come alive" arrow nudges down on hover. */
 .door-down {
   transition: transform var(--dur-quick) var(--ease-ecto);
 }

@@ -40,12 +40,13 @@ export const LANDING = {
     ],
   },
   hero: {
-    eyebrow: "A friendly Frankenstein ghost you talk to",
+    /** The second sentence is held together, so a narrow screen breaks between the two. */
+    eyebrow: "A friendly Frankenstein ghost. A scary good assistant.",
     /** The headline in three parts; `stitched` is the one italic word, with the stitched underline. */
     headline: { before: "Your whole life,", stitched: "stitched", after: "together." },
-    lede: "Franki joins your inbox, calendar, meals and money with one memory. It notices what lines up across them, says it out loud, and acts only when you say yes.",
+    lede: "Franki joins your inbox, calendar, meals and money with one powerful memory system. It understands the complex relationships between them and helps you win at life.",
     wake: "Wake Franki",
-    tour: "Watch a loop close",
+    tour: "Watch a win come alive",
     alive: "It's alive!",
     scroll: "Scroll to start the tour",
   },
@@ -64,26 +65,26 @@ export const LANDING = {
   sections: {
     loop: {
       eyebrow: "The loop",
-      title: "Watch one loop close.",
-      body: "Notice, connect, suggest, act with your OK, celebrate. Here it is on a sample month.",
+      title: "Watch one win come alive.",
+      body: "Notice, connect, suggest, act with your OK, celebrate the win. Here it is on a sample month.",
     },
     memory: {
       eyebrow: "The memory",
-      title: "A memory you can open.",
-      body: "Everything Franki knows sits in a jar on the bench.",
+      title: "A powerful memory you can open.",
+      body: "Everything Franki knows sits in one jar on the bench, and every win starts there.",
     },
     rules: {
       eyebrow: "House rules",
       title: "Six rules, wired in.",
-      body: "These hold in every part of the lab.",
+      body: "A friendly monster keeps its word. These hold in every part of the lab.",
     },
     build: {
       eyebrow: "The build",
       title: "Stitched together with Kiro.",
-      body: "Franki was built spec first. Every part below is in the repo for anyone to read.",
+      body: "Franki was built spec first. Specs, steering, hooks and property tests are a winning combination, and every part below is in the repo to read.",
     },
     wake: {
-      title: "Throw the switch.",
+      title: "Throw the switch. Start winning.",
       signature: "Franki Rocks at making your life easier.",
       lever: "Wake Franki",
       walkIn: "Or walk in",
@@ -128,7 +129,7 @@ export const LANDING = {
     result: {
       kicker: "05 The win",
       title: "$71, down from $186.",
-      body: "$115 less over the same three weeks. Franki celebrates the win with you.",
+      body: "$115 less over the same three weeks. Franki celebrates every win with you.",
     },
     jar: {
       kicker: "The jar",
@@ -193,7 +194,7 @@ export const LANDING = {
     docTitle: "Empty room · Franki",
     titleStart: "This room is",
     titleWord: "empty",
-    body: "Franki isn't here. The page you're after may have moved, or was never built.",
+    body: "Not even a ghost in here. The page you're after may have moved, or was never built.",
     fig: "the slab, empty",
     home: "Back to the front door",
     lab: "Go to the lab",
@@ -203,9 +204,9 @@ export const LANDING = {
     docTitle: "A fuse blew · Franki",
     titleStart: "A fuse",
     titleWord: "blew",
-    body: "Something in the lab tripped. Put a new one in and try again.",
+    body: "Something in the lab tripped. A new fuse brings it back to life.",
     fig: "the main fuse, blown",
-    retry: "Try again",
+    retry: "Put in a new fuse",
     home: "Back to the front door",
   },
 } as const;
