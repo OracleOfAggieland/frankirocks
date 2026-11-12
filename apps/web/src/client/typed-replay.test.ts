@@ -3,9 +3,8 @@
  * is committed by the server but the browser sees a network failure, as when a response is lost after the
  * commit; then the clock moves on and the owner presses send again with the same text.
  *
- * Unlike typed-to-server.test.ts, the browser clock here reads the rig's moving opsClock, so `utteredWorldAt` in
- * the rebuilt body differs between the two presses. Pinned as it behaves today, and red first (`it.fails`) for
- * the behaviour wanted later: the retry is byte-identical and replays the saved answer (R19.3).
+ * Unlike typed-to-server.test.ts, the browser clock here reads the rig's moving opsClock, so
+ * the clock reads differently at the two presses. The retry is byte-identical and replays the saved answer (B4, R19.3).
  * Test-only imports of server test helpers; no browser module imports the Server_Library.
  */
 import type { Turn } from "@franki/core";
@@ -69,21 +68,7 @@ async function retryAfterLostResponse() {
 }
 
 describe("typed line retried after a lost response", () => {
-  // Today's side of the red case "a retry on an advancing clock sends a byte-identical body and replays": the change that removes its `.fails` deletes this case.
-  it("today: the retry on an advancing clock differs only in utteredWorldAt and answers HASH", async () => {
-    const { first, afterFirst, second, typed, bodies, savedBeforeRetry, savedRole } = await retryAfterLostResponse();
-    expect(first).toBe(false);
-    expect(afterFirst.error).toBe("Not sent: could not reach the server.");
-    expect(savedBeforeRetry).toBe("user"); // the server saved the line before the retry
-    expect(savedRole).toBe("user");
-    expect(bodies).toHaveLength(2);
-    const [a, b] = bodies.map((s) => JSON.parse(s) as Record<string, unknown>);
-    expect(Object.keys(a!).filter((k) => JSON.stringify(a![k]) !== JSON.stringify(b![k]))).toEqual(["utteredWorldAt"]);
-    expect(second).toBe(false);
-    expect(typed.getSnapshot()).toMatchObject({ text: "My dog is called Pip", error: "Not sent: the server answered HASH." });
-  });
-
-  it.fails("a retry on an advancing clock sends a byte-identical body and replays", async () => {
+  it("a retry on an advancing clock sends a byte-identical body and replays", async () => {
     const { first, second, typed, bodies, savedBeforeRetry, savedRole } = await retryAfterLostResponse();
     expect(first).toBe(false);
     expect(savedBeforeRetry).toBe("user"); // the retry can only replay what was committed
