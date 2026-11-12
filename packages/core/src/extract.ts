@@ -431,10 +431,8 @@ export function relevantOpen<T extends { rendered: string }>(open: readonly T[],
 }
 
 /** What code keeps about a Memory it supplies in `open`, to check what a correction or change may close. */
-export function openRefOf(m: Pick<Memory, "rev" | "predicate" | "kind" | "subjectId" | "value"> & { args?: Memory["args"] }): OpenRef {
-  const ref: OpenRef = { rev: m.rev, predicate: m.predicate, kind: m.kind, subjectId: m.subjectId, text: m.value.kind === "text" ? norm(m.value.text) : null };
-  const other = (m.args as { otherRef?: unknown } | undefined)?.otherRef;
-  return m.predicate === "person.relation" ? { ...ref, otherRef: typeof other === "string" ? other : null } : ref;
+export function openRefOf(m: Pick<Memory, "rev" | "predicate" | "kind" | "subjectId" | "value">): OpenRef {
+  return { rev: m.rev, predicate: m.predicate, kind: m.kind, subjectId: m.subjectId, text: m.value.kind === "text" ? norm(m.value.text) : null };
 }
 
 /**
@@ -575,8 +573,6 @@ export interface OpenRef {
   subjectId: string;
   /** The normalized text value, for text values. */
   text: string | null;
-  /** For a `person.relation`, the other person (brief 041 part 2): a relation closes only its own person's. */
-  otherRef?: string | null;
 }
 
 /**
@@ -1105,10 +1101,7 @@ export function planItem(given: unknown, index: number, ctx: PlanContext): ItemP
   // §8): a model slip that names the Owner's name in a pet correction changes nothing.
   const closable = (mid: string): boolean => {
     const o = ctx.open?.get(mid);
-    // Brief 041 part 2: a change in one person's relation never moves another person's to history. A correction that
-    // names its target (a pet renamed: "his name is Pip, not Tip") still marks it wrong.
-    const otherPerson = change === "transition" && item.predicate === "person.relation" && o?.otherRef !== undefined && o.otherRef !== (typeof args.otherRef === "string" ? args.otherRef : null);
-    return o !== undefined && o.predicate === item.predicate && o.kind !== "rule" && o.predicate !== "allergy" && ctx.handledRefs?.includes(mid) !== true && !otherPerson;
+    return o !== undefined && o.predicate === item.predicate && o.kind !== "rule" && o.predicate !== "allergy" && ctx.handledRefs?.includes(mid) !== true;
   };
   let targets = [item.changes[0]?.targetMid ?? null, item.memoryId].filter((t): t is string => t !== null && closable(t));
   // An event or commitment keys on its day, so "the dentist moved to Tuesday" no longer shares Friday's key. When the
