@@ -117,3 +117,13 @@ describe("brief 036 finding 5: a day the zone moved back reads as full", () => {
     expect(next.counts).toContainEqual({ kind: "speech", count: 2 });
   });
 });
+
+describe("brief 036 finding 13: a non-finite world time is quiet hours", () => {
+  it("chooseDelivery with a NaN or infinite time speaks nothing and doesn't throw; a mustSay still may", () => {
+    for (const worldNow of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const out = chooseDelivery(input([cand("w", "wish")], { worldNow }));
+      expect(out.spoken).toBeNull();
+      expect(out.reasons[0]?.code).toBe("quietHours");
+    }
+  });
+});

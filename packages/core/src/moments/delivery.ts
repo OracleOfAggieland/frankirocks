@@ -105,7 +105,9 @@ export function capLimit(c: Pick<DeliveryCandidate, "heavy" | "mustSay" | "overr
 /** Why a candidate may not be spoken now, or null when it may. */
 function speechLimit(c: DeliveryCandidate, input: DeliveryInput): DeliveryReason | null {
   if (c.mustSay) return null;
-  if (!(c.override?.quietHours ?? false) && inQuietHours(input.worldNow, input.zone)) return "quietHours";
+  // Brief 036 finding 13: a non-finite world time counts as quiet here, before inQuietHours is asked.
+  const quiet = !Number.isFinite(input.worldNow) || inQuietHours(input.worldNow, input.zone);
+  if (!(c.override?.quietHours ?? false) && quiet) return "quietHours";
   return capLimit(c, input.today);
 }
 
