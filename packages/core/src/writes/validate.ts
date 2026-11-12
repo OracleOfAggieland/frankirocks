@@ -23,6 +23,7 @@ import { ownerWordsSettle } from "./life-subject";
 import { selfIsLifeSubject } from "./self-life";
 import { renameRefuted } from "./rename-words";
 import { retractionSaid } from "./retract-words";
+import { ownerSentence } from "./owner-sentence";
 import { spanClass, verifyTurnSpan } from "./spans";
 import type { AllergyVerdict, ArgPair, CorrectionVerdict, EntityKind, FastItem, FastSlotsOut, ItemVerdict, Need, QuestionKind, Route, Subject, TransitionKind, TransitionVerdict, ValidateContext } from "./types";
 
@@ -151,13 +152,18 @@ function allergyVerdict(item: Extract<FastItem, { kind: "allergy" }>, index: num
   // one (`LEND_ONLY_WHEN_NAMES_NO_ONE`). An item marked `isSelf` whose words hold no first person ("It's a real
   // reaction.") is read as naming no one too (item 2). When the span names someone, the subject comes from the words.
   const namesNoOneHere = !namesSomeone(span.quote, knownNameWords(ctx.known, ctx.entities));
+  // W-230: whose allergy it is comes from the owner's whole sentence around the span (its U words), never from the
+  // model's span boundaries; when that sentence holds a first person, R's subject is never lent.
+  const said = ownerSentence(span, ctx.evidence);
+  const saidFirst = hasFirstPerson(said, { kind: reading });
+  const namesNoOneSaid = !namesSomeone(said, knownNameWords(ctx.known, ctx.entities));
   const selfOnly = item.subject.isSelf && item.subject.entityId === null && item.subject.mention === null;
-  const lend = answering && R !== null && R.subjectId !== null && (!LEND_ONLY_WHEN_NAMES_NO_ONE || namesNoOneHere) && (isEmptySubject(item.subject) || (selfOnly && namesNoOneHere && !hasFirstPerson(span.quote, { kind: reading })));
+  const lend = answering && R !== null && R.subjectId !== null && !saidFirst && (!LEND_ONLY_WHEN_NAMES_NO_ONE || namesNoOneSaid) && (isEmptySubject(item.subject) || (selfOnly && namesNoOneSaid));
   if (lend) subject = { kind: "resolved", id: R!.subjectId!, label: null };
   else if (answering && isEmptySubject(item.subject)) {
-    subject = hasFirstPerson(span.quote, { kind: reading }) ? { kind: "resolved", id: "self", label: null } : { kind: "unresolved" };
+    subject = saidFirst ? { kind: "resolved", id: "self", label: null } : { kind: "unresolved" };
   } else if (mentionQuote !== null && !plainMention(mentionQuote)) subject = { kind: "unresolved" };
-  else subject = subjectOf(item.subject, span.quote, ctx, "person", reading);
+  else subject = subjectOf(item.subject, said, ctx, "person", reading);
   const resolved = subject.kind === "resolved" ? subject : null;
 
   if (polarity === "denied") {
