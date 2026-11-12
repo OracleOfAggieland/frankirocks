@@ -2,8 +2,21 @@
  * Every row of one tenant, read and cleared in pages by document ID (Q28), each Session's turns too (brief 019 task
  * 5; contracts §1 "Reset ... clears all tenant rows (paged Q28, subcollections too)").
  */
-import type { StoredDoc, StorePort } from "../store/port";
+import type { CoreEpoch, ID } from "@franki/core";
+import { staleError } from "../routes/errors";
+import type { StoredDoc, StorePort, Tx } from "../store/port";
 import { TOP_COLLECTIONS, paths } from "../store/paths";
+
+/**
+ * Brief 038 finding 8: inside each write transaction of a reset, the barrier must still carry that reset's operation
+ * ID. A reset that ran past its deadline and was taken over answers STALE at its next write and writes nothing more.
+ * With no `opId` (a load outside a reset, in tests) nothing is checked.
+ */
+export async function assertBarrier(tx: Tx, uid: string, opId: ID | undefined): Promise<void> {
+  if (opId === undefined) return;
+  const epoch = await tx.get<CoreEpoch>(paths.core(uid, "epoch"));
+  if (epoch?.data.barrier?.opId !== opId) throw staleError("barrier");
+}
 
 /** Rows per page and per delete transaction. */
 export const CLEAR_PAGE = 100;
@@ -38,14 +51,16 @@ export async function listTenantRows(store: StorePort, uid: string): Promise<Sto
 
 /**
  * Deletes every row of the tenant except the core documents and the paths in `keep`, one page per transaction.
- * Each Session's turns go before the Session. Returns the number of rows deleted.
+ * Each Session's turns go before the Session. Returns the number of rows deleted. With `opId`, each transaction
+ * first checks that the reset `opId` still holds the barrier (brief 038 finding 8).
  */
-export async function clearTenant(store: StorePort, uid: string, keep: ReadonlySet<string>): Promise<number> {
+export async function clearTenant(store: StorePort, uid: string, keep: ReadonlySet<string>, opId?: ID): Promise<number> {
   let deleted = 0;
   const drop = async (page: StoredDoc[]) => {
     const gone = page.filter((r) => !keep.has(r.path));
     if (gone.length === 0) return;
     await store.transaction(uid, async (tx) => {
+      await assertBarrier(tx, uid, opId);
       for (const r of gone) tx.delete(r.path);
     });
     deleted += gone.length;

@@ -74,6 +74,11 @@ All five are green now. **Weakness:** the run counts were committed low (isolati
 - **S-167:** ClaimsV1 outputs have no T-record target in the contracts, so they are validated and dropped.
 - **S-168:** the ClaimsV1 Topic list differs from the Memory Domain list. `topicDomain` maps family to relationship, and identity and other_secret to other.
 - **S-169:** the store contract had no delete, yet "Reset ... clears all tenant rows" needs one. `Tx.delete` was added (written-and-deleted is invalidInput).
+- **S-170 (brief 038 finding 3, amends S-163):** `ResetRequest` now carries `clientZone`, and it's required. A first clone is laid out in the browser's zone, and the core documents it creates are too.
+- **S-171 (brief 038 finding 1, amends `mayReset`):** a real account is answered 409 with a new code, `LIVE`, not 403 AUTH, so the browser can tell a real account from a failed clone. On `lane/fix7-held`, finding 9 widens "real" from Evidence alone to any Session, ledger row (a seed route's own request entries aside), Evidence or hard rule. That fails the committed isolation property, so it waits for a ruling.
+- **S-172 (brief 038 finding 2, amends "a reset raises epoch ... at unblock"):** the fence raises the epoch in its own transaction, so every stamp check fails during the reset, and the receipt route refuses under a barrier. A refused writer's own failed request entry stays in the tenant after the reset.
+- **S-173 (brief 038 finding 8):** each clear and load transaction checks that the barrier still carries the reset's operation ID, or answers STALE.
+- **S-174 (brief 038 finding 10, amends S-165 in part):** a reset answers 423 BARRIER while a phone call of the user may still be out. The forget part of S-165 stands.
 
 ## Rulings needed
 

@@ -16,7 +16,7 @@ import { TypedTurns } from "../client/typed-turns";
 import { type AudioLike, type PeerLike, type StreamLike, VoiceClient } from "../client/voice-client";
 import type { TurnCopies } from "../ui/surface-props";
 import { clearTurnCopies } from "../ui/turn-copies";
-import type { StoredVisit } from "../ui/visit/visit-machine";
+import { type StoredVisit, inputAllowed } from "../ui/visit/visit-machine";
 
 export interface ControllerDeps {
   api: ApiClient;
@@ -52,13 +52,39 @@ export interface SignedInControllers {
   proactive: ProactiveShelf;
 }
 
+/**
+ * Brief 038 finding 1: the input gate below the screen. While the visit has not said which account this is (no
+ * clone yet, a clone being made or reset, or one that failed), no Session is opened and no typed line is sent, so
+ * nothing a visitor does can write to the fresh account before its clone. The screen disables the same controls.
+ */
+export function gatedApi(api: ApiClient, takesInput: () => boolean, onStaleVisit: () => void = () => {}): ApiClient {
+  const gated = new Set(["/api/session/open", "/api/turn"]);
+  return {
+    async call<T>(path: string, options?: Parameters<ApiClient["call"]>[1]) {
+      const route = path.split("?")[0]!;
+      if (gated.has(route) && !takesInput()) return { ok: false, kind: "http", status: 423, error: "BARRIER", retryAfterMs: 0 } as const;
+      const r = await api.call<T>(path, options);
+      // Brief 038 finding 4: an open that named this tab's visit was answered STALE: another tab started over.
+      if (route === "/api/session/open" && !r.ok && r.kind === "http" && r.error === "STALE") onStaleVisit();
+      return r;
+    },
+  };
+}
+
 export function createSignedInControllers(deps: ControllerDeps): SignedInControllers {
-  const { api, clock } = deps;
+  const { clock } = deps;
+  // The visit is made below; the gate reads it when a call is made, never before.
+  const talk = gatedApi(
+    deps.api,
+    () => inputAllowed(visit.getSnapshot()),
+    () => visit.reloadVisit(),
+  );
+  const api = deps.api;
   const voice =
     deps.transcribeModel === null
       ? null
       : new VoiceClient({
-          api,
+          api: talk,
           clock,
           transcribeModel: deps.transcribeModel,
           audio: deps.audio(),
@@ -72,7 +98,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
   const phone = new PhoneWatch({ api, now: () => clock.mono() });
   const memory = new MemoryModel({ api });
   const typed = new TypedTurns({
-    api,
+    api: talk,
     clock,
     onTurn: (turn) => phone.onTypedTurn(turn),
     onReply: (reply) => memory.onReply(reply),
@@ -95,6 +121,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     storage: deps.storage ?? null,
     newId: () => randomId(),
     call: voice === null ? null : { inCall: () => voice.getSnapshot().phase !== "CLOSED", hangUp: () => voice.hangUp(), subscribe: voice.subscribe },
+    zone: () => clock.read().worldClock.zone,
     sessionId: () => voice?.getSnapshot().session?.sessionId ?? typed.getSnapshot().sessionId,
     onShow: (p) => proactive.show(p, typed.getSnapshot().entries.length),
     onAfterReset: () => {
