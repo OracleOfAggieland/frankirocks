@@ -34,13 +34,15 @@ export function offeredPendingId(m: Moment, heroPendingId: string | null): strin
 export async function offerAnswer(get: Get, uid: string, m: Moment, hasher: Hasher, heroPendingId: string | null): Promise<OfferAnswer | null> {
   const pendingId = offeredPendingId(m, heroPendingId);
   if (pendingId === null) return null;
-  for (const id of [reminderActionId(hasher, pendingId), heroActionId(hasher, pendingId)]) {
-    const row = await get(paths.ledger(uid, id));
-    if (row !== null && row.data.kind === "action") return "closed";
-  }
-  for (const id of [declinedEntryId(hasher, pendingId), heroDeclinedId(hasher, pendingId)]) {
-    if ((await get(paths.ledger(uid, id))) !== null) return "declined";
-  }
+  // A pattern moment carries the hero offer, answered by the hero's rows; an offer or an ask, by the reminder's. Two
+  // reads a moment, read together (the life check's cost, W-229: the seeded persona's pass is 38 calls with this).
+  const hero = m.payload.kind === "pattern";
+  const [yes, no] = await Promise.all([
+    get(paths.ledger(uid, hero ? heroActionId(hasher, pendingId) : reminderActionId(hasher, pendingId))),
+    get(paths.ledger(uid, hero ? heroDeclinedId(hasher, pendingId) : declinedEntryId(hasher, pendingId))),
+  ]);
+  if (yes !== null && yes.data.kind === "action") return "closed";
+  if (no !== null) return "declined";
   return null;
 }
 
