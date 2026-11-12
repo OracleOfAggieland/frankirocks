@@ -28,7 +28,10 @@ import {
   validate,
   type Infer,
   type Schema,
+  type Card,
+  type Stamp,
 } from "@franki/core";
+import { toolCardsThatFit } from "../ui/call-cards";
 import type { ApiClient, ApiResult } from "./api";
 import type { BrowserClock } from "./clock";
 import { permitPayloadHash } from "./hash";
@@ -119,6 +122,11 @@ export interface VoiceClientDeps {
    * was gone with no forget receipt), so the screen asks "Did you want that deleted?". Never changes call behavior.
    */
   onControlCheck?: () => void;
+  /**
+   * Brief 044, item 1: a tool answer's cards, when the call's Session and generation still fit their stamp
+   * (`toolCardsThatFit`), for the screen's Card_Dock. The machine gets the tool output and no card content.
+   */
+  onToolCards?: (cards: readonly Card[], stamp: Stamp) => void;
 }
 
 const liveTimers: TimerApi = { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
@@ -255,11 +263,15 @@ export class VoiceClient {
       case "turn":
         void this.postTurn(c.body, c.supersedesTurnId ?? null);
         return;
-      case "tool":
-        void this.post("/api/tool", { requestId: this.newId(), ...c.body }, TOOL_TIMEOUT_MS, ToolResponse).then((res) =>
-          this.dispatch(res === null ? { type: "toolFailed", callId: c.body.callId } : { type: "toolOk", callId: c.body.callId, response: res }),
-        );
+      case "tool": {
+        const sent = c.body.stamp;
+        void this.post("/api/tool", { requestId: this.newId(), ...c.body }, TOOL_TIMEOUT_MS, ToolResponse).then((res) => {
+          // The cards are read against the call as it is when the answer lands, before the machine moves on.
+          if (res !== null) this.showToolCards(toolCardsThatFit(this.state, sent, res), res.stamp);
+          this.dispatch(res === null ? { type: "toolFailed", callId: c.body.callId } : { type: "toolOk", callId: c.body.callId, response: res });
+        });
         return;
+      }
       case "close": {
         const done = this.deps.api
           .call("/api/session/close", { body: { requestId: this.newId(), ...c.body }, timeoutMs: CLOSE_TIMEOUT_MS })
@@ -299,6 +311,16 @@ export class VoiceClient {
         );
         return;
       }
+    }
+  }
+
+  /** A throwing screen never reaches the call. */
+  private showToolCards(cards: readonly Card[], stamp: Stamp): void {
+    if (cards.length === 0) return;
+    try {
+      this.deps.onToolCards?.(cards, stamp);
+    } catch {
+      // the screen's problem, not the call's
     }
   }
 

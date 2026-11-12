@@ -17,10 +17,12 @@ import { completed } from "../../../../packages/server/src/openai/responses";
 import { paths } from "../../../../packages/server/src/store/paths";
 import { commitUserTurnForTest, insertMemoryForTest } from "../../../../packages/server/src/testing/extract-fixtures";
 import { T0_MS, type TestRig, runScheduled, settle, testRig } from "../../../../packages/server/src/testing/fakes";
+import { callCardProps } from "../ui/call-cards";
 import { type ApiClient, type FetchLike, createApiClient } from "./api";
+import { CallCardShelf } from "./call-cards";
 import { createBrowserClock } from "./clock";
 import { permitPayloadHash } from "./hash";
-import { type AudioLike, type ChannelLike, type PeerLike, type StreamLike, TURN_TIMEOUT_MS, type TimerApi, type TrackLike, VoiceClient } from "./voice-client";
+import { type AudioLike, type ChannelLike, type PeerLike, type StreamLike, TURN_TIMEOUT_MS, type TimerApi, type TrackLike, VoiceClient, type VoiceClientDeps } from "./voice-client";
 
 const UID = "owner-1";
 const ROUTES: Record<string, RouteSpec<unknown>> = {
@@ -150,7 +152,7 @@ function virtualTimers(rig: TestRig): TimerApi & { advance(ms: number): Promise<
   };
 }
 
-async function setup(opts: { hang?: string[]; hash?: (p: unknown) => Promise<string>; inputLevel?: () => number; wrapApi?: (api: ApiClient, rig: TestRig) => ApiClient; onControlCheck?: () => void } = {}) {
+async function setup(opts: { hang?: string[]; hash?: (p: unknown) => Promise<string>; inputLevel?: () => number; wrapApi?: (api: ApiClient, rig: TestRig) => ApiClient; onControlCheck?: () => void; onToolCards?: VoiceClientDeps["onToolCards"] } = {}) {
   const rig = testRig();
   // One Memory to recall; extraction requests fail, recall requests answer from `recallAnswer`.
   const t = await commitUserTurnForTest(rig.store, UID, testId("src"), "My dog is called Pip", rig.clock, rig.deps.hasher);
@@ -189,6 +191,7 @@ async function setup(opts: { hang?: string[]; hash?: (p: unknown) => Promise<str
     ...(opts.hash === undefined ? {} : { hash: opts.hash as never }),
     ...(opts.inputLevel === undefined ? {} : { inputLevel: opts.inputLevel }),
     ...(opts.onControlCheck === undefined ? {} : { onControlCheck: opts.onControlCheck }),
+    ...(opts.onToolCards === undefined ? {} : { onToolCards: opts.onToolCards }),
   });
   const peer = () => peers.at(-1)!;
   const sent = () => peer().channel.sent;
@@ -734,5 +737,67 @@ describe("Voice_Client call swap (voice-control R14.3, R14.4, R14.6)", () => {
     // The failed swap open never reached the server, so the server's second open is the reconnect.
     await until(() => routeCalls("/api/session/open").length >= 2, "the reconnect's open");
     expect(routeCalls("/api/session/open")[1]!.body).toMatchObject({ previousSessionId: narrowed });
+  });
+});
+
+// Brief 044, item 1: a tool answer's cards go to the screen, only while the call's Session and generation still fit.
+describe("Voice_Client: cards from a tool answer (brief 044, item 1)", () => {
+  const card = (id: string, title: string) => ({ id: testId(id), kind: "food", title, lines: ["A line to read."], sources: [], sens: "S0" });
+  /** Answers /api/tool with two cards on the real result; `gate` holds the answer until it resolves. */
+  function cardsApi(gate: Promise<void> | null = null) {
+    return (api: ApiClient): ApiClient => ({
+      call: async (path: string, o?: Parameters<ApiClient["call"]>[1]) => {
+        const r = await api.call<any>(path, o);
+        if (path !== "/api/tool" || !r.ok || r.body.result === null) return r as never;
+        if (gate !== null) await gate;
+        return { ...r, body: { ...r.body, result: { ...r.body.result, cards: [card("dinners", "Three quick dinners"), card("groceries", "Grocery list")] } } } as never;
+      },
+    });
+  }
+  const recallArgs = JSON.stringify({ purpose: "answer", query: "dog", entityRefs: [], roleTuple: null, predicate: null, asOf: null, anchorId: null, sourceMode: "canonical" });
+
+  it("an `answer` answer with two cards puts both in the screen's model, with the call's stamp", async () => {
+    const shown: { titles: string[]; sessionId: string; generation: number }[] = [];
+    const shelf = new CallCardShelf();
+    const { vc, sent, routeCalls, connect, speak, peer } = await setup({
+      wrapApi: cardsApi(),
+      onToolCards: (cards, stamp) => {
+        shown.push({ titles: cards.map((c) => c.title), sessionId: stamp.sessionId, generation: stamp.generation });
+        shelf.show(cards, stamp);
+      },
+    });
+    await connect();
+    await speak("item_1", "Yes please");
+    const metadata = specCreate(sent()).response.metadata;
+    peer().channel.emit({ type: "response.created", response: { id: "resp_1", metadata } });
+    peer().channel.emit({ type: "response.function_call_arguments.done", response_id: "resp_1", call_id: "call_1", name: "answer", arguments: "{}" });
+    await until(() => replyCreates(sent()).length === 1 || vc.getSnapshot().phase === "LISTENING", "the tool continuation");
+    expect(routeCalls("/api/tool")).toHaveLength(1);
+    expect(routeCalls("/api/tool")[0]!.body.tool.name).toBe("answer");
+    const session = vc.getSnapshot().session!;
+    expect(shown).toEqual([{ titles: ["Three quick dinners", "Grocery list"], sessionId: session.sessionId, generation: session.generation }]);
+    expect(callCardProps(shelf.getSnapshot()).map((c) => c.title)).toEqual(["Three quick dinners", "Grocery list"]);
+    // The cards are faked onto the real result after the server hashed it, so the Permit no longer matches and
+    // the machine plays nothing: it still got the answer (it left TOOL_WAIT) and holds no card of its own.
+    expect(vc.getSnapshot().phase).not.toBe("TOOL_WAIT");
+    expect(JSON.stringify(vc.getSnapshot())).not.toContain("Three quick dinners");
+  });
+
+  it("an answer that arrives after a hang-up shows nothing", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const shown: string[][] = [];
+    const { vc, sent, routeCalls, connect, speak, peer } = await setup({ wrapApi: cardsApi(gate), onToolCards: (cards) => shown.push(cards.map((c) => c.title)) });
+    await connect();
+    await speak("item_1", "What is my dog called");
+    const metadata = specCreate(sent()).response.metadata;
+    peer().channel.emit({ type: "response.created", response: { id: "resp_1", metadata } });
+    peer().channel.emit({ type: "response.function_call_arguments.done", response_id: "resp_1", call_id: "call_1", name: "recall", arguments: recallArgs });
+    await until(() => routeCalls("/api/tool").length === 1, "the tool post");
+    vc.hangUp();
+    expect(vc.getSnapshot().phase).toBe("CLOSED");
+    release();
+    await flush(200);
+    expect(shown).toEqual([]);
   });
 });

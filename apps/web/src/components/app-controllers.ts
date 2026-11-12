@@ -4,6 +4,7 @@
 import type { Proactive } from "@franki/core";
 import type { ApiClient } from "../client/api";
 import type { BrowserClock } from "../client/clock";
+import { CallCardShelf } from "../client/call-cards";
 import { DebugPanelModel } from "../client/debug-panel";
 import { MemoryModel } from "../client/memory-model";
 import { PhoneWatch } from "../client/phone-watch";
@@ -50,6 +51,8 @@ export interface SignedInControllers {
   sheet: SheetModel;
   /** Brief 027: the last proactive line the time bolt brought. */
   proactive: ProactiveShelf;
+  /** Brief 044, item 1: the cards the last tool answer of a call brought. */
+  callCards: CallCardShelf;
 }
 
 /**
@@ -80,6 +83,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     () => visit.reloadVisit(),
   );
   const api = deps.api;
+  const callCards = new CallCardShelf();
   const voice =
     deps.transcribeModel === null
       ? null
@@ -94,6 +98,8 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
           ...(deps.inputLevel === undefined ? {} : { inputLevel: deps.inputLevel }),
           // Brief 030 P1-7: a spoken false "gone" shows the same ask as a typed one.
           onControlCheck: () => memory.askGone(),
+          // Brief 044, item 1: a tool answer's cards that fit the call go to the Card_Dock.
+          onToolCards: (cards, stamp) => callCards.show(cards, stamp),
         });
   const phone = new PhoneWatch({ api, now: () => clock.mono() });
   const memory = new MemoryModel({ api });
@@ -129,6 +135,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
       typed.dropSession();
       typed.dropTurnCopies();
       proactive.clear();
+      callCards.clear();
       sheet.clear();
       memory.clear();
       void memory.refresh();
@@ -142,6 +149,8 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     };
     voice.setVisit(named());
     visit.subscribe(() => voice.setVisit(named()));
+    // Brief 044, item 1: cards from a Session or generation the call has left go.
+    voice.subscribe(() => callCards.onVoice(voice.getSnapshot()));
   }
   return {
     typed,
@@ -152,6 +161,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     visit,
     sheet,
     proactive,
+    callCards,
   };
 }
 

@@ -48,6 +48,7 @@ import { CLOSED_SHEET, type SheetState } from "../client/sheet-model";
 import { INITIAL_VISIT, type VisitState, badgeFor, boltEnabled, inputAllowed } from "../ui/visit/visit-machine";
 import { boltTargets } from "../ui/visit/bolt-targets";
 import { proactiveCards, replyEntries, type ShownProactive } from "../ui/visit/proactive-view";
+import { type ShownCallCards, callCardProps } from "../ui/call-cards";
 
 const SIGNED_OUT_VOICE = initialVoiceState({ transcribeModel: "" });
 const noop = () => {};
@@ -64,6 +65,7 @@ const noMemory = (): MemoryState => NO_MEMORY;
 const noVisit = (): VisitState => INITIAL_VISIT;
 const noSheet = (): SheetState => CLOSED_SHEET;
 const noShown = (): ShownProactive | null => null;
+const noCallCards = (): ShownCallCards | null => null;
 
 /** The browser's localStorage, or null where it cannot be reached (brief 027: the visit is kept there). */
 function browserStorage(): Storage | null {
@@ -188,6 +190,7 @@ export function App() {
       visit.stop();
       sheet.clear();
       proactive.clear();
+      signedIn.callCards.clear();
     };
   }, [signedIn]);
 
@@ -199,6 +202,7 @@ export function App() {
     void signedIn?.memory.refresh();
     signedIn?.sheet.clear();
     signedIn?.proactive.clear();
+    signedIn?.callCards.clear();
   };
 
   const signIn = async () => {
@@ -282,6 +286,9 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
   const sheetState = useSyncExternalStore(controllers?.sheet.subscribe ?? noSubscribe, getSheet, getSheet);
   const getShown = controllers?.proactive.getSnapshot ?? noShown;
   const shown = useSyncExternalStore(controllers?.proactive.subscribe ?? noSubscribe, getShown, getShown);
+  // Brief 044, item 1: the cards the call's last tool answer brought.
+  const getCallCards = controllers?.callCards.getSnapshot ?? noCallCards;
+  const called = useSyncExternalStore(controllers?.callCards.subscribe ?? noSubscribe, getCallCards, getCallCards);
 
   const stage = <StageFor snap={snap} phone={phone} />;
   const live = <LiveRegion message={snap.live.message} seq={snap.live.seq} />;
@@ -328,7 +335,7 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
   ];
   const receipt = mem.surfaces.receipt === null ? null : <Receipt {...mem.surfaces.receipt} />;
   // Brief 027: the proactive line's cards join the dock; the badge reads the real clock through the clock port.
-  const allCards = [...memoryCards, ...proactiveCards(shown)];
+  const allCards = [...memoryCards, ...callCardProps(called), ...proactiveCards(shown)];
   const pair = clock.read();
   // Brief 038 finding 5: no clock until the server has said which one the account runs on.
   const badge = badgeFor(vis, pair.opsClock.now, pair.worldClock.zone);
