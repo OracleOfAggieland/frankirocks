@@ -159,7 +159,11 @@ export type VoicePhase =
  *                 `lineDone`.
  *   turnRetry     Whichever phase the posted Turn waits in (onTurn): a `hold` answer with `retryAfterMs`, also for a
  *                 Turn whose reply is admitted. Fires with no Permit pending or active, or while that Turn's own
- *                 admitted reply plays: the same post is sent again.
+ *                 admitted reply plays: the same post is sent again. A Turn that leaves `turn` with this armed (its reply
+ *                 ended first, toListening) takes the wait with it as retryPost.
+ *   retryPost     LISTENING (toListening): the post of a Turn that left `turn` while its `hold` retry hint was armed,
+ *                 at the same deadline; re-armed by another `hold` with a hint for that post (onTurn). Fires with the
+ *                 same Session held: the post is sent again (brief 031, finding 2).
  *   refresh       Any phase with a Session (onState): the next state request REFRESH_MS after an answer. Fires in a
  *                 live phase or RECOVERY.
  *   stateRetry    Any phase with a Session after CONFIGURING (onStateFailed): a failed state request is retried after
@@ -197,6 +201,7 @@ export type TimerName =
   | "transcript"
   | "permit"
   | "turnRetry"
+  | "retryPost"
   | "refresh"
   | "stateRetry"
   | "stateRetryUi"
@@ -378,6 +383,8 @@ export interface VoiceState {
   missing: MissingTurn[];
   /** An admitted Turn whose reply ended before its transcript came; posted `final` or `missing` (review item 7). */
   heldBack: VoiceTurn | null;
+  /** The post of a Turn that left `turn` while its `hold` retry hint was armed; sent again at `retryPost` (brief 031). */
+  retryPost: TurnBody | null;
   lastTurnResponseAt: number | null;
   /** When the in-flight `/api/session/state` went out, or null when none is in flight. */
   stateSentAt: number | null;
@@ -437,6 +444,7 @@ export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState
     outstanding: [],
     missing: [],
     heldBack: null,
+    retryPost: null,
     lastTurnResponseAt: null,
     stateSentAt: null,
     ackDroppedStale: false,
@@ -989,7 +997,7 @@ function onOpen(s: Step, res: Infer<typeof OpenResponse>): void {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
+    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, retryPost: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
     proactive: res.proactive,
     stateFailures: null,
     stateRetryVisible: false,
@@ -1032,6 +1040,7 @@ function openFailed(s: Step): void {
  *   turn, pending, active     null                      null                           null            -
  *   inFlight, unadmitted      []                        []                             []              -
  *   judge, spec, heldBack     null                      null                           null            -
+ *   retryPost                 null                      null                           null            -
  *   missing                   []                        []                             []              -
  *   admittedTurnId            null                      null                           null            -
  *   stateSentAt, afterReply   null                      null                           null            -
@@ -1089,7 +1098,7 @@ function closedFields(st: VoiceState): Partial<VoiceState> {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
+    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, retryPost: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
     proactive: null,
     narrowedFrom: null,
     deadlines: {},
@@ -1133,7 +1142,7 @@ function connectionRecovery(s: Step, closeSession: boolean): void {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
+    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, retryPost: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
     proactive: null,
     deadlines: {},
     recovery: { kind: "connection", since, attempts: st.recovery?.kind === "connection" ? st.recovery.attempts : 0 },
@@ -1192,7 +1201,7 @@ function startSwap(s: Step, from: string): void {
     pending: null,
     active: null,
     inFlight: [],
-    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
+    judge: null, spec: null, unadmitted: [], outstanding: st.outstanding, missing: [], heldBack: null, retryPost: null, admittedTurnId: null, stateSentAt: null, afterReply: null,
     proactive: null,
     deadlines: {},
     recovery: null,
@@ -1503,6 +1512,16 @@ function onTurn(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void 
   if (st.session === null || res.stamp.sessionId !== st.session.sessionId || res.stamp.generation !== st.session.generation) return;
   // The latest post of this Turn was a Superseding_Post: the answer is its own, whether or not the Turn is current.
   if (was?.supersede !== undefined && was.sessionId === st.session.sessionId) return onSupersedingAnswer(s, turnId, was.supersede, res);
+  // The answer to a post kept after its Turn left `turn` (retryPost): another hint waits again; anything else ends it
+  // and is read below as any answer for a Turn that is no longer current (brief 031, finding 2).
+  if (st.retryPost !== null && st.retryPost.turnId === turnId && (turn === null || turn.turnId !== turnId)) {
+    if (res.status === "hold" && res.permit === null && res.error === null && res.retryAfterMs > 0) {
+      adoptDeck(s, res.deck);
+      s.arm("retryPost", s.now + res.retryAfterMs);
+      return;
+    }
+    s.set({ retryPost: null });
+  }
   const current = turn !== null && turn.turnId === turnId && turn.posted !== null && res.stamp.turnId === turnId;
   if (!current) {
     // An answer for a turn that is no longer current still carries a Deck (design rows), and if nothing was
@@ -1584,8 +1603,16 @@ function toListening(s: Step): void {
   // transcript), or `missing` at t0 + 5 s, so its Evidence and slow parse still happen (review of wave A, item 7).
   // A Turn whose admitted reply was cut or refused counts too: admittedTurnId was cleared, the Turn was still admitted.
   const keep = unpostedAdmitted(st, turn);
+  // A posted Turn whose `hold` retry hint is still armed is resent at that hint, even with `turn` gone (brief 031).
+  const retryAt = turn !== null && turn.posted !== null ? st.deadlines.turnRetry : undefined;
   s.disarm("permit", "turnRetry", "tool", "lineDone", "item", "transcript", "judge", "speakCap");
   if (keep) parkAdmitted(s, turn);
+  if (retryAt !== undefined && turn?.posted != null) {
+    // One kept at a time: an older one still waiting goes now, so neither is dropped.
+    if (s.st.retryPost !== null) pushTurn(s, s.st.retryPost);
+    s.set({ retryPost: turn.posted });
+    s.arm("retryPost", retryAt);
+  }
   s.set({ phase: "LISTENING", turn: null, pending: null, active: null, admittedTurnId: null, recovery: s.st.recovery?.kind === "line" ? null : s.st.recovery });
 }
 
@@ -2293,6 +2320,10 @@ function onTimer(s: Step, name: TimerName): void {
       if (st.turn?.posted != null && ((st.pending === null && st.active === null) || ownReply)) pushTurn(s, st.turn.posted);
       return;
     }
+    case "retryPost":
+      // The post of a Turn that left `turn` before its retry hint (brief 031, finding 2); its answer clears it (onTurn).
+      if (st.retryPost !== null && st.session !== null && st.retryPost.sessionId === st.session.sessionId) pushTurn(s, st.retryPost);
+      return;
     case "permit":
       // A Permit that came inside the answer wait is still being checked: the check keeps its own limit (V2 step 5).
       if (st.pending !== null && st.pending.checkUntil !== undefined && st.pending.checkUntil > s.now) return s.arm("permit", st.pending.checkUntil);

@@ -143,6 +143,22 @@ describe("post transitions", () => {
     expect(turnPosts(cmds).map((c) => [c.body.turnId, c.body.clientSeq])).toEqual([[turnId, sent[0]!.body.clientSeq]]);
   });
 
+  it("SPEAKING + output stopped before a hold's retry hint -> LISTENING (the admitted Turn's post is still resent, brief 031)", () => {
+    const d = live();
+    const turnId = fastOSpeaking(d);
+    const sent = turnPosts(play(d, { k: "transcript", pick: 0, fail: false, empty: false }, 300));
+    expect(sent).toHaveLength(1);
+    // Nothing was recorded: hold, retry after 250 ms. The short reply ends first.
+    play(d, { k: "turnOk", pick: 0, variant: "retry", hashOk: true }, 100);
+    expect(d.st.deadlines.turnRetry).toBeDefined();
+    play(d, { k: "stopped" }, 50);
+    expect(d.st).toMatchObject({ phase: "LISTENING", turn: null });
+    const before = d.trace.steps.length;
+    wait(d, 1_000);
+    const resent = turnPosts(d.trace.steps.slice(before).flatMap((x) => x.commands));
+    expect(resent.map((c) => [c.body.turnId, c.body.clientSeq]), "the post is resent after the hint").toEqual([[turnId, sent[0]!.body.clientSeq]]);
+  });
+
   /** A Turn posted `missing`, answered with the neutral line; then its late transcript sends a Superseding_Post. */
   function superseding(d: WideDriver, lineEnded: boolean): { turnId: string; cmds: VoiceCommand[] } {
     committed(d);
