@@ -49,7 +49,7 @@ export function CallScreenSection() {
     <ReducedMotionOverride reduced={false}>
       <Section id="call-screen" title="A call on the screen">
         <Tile label="Cards from a tool answer, during a call" data-specimen="call-cards">
-          <div className="flex w-[360px] flex-col items-center gap-4">
+          <div className="flex w-[343px] flex-col items-center gap-4">
             <CallScreen voice={listening} enabled onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />
             <div className="w-full [&_aside]:static [&_aside]:px-0 [&_aside]:pb-0">
               <CardDock cards={callCardProps(SHOWN)} />
