@@ -63,11 +63,11 @@ describe("checkResolve (spec §8 step 4)", () => {
     expect(targetRefs(r)).toEqual([{ type: "memory", id: DANNY.id, rev: 1 }]);
   });
 
-  it("keeps only removal spans whose quote verifies on this session's text", () => {
+  it("removes only spans whose quote verifies on this session's text, and holds when one does not (review 028)", () => {
     const good = { eid: EID_A, fieldPath: "text", start: 0, end: 15, quote: "Danny relapsed." };
     const bad = { eid: EID_A, fieldPath: "text", start: 0, end: 15, quote: "Something else." };
-    const r = check(answer({ remove: [good, bad] }));
-    expect(r.kind === "exact" && r.remove).toEqual([good]);
+    expect(check(answer({ remove: [good] }))).toMatchObject({ kind: "exact", remove: [good] });
+    expect(check(answer({ remove: [good, bad] }))).toMatchObject({ kind: "scopePending", reason: "invalid" });
   });
 
   it.each([

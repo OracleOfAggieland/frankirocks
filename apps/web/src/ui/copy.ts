@@ -126,6 +126,18 @@ export const COPY = {
     /** The strip's last terminal while no comparison figure has a source. */
     stripResult: "Compared",
     goneAsk: { title: "A quick check", question: "Did you want that deleted?", yes: "Yes", no: "No" },
+    /** Where a `why` root came from, by Evidence kind code (review 028 finding 9); `other` for a code not listed. */
+    sources: {
+      turn: "You said",
+      message: "An email",
+      calendar: "Your calendar",
+      transaction: "Your bank",
+      receipt: "A receipt",
+      note: "A note",
+      task: "A task",
+      food: "A food log",
+      other: "A source",
+    },
   },
   /** Brief 027: the visit, the time bolt, start over and the sheet on real data. */
   visit: {
