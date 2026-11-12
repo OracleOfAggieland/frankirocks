@@ -18,11 +18,12 @@
  * The Proactive is not part of the open's recorded answer: a replayed open (a lost answer) gets none, and the moment
  * stays leased for the next opening. Ruling, fails closed: a line is never sent twice from one render.
  */
-import { IDLE_SILENCE_MS, PERMIT_TTL_MS, type ID, type Moment, type Proactive, type Session, type Stamp, type Turn, msFromTs } from "@franki/core";
+import { IDLE_SILENCE_MS, PERMIT_TTL_MS, type ID, type Moment, type Proactive, type Session, type Stamp, type Turn, msFromTs, tsFromMs } from "@franki/core";
 import { gateAudience } from "../audience";
 import { raceLimit } from "../clock/timers";
 import { paths } from "../store/paths";
-import { type SessionSignals, chooseNow, proactiveOf } from "../time/proactive";
+import { type DeliveryVerdict, type SessionSignals, chooseNow, proactiveOf } from "../time/proactive";
+import { writeGateDecision } from "../ledger/said";
 import { memoryTick, scanMoments } from "../time/tick";
 import { storeReader } from "../head-build";
 import type { RouteContext } from "./runtime";
@@ -98,7 +99,8 @@ async function deliver(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1],
 }
 
 async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>[1], stamp: Omit<Stamp, "turnId">, signals: SessionSignals, deadline: number): Promise<Proactive | null> {
-  const { choice, moments } = await chooseNow(ctx, mode, signals);
+  const { choice, moments, verdicts } = await chooseNow(ctx, mode, signals);
+  if (verdicts !== undefined && verdicts.length > 0 && ctx.deps.clock.read().opsClock.now < deadline) await writeVerdictRows(ctx, stamp, signals, verdicts);
   if (choice.spoken === null) return null;
   const id = choice.spoken.momentId as ID;
   const m = moments.get(id);
@@ -111,6 +113,27 @@ async function deliverOnce(ctx: RouteContext, mode: Parameters<typeof chooseNow>
   if (ctx.deps.clock.read().opsClock.now >= deadline) return null;
   const turnId = ctx.deps.hasher.id(["proactiveTurn", stamp.sessionId, id, m.generation]) as ID;
   return proactiveOf(ctx, id, m, { ...stamp, turnId });
+}
+
+/**
+ * Brief 042 item 4: the rows for delivery's own Gate verdicts that were not `say`, IDs and reason codes only, at most
+ * one per candidate per Session: the rows' turn is the Session's delivery turn (`deliveryTurnId`), so the row ID is
+ * the same for every poll and open of that Session and a second write finds it stored. A `card` verdict is recorded
+ * with the Gate's own outcome for it, `steered`. At most `DELIVERY_ROWS_MAX` a call; the rest wait for the next.
+ */
+export const DELIVERY_ROWS_MAX = 8;
+export const deliveryTurnId = (hasher: { id(parts: unknown): string }, sessionId: string): ID => hasher.id(["deliveryVerdicts", sessionId]) as ID;
+
+async function writeVerdictRows(ctx: RouteContext, stamp: Omit<Stamp, "turnId">, signals: SessionSignals, verdicts: readonly DeliveryVerdict[]): Promise<void> {
+  const { uid, deps } = ctx;
+  const turnId = deliveryTurnId(deps.hasher, stamp.sessionId);
+  await deps.store.transaction(uid, async (tx) => {
+    const at = { uid, now: tsFromMs(deps.clock.read().opsClock.now), epoch: stamp.epoch, policyRev: stamp.policyRev };
+    for (const v of verdicts.slice(0, DELIVERY_ROWS_MAX)) {
+      const row = { candidateId: v.momentId, refs: [{ type: "moment" as const, id: v.momentId, rev: v.rev }], noteIds: [], momentId: v.momentId, sessionId: stamp.sessionId as ID, turnId, audience: signals.audience ?? "unknown", permitKind: "proactive" as const };
+      await writeGateDecision(tx, deps.hasher, at, v.result, row);
+    }
+  });
 }
 
 /**

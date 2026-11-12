@@ -12,6 +12,7 @@ import {
   type DeliveryCandidate,
   type DeliveryChoice,
   type DeliveryMode,
+  type GateResult,
   type ID,
   type Ledger,
   type Memory,
@@ -52,8 +53,19 @@ import { isStoreError } from "../store/errors";
  */
 export type SessionSignals = SessionHolds & GateSignals & { turnsSinceCheckInAnswer: number | null };
 
-/** The delivery choice now, over the opened moments whose lease still holds and whose source rereads `ok`. */
-export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: SessionSignals): Promise<{ choice: DeliveryChoice; moments: Map<ID, Moment> }> {
+/** Brief 042 item 4: a Gate verdict inside delivery that was not `say`, for the route to write as a row. */
+export interface DeliveryVerdict {
+  momentId: ID;
+  /** The moment's revision when the Gate was asked. */
+  rev: number;
+  result: GateResult;
+}
+
+/**
+ * The delivery choice now, over the opened moments whose lease still holds and whose source rereads `ok`. Brief 042
+ * item 4: `verdicts` holds each candidate the Gate did not let through (held, steered, declined or blocked).
+ */
+export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: SessionSignals): Promise<{ choice: DeliveryChoice; moments: Map<ID, Moment>; verdicts?: DeliveryVerdict[] }> {
   const { uid, deps } = ctx;
   const reader = storeReader(deps.store, uid);
   const core = await readCoreDocs(reader, uid);
@@ -73,11 +85,13 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
   // `say` that needs no sender's attribution (a code-worded line carries none) is offered to delivery.
   const context = gateContextOf(core, pair, mode, signals, today);
   const said: typeof rows = [];
+  const verdicts: DeliveryVerdict[] = [];
   for (const r of rows) {
     const candidate = await gateCandidateOf(reader, uid, r.id as ID, r.data, pair.worldClock.now);
     if (candidate === null) continue;
     const g = gate(candidate, context);
     if (g.verdict === "say" && g.render !== "attributed") said.push(r);
+    else if (g.verdict !== "say") verdicts.push({ momentId: r.id as ID, rev: r.data.rev, result: g });
   }
   const moments = new Map(said.map((r) => [r.id as ID, r.data]));
   const candidates: DeliveryCandidate[] = [];
@@ -101,7 +115,7 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
     worldNow: pair.worldClock.now,
     zone: pair.worldClock.zone,
   });
-  return { choice, moments };
+  return { choice, moments, verdicts };
 }
 
 /** The line a moment speaks, worded by code, and its sensitivity; null when it can't be worded now. */
