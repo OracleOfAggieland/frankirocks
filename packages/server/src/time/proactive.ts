@@ -13,6 +13,7 @@ import {
   type DeliveryChoice,
   type DeliveryMode,
   type ID,
+  type Ledger,
   type Memory,
   type Moment,
   type Permit,
@@ -41,6 +42,7 @@ import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 import { scanMoments } from "./tick";
 import { getMoment, momentNoteId, momentVerdict } from "./verdict";
+import { offerAnswer } from "./answered";
 import { type GateSignals, gateCandidateOf, gateContextOf } from "./gate-candidate";
 import { isStoreError } from "../store/errors";
 
@@ -59,9 +61,13 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
   const all = (await scanMoments(reader, uid)) ?? [];
   const leased = all.filter((r) => r.data.status === "leased" && r.data.leaseUntil !== null && Date.parse(r.data.leaseUntil) > pair.opsClock.now);
   // Brief 036 finding 2: every candidate's source is reread with the tick's verdict; anything not `ok` is skipped.
-  const rollupLive = leased.some((r) => r.data.rollupId !== null) ? (await heroOffer(ctx, 0).catch(() => null)) !== null : null;
+  const hero = leased.some((r) => r.data.rollupId !== null) ? await heroOffer(ctx, 0).catch(() => null) : undefined;
+  const rollupLive = hero === undefined ? null : hero !== null;
   const rows: typeof leased = [];
   for (const r of leased) if ((await momentVerdict(reader, uid, r.data, core, deps.clock, { rollupLive })) === "ok") rows.push(r);
+  // Brief 042 item 2: an offer already answered, yes or no, is not offered again.
+  const ledgerGet = (p: string) => reader.get<Ledger>(p);
+  for (let i = rows.length - 1; i >= 0; i--) if ((await offerAnswer(ledgerGet, uid, rows[i]!.data, deps.hasher, hero?.pendingId ?? null)) !== null) rows.splice(i, 1);
   const today = todayCounts(core.counters.data, civilDateAt(pair.worldClock.now, pair.worldClock.zone));
   // Brief 036 finding 3: the Gate runs here, for every candidate, in the unprompted context of this session. Only a
   // `say` that needs no sender's attribution (a code-worded line carries none) is offered to delivery.
