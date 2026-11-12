@@ -98,25 +98,28 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
   return { choice, moments };
 }
 
-/** The line a moment speaks, worded by code, and its sensitivity; null when it can't be worded now. */
-async function lineOf(ctx: RouteContext, m: Moment): Promise<{ text: string; sens: Sens } | null> {
-  const { uid, deps } = ctx;
-  if (m.payload.kind === "cue") {
-    const text = m.payload.template?.text ?? null;
-    if (text === null) return null;
-    const ref = m.payload.noteRef;
-    const source = ref.type === "memory" ? await deps.store.get<Memory>(uid, paths.memory(uid, ref.id)) : null;
-    return { text, sens: source?.data.sens ?? "S0" };
-  }
-  if (m.payload.kind === "pattern") {
-    const offer = await heroOffer(ctx, 0);
-    return offer === null ? null : { text: offer.line, sens: "S1" };
-  }
+/** The line a moment speaks, worded by code; null when it can't be worded now. Its sensitivity is the Gate's. */
+async function lineOf(ctx: RouteContext, m: Moment): Promise<string | null> {
+  if (m.payload.kind === "cue") return m.payload.template?.text ?? null;
+  if (m.payload.kind === "pattern") return (await heroOffer(ctx, 0))?.line ?? null;
   if (m.payload.kind === "celebrate") {
     const c = await compareLoop(ctx, m.payload.loopId, 0);
-    return c?.lines == null ? null : { text: c.lines.join(" "), sens: "S1" };
+    return c?.lines == null ? null : c.lines.join(" ");
   }
   return null;
+}
+
+/**
+ * The sensitivity a moment's line goes on the wire at: the Gate candidate's, read now (brief 045, finding 8). A
+ * reminder is as sensitive as the rows it came from; it is never S0 because its cue points at no memory. Null (the
+ * line is not put out) when the source can't be read.
+ */
+async function sensOf(ctx: RouteContext, momentId: ID, m: Moment): Promise<Sens | null> {
+  const { uid, deps } = ctx;
+  const reader = storeReader(deps.store, uid);
+  const core = await readCoreDocs(reader, uid);
+  const candidate = await gateCandidateOf(reader, uid, momentId, m, ownerClock(core.state.data, deps.clock).worldClock.now);
+  return candidate?.sens ?? null;
 }
 
 /**
@@ -148,9 +151,10 @@ async function render(ctx: RouteContext, momentId: ID, m: Moment, noteId: string
 export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, stamp: Stamp): Promise<Proactive | null> {
   const { deps } = ctx;
   const line = await lineOf(ctx, m);
-  if (line === null || line.sens === "S2") return null;
+  const sens = line === null ? null : await sensOf(ctx, momentId, m);
+  if (line === null || sens === null || sens === "S2") return null;
   const noteId = momentNoteId(deps.hasher, momentId, m) as ID;
-  const text = line.text.slice(0, 1024);
+  const text = line.slice(0, 1024);
   if (!(await render(ctx, momentId, m, noteId, text))) return null;
   const ops = deps.clock.read().opsClock.now;
   const expiresAt = tsFromMs(ops + PERMIT_TTL_MS);
@@ -161,7 +165,7 @@ export async function proactiveOf(ctx: RouteContext, momentId: ID, m: Moment, st
     text,
     rootKeys: m.rootKeys.slice(0, 128),
     dependsOn: m.dependsOn.slice(0, 256),
-    sens: line.sens,
+    sens,
     expiresAt,
     unprompted: true,
     momentId,
