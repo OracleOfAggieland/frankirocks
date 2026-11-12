@@ -11,6 +11,8 @@ import { publicEnv, readFirebaseConfig } from "../client/firebase-config";
 import type { TypedState, TypedTurns } from "../client/typed-turns";
 import { type AudioLike, type PeerLike, SIGN_OUT_LIMIT_MS } from "../client/voice-client";
 import { TRANSCRIBE_VAR, transcribeModel } from "../client/voice-config";
+import { MAIN_CHIPS, type MemoryState } from "../client/memory-model";
+import { NO_SURFACES, goneAskCard, readoutCard } from "../ui/memory-screen";
 import { sharedAudio } from "../ui/audio/context";
 import { debugVisible } from "../ui/debug-flag";
 import { browserScheduler } from "../ui/hooks/frame-loop";
@@ -33,6 +35,11 @@ import { ReplyLine } from "./ReplyLine";
 import { MainScreen } from "./screen/MainScreen";
 import { SoundToggle, soundPreference } from "./SoundToggle";
 import { TypedLine } from "./TypedLine";
+import { Chips } from "./surfaces/Chips";
+import { Jar } from "./surfaces/Jar";
+import { Lab } from "./surfaces/Lab";
+import { Receipt } from "./surfaces/Receipt";
+import { Strip } from "./surfaces/Strip";
 
 const SIGNED_OUT_VOICE = initialVoiceState({ transcribeModel: "" });
 const noop = () => {};
@@ -42,6 +49,9 @@ const signedOutVoice = () => SIGNED_OUT_VOICE;
 const noTyped = (): TypedState | null => null;
 /** The phone while signed out: nothing hangs on the wall. */
 const noPhone = (): PhoneView => ABSENT_PHONE;
+/** Memory while signed out: nothing is read, so nothing shows. */
+const NO_MEMORY: MemoryState = { surfaces: NO_SURFACES, readout: null, goneAsk: false };
+const noMemory = (): MemoryState => NO_MEMORY;
 
 /** The output audio element: muted until a verified Permit unmutes it (KV02). */
 function outputAudio(): AudioLike {
@@ -136,8 +146,21 @@ export function App() {
     };
   }, [signedIn]);
 
+  // The memory surfaces read once on sign-in, again after each answered typed line, and drop on sign-out (brief 020).
+  useEffect(() => {
+    if (signedIn === null) return;
+    const { memory } = signedIn;
+    void memory.refresh();
+    return () => memory.clear();
+  }, [signedIn]);
+
   const snap = useSyncExternalStore(screen.subscribe, screen.getSnapshot, screen.getSnapshot);
-  const forget = () => setCopies((c) => onForgetComplete(signedIn?.typed ?? null, c));
+  const forget = () => {
+    setCopies((c) => onForgetComplete(signedIn?.typed ?? null, c));
+    // A completed forget drops what the screen shows, then reads it again.
+    signedIn?.memory.clear();
+    void signedIn?.memory.refresh();
+  };
 
   const signIn = async () => {
     const auth = authRef.current;
@@ -210,11 +233,14 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
   const subscribePhone = controllers?.phone.subscribe ?? noSubscribe;
   const getPhone = controllers?.phone.getSnapshot ?? noPhone;
   const phone = useSyncExternalStore(subscribePhone, getPhone, getPhone);
+  const subscribeMemory = controllers?.memory.subscribe ?? noSubscribe;
+  const getMemory = controllers?.memory.getSnapshot ?? noMemory;
+  const mem = useSyncExternalStore(subscribeMemory, getMemory, getMemory);
 
   const stage = <StageFor snap={snap} phone={phone} />;
   const live = <LiveRegion message={snap.live.message} seq={snap.live.seq} />;
 
-  if (typed === null || t === null) {
+  if (controllers === null || typed === null || t === null) {
     return (
       <MainScreen
         signedIn={false}
@@ -239,6 +265,19 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
     if (!inCall || voice === null) return void typed.submit();
     if (voice.sendTyped(t.text)) typed.setText("");
   };
+
+  // Brief 020: a chip's words go down the typed path as the owner's own; in a call, over the call's typed line.
+  const memory = controllers.memory;
+  const chip = (text: string) => {
+    if (text === MAIN_CHIPS[0]) void memory.openReadout();
+    if (inCall && voice !== null) voice.sendTyped(text);
+    else void typed.sendLine(text);
+  };
+  const memoryCards = [
+    ...(mem.goneAsk ? [goneAskCard((a) => memory.answerGone(a), noop)] : []),
+    ...(mem.readout === null ? [] : [readoutCard(mem.readout, noop)]),
+  ];
+  const receipt = mem.surfaces.receipt === null ? null : <Receipt {...mem.surfaces.receipt} />;
 
   return (
     <MainScreen
@@ -273,6 +312,11 @@ function Screen({ snap, auth, controllers }: { snap: ScreenSnapshot; auth: React
         />
       }
       reply={inCall ? null : <ReplyLine entries={t.entries} />}
+      cards={memoryCards}
+      strip={mem.surfaces.strip === null ? null : <Strip {...mem.surfaces.strip} />}
+      chips={<Chips chips={MAIN_CHIPS} disabled={t.sending || (inCall && v.phase !== "LISTENING")} onChip={chip} />}
+      jar={<Jar motes={mem.surfaces.jar} onOpen={() => (mem.readout === null ? void memory.openReadout() : memory.closeReadout())} />}
+      lab={<Lab counters={mem.surfaces.lab?.counters ?? []} limits={mem.surfaces.lab?.limits ?? []} receipt={receipt} />}
       debug={debug === null ? null : <DebugArea debug={debug} typed={typed} voice={v} />}
       live={live}
     />
