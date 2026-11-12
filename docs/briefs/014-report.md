@@ -2,7 +2,7 @@
 
 Built on `build/state-machines` and then on `build/next` by Claude Code agents, from `docs/briefs/014-state-machines.md`. None of this is Kiro's work: no commit in this brief carries the Kiro trailer.
 
-**State:** the work stops part done. A1, A2, A3, T1, T2, V1 step 1, B3 and the first part of S6 are built and committed. Everything else in the brief is not built (listed below). **No live call was made on this line**, so nothing here has been checked on a real call, and the ring spark has not been looked at in a browser. `npm test`, `npm run lint`, `npm run typecheck` and `npm run build` all exit 0 at the end of this report's commits.
+**State:** the work stops part done. A1, A2, A3, T1, T2, V1 step 1, B3 and the first part of S6 are built and committed. Everything else in the brief is not built (listed below). **No live call was made on this line**, so nothing here has been checked on a real call, and the ring spark has not been looked at in a browser. `npm test`, `npm run lint`, `npm run typecheck` and `npm run build` exited 0 on the recorded runs at the end of this report's commits. `npm test` can exit 1 on a fresh seed of the unseeded Property 13 (see "Property 13 on a fresh seed" below).
 
 ## Base numbers
 
@@ -92,6 +92,14 @@ The sequences are written out in each test. The two mic pins in `apps/web/src/cl
 
 For the two stale-resend cases the trace shows the original post's permit wait (`timer:permit HELD->RECOVERY`) ending before the resend's answer arrives. `voice-turn.transitions.test.ts` also pins, as today's behaviour, `SPEAKING + stateOk (higher Deck) -> HELD (today the cut leaves admittedTurnId naming the cut Turn)`; it follows the default of contract question 2 in the brief (leave today's behaviour), so it does not change with V2.
 
+### Property 13 on a fresh seed
+
+`packages/core/src/voice/admitted-turn-posted.property.test.ts` (Property 13, 1,000 runs over `arbCall`, no fixed seed) fails on some seeds. A review of this step's HEAD saw it fail in 3 of 91 runs (one full `npm test`, then the file alone 90 times), at seeds -81537958, -234263625 and 283257402; a second review saw 12 of 300 fresh seeds fail. Brief 012's seed -1393276649 also still fails. These runs were made by the reviews; this step did not rerun them. The failures have three shapes:
+
+- **An error naming the admitted create, then a commit.** The same shape as the seed-99 case under V2 above.
+- **A higher Deck cuts the admitted Turn.** The same shape as the seed-42 case under V2 above.
+- **An admitted Turn whose only transcript comes back empty.** Sequence: commit, `conversation.item.added`, the judge's `response.created`, the hash check, the judge's answer `O` (`fastO`), the hash check, then `conversation.item.input_audio_transcription.completed` with an empty `transcript`. `maybeAdmit` sees every transcript blank, cancels the reply, clears `admittedTurnId` and goes to LISTENING with no post, so the admitted Turn is never posted. Seeds -81537958 and 283257402 are this shape. It has no `it.fails` case. `machine.test.ts` > `item 9: an empty transcript while the reply plays ends it with a cancel, a clear and its receipt` pins the drop as correct, and the `voice.call` page says noise with an empty transcript is no Turn; Property 13 says the opposite for a Turn that was admitted. Contract question Q-SM18 in the brief asks which holds. The property file is tracked and was not edited.
+
 ### Turned green on this line
 
 - B3's four: `SPARKING + reducedOn -> IDLE, grant released`, `SPARKING + formLeft -> IDLE, grant released`, `SPARKING + animationCancel -> IDLE` and `SPARKING + unmount -> IDLE, grant released`. Each failed with the spark still `sparking` and its grant held (`expected { mode: 'sparking', token: 1 } to deeply equal { mode: 'idle' }`, and for unmount `budget.active()` still 1).
@@ -173,7 +181,7 @@ Run in the `build/next` worktree after the last code commit of this step (`30513
 
 | Check | Result |
 |---|---|
-| `npm test` | exit 0: 236 test files, 2,665 tests (2,645 passed, 20 expected fail) |
+| `npm test` | exit 0 on the recorded run: 236 test files, 2,665 tests (2,645 passed, 20 expected fail). Can exit 1 on a fresh seed of Property 13 (3 of 91 runs in a later review; seeds above) |
 | `npm run lint` | exit 0 |
 | `npm run typecheck` | exit 0 |
 | `npm run build` | exit 0 |

@@ -99,6 +99,7 @@ Each has the default that holds until it is answered. Memory questions go to the
 - **Q-SM15.** A stored record shape change: fill defaults on read, or reseed? Default: fill defaults on read, with a test over a record written before the change.
 - **Q-SM16.** Should the API timeout start before the token step? Default: no, unless a live call shows the token step hanging.
 - **Q-SM17.** A time-driven runner that closes Sessions left open. Default: none; cut.
+- **Q-SM18.** A Turn admitted under `fastO` whose every transcript comes back empty: is it posted, or does Property 13 (`admitted-turn-posted.property.test.ts`) exempt it? Default: leave today's behaviour, where `maybeAdmit` cancels the reply and posts nothing, as `machine.test.ts` item 9 pins it. Changing the property file needs the owner's yes.
 
 ## Report
 
