@@ -27,6 +27,7 @@ import {
   civilDateAt,
   idParts,
   isHeavy,
+  gate,
   isMustSay,
   saidTokens,
   todayCounts,
@@ -40,13 +41,14 @@ import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 import { scanMoments } from "./tick";
 import { getMoment, momentNoteId, momentVerdict } from "./verdict";
+import { type GateSignals, gateCandidateOf, gateContextOf } from "./gate-candidate";
 import { isStoreError } from "../store/errors";
 
 /**
  * The session's signals. Brief 036 finding 4: pass `transition` and `crisis` separately; the older
  * `transitionOrCrisis` still reads, and holds as both (fails closed).
  */
-export type SessionSignals = SessionHolds & { turnsSinceCheckInAnswer: number | null };
+export type SessionSignals = SessionHolds & GateSignals & { turnsSinceCheckInAnswer: number | null };
 
 /** The delivery choice now, over the opened moments whose lease still holds and whose source rereads `ok`. */
 export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: SessionSignals): Promise<{ choice: DeliveryChoice; moments: Map<ID, Moment> }> {
@@ -60,9 +62,20 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
   const rollupLive = leased.some((r) => r.data.rollupId !== null) ? (await heroOffer(ctx, 0).catch(() => null)) !== null : null;
   const rows: typeof leased = [];
   for (const r of leased) if ((await momentVerdict(reader, uid, r.data, core, deps.clock, { rollupLive })) === "ok") rows.push(r);
-  const moments = new Map(rows.map((r) => [r.id as ID, r.data]));
-  const candidates: DeliveryCandidate[] = [];
+  const today = todayCounts(core.counters.data, civilDateAt(pair.worldClock.now, pair.worldClock.zone));
+  // Brief 036 finding 3: the Gate runs here, for every candidate, in the unprompted context of this session. Only a
+  // `say` that needs no sender's attribution (a code-worded line carries none) is offered to delivery.
+  const context = gateContextOf(core, pair, mode, signals, today);
+  const said: typeof rows = [];
   for (const r of rows) {
+    const candidate = await gateCandidateOf(reader, uid, r.id as ID, r.data, pair.worldClock.now);
+    if (candidate === null) continue;
+    const g = gate(candidate, context);
+    if (g.verdict === "say" && g.render !== "attributed") said.push(r);
+  }
+  const moments = new Map(said.map((r) => [r.id as ID, r.data]));
+  const candidates: DeliveryCandidate[] = [];
+  for (const r of said) {
     const source = r.data.memoryId === null ? null : await reader.get<Memory>(paths.memory(uid, r.data.memoryId));
     const override = r.data.deliveryOverride;
     candidates.push({
@@ -78,7 +91,7 @@ export async function chooseNow(ctx: RouteContext, mode: DeliveryMode, signals: 
     candidates,
     mode,
     ...signals,
-    today: todayCounts(core.counters.data, civilDateAt(pair.worldClock.now, pair.worldClock.zone)),
+    today,
     worldNow: pair.worldClock.now,
     zone: pair.worldClock.zone,
   });

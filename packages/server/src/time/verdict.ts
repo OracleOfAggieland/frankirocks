@@ -77,7 +77,7 @@ async function rowVerdict(r: Reader, uid: string, moment: Moment, current: Memor
   const pair = ownerClock(core.state.data, clock);
   // An expiry ask is about a row whose bound has passed: read it as it stood just before.
   const world = moment.kind === "expiryAsk" && current.validTo !== null ? Math.min(pair.worldClock.now, msFromTs(current.validTo) - 1) : pair.worldClock.now;
-  const ec = { ...foregroundEC(uid, core.epoch.data, { ...pair, worldClock: { ...pair.worldClock, now: world } }, 0), stage: "read" as const, purpose: "proactive" as const };
+  const ec = { ...foregroundEC(uid, core.epoch.data, { ...pair, worldClock: { ...pair.worldClock, now: world } }, 0), stage: "speech" as const, purpose: "proactive" as const };
   const snapshot: Snapshot = {
     uid,
     epoch: core.epoch.data,
@@ -130,7 +130,7 @@ async function reminderSourceVerdict(r: Reader, uid: string, moment: Moment, dep
       const blocks = await r.query<Block>({ collection: paths.collection(uid, "blocks"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: REREAD_MAX });
       const pair = ownerClock(core.state.data, clock);
       const ref = docRef("evidence", e.id, e.data.rev);
-      const ec = { ...foregroundEC(uid, core.epoch.data, pair, 0), stage: "read" as const, purpose: "proactive" as const };
+      const ec = { ...foregroundEC(uid, core.epoch.data, pair, 0), stage: "speech" as const, purpose: "proactive" as const };
       const snapshot: Snapshot = { uid, epoch: core.epoch.data, session: null, job: null, localGeneration: 0, refs: [ref], rows: [e.data], blocks: blocks.map((b) => b.data), coverage: core.state.data.coverage, complete: blocks.length < REREAD_MAX };
       const er = eligible({ ref, row: e.data }, ec, snapshot);
       if (!er.allow) return er.reason === "blocked" ? "forgotten" : "gone";
