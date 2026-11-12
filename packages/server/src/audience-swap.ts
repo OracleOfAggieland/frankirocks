@@ -193,11 +193,13 @@ export function audienceEffect(o: RuleOutcome, x: AudienceInput): AudienceEffect
 
 /**
  * The audience an open inherits from the Session it replaces (R14.8; design "Open with inheritance"): that Session's
- * audience when it is the Owner's (it was read under the Owner's uid), not private, and its `waitDeadline` has not
- * passed; else `private`. An expired parse lease counts as the failed repair it is (`unknown`).
+ * audience when it is the Owner's (it was read under the Owner's uid) and not private; else `private`. An expired
+ * parse lease counts as the failed repair it is (`unknown`).
+ * Brief 035 (finding 5): a Session opened, or narrowed, with a non-private audience and no `waitDeadline` passes it
+ * on whether or not a close came first; only the Owner's own close makes it private (`userCloseCarry`).
  */
 export function inheritedAudience(prev: Session | null, opsNow: number): { audience: Au; crisis: boolean } | null {
-  if (prev === null || prev.waitDeadline === null || msFromTs(prev.waitDeadline) < opsNow) return null;
+  if (prev === null || (prev.waitDeadline !== null && msFromTs(prev.waitDeadline) < opsNow)) return null;
   const audience = effectiveAudience(expireLease(prev, opsNow), opsNow);
   return audience === "private" ? null : { audience, crisis: prev.modifiers.crisis !== null };
 }
@@ -228,6 +230,14 @@ export const swapLineRule: RuleInput = {
 
 /** The swap line's turn ID: `H("swapline", sessionId)`. */
 export const swapLineTurnId = (hasher: Pick<Hasher, "id">, sessionId: string): ID => hasher.id(["swapline", sessionId]) as ID;
+
+/**
+ * The Owner's own close (reason `user`) of a non-private Session ends what it passes on (finding 5): the Session
+ * records `private`, so an open naming it starts private (R14.8). Any other close changes nothing here.
+ */
+export function userCloseCarry(s: Session, reason: "user" | "replace" | "expired" | "error"): Partial<Session> | null {
+  return reason === "user" && s.audience !== "private" ? { audience: "private" } : null;
+}
 
 /** An error close of a non-private Session keeps its audience for the reconnect; any other close changes nothing. */
 export function errorCloseCarry(s: Session, reason: "user" | "replace" | "expired" | "error", opsNow: number): Partial<Session> | null {

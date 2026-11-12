@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import { never, ok } from "../openai/fake";
 import { paths } from "../store/paths";
 import { decisionAnswer } from "../testing/decisions";
-import { type TestRig, callRoute, runScheduled } from "../testing/fakes";
+import { type TestRig, callRoute, patchRecord, runScheduled } from "../testing/fakes";
+import { closeRoute } from "./close";
 import { openRoute } from "./open";
 import { stateRoute } from "./state";
 import { asrTurn, typedTurn } from "../testing/session-fixtures";
@@ -202,5 +203,35 @@ describe("finding 9: the state route on a crisis-deferred Session gives no ack a
     expect(res.body.ack).toBeNull();
     expect(res.body.deck).toBeNull();
     expect((await sessionOf(rig, s.sessionId)).stateAck?.stamp.policyRev ?? 0).toBeLessThan(stamp.policyRev);
+  });
+});
+
+const openNaming = (rig: TestRig, previousSessionId: string, label: string) => callRoute(rig, openRoute, { requestId: testId(label), initiator: "user", previousSessionId, clientZone: "UTC", visitId: null });
+async function narrowedThenSwapped() {
+  const { rig, s } = await doorRig(true);
+  rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9 })));
+  await postTurn(rig, voice(s.stamp, 1, "My boss just walked in."));
+  const b = await openNaming(rig, s.sessionId, "open-b");
+  expect(headText(b.body)).not.toContain(PERSONAL_FACT);
+  const bId: string = b.body.sessionId;
+  await patchRecord<Session>(rig.store, UID, paths.session(UID, bId), { status: "active", registeredCallIds: ["rtc_b"], callId: "rtc_b" });
+  return { rig, a: s.sessionId, bId };
+}
+
+describe("finding 5: an inherited audience carries on with no close before the reconnect", () => {
+  it("B, opened company from A, drops with no close; an open naming B starts company", async () => {
+    const { rig, bId } = await narrowedThenSwapped();
+    rig.clock.advance(30_000);
+    const c = await openNaming(rig, bId, "open-c");
+    expect(headText(c.body)).not.toContain(PERSONAL_FACT);
+    expect((await sessionOf(rig, c.body.sessionId)).audience).toBe("company");
+  });
+
+  it("but after the Owner closed B themselves, an open naming B may start private", async () => {
+    const { rig, bId } = await narrowedThenSwapped();
+    const closed = await callRoute(rig, closeRoute, { requestId: testId("close-b"), sessionId: bId, generation: 1, reason: "user" });
+    expect(closed.status).toBe(200);
+    const c = await openNaming(rig, bId, "open-c");
+    expect((await sessionOf(rig, c.body.sessionId)).audience).toBe("private");
   });
 });
