@@ -93,3 +93,45 @@ Properties, red first, 1,000 runs:
 ## Done, for each part
 
 The fixes with their red-first tests, one finding per commit, the part's properties green with seeds and counterexamples recorded, the checks of brief 016 with `npm run build` and the repo's check scripts, and a section "Outcome, part V" (or S, or D) at the end of this file: per finding, the test, the commit and the ruling it changed as a numbered question in that lane's report; per property, the seed; every existing assertion changed and why; what only a live call can show. Merge `build/plan-stages` before the final checks and run the full suite after it.
+
+## Outcome, part D
+
+Lane `wire`. Findings 6 and 9 are done; findings 7, 10 and 12, and the open's tail reserve, are not started and go to a fresh builder. Brief 042's items 1 to 5 were built in the same lane; see that brief's "Outcome".
+
+| Finding | Commit | Test, red first | Ruling, as a numbered question in `030-report.md` |
+|---|---|---|---|
+| 9. Delivery never fails a route | `c8685c2` (with the coordinator's open budget), `e244a3a` | `routes/open-budget.test.ts`, "a store failure in delivery's reads": the idle read threw `blip` before | 11, 12 |
+| 6. Shown means heard to the end; only the owner's private yes writes | `79571ab`, tests `d1e85ca` | `routes/offer-heard-to-the-end.test.ts`: 9 of 11 red before | 1, 2, 3 |
+| 7. A typed open shows only lines that need no answer | not started | | |
+| 10. `suggest` asks nothing private in company | not started | | |
+| 12. A receipt counts only for what was sent | not started | | |
+| The open's tail reserve (coordinator, after part S) | not started | | |
+
+### Properties
+
+| Property | File | Seed | Counterexample before the fix |
+|---|---|---|---|
+| Only an owner's yes to an offer heard to the end writes | `routes/yes-to-offer-heard.property.test.ts` | 45061 | `[["admitted","playbackStarted"],"O","private",false]` |
+| A receipt counts only for what was sent | not written | | |
+| Delivery never breaks a route | not written as a property; the injected-failure test above covers the open's and the idle read's own reads | | |
+| Food asks nothing private in company | not written | | |
+
+### The open's budget, measured on the injected clock
+
+- At 75 ms a store call and a 1.5 s hang-up, the seeded open makes 74 store calls and answers at 3,350 ms; a new owner makes 40 and answers at 3,325 ms. Delivery alone on the persona costs 60 calls unbounded. An idle poll costs 8 calls when silent with nothing due, 1 when not silent.
+- After delivery's deadline the open makes no store call (`OPEN_CALLS_AFTER_DELIVERY` = 0). `OPEN_ANSWER_MARGIN_MS` (150) covers the return and a late timer only.
+- The emulator's `collide` retry (3,562 ms) overruns before delivery starts: its transaction took 1,366 ms against `OPEN_TAIL_RESERVE_MS` (1,400 ms), and delivery got 0 ms. The fix is the tail reserve in `open.ts`, after part S lands (the coordinator's four steps).
+- No wall-time read on the open path: the only `Date.now()` outside tests is in `clock/live-clock.ts`.
+
+### The life check's second scan (writes lane's finding, W-229)
+
+Left at two scans per delivery pass: the choice reads the verdict on the store's Reader, and the render rereads it in its own transaction (`time/proactive.ts`, `render`), a second Reader, so the life check's view of the deceased and of open care is built twice. On the seeded persona that is 36 store calls and 2 Memory scans per pass (the writes lane's count), plus one scan page per 100 Memories each time. Sharing one Reader would either drop the render's reread (a death recorded between the choice and the render must still stop the line) or widen the render's transaction to the choice's reads, so neither is done. The open's deadline and the poll's budget bound the cost; it is cost, not correctness. Not re-measured here after the merge of `ef1232c`.
+
+### Existing assertions and inputs changed
+
+- The yes turns in `tool-food.test.ts`, `tool-food.review.test.ts`, `testing/answer-call-fixture.ts`, `scripts/beat3-hero.test.ts` (two steps) and `scripts/gate-food.ts` (F34, F35) now carry judge `O`. Finding 6's ruling makes a timed-out judge's yes `clarify`; these turns stand for the owner's own yes. No expected line or assertion changed. The committed `answer-call.property.test.ts` is unchanged; its fixture carries the judge.
+
+### What only a live call can show
+
+- A barge-in after one word of the hero offer, then "Okay?": nothing written.
+- The voice client's `playbackEnded` arriving for an uncut line (the server counts it; the machine's receipts are part V's).
