@@ -33,3 +33,24 @@ describe("finding 2: code templates take typed parts only", () => {
     expect(buildWhisper(note(["3:30 PM"]), g, "s2Appointment", at)?.text).toBe("Personal appointment at 3:30 PM.");
   });
 });
+
+describe("finding 8: the template render has its own typed template", () => {
+  const g = say({ render: "template" });
+
+  it("is not the free item template", () => {
+    expect(buildWhisper(note(["Interview today 4 PM"]), g, "item", at)).toBeNull();
+    expect(buildWhisper(note(["Interview today 4 PM"]), g, "typed", at)).toBeNull();
+  });
+
+  it("takes a name, a result from a closed set and a time, and nothing else", () => {
+    expect(buildWhisper(note(["Dentist", "starts", "3 PM"]), g, "typed", at)?.text).toBe('For "Dentist": starts at 3 PM. One line, nothing more.');
+    expect(buildWhisper(note(["Dentist", "went badly", "3 PM"]), g, "typed", at)).toBeNull();
+    expect(buildWhisper(note(["Dentist", "starts", "3 PM at the clinic"]), g, "typed", at)).toBeNull();
+  });
+
+  it("serves the exact authorization the same way", () => {
+    const auth = say({ render: "template", carveOut: "authorization" });
+    expect(buildWhisper(note(["Mom", "moved", "10"]), auth, "typed", at)?.text).toBe('For "Mom": moved at 10. One line, nothing more.');
+    expect(buildWhisper(note(["Mom biopsy came back positive"]), auth, "item", at)).toBeNull();
+  });
+});

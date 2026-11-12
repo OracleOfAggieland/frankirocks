@@ -11,6 +11,7 @@ import { safeName } from "../safe-name";
 import {
   FIXED_TEMPLATE_IDS,
   MAIL_KINDS,
+  TEMPLATE_RESULTS,
   TIME_SLOT,
   WHISPER_TEMPLATES,
   type WhisperSlot,
@@ -42,7 +43,7 @@ export interface WhisperContext {
 
 const ONE_LINE = /^[^\p{Cc}\p{Zl}\p{Zp}]+$/u;
 
-/** A token as its slot's type allows it, or null (brief 033 finding 2): a name through `safeName`, a kind from its closed set, a time by `TIME_SLOT`. */
+/** A token as its slot's type allows it, or null (brief 033 finding 2): a name through `safeName`, a kind or a result from its closed set, a time by `TIME_SLOT`. */
 function slotValue(s: WhisperSlot, k: string): string | null {
   switch (s) {
     case "free":
@@ -51,6 +52,8 @@ function slotValue(s: WhisperSlot, k: string): string | null {
       return safeName(k);
     case "kind":
       return (MAIL_KINDS as readonly string[]).includes(k) ? k : null;
+    case "result":
+      return (TEMPLATE_RESULTS as readonly string[]).includes(k) ? k : null;
     case "time":
       return TIME_SLOT.test(k) ? k : null;
     default:
