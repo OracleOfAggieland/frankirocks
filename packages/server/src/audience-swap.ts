@@ -328,8 +328,14 @@ export async function withNarrowHead(
   return compiled.ok ? { ...eff, bundle: headBundle(x.bundle, compiled.head, x.rules.rulesRev, x.opsNow, x.hasher) } : eff;
 }
 
-/** Whether an answer may carry a Deck after this effect: never when it hangs up (finding 11), nor when the Head it needs is missing. */
-export const deckAllowed = (eff: AudienceEffect | null): boolean => eff === null || (!eff.hangup && ((eff.wantsHead ?? null) === null || eff.bundle !== null));
+/**
+ * Whether the answer narrows the Session here (finding 11): it hangs up (row 8) or sets the swap wait (row 6). Its
+ * answer is `blocked`, every later one is held, so it carries no Deck.
+ */
+export const narrowsHere = (eff: AudienceEffect | null): boolean => eff !== null && (eff.hangup || (eff.session.waitDeadline ?? null) !== null);
+
+/** Whether an answer may carry a Deck after this effect: never when it narrows here (finding 11), nor when the Head it needs is missing. */
+export const deckAllowed = (eff: AudienceEffect | null): boolean => eff === null || (!narrowsHere(eff) && ((eff.wantsHead ?? null) === null || eff.bundle !== null));
 
 /**
  * A turn on a Session narrowed here (finding 7): it answers `blocked` and is kept, and a crisis line in it sets the

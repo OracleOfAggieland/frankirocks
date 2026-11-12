@@ -67,7 +67,7 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 026: company, quiet and alone (voice-control tasks 48, 49).
 import { audienceEffect, narrowedHere, precompileAudienceHead } from "../audience-swap";
 // Brief 035: the review of the audience wave.
-import { carryNarrowing, deckAllowed, lateNarrowing, replacedNarrowing, swapWindowCare, withNarrowHead } from "../audience-swap";
+import { carryNarrowing, deckAllowed, lateNarrowing, narrowsHere, replacedNarrowing, swapWindowCare, withNarrowHead } from "../audience-swap";
 import { afterClosed } from "../sessions";
 import { driveHangupJob, ensureHangupJob } from "../worker/hangup";
 
@@ -439,7 +439,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             updatedAt: now,
           });
 
-          const deck = headOut2 === null || headless || held ? null : issueDeck(stampOut2, headOut2, ops, safe);
+          const deck = headOut2 === null || headless || held || narrowsHere(aud) ? null : issueDeck(stampOut2, headOut2, ops, safe);
           // Every reply's Permit comes from the Admission_Seam, which writes its decision ledger entry in this
           // transaction and runs in production too (R8.1, R8.2).
           const admitted = admitRule(

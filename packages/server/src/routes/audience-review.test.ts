@@ -281,3 +281,22 @@ describe("finding 13: the swapped Session inherits the crisis modifier", () => {
     expect(b.body.proactive).toBeNull();
   });
 });
+
+describe("finding 11: a row 8 answer that hangs up carries no Deck", () => {
+  it("a company hit with a live call answers blocked with no Deck, so the private Head never goes out under the raised stamp", async () => {
+    const { rig, s } = await doorRig(true);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9 })));
+    const res = await postTurn(rig, voice(s.stamp, 1, "My boss just walked in."));
+    expect(res.body.status).toBe("blocked");
+    expect(res.body.deck ?? null).toBeNull();
+    expect(headText(res.body)).not.toContain(PERSONAL_FACT);
+  });
+
+  it("row 6 (crisis with company, live call) answers blocked with the care Permit and no Deck either", async () => {
+    const { rig, s } = await doorRig(true);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ crisis: 0.6, company: 0.3 })));
+    const res = await postTurn(rig, voice(s.stamp, 1, "My boss is here and I can't do this anymore."));
+    expect(res.body).toMatchObject({ status: "blocked", permit: { kind: "postCommitControl", scope: "ack" } });
+    expect(res.body.deck ?? null).toBeNull();
+  });
+});
