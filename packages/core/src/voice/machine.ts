@@ -143,13 +143,14 @@ export type VoicePhase =
  *                 admission (admit) to t0 + ADMITTED_TRANSCRIPT_LIMIT_MS (R7.6). Fires: the unposted ASR Turn is
  *                 posted `missing`.
  *   permit        Two meanings under one name; whichever arm came last sets the deadline.
- *                 (1) The answer wait. HELD, JUDGING or SPECULATING (postTurn "final", for a Turn not admitted): the
- *                 post + TURN_RESPONSE_LIMIT_MS (R7.5). Also RECOVERY (line), when the transcript arrives after the
+ *                 (1) The answer wait. HELD, JUDGING or SPECULATING (postTurn "final", for a Turn not admitted, and
+ *                 onTurn's resend after a `stale` answer): the post + TURN_RESPONSE_LIMIT_MS (R7.5). Also RECOVERY (line), when the transcript arrives after the
  *                 admitted reply's `response.create` was refused; it does nothing there, and lineDone ends the
  *                 Turn. Any phase but RECOVERY (requestVerify, only when none is armed): the hash check of a pending
  *                 Permit has TURN_RESPONSE_LIMIT_MS (KV06).
  *                 (2) The hold. HELD, entered from SPEAKING, TOOL_WAIT, HELD, JUDGING or SPECULATING when a higher
- *                 Stamp cancels the reply (cancelAll): now + HOLD_LIMIT_MS for a Permit under the new Deck.
+ *                 Stamp cancels the reply (cancelAll): now + HOLD_LIMIT_MS for a Permit under the new Deck, or the
+ *                 answer wait or hash check already armed, whichever is later.
  *                 Fires in HELD, JUDGING or SPECULATING with no active reply: RECOVERY with nothing to play, then
  *                 `lineDone`.
  *   turnRetry     Whichever phase the posted Turn waits in (onTurn): a `hold` answer with `retryAfterMs`. Fires with
@@ -613,6 +614,8 @@ export function specCreate(st: VoiceState, eventId: string): RealtimeClientEvent
 
 const IN_CALL: readonly VoicePhase[] = ["LISTENING", "WAIT_ITEM", "JUDGING", "SPECULATING", "HELD", "SPEAKING", "TOOL_WAIT"];
 const JUDGE_PHASES: readonly VoicePhase[] = ["JUDGING", "SPECULATING"];
+/** Where a posted Turn waits for its answer under the `permit` wait (postTurn "final"; the permit timer's phases). */
+const WAITS_FOR_ANSWER: readonly VoicePhase[] = ["HELD", "JUDGING", "SPECULATING"];
 
 /** The current Stamp: the Session, the held Deck's four revisions, the generation and the current Turn. */
 export function localStamp(st: VoiceState): Stamp | null {
@@ -1142,11 +1145,13 @@ function cancelAll(s: Step, higherStamp: boolean): void {
   const a = st.active;
   if (a !== null && a.responseId !== null) receipt(s, a, a.audioStarted ? "playbackEnded" : "cancelled");
   s.set({ inFlight: [], pending: null, active: null, judge: null, spec: null });
+  // A post's answer wait (or a Permit's hash check) already running is never shortened by the hold (V2 step 4).
+  const waiting = st.deadlines.permit;
   s.disarm("tool", "permit", "turnRetry", "judge", "speakCap");
   if (higherStamp && (st.phase === "SPEAKING" || st.phase === "TOOL_WAIT" || st.phase === "HELD" || JUDGE_PHASES.includes(st.phase))) {
     // Design table: SPEAKING goes to HELD on a higher revision; no Permit can follow for the old reply.
     s.set({ phase: "HELD" });
-    s.arm("permit", s.now + HOLD_LIMIT_MS);
+    s.arm("permit", Math.max(s.now + HOLD_LIMIT_MS, waiting ?? 0));
   }
 }
 
@@ -1323,6 +1328,8 @@ function onTurn(s: Step, turnId: string, res: Infer<typeof TurnResponse>): void 
     const body: TurnBody = { ...turn.posted, epoch: res.stamp.epoch, policyRev: res.stamp.policyRev, bundleRev: res.stamp.bundleRev, rulesRev: res.stamp.rulesRev };
     s.set({ turn: { ...turn, posted: body, staleRetried: true } });
     pushTurn(s, body);
+    // R7.5: the resend is a new request and gets the full answer wait, as the first post did (V2 step 4).
+    if (s.st.admittedTurnId !== turnId && WAITS_FOR_ANSWER.includes(s.st.phase)) s.arm("permit", s.now + TURN_RESPONSE_LIMIT_MS);
     return;
   }
   if (s.st.admittedTurnId === turnId) {

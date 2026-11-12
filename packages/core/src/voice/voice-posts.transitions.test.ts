@@ -98,7 +98,7 @@ describe("post transitions", () => {
     expect(resend[0]!.body).toMatchObject({ clientSeq: first.body.clientSeq, policyRev: first.body.policyRev + 1 });
   });
 
-  it.fails("HELD + turnOk stale (higher Deck) -> HELD (the resend gets the full answer wait)", () => {
+  it("HELD + turnOk stale (higher Deck) -> HELD (the resend gets the full answer wait)", () => {
     const d = live();
     posted(d);
     play(d, { k: "higherDeck" });
@@ -109,7 +109,7 @@ describe("post transitions", () => {
     expect(cmds.some((c) => c.kind === "verifyPermit"), "the resend's Permit is sent for checking").toBe(true);
   });
 
-  it.fails("HELD + turnOk stale (after a poll's higher Deck) -> HELD (a higher Deck never shortens the resend's answer wait)", () => {
+  it("HELD + turnOk stale (after a poll's higher Deck) -> HELD (a higher Deck never shortens the resend's answer wait)", () => {
     const d = live();
     posted(d);
     play(d, { k: "higherDeck" });
