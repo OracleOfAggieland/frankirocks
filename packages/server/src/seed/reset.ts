@@ -3,9 +3,11 @@
  * subcollections too), reseeds before unblock; namespace salts synthetic IDs only"; ยง6 POST /api/seed/reset).
  * It clones the persona into the caller's own tenant, in this order:
  *
- *   1. Fence: `core/epoch.barrier` goes up (phase `fence`), so open answers blocked and state, turn and tool refuse
- *      with BARRIER; `core/state.fixtureNamespace` names the new namespace, so a crashed reset can be recognised
- *      as this tenant's own and taken over by the next one.
+ *   1. Fence: `core/epoch.barrier` goes up (phase `fence`), so open answers blocked and state, turn, tool and
+ *      receipt refuse with BARRIER; the epoch rises in the same transaction, as the forget fence's does (contracts
+ *      ง8 step 2), so every Stamp and every captured epoch from before the reset fails its check from here on
+ *      (brief 038 finding 2); `core/state.fixtureNamespace` names the new namespace, so a crashed reset can be
+ *      recognised as this tenant's own and taken over by the next one. policyRev is not raised.
  *   2. Close (phase `close`): every live Session moves to closing and its calls are hung up. A hangup that fails
  *      leaves the Session's hangup Job and fails the reset retryably; the barrier stays, so nothing can speak.
  *   3. Clear (phase `install`): every row but the core documents and this request's own ledger entry.
@@ -83,6 +85,8 @@ async function fence(ctx: RouteContext, namespace: ID, opId: ID): Promise<string
     const now = tsFromMs(ops);
     tx.update(paths.core(uid, "epoch"), {
       ...core.epoch.data,
+      // Brief 038 finding 2: the fence raises the epoch, so a writer of the old visit fails STALE during the reset.
+      epoch: core.epoch.data.epoch + 1,
       barrier: { opId, phase: "fence", startedAt: now, deadline: tsFromMs(ops + RESET_BARRIER_MS), queuedOps: barrier?.queuedOps ?? [] },
       updatedAt: now,
     });
@@ -139,7 +143,7 @@ export async function resetVisit(ctx: RouteContext, req: ResetReq, key: RequestK
   const prior = await deps.store.transaction(uid, async (tx) => readCoreDocs(tx, uid));
   let rows;
   try {
-    rows = await loadSeed(deps, uid, { fixture, namespace, zone, worldStart, core: { epoch: prior.epoch.data.epoch + 1, policyRev: prior.epoch.data.policyRev } });
+    rows = await loadSeed(deps, uid, { fixture, namespace, zone, worldStart, core: { epoch: prior.epoch.data.epoch, policyRev: prior.epoch.data.policyRev } });
   } catch (error) {
     if (error instanceof SeedLoadError) {
       deps.log("seed.loadFailed", { check: error.check, line: error.lineId });

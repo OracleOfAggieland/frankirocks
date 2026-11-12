@@ -67,15 +67,16 @@ export interface SeedCoreInput {
 
 /**
  * The five core documents of a fresh clone: fixture clock mode at the clone's Friday 08:40, the namespace and visit
- * ID stored (they persist across a reload), coverage over the hero window, rules and bundle empty. The epoch rises,
- * so work captured before the reset fails STALE; the rules and bundle revisions rise too, so no older Deck is taken
- * for newer. policyRev is kept: only a late control hit raises it (brief 014, S6).
+ * ID stored (they persist across a reload), coverage over the hero window, rules and bundle empty. The epoch is the
+ * one the reset's fence already raised (brief 038 finding 2), so work captured before the reset fails STALE; the rules
+ * and bundle revisions rise here, so no older Deck is taken for newer. policyRev is kept: only a late control hit
+ * raises it (brief 014, S6).
  */
 export function seedCoreDocs(uid: string, input: SeedCoreInput): CoreDocs {
   const pair: ClockPair = { worldClock: { now: input.worldStart, zone: input.zone }, opsClock: { now: input.opsNow } };
   const fresh = initialCoreDocs(uid, pair, input.zone);
   const { prior } = input;
-  const epoch = prior.epoch.epoch + 1;
+  const epoch = prior.epoch.epoch;
   const policyRev = prior.epoch.policyRev;
   const keep = <T extends { epoch: number; policyRev: number; createdAt: string }>(doc: T, was: { createdAt: string }): T => ({ ...doc, epoch, policyRev, createdAt: was.createdAt });
   const rulesRev = prior.rules.rulesRev + 1;
