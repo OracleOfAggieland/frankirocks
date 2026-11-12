@@ -74,9 +74,9 @@ describe("release gates: the count per gate (spec §13)", () => {
       written: 20,
       green: 7,
       waiting: 13,
-      waitingSteps: 17,
+      waitingSteps: 16,
       silent: 1,
-      byWait: { other: 9, G_FT02: 2, G_FT16: 1, GATE_WIRE: 2, MAIL_READ: 1 },
+      byWait: { other: 9, G_FT02: 2, GATE_WIRE: 2, MAIL_READ: 1 },
     });
   });
 });

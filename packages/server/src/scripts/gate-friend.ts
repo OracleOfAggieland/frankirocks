@@ -400,7 +400,6 @@ const FT16 = friend("FT16", 16, "Two Alexes", [
     label: "two separate people",
     do: "check",
     of: "open",
-    waits: W.G_FT16,
     expect: [storeHas("two person.relation Memories naming different entities", (m) => m.predicate === "person.relation", (ms) => (new Set(ms.map((m) => (m.args as { otherRef?: string }).otherRef)).size === 2 ? true : `${ms.length} relation(s), refs ${ms.map((m) => (m.args as { otherRef?: string }).otherRef).join(", ")}`))],
   },
   { label: "an action that depends on which", do: "type", text: "Remind me to text Alex tonight.", answers: [reply("Alex from work, or your neighbor?"), parse({ action: 0.9 }, "parse: an action")] },
