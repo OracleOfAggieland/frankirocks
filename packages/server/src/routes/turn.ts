@@ -67,7 +67,7 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 026: company, quiet and alone (voice-control tasks 48, 49).
 import { audienceEffect, narrowedHere, precompileAudienceHead } from "../audience-swap";
 // Brief 035: the review of the audience wave.
-import { deckAllowed, lateNarrowing, withNarrowHead } from "../audience-swap";
+import { deckAllowed, lateNarrowing, swapWindowCare, withNarrowHead } from "../audience-swap";
 import { afterClosed } from "../sessions";
 import { driveHangupJob, ensureHangupJob } from "../worker/hangup";
 
@@ -255,9 +255,10 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           };
 
           // Brief 026 (row 1; R14.5; property 10, server half): a Session narrowed during itself speaks no more. Every
-          // turn on it answers `blocked` with no Permit, whatever it carries; only the hold decision and the answer
-          // are written.
-          if (narrowedHere(s0)) {
+          // turn on it answers `blocked` with no Permit, whatever it carries. Brief 035 (finding 7): the turn that is
+          // next in order is still kept below (its Turn, Evidence, Extract_Job and hard rule); one out of order has no
+          // place to go, so only the hold decision and the answer are written for it.
+          if (narrowedHere(s0) && req.clientSeq !== s0.nextClientSeq) {
             const closed: RuleInput = {
               source: req.source === "asr" ? "asr" : cls.cls === "T" ? "pasted" : "typed",
               transcript: req.transcriptState,
@@ -283,7 +284,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
 
           // Stamp revisions must be current; a stale Stamp commits nothing.
           const fresh = req.epoch === stamp.epoch && req.policyRev === stamp.policyRev && req.bundleRev === stamp.bundleRev && req.rulesRev === stamp.rulesRev;
-          if (!fresh) {
+          if (!fresh && !narrowedHere(s0)) {
             return { kind: "unrecorded" as const, response: { ...base, status: "stale" as const, deck: head === null ? null : issueDeck(stamp, head, ops) } };
           }
           if (req.clientSeq > s0.nextClientSeq) {
@@ -380,7 +381,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             regexMatch: (slow?.regex.length ?? 0) > 0,
             // The gap and the audience are those before this Turn; its own failure shows from the next one.
             audience: effectiveAudience(s, ops),
-            narrowedHere: false,
+            narrowedHere: narrowedHere(s0),
             callLive: s.registeredCallIds.length > 0,
             parseGap: hasParseGap(s),
             noteSens: candidateNotes.length === 0 ? "none" : candidateNotes.some((n) => n.sens !== "S0") ? "S1+" : "S0",
@@ -421,6 +422,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           tx.update(doc.path, {
             ...next,
             ...(aud?.session ?? {}),
+            ...swapWindowCare(s0, rule, ops),
             nextClientSeq: req.clientSeq + 1,
             lastClientSeq: req.clientSeq,
             committedParseSeq,
@@ -431,7 +433,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             updatedAt: now,
           });
 
-          const deck = headOut2 === null || headless ? null : issueDeck(stampOut2, headOut2, ops, safe);
+          const deck = headOut2 === null || headless || narrowedHere(s0) ? null : issueDeck(stampOut2, headOut2, ops, safe);
           // Every reply's Permit comes from the Admission_Seam, which writes its decision ledger entry in this
           // transaction and runs in production too (R8.1, R8.2).
           const admitted = admitRule(

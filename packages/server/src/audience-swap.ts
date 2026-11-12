@@ -303,3 +303,12 @@ export async function withNarrowHead(
 
 /** Whether an answer may carry a Deck after this effect: never when it hangs up (finding 11), nor when the Head it needs is missing. */
 export const deckAllowed = (eff: AudienceEffect | null): boolean => eff === null || (!eff.hangup && ((eff.wantsHead ?? null) === null || eff.bundle !== null));
+
+/**
+ * A turn on a Session narrowed here (finding 7): it answers `blocked` and is kept, and a crisis line in it sets the
+ * crisis modifier, so the next call opens with care; a company line there changes nothing more. Empty otherwise.
+ */
+export function swapWindowCare(s: Session, rule: RuleInput, opsNow: number): Partial<Session> {
+  if (!narrowedHere(s) || rule.parse.kind !== "hit" || !crisisFires(rule.parse, rule.judge)) return {};
+  return { modifiers: { ...s.modifiers, crisis: s.modifiers.crisis ?? tsFromMs(opsNow) } };
+}

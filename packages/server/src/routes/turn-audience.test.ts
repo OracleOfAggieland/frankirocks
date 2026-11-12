@@ -101,9 +101,9 @@ describe("/api/turn: company and quiet (task 48)", () => {
       const later = await post(rig, voice(stamp, 2, "What's on for tonight?", "O"));
       expect(later.status, JSON.stringify(probs)).toBe(200);
       expect(later.body, JSON.stringify(probs)).toMatchObject({ status: "blocked", permit: null, notes: [] });
-      // Nothing of the later turn is stored: no Turn, and the Session's clientSeq didn't move.
-      expect(await rig.store.get(UID, paths.turn(UID, s.sessionId, later.body.stamp.turnId))).toBeNull();
-      expect((await sessionOf(rig, s.sessionId)).nextClientSeq).toBe(2);
+      // Brief 035 (finding 7): the later turn is kept, though nothing is admitted: its Turn, and the clientSeq moved.
+      expect(await rig.store.get(UID, paths.turn(UID, s.sessionId, later.body.stamp.turnId))).not.toBeNull();
+      expect((await sessionOf(rig, s.sessionId)).nextClientSeq).toBe(3);
     }
   });
 

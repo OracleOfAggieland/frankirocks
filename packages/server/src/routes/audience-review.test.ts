@@ -1,5 +1,5 @@
 // Brief 035: the review of the audience wave. One block per finding, each the reviewer's sequence as a route test.
-import { COMPANY_LINE, type CoreBundle, type CoreEpoch, type CoreRules, type Job, type SS, type Session } from "@franki/core";
+import { COMPANY_LINE, type CoreBundle, type CoreEpoch, type CoreRules, type Job, type SS, type Session, type Turn } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { never, ok } from "../openai/fake";
@@ -10,6 +10,8 @@ import { asrTurn, typedTurn } from "../testing/session-fixtures";
 import { PERSONAL_FACT } from "../testing/two-memories";
 import { UID, doorRig, postTurn } from "../testing/audience-doors";
 import { hangupJobId } from "../worker/hangup";
+import { extractJobId } from "../worker/extract-jobs";
+import { template } from "../testing/arb-rule-turns";
 
 /** The Stamp the browser would hold now: the stored core revisions. */
 async function stampNow(rig: TestRig, sessionId: string): Promise<SS> {
@@ -128,5 +130,37 @@ describe("finding 4: a retained company candidate narrows whatever class was cho
     const res = await postTurn(rig, voice(s.stamp, 1, "Keep this between us, someone's here.", "O"));
     expect(res.body.status).toBe("blocked");
     expect((await sessionOf(rig, s.sessionId)).audience).toBe("company");
+  });
+});
+
+describe("finding 7: a turn on a narrowed Session is kept, not thrown away", () => {
+  it("an allergy said in the swap window answers blocked with no Permit, and its Turn, Evidence, Extract_Job and rule are stored", async () => {
+    const { rig, s } = await doorRig(true);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9 })));
+    const first = await postTurn(rig, voice(s.stamp, 1, "My boss just walked in."));
+    expect(first.body.status).toBe("blocked");
+    const tpl = template("self", "peanuts", "peanuts");
+    rig.openai.script("decisions.create", ok(decisionAnswer({ hardRule: 0.9 })));
+    rig.fastSlots.script((input) => ({ kind: "valid", out: { items: tpl.items(input.turn.eid), need: "none" }, ms: 120 }));
+    const res = await postTurn(rig, voice(await stampNow(rig, s.sessionId), 2, tpl.text));
+    expect(res.body).toMatchObject({ status: "blocked", permit: null, notes: [], deck: null });
+    const turn = (await rig.store.get<Turn>(UID, paths.turn(UID, s.sessionId, testId("turn-2"))))?.data;
+    expect(turn?.text).toBe(tpl.text);
+    expect(await rig.store.get(UID, paths.evidence(UID, turn!.evidenceId!))).not.toBeNull();
+    expect(await rig.store.get(UID, paths.job(UID, extractJobId(turn!.evidenceId! as never, rig.deps.hasher)))).not.toBeNull();
+    const rules = (await rig.store.get<CoreRules>(UID, paths.core(UID, "rules")))!.data;
+    expect(rules.allergies.some((r) => r.subjectId === "self" && r.code === "peanut" && r.state === "active")).toBe(true);
+    expect((await sessionOf(rig, s.sessionId)).nextClientSeq).toBe(3);
+  });
+
+  it("a crisis line in the swap window sets the crisis modifier, so the next call opens with care", async () => {
+    const { rig, s } = await doorRig(true);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9 })));
+    await postTurn(rig, voice(s.stamp, 1, "My boss just walked in."));
+    rig.openai.script("decisions.create", ok(decisionAnswer({ crisis: 0.6 })));
+    const res = await postTurn(rig, voice(await stampNow(rig, s.sessionId), 2, "I can't do this anymore."));
+    expect(res.body).toMatchObject({ status: "blocked", permit: null });
+    expect((await sessionOf(rig, s.sessionId)).modifiers.crisis).not.toBeNull();
+    expect(await rig.store.get(UID, paths.turn(UID, s.sessionId, testId("turn-2")))).not.toBeNull();
   });
 });
