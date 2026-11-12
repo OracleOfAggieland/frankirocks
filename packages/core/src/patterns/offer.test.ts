@@ -18,4 +18,9 @@ describe("the hero offer", () => {
   it.each(["Yes", "Yes.", "Yeah, let's do it", "Sure", "OK please", "Sounds good"])("%s is a plain yes", (t) => expect(isPlainYes(t)).toBe(true));
   it.each(["No", "Yes, but not tonight", "Maybe", "Wait", "I said yes to Dana", "", "Yes later", "Nah", "Please hold off", "Sure, but I can't this week", "Okay, skip the groceries"])("%s is not", (t) => expect(isPlainYes(t)).toBe(false));
   it("no words are not a yes", () => expect(isPlainYes(null)).toBe(false));
+  // Brief 037, finding 4: the reviewer's hedges and deferrals.
+  it.each(["Okay, I'll think about it", "Sure, tell me more first", "ok what are they", "Do it tomorrow", "Yeah right", "sure, after I check with Sam", "Yes. Actually, hmm"])("%s is not a yes (finding 4)", (t) =>
+    expect(isPlainYes(t)).toBe(false),
+  );
+  it.each(["Yes, let's do it", "Yes please", "Okay, thanks", "Yep!", "Let's do it."])("%s is a plain yes (finding 4)", (t) => expect(isPlainYes(t)).toBe(true));
 });

@@ -19,15 +19,27 @@ export function heroOfferParts(p: PatternResult): unknown[] {
   return ["heroOffer", p.detectorVersion, w.fromCivil, w.toCivil, w.zone, w.currency, p.totalCents, p.lateCents, [...w.purchaseIds].sort(), [...p.meetingIds].sort()];
 }
 
-const AFFIRM = /^(yes|yeah|yep|yup|sure|ok|okay|absolutely|definitely|let's do it|lets do it|let's do that|do it|go ahead|sounds good)\b/;
-const NEGATION = /\b(no|not|don't|dont|never|nope|nah|wait|later|stop|cancel|maybe|can't|cant|won't|wont|but|except|skip|hold|rather|instead|without|unless|if)\b/;
+/**
+ * The closed list of plain yeses (brief 037, finding 4): an affirmative, with at most one of PLAIN_YES_TAILS after
+ * it, as the whole utterance. Anything else is not a yes, and Franki may ask again.
+ */
+export const PLAIN_YES_AFFIRMATIVES = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "absolutely", "definitely", "sounds good", "go ahead", "lets do it", "lets do that"] as const;
+export const PLAIN_YES_TAILS = ["please", "thanks", "thank you", "lets do it"] as const;
+
+const PLAIN_YES = new Set<string>(PLAIN_YES_AFFIRMATIVES.flatMap((a) => [a, ...PLAIN_YES_TAILS.map((t) => `${a} ${t}`)]));
 
 /**
- * True when the owner's own words are a plain yes: they start with an affirmative and hold no negation or hedge.
- * "Yes." and "Yeah, let's do it" pass; "Yes, but not tonight", "Maybe" and "No" don't. Fails closed.
+ * True when the owner's own words are, as a whole, one plain yes from the closed list. Case, punctuation and
+ * apostrophes don't matter. "Yes.", "Yeah, let's do it" and "OK please" pass; "Sure, tell me more first", "Do it
+ * tomorrow", "Yeah right" and "Yes. Actually, hmm" don't. Fails closed.
  */
 export function isPlainYes(text: string | null): boolean {
   if (text === null) return false;
-  const t = text.normalize("NFKC").toLowerCase().replace(/[‘’]/g, "'").replace(/[^\p{L}\p{N}' ]+/gu, " ").replace(/\s+/g, " ").trim();
-  return AFFIRM.test(t) && !NEGATION.test(t);
+  const t = text
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/['‘’]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+  return PLAIN_YES.has(t);
 }
