@@ -8,6 +8,7 @@ import { CardExtrasSection } from "./_sections/CardExtrasSection";
 import { ControlsSection } from "./_sections/ControlsSection";
 import { InstrumentExtrasSection } from "./_sections/InstrumentExtrasSection";
 import { MainScreenSection } from "./_sections/MainScreenSection";
+import { MemoryScreenSection } from "./_sections/MemoryScreenSection";
 import { MaterialsSection } from "./_sections/MaterialsSection";
 import { MemoryExtrasSection } from "./_sections/MemoryExtrasSection";
 import { PhoneSection } from "./_sections/PhoneSection";
@@ -24,6 +25,7 @@ export default function SpecimensPage() {
       <AvatarSection />
       <ThreeSection />
       <MainScreenSection />
+      <MemoryScreenSection />
       <PhoneSection />
       <MaterialsSection />
       <SurfaceSections />
