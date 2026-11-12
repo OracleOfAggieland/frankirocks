@@ -47,10 +47,13 @@ function entryOf(p: GatePayload, at: GateWriteAt): GateEntry {
   return { ...cFields(at.uid, at.now, at.epoch, at.policyRev), kind: "gate", state: "complete", at: at.now, retainUntil: null, payload: p };
 }
 
-/** Writes one row inside the caller's transaction, unless it is already stored. Returns the entry ID, or null. */
+/** Writes one row inside the caller's transaction, unless it is already stored. Returns the entry ID; throws on a row with no scope or one that fails validation. */
 async function writeOnce(tx: Tx, hasher: Hasher, at: GateWriteAt, p: GatePayload): Promise<ID | null> {
+  // Brief 033 finding 11: a row without a scope would collide with the same candidate's later row of the same
+  // outcome, and a row that fails validation is a bug, not a quiet skip.
+  if (p.turnId === null && p.momentId === null) throw new Error("gate row needs a turnId or a momentId");
   const entry = entryOf(p, at);
-  if (!validate(LedgerSchema, entry).ok) return null;
+  if (!validate(LedgerSchema, entry).ok) throw new Error("gate row failed validation");
   const id = gateRowId(hasher, at.uid, p);
   const path = paths.ledger(at.uid, id);
   if ((await tx.get(path)) !== null) return id;

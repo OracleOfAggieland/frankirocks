@@ -33,7 +33,8 @@ export const CEILING = {
   S0: {
     told: { paths: ["open"], reply: "free" },
     own: { paths: ["open"], reply: "free" },
-    third: { paths: ["attributedMailed", "card"], reply: "attributed" },
+    // "Q<=1/sender/day" holds for every T ask (brief 033 finding 14), so the capped ask is tried first.
+    third: { paths: ["cappedAsk", "attributedMailed", "card"], reply: "attributed" },
     inferred: { paths: ["offer", "silentUntilRaised"], reply: "hedged" },
   },
   S1: {

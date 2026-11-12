@@ -48,3 +48,45 @@ Update `docs/machines/` where a transition changed. Property 10 and properties 1
 ## Done
 
 The four fixes with their red-first tests, the checks of brief 016 with `npm run build`, and a section "Outcome" added at the end of this file: per finding, the test, the commit, and how many golden calls moved.
+
+## Outcome
+
+Built by Claude Code on `lane/fix2`. No commit ends `Built-with: Kiro`. Nothing here was tried on a live call or in a browser. "Golden" counts calls whose digest moved: `a` is the 600-call `arbCall` corpus, `w` the 500-call wide corpus.
+
+| Finding | Red-first test | Commit | Golden moved |
+|---|---|---|---|
+| 1. The swap adopted an open the narrowing never reached | New `swap-fresh-open.property.test.ts` (1,000 runs over the new `arbEarlyOpenCall`), and `voice-swap.transitions.test.ts` > `SWAPPING + openOk for the open sent before the blocked answer -> SWAPPING (closed, never adopted; the swap's own open follows)` | `681c36e` | none: neither corpus reaches a `blocked` answer |
+| 2. An admitted Turn lost when its reply ended before the retry hint | `voice-posts.transitions.test.ts` > `SPEAKING + output stopped before a hold's retry hint -> LISTENING (...)` | `959377f` | 1 a (seed 505, call 25), 0 w: a slow-path Turn answered `hold` with a hint reached LISTENING before the hint and now arms `retryPost` |
+| 3. A second `blocked` cut or restarted the care reply | `voice-swap.transitions.test.ts` > the two `SPEAKING (care reply) + turnOk blocked ...` cases | `8cc1dc9` | none |
+| 4. Answers matched to posts by order | `voice-posts.transitions.test.ts` > `LISTENING + turnOk stale for a Superseding_Post answered before its missing post ...` and `LISTENING + turnFailed for a Superseding_Post before its missing post's answer ...` | `c71b5a2` | none: the drivers send no flag |
+| 5, `narrowedFrom` as a set | `voice-swap.transitions.test.ts` > `SWAPPING + turnOk blocked for a Session swapped away from two swaps back -> SWAPPING (nothing happens)` | `707761a` | none |
+
+**What changed, per finding.**
+
+1. `startSwap` never reuses an open in flight. It marks it `staleOpen` and keeps that open's own `openWait`; the swap's own open (`previousSessionId` the narrowed Session) goes out only when the stale one answers, so one open is in flight at a time and answers are never misattributed. The stale answer is closed if it created a Session and is never adopted (`dropStaleOpen`). If the stale open never answers, its `openWait` ends the swap in connection recovery, which also fixes the second problem the review named (no second open while the first is untracked). Ruling V-163 is replaced as this brief says. The transitions case that pinned V-163 (`CONNECTING (reconnect) + turnOk blocked for the lost Session -> SWAPPING`) was rewritten to the new ruling; it asserts more than before (the stale Session closed, never connected, the open wait kept).
+   - Red: seed `913073197` (and `1749594897` on the first draft). Shrunk: setup, a typed post, `connectionLost`, the reconnect's open, the post answered `blocked` at step 7, that open answered early (`openEarly`), and a reply on that Session heard at step 22.
+   - The driver now answers an open only inside the Voice_Client's own open timeout (`openTimeoutMs`, used by `runEarlyOpenCall` only). Without it the generator produced answers that arrive after the machine's `openWait` gave up, which the browser cannot produce: `postOpen` times out at the same 5 s and dispatches `openFailed`. A hanging `getToken` (B1's open pin) is the one way it could, and is not modelled.
+   - A reach test in `arb-swap.test.ts` counts the early-open situations (132 and 120 of 500 at seed 2026; floors 65 and 60). Property 10's own reach moved `lineHeard` from 77 to 71 (floor 35), because a `droppedBack` lead's first `openOk` now answers the stale open.
+2. `toListening` keeps the post of a Turn leaving `turn` with `turnRetry` armed as `retryPost`, armed at the same deadline under a new timer, `retryPost`. Ruling: its own timer rather than `turnRetry`, because a new commit, a barge-in or a higher Deck disarm `turnRetry` for the current Turn, which would drop the resend again. Another `hold` with a hint for it waits again; any other answer clears it and is read as an answer for a Turn no longer current (so `stale` or an error reconnects, as before for such a post). A second one arriving while one waits sends the older one at once.
+3. `onBlocked` returns when `afterReply` is `"swap"` and the answer names the current Session, before it adopts the answer's Deck.
+4. `turnOk` and `turnFailed` carry an optional `supersede`, which `voice-client.ts` always sets from the request it answered. `answerOf` matches the post of that kind only. Ruling (fails closed): a flagged Superseding_Post answer with no entry left gives its Deck only and never reconnects. An answer without the flag (the test drivers) is matched by order, as before, which is why no golden call moved.
+
+**Low items.**
+- `narrowedFrom` as a set: fixed (`swappedFrom`).
+- Unmute in RECOVERY, CONNECTING and CONFIGURING: not fixed. The mute control is hidden there (`muteVisible` follows `avatarState`, and `CallScreen.tsx` reads it), so no press reaches the reducer. A fix means showing the control while muted in those phases: a UI change in a file this lane may not edit, and a change to an outward view that moves golden digests, on a path no live call has tried. Left open; the mute is kept and the control returns at LISTENING.
+- Open, as the review wrote them: a commit after a care reply, with no reply pending or active, starts a new Turn on the narrowed call (it still ends in the swap); a swap timeout after the fresh Session opened reconnects naming that Session, not the narrowed one, and the swap line in its open answer is lost; a token that always fails shows as reconnects, not as signed out (`api.ts`).
+
+**Questions and things seen on the way.**
+- **V-165. Property 10 fails on some seeds, before and after this brief.** Seed `1176707969` (path `932:0:0:0:0:0:2:2:2:2:2:1:2:2:2:3:3:3:6:4:7:7:7:7`) fails at the base commit too: a second `blocked` for the Session already swapped away from (which does nothing, correctly) is read by the property as a new narrowing, and the swap line on the fresh call, opened before that answer, counts as heard from an old call. It failed about 2 runs in 70 on fresh seeds here. The property file is committed, so it was not edited; its rule should skip a `blocked` for a Session already narrowed.
+- `docs/machines/voice-call.md` said the `swap` timer and `afterReply` do nothing on this branch; that sentence was wrong and is removed.
+
+**Checks** (after the last code commit):
+
+| Check | Result |
+|---|---|
+| `npx vitest run --maxWorkers=3` | exit 0: 376 files, 3,665 passed, 0 expected fail |
+| `npm run lint` | exit 0; one warning, in `components/avatar/three/brass.ts`, not touched here |
+| `npm run typecheck` | exit 0 |
+| `npm run build` | exit 0 |
+
+**Not tested:** no live call, browser, emulator or real Realtime session. Nothing here shows the swap's stale open closed on a real network, the `retryPost` resend against the real route, or the `supersede` flag against real answer orderings.

@@ -64,5 +64,8 @@ export async function advancedWatermark(tx: Pick<Tx, "query">, uid: string, sess
 // counts as on (fails closed); the Effective_Audience is `unknown` while a parse repair is pending.
 
 export function gateAudience(s: Session, opsNow: number): { audience: Au; modifiers: { rushed: boolean; crisis: boolean } } {
-  return { audience: effectiveAudience(s, opsNow), modifiers: { rushed: s.modifiers.rushed !== null, crisis: s.modifiers.crisis !== null } };
+  // Brief 033 finding 13: a parse gap, or a lease whose time can't be read, is `unknown` too (fails closed).
+  const unreadableLease = s.parseLease !== null && !Number.isFinite(msFromTs(s.parseLease.until));
+  const audience = hasParseGap(s) || unreadableLease ? "unknown" : effectiveAudience(s, opsNow);
+  return { audience, modifiers: { rushed: s.modifiers.rushed !== null, crisis: s.modifiers.crisis !== null } };
 }
