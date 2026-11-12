@@ -2,7 +2,7 @@
  * Typed input and the conversation view's state (R18.1, R18.6, R18.8–R18.10; design "One typed turn").
  *
  * With no call open, the first typed line opens a Session (`/api/session/open`, no SDP) and keeps its Stamp. Each
- * line is one TurnRequest with `source:"typed"`, `items:[]`, `judge:"typed"`, `transcriptState:"final"` and a
+ * line is one TurnRequest with `source:"typed"` (`"pasted"` when a paste event supplied its text, G34), `items:[]`, `judge:"typed"`, `transcriptState:"final"` and a
  * clientSeq exactly 1 above the last one this client assigned (KV12). While a request is in flight the send
  * control is disabled, so one press sends at most one request. On an error or no response within 10 s the text
  * stays in the box with an error and no reply.
@@ -42,6 +42,11 @@ export interface TypedState {
   entries: ConversationEntry[];
   /** The last clientSeq this client assigned in the current Session (0 before the first). */
   lastClientSeq: number;
+  /**
+   * A paste event supplied some of the box's text (brief 012 G34, task B10). It holds until the box is empty
+   * (`PASTE_STICKS_UNTIL_CLEARED`), so typing around pasted words never makes them the owner's own.
+   */
+  pasted: boolean;
   sessionId: string | null;
 }
 
@@ -52,7 +57,15 @@ interface Pending {
   transcript: string;
   /** Read once, when the line is first sent: every retry of the line sends the same body (B4, R19.3). */
   utteredWorldAt: string;
+  /** `pasted` when a paste event supplied the text (G34); read once with the line, like `utteredWorldAt`. */
+  source: "typed" | "pasted";
 }
+
+/**
+ * A ruling of brief 018 (task B10), failing closed: once a paste has put words in the box, the line counts as
+ * pasted until the box is cleared, whatever is typed around them.
+ */
+export const PASTE_STICKS_UNTIL_CLEARED = true;
 
 export interface TypedDeps {
   api: ApiClient;
@@ -85,7 +98,7 @@ const failureMessage = (r: Exclude<ApiResult<unknown>, { ok: true }>, step: stri
 };
 
 export class TypedTurns {
-  private state: TypedState = { text: "", sending: false, error: null, entries: [], lastClientSeq: 0, sessionId: null };
+  private state: TypedState = { text: "", sending: false, error: null, entries: [], lastClientSeq: 0, sessionId: null, pasted: false };
   private listeners = new Set<() => void>();
   private stamp: SS | null = null;
   private pending: Pending | null = null;
@@ -109,13 +122,23 @@ export class TypedTurns {
   }
 
   setText(text: string): void {
-    this.set({ text });
+    this.set(text === "" || !PASTE_STICKS_UNTIL_CLEARED ? { text, pasted: false } : { text });
+  }
+
+  /** A paste event put text in the box (G34): the line it is part of is sent as `source: "pasted"`. */
+  markPasted(): void {
+    if (!this.state.pasted) this.set({ pasted: true });
+  }
+
+  /** Shows why the box's line was not sent, and keeps the text (R18.10). */
+  refuse(message: string): void {
+    this.set({ error: message });
   }
 
   /** One press of send or Enter. Returns false when nothing was sent. */
   async submit(): Promise<boolean> {
     if (!this.canSend()) return false;
-    return this.send(this.state.text, true);
+    return this.send(this.state.text, true, this.state.pasted ? "pasted" : "typed");
   }
 
   /**
@@ -124,15 +147,15 @@ export class TypedTurns {
    */
   async sendLine(text: string): Promise<boolean> {
     if (this.state.sending || !canSendText(text)) return false;
-    return this.send(text, false);
+    return this.send(text, false, "typed");
   }
 
-  private async send(transcript: string, fromBox: boolean): Promise<boolean> {
+  private async send(transcript: string, fromBox: boolean, source: "typed" | "pasted"): Promise<boolean> {
     this.set({ sending: true, error: null });
     try {
       const stamp = this.stamp ?? (await this.openSession());
       if (typeof stamp === "string") return this.fail(stamp);
-      const pending = this.pendingFor(transcript);
+      const pending = this.pendingFor(transcript, source);
       const result = await this.sendTurn(stamp, pending);
       if (typeof result === "string") return this.fail(result);
 
@@ -141,7 +164,7 @@ export class TypedTurns {
       const entries = [...this.state.entries, { key: pending.turnId, role: "user" as const, text: transcript }];
       // No call is open in this path, so the reply shows as text and no audio plays (R18.6).
       for (const note of result.notes) entries.push({ key: note.noteId, role: "franki", text: note.text });
-      this.set({ ...(fromBox ? { text: "" } : {}), sending: false, error: null, entries });
+      this.set({ ...(fromBox ? { text: "", pasted: false } : {}), sending: false, error: null, entries });
       this.deps.onTurn?.({ sessionId: result.stamp.sessionId, turnId: result.stamp.turnId });
       this.deps.onReply?.({ transcript, lines: result.notes.map((n) => n.text), receiptId: result.receiptId });
       return true;
@@ -168,7 +191,7 @@ export class TypedTurns {
 
   /** Drops every typed line and reply this client holds, after a completed forget (lab-ui-foundation R17.5). */
   dropTurnCopies(): void {
-    this.set({ entries: [], text: "" });
+    this.set({ entries: [], text: "", pasted: false });
   }
 
   /** Forgets the typed Session without a request: a call open closes it on the server (KV09). */
@@ -185,12 +208,12 @@ export class TypedTurns {
     return false;
   }
 
-  private pendingFor(transcript: string): Pending {
-    if (this.pending !== null && this.pending.transcript === transcript) return this.pending;
+  private pendingFor(transcript: string, source: "typed" | "pasted"): Pending {
+    if (this.pending !== null && this.pending.transcript === transcript && this.pending.source === source) return this.pending;
     // The clientSeq stays the one assigned to the unsent line; a new line gets last + 1 (R18.1).
     const clientSeq = this.pending?.clientSeq ?? this.state.lastClientSeq + 1;
     const utteredWorldAt = tsFromMs(this.deps.clock.read().worldClock.now);
-    this.pending = { clientSeq, requestId: this.newId(), turnId: this.newId(), transcript, utteredWorldAt };
+    this.pending = { clientSeq, requestId: this.newId(), turnId: this.newId(), transcript, utteredWorldAt, source };
     if (clientSeq !== this.state.lastClientSeq) this.set({ lastClientSeq: clientSeq });
     return this.pending;
   }
@@ -223,7 +246,7 @@ export class TypedTurns {
         turnId: pending.turnId,
         requestId: pending.requestId,
         clientSeq: pending.clientSeq,
-        source: "typed",
+        source: pending.source,
         items: [],
         utteredWorldAt: pending.utteredWorldAt,
         transcript: pending.transcript,

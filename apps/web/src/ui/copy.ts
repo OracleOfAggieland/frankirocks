@@ -89,7 +89,7 @@ export const COPY = {
   captions: { toggle: "Captions" },
   sound: { toggle: "Sound effects" },
   auth: { signIn: "Sign in to wake Franki", signOut: "Sign out", about: "About Franki" },
-  typed: { open: "Type to Franki", label: "Type to Franki", send: "Send" },
+  typed: { open: "Type to Franki", label: "Type to Franki", send: "Send", pastedInCall: "Pasted text can't go into a call. Send it after you hang up." },
   call: {
     start: "Call Franki",
     hangUp: "Hang up",
@@ -126,6 +126,18 @@ export const COPY = {
     /** The strip's last terminal while no comparison figure has a source. */
     stripResult: "Compared",
     goneAsk: { title: "A quick check", question: "Did you want that deleted?", yes: "Yes", no: "No" },
+    /** Where a `why` root came from, by Evidence kind code (review 028 finding 9); `other` for a code not listed. */
+    sources: {
+      turn: "You said",
+      message: "An email",
+      calendar: "Your calendar",
+      transaction: "Your bank",
+      receipt: "A receipt",
+      note: "A note",
+      task: "A task",
+      food: "A food log",
+      other: "A source",
+    },
   },
   /** Brief 027: the visit, the time bolt, start over and the sheet on real data. */
   visit: {

@@ -225,17 +225,20 @@ export function readout(rows: readonly ViewRow[], ctx: ViewContext): { lines: Re
 
 /**
  * A snapshot with only the cards and told lines at or under `ceiling`; each card taken out is counted as private.
- * Topic counts cover the rows taken out too, so they are dropped. The tool route runs this when the turn's
- * admission allows S0 notes only.
+ * Topic counts cover the whole floor, not only this page, so under any ceiling below the screen's highest (S1) they
+ * are dropped (review 028 finding 2). The cursor names the last card kept, or nothing when none was kept. The tool
+ * route runs this when the turn's admission allows S0 notes only.
  */
 export function limitSnapshot(view: SnapshotView, ceiling: Sens): SnapshotView {
   const cards = view.cards.filter((c) => RANK[c.sens] <= RANK[ceiling]);
+  const cursor = view.cursor === null || cards.length === view.cards.length ? view.cursor : (cards[cards.length - 1]?.id ?? null);
   return {
     ...view,
     cards,
+    cursor,
     overview: {
       ...view.overview,
-      topics: cards.length === view.cards.length ? view.overview.topics : [],
+      topics: RANK[ceiling] >= RANK.S1 ? view.overview.topics : [],
       heldPrivate: view.overview.heldPrivate + (view.cards.length - cards.length),
       recentTold: view.overview.recentTold.filter((w) => RANK[w.sens] <= RANK[ceiling]),
     },
@@ -253,21 +256,11 @@ export function itemView(rows: readonly ViewRow[], id: ID, ctx: ViewContext): In
   return r === undefined || !shown(r, ctx) ? [] : [itemOf(r)];
 }
 
-/** Evidence kinds as the `why` view's labels (shown under "Sources"). */
-const EVIDENCE_LABEL: Record<Evidence["kind"], string> = {
-  turn: "You said",
-  message: "An email",
-  calendar: "Your calendar",
-  transaction: "Your bank",
-  receipt: "A receipt",
-  note: "A note",
-  task: "A task",
-  food: "A food log",
-};
-
 /**
  * The `why` view ("How do you know?" walks the roots, spec §6): the shown row, then each root's quoted words, only
- * where the root's Slice is at or under the audience's ceiling and its Evidence is retained and current.
+ * where the root's Slice is at or under the audience's ceiling and its Evidence is retained and current. A root's
+ * `label` is its Evidence kind code (`turn`, `message`, ...); the browser words it from `ui/copy.ts` (review 028
+ * finding 9).
  */
 export function whyView(rows: readonly ViewRow[], evidence: ReadonlyMap<string, Evidence>, id: ID, ctx: ViewContext): InspectItem[] {
   const r = rows.find((x) => x.id === id);
@@ -278,11 +271,13 @@ export function whyView(rows: readonly ViewRow[], evidence: ReadonlyMap<string, 
     if (!underCeiling(s.sens, ctx.ec.audience) || s.start === null || s.end === null || s.fieldPath !== "text") continue;
     const ev = evidence.get(s.eid);
     if (ev === undefined || ev.status !== "retained" || ev.uid !== ctx.ec.uid || ev.epoch < ctx.ec.epoch || ev.dirty) continue;
+    // Review 028 finding 5: the root itself passes the one `eligible` function (blocks, overlays, barrier).
+    if (!eligible({ ref: docRef("evidence", s.eid, ev.rev), row: ev }, ctx.ec, ctx.snapshot).allow) continue;
     const text = ev.text?.kind === "inline" ? ev.text.text : null;
     if (text === null || s.end > text.length) continue;
     const quote = text.slice(s.start, s.end);
     if (quote === "" || out.some((o) => o.id === s.eid)) continue;
-    out.push({ id: s.eid, kind: "evidence", label: EVIDENCE_LABEL[ev.kind], body: quote.slice(0, 2048), status: "active", refs: [{ type: "evidence", id: s.eid, rev: ev.rev }] });
+    out.push({ id: s.eid, kind: "evidence", label: ev.kind, body: quote.slice(0, 2048), status: "active", refs: [{ type: "evidence", id: s.eid, rev: ev.rev }] });
   }
   return out;
 }

@@ -58,6 +58,7 @@ import { readSnapshot } from "../store/port";
 import { type TypedPlan, planTypedReply, readPreRoute, runHardRuleSlots, typedRouteNote } from "../onturn/route";
 import { askedHere, candidateOpens, regexOpens, routeEligible, speakerCertain } from "../onturn/trigger";
 import { planKey } from "../onturn/typed";
+import { lateSlots, routeHandled } from "../onturn/late";
 import { storeReader } from "../head-build";
 import { turnEvidenceId } from "../turns";
 import { finishTypedPhoneCall } from "../phone/typed";
@@ -498,6 +499,8 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
   const text = normalizedTranscript(req.transcript)!;
   const cls = classifyTurn(req);
   const slow = await runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log }, { turnId: req.turnId, utterance: text });
+  // Brief 012 G20 (task B9): the hardRule route only, once per turn, planned in this post's own transaction.
+  const late = await lateSlots(ctx, { turnId: req.turnId, text, cls: cls.cls, typed: false, slow, generation: req.generation });
   for (let attempt = 1; ; attempt++) {
     try {
       const outcome = await deps.store.transaction(uid, async (tx) => {
@@ -510,7 +513,7 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
         const pair = ownerClock(core.state.data, deps.clock);
         const ops = pair.opsClock.now;
         const stamp0 = { ...currentStamp(req.sessionId, s0.generation, { epoch: core.epoch.data, rules: core.rules.data, bundle: core.bundle.data }), turnId: req.turnId };
-        const head = core.bundle.data.head;
+        const head0 = core.bundle.data.head;
         const base: TurnRes = {
           requestId: req.requestId,
           stamp: stamp0,
@@ -526,7 +529,7 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
           error: null,
         };
         const fresh = req.epoch === stamp0.epoch && req.policyRev === stamp0.policyRev && req.bundleRev === stamp0.bundleRev && req.rulesRev === stamp0.rulesRev;
-        if (!fresh) return { kind: "unrecorded" as const, response: { ...base, status: "stale" as const, deck: head === null ? null : issueDeck(stamp0, head, ops) } };
+        if (!fresh) return { kind: "unrecorded" as const, response: { ...base, status: "stale" as const, deck: head0 === null ? null : issueDeck(stamp0, head0, ops) } };
 
         // The Turn must still wait for this transcript: same seq, same items; else stale with no writes.
         const turnDoc = await tx.get<Turn>(paths.turn(uid, req.sessionId, req.turnId));
@@ -545,10 +548,38 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
         const epoch: CoreEpoch = hit ? { ...core.epoch.data, policyRev: core.epoch.data.policyRev + 1, updatedAt: tsFromMs(ops) } : core.epoch.data;
         if (hit) tx.update(paths.core(uid, "epoch"), epoch);
         const coreVals = { epoch: epoch.epoch, policyRev: epoch.policyRev };
-        const stamp = { ...currentStamp(req.sessionId, s0.generation, { epoch, rules: core.rules.data, bundle: core.bundle.data }), turnId: req.turnId };
 
         const { evidence } = userTurnRecords({ uid, sessionId: req.sessionId, req, text, cls, clock: pair, core: coreVals, hasher: deps.hasher });
         const ev = evidence!;
+        // Task B9: the executor on the rules this transaction read, unless the route already ran for this Evidence.
+        const lateHr = late === null || routeHandled(core.rules.data as CoreRules, ev.eid) ? null : executeHardRule({
+          uid,
+          sessionId: req.sessionId,
+          turnId: req.turnId,
+          clientSeq: req.clientSeq,
+          generation: req.generation,
+          source: "asr",
+          rules: core.rules.data as CoreRules,
+          epoch,
+          bundle: core.bundle.data,
+          evidence: ev,
+          slots: late.run.slots,
+          trigger: { regex: late.regex, candidate: candidateOpens(slow), asked: false },
+          askedAtArrival: null,
+          speakerCertain: speakerCertain("asr", slow),
+          context: late.run.context,
+          clock: pair,
+          audience: effectiveAudience(s0, ops),
+          hasher: deps.hasher,
+        });
+        if (lateHr !== null) {
+          tx.update(paths.core(uid, "rules"), lateHr.rules);
+          if (lateHr.bundle !== null) tx.update(paths.core(uid, "bundle"), lateHr.bundle);
+        }
+        const rulesOut = lateHr?.rules ?? core.rules.data;
+        const bundleOut = lateHr?.bundle ?? core.bundle.data;
+        const stamp = { ...currentStamp(req.sessionId, s0.generation, { epoch, rules: rulesOut, bundle: bundleOut }), turnId: req.turnId };
+        const head = bundleOut.head;
         tx.create(paths.evidence(uid, ev.eid), ev.record);
         const jobId = extractJobId(ev.eid, deps.hasher);
         tx.create(paths.job(uid, jobId), extractJobRecord(uid, ev.eid, ev.record, ops, coreVals));
@@ -579,7 +610,8 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
 
         const safe = await earlierSafeTurns(tx, uid, req.sessionId, req.clientSeq, ctx);
         const deck = head === null ? null : issueDeck(stamp, head, ops, safe);
-        const response: TurnRes = { ...base, stamp, status: hit ? "ready" : "ordinary", deck };
+        // A rules write raises the Deck, which cuts what is playing (G1), as a late hit does.
+        const response: TurnRes = { ...base, stamp, status: hit || lateHr?.rulesChanged === true ? "ready" : "ordinary", deck };
         await completeRequest(tx, key, response, ops);
         return { kind: "committed" as const, response, jobId };
       });

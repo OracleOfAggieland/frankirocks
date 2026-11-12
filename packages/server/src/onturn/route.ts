@@ -40,7 +40,7 @@ export interface PreRoute {
 }
 
 /** The core documents read at arrival, outside the transaction. */
-export async function readPreRoute(ctx: RouteContext): Promise<PreRoute> {
+export async function readPreRoute(ctx: Pick<RouteContext, "uid" | "deps">): Promise<PreRoute> {
   const { uid, deps } = ctx;
   const [rules, epoch, bundle, state] = await Promise.all([
     deps.store.get<CoreRules>(uid, paths.core(uid, "rules")),
@@ -61,7 +61,7 @@ export interface RouteRun {
  * candidate; never otherwise. The context is read right before the call.
  */
 export async function runHardRuleSlots(
-  ctx: RouteContext,
+  ctx: Pick<RouteContext, "uid" | "deps">,
   a: { eid: string; text: string; typed: boolean; regex: boolean; askedRuleId: string | null; asked: boolean; pre: PreRoute; generation: number; slowP: Promise<SlowParse | null> },
 ): Promise<RouteRun | null> {
   const { uid, deps } = ctx;
