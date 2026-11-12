@@ -8,6 +8,7 @@ import {
   HERO_ORDERS,
   HERO_ZONE,
   instantAt,
+  sampleBlock,
   sampleEvidence,
   testId,
 } from "@franki/core/testing";
@@ -106,6 +107,18 @@ describe("the hero offer and its yes", () => {
     expect(offer?.line).toBe("You've spent $186 on takeout in this window, mostly on nights with meetings after 6. Sources are on the card. Want three quick dinners for those nights, with groceries on your list?");
     expect(offer?.pattern).toMatchObject({ totalCents: 18600, lateCents: 12600, orderCount: 6, lateOrderCount: 4 });
     expect(offer?.card.sources).toHaveLength(10);
+  });
+
+  it("a blocked row is not counted: the offer reads the owner's blocks (brief 028 finding 3, brief 030 P1-9)", async () => {
+    const { rig, ctx, stamp } = await setup();
+    const before = (await heroOffer(ctx, stamp.generation))!;
+    expect(before.pattern.totalCents).toBe(18600);
+    const order = HERO_ORDERS[0]!;
+    await rig.store.transaction(UID, async (tx) => {
+      tx.create(paths.block(UID, testId("block-1")), sampleBlock({ uid: UID, kind: "root", rootKey: order.rootKey, key: order.rootKey, createdFrom: { type: "evidence", id: order.id, rev: 1 } }));
+    });
+    const after = await heroOffer(ctx, stamp.generation);
+    expect(after?.pattern.totalCents ?? 0).toBeLessThan(18600);
   });
 
   it("no rows, no offer", async () => {

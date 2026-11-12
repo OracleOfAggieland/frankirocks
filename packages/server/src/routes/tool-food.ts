@@ -55,6 +55,7 @@ import {
 } from "@franki/core";
 import { readCoreDocs, ownerClock } from "../core-docs";
 import { heroAnchor } from "../time/hero-anchor";
+import { forgetRowsFor } from "../forget/snapshot-rows";
 import { foregroundEC, storeReader } from "../head-build";
 import { cFields } from "../records";
 import type { Reader } from "../store/port";
@@ -115,17 +116,20 @@ async function readMoneyRows(ctx: RouteContext, generation: number): Promise<Mon
   const docs = await scanEvidence(reader, uid);
   if (docs === null) return null;
   const money = docs.filter((d) => ["transaction", "receipt", "calendar"].includes(d.data.kind));
+  // Brief 030 P1-9 (brief 028 finding 3): the owner's blocks and overlays, as the read route's Snapshot carries them.
+  const forget = await forgetRowsFor(reader, uid);
+  const refs = [...money.map((d) => docRef("evidence", d.id, d.data.rev)), ...forget.refs];
   const snapshot: Snapshot = {
     uid,
     epoch: core.epoch.data,
     session: null,
     job: null,
     localGeneration: generation,
-    refs: money.map((d) => docRef("evidence", d.id, d.data.rev)),
-    rows: money.map((d) => d.data),
-    blocks: [],
+    refs: refs.slice(0, 4096),
+    rows: [...money.map((d) => d.data), ...forget.rows].slice(0, 4096),
+    blocks: forget.blocks,
     coverage: core.state.data.coverage,
-    complete: true,
+    complete: refs.length <= 4096 && forget.complete,
   };
   const ec = { ...foregroundEC(uid, core.epoch.data, clock, generation), stage: "toolReturn" as const };
   const anchor = await heroAnchor(reader, uid, deps.hasher, clock.worldClock.now);
