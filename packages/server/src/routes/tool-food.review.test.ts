@@ -117,6 +117,22 @@ describe("finding 2: the food paths filter by every stored rule of every subject
   });
 });
 
+describe("finding 6: the caps apply after filtering to the window and the category", () => {
+  it("130 older bank rows don't silence the offer", async () => {
+    const old = Array.from({ length: 130 }, (_, i) => bankRow(`old${i}`, "2026-06-10", 19 * 60, 1500));
+    const t = await setup({ turns: ["Hi"], rows: [...HERO_ORDERS, ...HERO_BASELINE_GROCERIES, ...HERO_MEETINGS, ...old] });
+    expect(t.offer?.pattern.totalCents).toBe(18600);
+  });
+
+  it("2,100 Evidence of other kinds don't silence the offer", async () => {
+    const t = await setup({ turns: ["Hi"] });
+    await t.rig.store.transaction(UID, async (tx) => {
+      for (let i = 0; i < 2100; i++) tx.create(paths.evidence(UID, testId(`mail${i}`)), sampleEvidence({ logicalId: testId(`mail${i}`) }));
+    });
+    expect((await heroOffer(t.ctx, t.stamp.generation))?.pattern.totalCents).toBe(18600);
+  });
+});
+
 describe("finding 10: the card cites every counted row or says how many more", () => {
   it("the card's lines are the guarded core lines", async () => {
     const t = await setup({ turns: ["Hi"] });

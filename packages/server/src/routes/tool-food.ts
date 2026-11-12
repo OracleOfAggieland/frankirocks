@@ -36,6 +36,8 @@ import {
   type MeetingRow,
   type ReceiptRow,
   CATALOG_VERSION,
+  METRIC_CATEGORIES,
+  POSTING_LAG_DAYS,
   addCivilDays,
   celebration,
   civilDateAt,
@@ -71,9 +73,17 @@ type AnswerArgs = Extract<ToolCall, { name: "answer" }>["args"];
 
 /** The hero's currency. Rows in any other currency are excluded, never converted. */
 export const HERO_CURRENCY = "USD";
-/** Evidence is read by document ID (Q28; no index by kind exists). More than this many and the hero says nothing. */
-export const EVIDENCE_SCAN_MAX = 2_000;
-/** At most this many rows of each kind go to the detector (contracts: Purchase[<=128], CalendarEvent[<=128]). */
+/**
+ * Evidence is read by document ID (Q28; no index by kind exists), so every page is read. Past this many documents the
+ * read stops and the hero says nothing (fails closed). Brief 037, finding 6: this bounds the scan only; the caps that
+ * matter, MONEY_ROWS_MAX, apply after the rows are filtered to the window and the category.
+ */
+export const EVIDENCE_SCAN_MAX = 50_000;
+/**
+ * At most this many rows of each kind go to the detector (contracts: Purchase[<=128], CalendarEvent[<=128]), counted
+ * after filtering to the window (plus the posting lag) and the category (brief 037, finding 6). More, and the hero
+ * says nothing.
+ */
 export const MONEY_ROWS_MAX = 128;
 /**
  * Brief 037, finding 2. Nobody on the server knows who is at the table, so the food paths filter by every stored
@@ -99,6 +109,14 @@ interface MoneyRows {
   anchor: string | null;
 }
 
+/** The dates and categories a reader needs: rows outside them can't change its result. */
+interface MoneyScope {
+  fromCivil: string;
+  toCivil: string;
+  categories: readonly BankRow["bank"]["category"][];
+  meetings: boolean;
+}
+
 async function scanEvidence(reader: Reader, uid: string): Promise<{ id: string; data: Evidence }[] | null> {
   const out: { id: string; data: Evidence }[] = [];
   let cursor: string | null = null;
@@ -116,15 +134,59 @@ async function scanEvidence(reader: Reader, uid: string): Promise<{ id: string; 
   }
 }
 
-/** The eligible bank, receipt and calendar rows, or null when they can't all be read (fails closed). */
-async function readMoneyRows(ctx: RouteContext, generation: number): Promise<MoneyRows | null> {
+/**
+ * The money rows that can change a result over `scope` (brief 037, finding 6), widened by a day each side for zones:
+ *   - a bank row in a counted category, or any refund, with a known date (purchase or posting) from the window's
+ *     first date to the posting lag after its last; a row with no known date is kept;
+ *   - a negative row posted on or after the window's first date (it may refund a counted order), and every row that
+ *     names a kept row as the order it refunds;
+ *   - a receipt that names a kept bank row; a meeting starting in the window.
+ */
+function inScope(docs: readonly { id: string; data: Evidence }[], scope: MoneyScope, zone: string): { id: string; data: Evidence }[] {
+  const from = addCivilDays(scope.fromCivil, -1);
+  const to = addCivilDays(scope.toCivil, POSTING_LAG_DAYS + 1);
+  const cats = new Set(scope.categories);
+  const dateOf = (ts: string | null) => (ts === null ? null : civilDateAt(Date.parse(ts), zone));
+  const bank = new Set<string>();
+  for (const d of docs) {
+    const o = d.data.observation;
+    if (o.kind !== "bank" || (!cats.has(o.category) && o.refundOfId === null)) continue;
+    const posted = dateOf(o.postedAt);
+    const dates = [dateOf(o.purchaseAt.instant), o.purchaseAt.civilDate, posted].filter((x): x is string => x !== null);
+    const keep = o.amountCents < 0 ? posted === null || posted >= from : dates.length === 0 || dates.some((x) => x >= from && x <= to);
+    if (keep) bank.add(d.id);
+  }
+  for (const d of docs) {
+    const o = d.data.observation;
+    if (o.kind === "bank" && o.refundOfId !== null && bank.has(o.refundOfId)) bank.add(d.id);
+  }
+  return docs.filter((d) => {
+    const o = d.data.observation;
+    if (o.kind === "bank") return bank.has(d.id);
+    if (o.kind === "receipt") return o.bankEvidenceId !== null && bank.has(o.bankEvidenceId);
+    if (o.kind === "calendar") {
+      if (!scope.meetings) return false;
+      const day = dateOf(o.start);
+      return day !== null && day >= from && day <= addCivilDays(scope.toCivil, 1);
+    }
+    return false;
+  });
+}
+
+/** The eligible bank, receipt and calendar rows over a scope, or null when they can't all be read (fails closed). */
+async function readMoneyRows(ctx: RouteContext, generation: number, scopeOf: (clock: ClockPair, anchor: string | null) => MoneyScope): Promise<MoneyRows | null> {
   const { uid, deps } = ctx;
   const reader = storeReader(deps.store, uid);
   const core = await readCoreDocs(reader, uid);
   const clock = ownerClock(core.state.data, deps.clock);
   const docs = await scanEvidence(reader, uid);
   if (docs === null) return null;
-  const money = docs.filter((d) => ["transaction", "receipt", "calendar"].includes(d.data.kind));
+  const anchor = await heroAnchor(reader, uid, deps.hasher, clock.worldClock.now);
+  const money = inScope(
+    docs.filter((d) => ["transaction", "receipt", "calendar"].includes(d.data.kind)),
+    scopeOf(clock, anchor),
+    clock.worldClock.zone,
+  );
   // Brief 030 P1-9 (brief 028 finding 3): the owner's blocks and overlays, as the read route's Snapshot carries them.
   const forget = await forgetRowsFor(reader, uid);
   const refs = [...money.map((d) => docRef("evidence", d.id, d.data.rev)), ...forget.refs];
@@ -141,7 +203,6 @@ async function readMoneyRows(ctx: RouteContext, generation: number): Promise<Mon
     complete: refs.length <= 4096 && forget.complete,
   };
   const ec = { ...foregroundEC(uid, core.epoch.data, clock, generation), stage: "toolReturn" as const };
-  const anchor = await heroAnchor(reader, uid, deps.hasher, clock.worldClock.now);
   const out: MoneyRows = { bank: [], receipts: [], events: [], coverage: core.state.data.coverage, clock, evidence: new Map(), anchor };
   for (const d of money) {
     if (!eligible({ ref: docRef("evidence", d.id, d.data.rev), row: d.data }, ec, snapshot).allow) continue;
@@ -156,6 +217,19 @@ async function readMoneyRows(ctx: RouteContext, generation: number): Promise<Mon
   if (out.bank.length > MONEY_ROWS_MAX || out.receipts.length > MONEY_ROWS_MAX || out.events.length > MONEY_ROWS_MAX) return null;
   return out;
 }
+
+/** The hero's window from the clock and the live insight's anchor (brief 030 P1-1). */
+function heroWindowOf(clock: ClockPair, anchor: string | null) {
+  const zone = clock.worldClock.zone;
+  // A live insight keeps its own window across a jump; heroWindow ends the day before `today`.
+  const today = anchor !== null ? addCivilDays(anchor, 1) : civilDateAt(clock.worldClock.now, zone);
+  return heroWindow(today, zone, HERO_CURRENCY);
+}
+
+const heroScope = (clock: ClockPair, anchor: string | null): MoneyScope => {
+  const w = heroWindowOf(clock, anchor);
+  return { fromCivil: w.fromCivil, toCivil: w.toCivil, categories: ["takeout"], meetings: true };
+};
 
 // ---------------------------------------------------------------------------------------------
 // The hero offer
@@ -180,9 +254,6 @@ const evidenceRefs = (ids: readonly string[], evidence: Map<string, Evidence>, m
 const CARD_SOURCES_MAX = 32;
 
 function patternFor(rows: MoneyRows): PatternResult {
-  const zone = rows.clock.worldClock.zone;
-  // Brief 030 P1-1: a live insight keeps its own window across a jump; heroWindow ends the day before `today`.
-  const today = rows.anchor !== null ? addCivilDays(rows.anchor, 1) : civilDateAt(rows.clock.worldClock.now, zone);
   return takeoutLateMeetingV1({
     purchases: rows.bank,
     receipts: rows.receipts,
@@ -190,7 +261,7 @@ function patternFor(rows: MoneyRows): PatternResult {
     // One coverage for both until connectors keep their own (design note 022, gap 13).
     bankCoverage: rows.coverage,
     calendarCoverage: rows.coverage,
-    window: heroWindow(today, zone, HERO_CURRENCY),
+    window: heroWindowOf(rows.clock, rows.anchor),
   });
 }
 
@@ -220,7 +291,7 @@ function offerFrom(ctx: RouteContext, rows: MoneyRows): HeroOffer | null {
 
 /** The hero offer now, or null when the pattern doesn't hold (or its rows can't all be read). */
 export async function heroOffer(ctx: RouteContext, generation: number): Promise<HeroOffer | null> {
-  const rows = await readMoneyRows(ctx, generation);
+  const rows = await readMoneyRows(ctx, generation, heroScope);
   return rows === null ? null : offerFrom(ctx, rows);
 }
 
@@ -368,7 +439,7 @@ function loopMemory(ctx: RouteContext, at: string, epoch: number, policyRev: num
 export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerArgs, turn: Turn): Promise<Result> {
   const { uid, deps } = ctx;
   const answer = (state: "applied" | "declined" | "clarify" | "stale", receiptId: string | null = null, cards: Card[] = []): Result => ({ name: "answer", state, receiptId, pendingId: args.pendingId, cards });
-  const rows = await readMoneyRows(ctx, stamp.generation);
+  const rows = await readMoneyRows(ctx, stamp.generation, heroScope);
   const offer = rows === null ? null : offerFrom(ctx, rows);
   if (rows === null || offer === null || args.pendingId !== offer.pendingId) return answer("stale");
   if (args.choiceId === offer.noId) return answer("declined");
@@ -430,9 +501,11 @@ export interface LoopComparison {
 export async function compareLoop(ctx: RouteContext, loopId: string, generation: number): Promise<LoopComparison | null> {
   const doc = await ctx.deps.store.get<Memory>(ctx.uid, paths.memory(ctx.uid, loopId));
   if (doc === null || doc.data.loop === null || doc.data.status !== "active") return null;
-  const rows = await readMoneyRows(ctx, generation);
-  if (rows === null) return null;
   const loop = doc.data.loop;
+  // Both windows, every food category the comparison reads (brief 037, finding 6).
+  const scope: MoneyScope = { fromCivil: loop.baseline.fromCivil, toCivil: loop.comparison.toCivil, categories: [...new Set([...METRIC_CATEGORIES.takeoutSpend, ...METRIC_CATEGORIES.totalFoodSpend])], meetings: false };
+  const rows = await readMoneyRows(ctx, generation, () => scope);
+  if (rows === null) return null;
   const input = { loop, purchases: rows.bank, receipts: rows.receipts, bankCoverage: rows.coverage, worldNow: rows.clock.worldClock.now };
   const takeout = loopPredicate(input);
   const totalFood = loopPredicate({ ...input, metric: "totalFoodSpend" });
