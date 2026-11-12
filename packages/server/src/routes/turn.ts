@@ -391,12 +391,10 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           };
           // Brief 026 (tasks 48, 49): the audience effects of the rule's outcome, written in this transaction. The rule is
           // pure, so it runs here once more to choose them; the seam below runs it again on the same input.
-          // A wave B route that fires changes what is said, so it raises policyRev (KV05; design "Audience effects").
-          const routed = rule.parse.kind === "hit" && changesWhatIsSaid(rule.parse, rule.judge, "B");
-          const raisedEpoch: CoreEpoch | null = routed ? { ...core.epoch.data, policyRev: core.epoch.data.policyRev + 1, updatedAt: tsFromMs(ops) } : null;
+          // An audience outcome changes what is said, so audienceEffect raises policyRev (KV05; design "Audience
+          // effects"; brief 035: the rule's outcome decides, not the chosen class alone).
           const aud0 = audienceEffect(serverRule(rule), {
             sessionId: req.sessionId,
-            raisedEpoch,
             modifiers: s.modifiers,
             epoch: core.epoch.data,
             bundle: changed?.bundle ?? core.bundle.data,

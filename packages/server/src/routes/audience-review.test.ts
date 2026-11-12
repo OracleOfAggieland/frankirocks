@@ -1,5 +1,5 @@
 // Brief 035: the review of the audience wave. One block per finding, each the reviewer's sequence as a route test.
-import { type CoreBundle, type CoreEpoch, type CoreRules, type Job, type SS, type Session } from "@franki/core";
+import { COMPANY_LINE, type CoreBundle, type CoreEpoch, type CoreRules, type Job, type SS, type Session } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { never, ok } from "../openai/fake";
@@ -100,5 +100,33 @@ describe("finding 3: a typed crisis line with company and no call open narrows",
     expect(after.status).not.toBe("closing");
     expect((await epochOf(rig)).policyRev).toBe(before.policyRev + 1);
     expect(await jobOf(rig, s.sessionId)).toBeNull();
+  });
+});
+
+describe("finding 4: a retained company candidate narrows whatever class was chosen", () => {
+  it("forget chosen with company on a live call: blocked, company, closing and the hangup Job", async () => {
+    const { rig, s } = await doorRig(true);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ forget: 0.9, company: 0.9 })));
+    const res = await postTurn(rig, voice(s.stamp, 1, "Forget that, my boss just walked in."));
+    expect(res.body).toMatchObject({ status: "blocked", permit: null, notes: [] });
+    expect(await sessionOf(rig, s.sessionId)).toMatchObject({ audience: "company", status: "closing" });
+    expect(await jobOf(rig, s.sessionId)).not.toBeNull();
+  });
+
+  it("forget chosen with company, typed with no call: the company line and a narrow Head", async () => {
+    const { rig, s } = await doorRig(false);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ forget: 0.9, company: 0.9 })));
+    const res = await postTurn(rig, typedTurn(s.stamp, 1, "Forget that, my cousin is reading over my shoulder."));
+    expect(res.body.notes.map((n: { text: string }) => n.text)).toEqual([COMPANY_LINE]);
+    expect(headText(res.body)).not.toContain(PERSONAL_FACT);
+    expect((await sessionOf(rig, s.sessionId)).audience).toBe("company");
+  });
+
+  it("a weak company candidate with judge O doesn't narrow, but a sure quiet one beside it does", async () => {
+    const { rig, s } = await doorRig(true);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.5, quiet: 0.9 })));
+    const res = await postTurn(rig, voice(s.stamp, 1, "Keep this between us, someone's here.", "O"));
+    expect(res.body.status).toBe("blocked");
+    expect((await sessionOf(rig, s.sessionId)).audience).toBe("company");
   });
 });

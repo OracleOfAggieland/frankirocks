@@ -122,8 +122,9 @@ export function serverRule(i: RuleInput): RuleOutcome {
     // Brief 035 (finding 3): with company or quiet too, the audience is recorded (R14.7) and the typed reply is S0.
     const careNarrows = i.wave === "B" && narrows;
     if (crisis) return permit("postCommitControl", "ack", i.source === "typed" && !i.callLive ? (careNarrows ? "S0" : typedPrivate) : "none", true, careNarrows ? { reasons: ["audience", ...quietReason] } : {});
-    if (i.wave === "B" && (p.chosen === "company" || p.chosen === "quiet") && fires(p.chosen)) {
-      const reasons: ReasonCode[] = p.chosen === "quiet" ? ["audience", "quiet"] : ["audience"];
+    // Brief 035 (finding 4): a company or quiet candidate that fires narrows whatever was chosen, forget included.
+    if (i.wave === "B" && narrows) {
+      const reasons: ReasonCode[] = fires("company") ? ["audience"] : ["audience", "quiet"];
       // 8. Narrow with a live call: hang up and swap (R14.1).
       if (i.callLive) return hold(reasons, true, "now");
       // 9. Narrow with no call: the company line (typed).

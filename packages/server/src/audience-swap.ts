@@ -63,8 +63,9 @@ export function narrowedHere(s: Session): boolean {
 /** The audience a parse may move the Session to, whose Head is compiled before the transaction; null for none. */
 export function audienceTarget(slow: SlowParse | null): Au | null {
   if (slow === null || slow.parse.kind !== "hit") return null;
-  const c = slow.parse.chosen;
-  return c === "alone" ? "private" : c === "company" || c === "quiet" ? "company" : null;
+  // Brief 035 (finding 4): a retained company or quiet candidate may narrow whatever was chosen.
+  if (slow.parse.candidates.includes("company") || slow.parse.candidates.includes("quiet")) return "company";
+  return slow.parse.chosen === "alone" ? "private" : null;
 }
 
 export interface AudienceHead {
@@ -127,11 +128,6 @@ export interface AudienceEffect {
 
 export interface AudienceInput {
   sessionId: string;
-  /**
-   * core/epoch with policyRev raised, which the turn route computes behind `changesWhatIsSaid` (the one place a
-   * route raises it; `scripts/policy-rev-raises.test.ts`), or null when no wave B route fired: then nothing changes.
-   */
-  raisedEpoch: CoreEpoch | null;
   /** The Session's modifiers before this turn; row 6 adds crisis and keeps the rest. */
   modifiers: Session["modifiers"];
   epoch: CoreEpoch;
@@ -145,6 +141,15 @@ export interface AudienceInput {
   hasher: Pick<Hasher, "sha256">;
 }
 
+/** Which audience row an outcome is (rows 6 to 10, and row 7 with company or quiet), or null for none. */
+export function audienceRow(o: RuleOutcome): "hangup" | "care" | "company" | "careNoCall" | "alone" | null {
+  if (o.kind === "hold") return o.swap === "now" ? "hangup" : null;
+  if (o.swap === "afterReply") return "care";
+  if (o.line === COMPANY_LINE) return "company";
+  if (o.line === ALONE_LINE) return "alone";
+  return o.line === null && o.reasons.includes("audience") ? "careNoCall" : null;
+}
+
 /**
  * The audience effects of a wave B outcome (design "Audience effects in the transaction"):
  *   row 8, company or quiet with a live call: `company`, policyRev raised, waitDeadline + 10 s, the Session `closing`,
@@ -153,11 +158,13 @@ export interface AudienceInput {
  *   row 9, company with no call: `company`, policyRev raised, and the narrow Head when it was compiled;
  *   row 10, alone: `private`, policyRev raised and the full Head; waitDeadline unchanged; a gap stays a gap.
  * Quiet is recorded as company (question 79). Anything else changes nothing: null.
+ * Brief 035: every audience outcome changes what is said, so this is where the turn raises policyRev; the rule
+ * decides the outcome, and a company or quiet candidate that fires narrows whatever was chosen (finding 4).
  */
 export function audienceEffect(o: RuleOutcome, x: AudienceInput): AudienceEffect | null {
   const ts = tsFromMs(x.opsNow);
-  if (x.raisedEpoch === null) return null;
-  const raised = x.raisedEpoch;
+  if (audienceRow(o) === null) return null;
+  const raised: CoreEpoch = { ...x.epoch, policyRev: x.epoch.policyRev + 1, updatedAt: ts };
   const bundleFor = (audience: Au): CoreBundle | null =>
     x.head !== null && x.head.audience === audience && !x.bundleWritten && x.head.rulesRev === x.rules.rulesRev && x.head.epoch === x.epoch.epoch
       ? headBundle(x.bundle, x.head.head, x.rules.rulesRev, x.opsNow, x.hasher)
@@ -175,7 +182,7 @@ export function audienceEffect(o: RuleOutcome, x: AudienceInput): AudienceEffect
   if (o.swap === "afterReply") {
     return { session: { audience: "company", waitDeadline: tsFromMs(x.opsNow + CARE_SWAP_WAIT_MS), modifiers: { ...x.modifiers, crisis: ts } }, epoch: raised, bundle: null, hangup: false };
   }
-  if (o.line === COMPANY_LINE) return { session: { audience: "company" }, epoch: raised, bundle: bundleFor("company"), hangup: false };
+  if (o.line === COMPANY_LINE) return { session: { audience: "company" }, epoch: raised, bundle: bundleFor("company"), hangup: false, wantsHead: "company" };
   // Brief 035 (finding 3): row 7 with company or quiet and no call (a typed crisis line): company, policyRev raised,
   // the crisis modifier and the narrow Head; no hang-up and no swap wait, since no call is open.
   if (o.line === null && o.reasons.includes("audience")) return { session: { audience: "company", modifiers: { ...x.modifiers, crisis: ts } }, epoch: raised, bundle: bundleFor("company"), hangup: false, wantsHead: "company" };
