@@ -147,3 +147,21 @@ describe("finding 8: a confirmed reminder due within 24 hours is mustSay", () =>
     expect(await admit(rig, applied.momentId, "resp_rem", [p.whisper.noteId])).toBe(true);
   });
 });
+
+describe("finding 9: a reminder's confirmation is bound to its rendered offer", () => {
+  it("a swapped note or time under the same pending ID, a yes at the render's instant, and a yes after a no are all refused", async () => {
+    const { rig, ctx } = await clone();
+    await memoryTick(ctx);
+    const world = msFromTs((await stateOf(rig.store, UID)).worldClock!);
+    const offer = offerReminder(rig.deps.hasher, { sourceId: await interviewId(rig), note: "Bring the portfolio", spoken: "tomorrow at 9", worldNow: world, zone: ZONE })!;
+    const later = offerReminder(rig.deps.hasher, { sourceId: offer.sourceId, note: "Bring the portfolio", spoken: "tomorrow at 10", worldNow: world, zone: ZONE })!;
+    const ops = rig.clock.read().opsClock.now;
+    await tx(rig, (t) => recordPendingRendered(t, UID, offer.pendingId, ops, rig.deps.hasher));
+    const yesAt = (ms: number) => sampleTurn({ text: "Yes.", sourceClass: "U", final: true, role: "user", committedAt: tsFromMs(ms) });
+    expect(await confirmReminder(ctx, offer, offer.yesId, yesAt(ops))).toEqual({ state: "stale" });
+    expect(await confirmReminder(ctx, { ...offer, note: "Wire the money" }, offer.yesId, yesAt(ops + MINUTE))).toEqual({ state: "stale" });
+    expect(await confirmReminder(ctx, { ...offer, time: later.time }, offer.yesId, yesAt(ops + MINUTE))).toEqual({ state: "stale" });
+    expect(await confirmReminder(ctx, offer, offer.noId, yesAt(ops + MINUTE))).toEqual({ state: "declined" });
+    expect(await confirmReminder(ctx, offer, offer.yesId, yesAt(ops + 2 * MINUTE))).toEqual({ state: "stale" });
+  });
+});

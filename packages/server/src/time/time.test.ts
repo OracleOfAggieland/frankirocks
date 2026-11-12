@@ -140,11 +140,11 @@ describe("delivery, said and the reminder", () => {
     const offer = offerReminder(rig.deps.hasher, { sourceId: testId("jordan-thread"), note: "Reply to Jordan about the platform role", spoken: "Thursday", worldNow: world, zone: ZONE })!;
     expect(offer.line).toMatch(/^Want a reminder on Thursday/);
     expect(offerReminder(rig.deps.hasher, { sourceId: testId("x"), note: "x", spoken: "sometime soon", worldNow: world, zone: ZONE })).toBeNull();
-    const yes = sampleTurn({ text: "Yes.", sourceClass: "U", final: true, role: "user" });
+    // Brief 036 finding 9: the yes must come after the render.
+    const yes = sampleTurn({ text: "Yes.", sourceClass: "U", final: true, role: "user", committedAt: tsFromMs(rig.clock.read().opsClock.now + 60_000) });
     expect(await confirmReminder(ctx, offer, offer.yesId, yes)).toEqual({ state: "stale" });
     await rig.store.transaction(UID, (tx) => recordPendingRendered(tx, UID, offer.pendingId, rig.clock.read().opsClock.now, rig.deps.hasher));
     expect(await confirmReminder(ctx, offer, offer.yesId, sampleTurn({ text: "Yes, but not Thursday", sourceClass: "U", final: true, role: "user" }))).toEqual({ state: "clarify" });
-    expect(await confirmReminder(ctx, offer, offer.noId, yes)).toEqual({ state: "declined" });
     const applied = await confirmReminder(ctx, offer, offer.yesId, yes);
     expect(applied.state).toBe("applied");
     if (applied.state !== "applied") return;
@@ -158,5 +158,10 @@ describe("delivery, said and the reminder", () => {
     // The tick keeps it, and opens it on its day at 09:00.
     await memoryTick(ctx);
     expect((await moments(rig)).get(applied.momentId)?.status).toBe("pending");
+    // Brief 036 finding 9 reverses what this test pinned before: a "no" is recorded, and a later yes is refused.
+    const second = offerReminder(rig.deps.hasher, { sourceId: offer.sourceId, note: "Reply to Jordan again", spoken: "Thursday", worldNow: world, zone: ZONE })!;
+    await rig.store.transaction(UID, (tx) => recordPendingRendered(tx, UID, second.pendingId, rig.clock.read().opsClock.now, rig.deps.hasher));
+    expect(await confirmReminder(ctx, second, second.noId, yes)).toEqual({ state: "declined" });
+    expect(await confirmReminder(ctx, second, second.yesId, yes)).toEqual({ state: "stale" });
   });
 });
