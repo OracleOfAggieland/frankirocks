@@ -5,7 +5,7 @@
 import { CORE_DOC_IDS, type CoreDocId, isIdShape } from "@franki/core";
 import { StoreError } from "./errors";
 
-export const TOP_COLLECTIONS = ["evidence", "memories", "sessions", "jobs", "ledger", "core"] as const;
+export const TOP_COLLECTIONS = ["evidence", "memories", "sessions", "jobs", "ledger", "core", "blocks", "overlays", "effects"] as const;
 export type TopCollection = (typeof TOP_COLLECTIONS)[number];
 export type Collection = TopCollection | "turns";
 
@@ -30,6 +30,10 @@ export const paths = {
   core: (uid: string, doc: CoreDocId) => `users/${uid}/core/${doc}`,
   collection: (uid: string, collection: TopCollection) => `users/${uid}/${collection}`,
   turns: (uid: string, sessionId: string) => `users/${uid}/sessions/${sessionId}/turns`,
+  // Forget rows (brief 021).
+  block: (uid: string, blockId: string) => `users/${uid}/blocks/${blockId}`,
+  overlay: (uid: string, overlayId: string) => `users/${uid}/overlays/${overlayId}`,
+  effect: (uid: string, effectId: string) => `users/${uid}/effects/${effectId}`,
 };
 
 const UID_PATTERN = /^[^/]{1,128}$/;
