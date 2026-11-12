@@ -16,7 +16,26 @@ export function heroWindow(today: string, zone: string, currency: string): Windo
 /** What the offer's ID is hashed from. Equal parts mean the same offer. */
 export function heroOfferParts(p: PatternResult): unknown[] {
   const w = p.window;
-  return ["heroOffer", p.detectorVersion, w.fromCivil, w.toCivil, w.zone, w.currency, p.totalCents, p.lateCents, [...w.purchaseIds].sort(), [...p.meetingIds].sort()];
+  // Everything the offer's words and card say (brief 037, finding 9): a receipt that turns "days" into "nights", or a
+  // change in the late count or in "mostly", makes a new offer, and the old one's yes is stale.
+  return [
+    "heroOffer",
+    p.detectorVersion,
+    w.fromCivil,
+    w.toCivil,
+    w.zone,
+    w.currency,
+    p.totalCents,
+    p.lateCents,
+    [...w.purchaseIds].sort(),
+    [...p.meetingIds].sort(),
+    [...p.receiptIds].sort(),
+    [...p.latePurchaseIds].sort(),
+    p.associationUnit,
+    p.orderCount,
+    p.lateOrderCount,
+    p.mostly,
+  ];
 }
 
 /**
