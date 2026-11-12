@@ -19,6 +19,7 @@ import {
   type Cov,
   type Evidence,
   type FoodCandidate,
+  type FoodPrefs,
   type FoodRule,
   type Infer,
   type Ledger,
@@ -50,11 +51,13 @@ import {
   heroOfferParts,
   heroWindow,
   ingredient,
+  NO_PREFS,
   isPlainYes,
   loopPredicate,
   moreSourcesLine,
   planHeroLoop,
   rootKey,
+  readDietAnswer,
   suggestFood,
   takeoutLateMeetingV1,
   tsFromMs,
@@ -67,6 +70,7 @@ import { cFields } from "../records";
 import type { Reader, Tx } from "../store/port";
 import { renderedEntryId } from "../time/reminder";
 import { paths } from "../store/paths";
+import { readFoodPrefs } from "../food/prefs-read";
 import type { RouteContext } from "./runtime";
 
 type Result = Infer<typeof ToolResult>;
@@ -337,8 +341,30 @@ async function readRules(ctx: RouteContext): Promise<FoodRule[] | null> {
   }
 }
 
-/** Three quick dinners for these rules, filtered for every subject they name. */
-const dinnersFor = (rules: readonly FoodRule[] | null, modelIds: readonly string[] = []) => suggestFood({ rules, attendeeIds: rules === null ? modelIds : eatersOf(rules, modelIds) });
+/**
+ * Three quick dinners for these rules, filtered for every subject they name, then by the diets and dislikes that
+ * apply (brief 039). A null `prefs` (they couldn't be read) offers nothing: a preference never fails open.
+ */
+const dinnersFor = (rules: readonly FoodRule[] | null, modelIds: readonly string[] = [], prefs: FoodPrefs | null = NO_PREFS) => {
+  const out = suggestFood({ rules, attendeeIds: rules === null ? modelIds : eatersOf(rules, modelIds), prefs: prefs ?? NO_PREFS });
+  return prefs === null ? { ...out, candidates: [], selectedId: null, reason: null } : out;
+};
+
+/** The diets and dislikes for this turn's words and the model's attendees, or null when they can't be read. */
+async function readPrefs(ctx: RouteContext, generation: number, turnText: string, modelIds: readonly string[]) {
+  try {
+    return await readFoodPrefs(storeReader(ctx.deps.store, ctx.uid), ctx.uid, ctx.deps.clock, generation, turnText, modelIds);
+  } catch {
+    return null;
+  }
+}
+
+/** The pending ID of the question about an ended diet: one per diet row as it stands. */
+const dietAskId = (ctx: RouteContext, d: { memoryId: string; memoryRev: number }) => ctx.deps.hasher.id(["dietAsk", d.memoryId, d.memoryRev]);
+
+function askCard(ctx: RouteContext, pendingId: string, line: string, d: { memoryId: string; memoryRev: number }): Card {
+  return { id: ctx.deps.hasher.id(["dietAskCard", pendingId]), kind: "ask", title: "A question first", lines: [line], sources: [{ type: "memory", id: d.memoryId, rev: d.memoryRev }], sens: "S0" };
+}
 
 const candidateId = (ctx: RouteContext, c: FoodCandidate) => ctx.deps.hasher.id(["candidate", c.kind, CATALOG_VERSION, c.id, c.version]);
 
@@ -362,19 +388,28 @@ export async function suggestTool(ctx: RouteContext, stamp: Stamp, args: Suggest
     return { result: { name: "suggest", candidateIds: [], selectedId: null, reason: "", pendingId: null, question: null, coverage: UNKNOWN_COV, cards: [] }, write: null };
   }
   const rules = await readRules(ctx);
-  const out = dinnersFor(rules, args.attendeeIds);
+  // Brief 039: the diets and dislikes, for whoever the owner's words in this turn name.
+  const turn = rules === null ? null : await ctx.deps.store.get<Turn>(ctx.uid, paths.turn(ctx.uid, stamp.sessionId, stamp.turnId));
+  const read = rules === null ? null : await readPrefs(ctx, stamp.generation, turn?.data.text ?? "", args.attendeeIds);
+  const prefs = rules === null ? NO_PREFS : (read?.prefs ?? null);
+  const out = dinnersFor(rules, args.attendeeIds, prefs);
   const picked = out.candidates.map((c) => c.id).join("|");
-  const write: FoodWrite = async (_tx, now) => (now.rulesRev === stamp.rulesRev && dinnersFor(foodRulesOf(now), args.attendeeIds).candidates.map((c) => c.id).join("|") === picked ? () => undefined : null);
-  ctx.deps.log("tool.suggest", { kept: out.filter.kept.length, removed: out.filter.removed.length, picked: out.candidates.length });
+  const write: FoodWrite = async (_tx, now) => (now.rulesRev === stamp.rulesRev && dinnersFor(foodRulesOf(now), args.attendeeIds, prefs).candidates.map((c) => c.id).join("|") === picked ? () => undefined : null);
+  // The reasons are codes, in the log only: a removed dinner is simply absent from what is said and shown.
+  ctx.deps.log("tool.suggest", { kept: out.filter.kept.length, removed: out.filter.removed.length, diet: out.prefs.filter((r) => r.reason === "diet").length, dislike: out.prefs.filter((r) => r.reason === "dislike").length, picked: out.candidates.length });
+  const asked = out.dietAsked;
+  const pendingId = asked?.kind === "ended" ? dietAskId(ctx, asked.diet) : null;
+  const ask = asked === null ? [] : [askCard(ctx, pendingId ?? dietAskId(ctx, asked.diet), asked.line, asked.diet)];
   const result: Result = {
     name: "suggest",
     candidateIds: out.candidates.map((c) => candidateId(ctx, c)),
     selectedId: out.selectedId === null ? null : candidateId(ctx, out.candidates[0]!),
     reason: out.reason?.text ?? "",
-    pendingId: null,
+    pendingId,
     question: out.question,
     coverage: rules === null ? UNKNOWN_COV : COMPLETE_COV,
-    cards: out.candidates.length === 0 ? [] : [foodCard(ctx, out.candidates, "Quick dinners")],
+    // The question comes first (brief 039, change 3).
+    cards: [...ask, ...(out.candidates.length === 0 ? [] : [foodCard(ctx, out.candidates, "Quick dinners")])],
   };
   return { result, write: rules === null ? null : write };
 }
@@ -482,10 +517,47 @@ async function yesFollowsOffer(ctx: RouteContext, pendingId: string, turnId: str
 }
 
 
+/** "Three quick dinners for those nights", or two, or one. */
+export const heroCardTitle = (n: number): string => (n === 1 ? "One quick dinner for those nights" : `${n === 2 ? "Two" : "Three"} quick dinners for those nights`);
+
+/**
+ * The answer to "Still vegetarian, or was November it?" (brief 039, change 3). Code reads the owner's own words in
+ * this committed turn from a closed list (core `readDietAnswer`), never the model's choice: "yes, still" extends the
+ * diet with no end; "no, that was November" closes it as history. Anything else is `clarify`, and the diet keeps
+ * filtering. Null when the pending ID isn't an open diet question.
+ */
+async function answerDiet(ctx: RouteContext, stamp: Stamp, args: AnswerArgs, turn: Turn): Promise<FoodOutcome | null> {
+  const { uid, deps } = ctx;
+  const read = await readPrefs(ctx, stamp.generation, turn.text ?? "", []);
+  const diet = read?.prefs.diets.find((d) => d.subjectId === "self" && d.ended !== null && dietAskId(ctx, d) === args.pendingId) ?? null;
+  if (read === null || diet === null) return null;
+  const answer = (state: "applied" | "clarify" | "stale"): Result => ({ name: "answer", state, receiptId: null, pendingId: args.pendingId, cards: [] });
+  if (turn.role !== "user" || turn.sourceClass !== "U" || !turn.final) return { result: answer("clarify"), write: null };
+  const said = readDietAnswer(turn.text ?? "", diet.code, diet.ended!);
+  if (said === "unclear") return { result: answer("clarify"), write: null };
+  const write: FoodWrite = async (tx) => {
+    const path = paths.memory(uid, diet.memoryId);
+    const now = await tx.get<Memory>(path);
+    if (now === null || now.data.rev !== diet.memoryRev || now.data.status !== "active") return null;
+    const at = tsFromMs(deps.clock.read().opsClock.now);
+    const row: Memory =
+      said === "still"
+        ? { ...now.data, validTo: null, lastSupportAt: tsFromMs(read.worldNow), rev: now.data.rev + 1, updatedAt: at }
+        : { ...now.data, status: "history", closeReason: "expired", rev: now.data.rev + 1, updatedAt: at };
+    return () => {
+      tx.update(path, row);
+      deps.log("tool.dietAnswer", { memoryId: diet.memoryId, said });
+    };
+  };
+  return { result: answer("applied"), write };
+}
+
 export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerArgs, turn: Turn): Promise<FoodOutcome> {
   const { uid, deps } = ctx;
   const answer = (state: "applied" | "declined" | "clarify" | "stale", receiptId: string | null = null, cards: Card[] = []): Result => ({ name: "answer", state, receiptId, pendingId: args.pendingId, cards });
   const only = (state: "declined" | "clarify" | "stale"): FoodOutcome => ({ result: answer(state), write: null });
+  const dietAnswered = await answerDiet(ctx, stamp, args, turn);
+  if (dietAnswered !== null) return dietAnswered;
   const rows = await readMoneyRows(ctx, stamp.generation, heroScope);
   const offer = rows === null ? null : offerFrom(ctx, rows);
   if (rows === null || offer === null || args.pendingId !== offer.pendingId) return only("stale");
@@ -495,7 +567,9 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerAr
   if (args.choiceId !== offer.yesId || turn.role !== "user" || turn.sourceClass !== "U" || !turn.final || !isPlainYes(turn.text)) return only("clarify");
   if (!(await yesFollowsOffer(ctx, offer.pendingId, stamp.turnId, turn))) return only("clarify");
 
-  const planned = dinnersFor(await readRules(ctx));
+  // Brief 039: the owner's diets and dislikes, and those of anyone the yes names, as suggest reads them.
+  const prefs = (await readPrefs(ctx, stamp.generation, turn.text ?? "", []))?.prefs ?? null;
+  const planned = dinnersFor(await readRules(ctx), [], prefs);
   if (planned.candidates.length === 0) return only("clarify");
   const actionId = deps.hasher.id(["heroAction", offer.pendingId]);
   const loopId = deps.hasher.id(["heroLoop", offer.pendingId]);
@@ -503,12 +577,13 @@ export async function answerTool(ctx: RouteContext, stamp: Stamp, args: AnswerAr
   if (loop === null) return only("stale");
   const cited = loopCited(offer.pattern, rows.evidence);
   if (cited.length > LOOP_CITED_MAX || cited.some((eid) => loopRootSlice(rows.evidence.get(eid)!) === null)) return only("stale");
-  const card = foodCard(ctx, planned.candidates, "Three quick dinners for those nights");
+  // Brief 039: a diet or a dislike can leave fewer than three; the title says how many.
+  const card = foodCard(ctx, planned.candidates, heroCardTitle(planned.candidates.length));
   const pickedIds = planned.candidates.map((c) => c.id).join("|");
 
   const write: FoodWrite = async (tx, rules) => {
     if (rules.rulesRev !== stamp.rulesRev) return null;
-    const dinners = dinnersFor(foodRulesOf(rules));
+    const dinners = dinnersFor(foodRulesOf(rules), [], prefs);
     if (dinners.candidates.map((c) => c.id).join("|") !== pickedIds) return null;
     if ((await tx.get(paths.ledger(uid, actionId))) !== null) return () => undefined;
     const at = tsFromMs(deps.clock.read().opsClock.now);

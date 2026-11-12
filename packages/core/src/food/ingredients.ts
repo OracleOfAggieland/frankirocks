@@ -11,6 +11,10 @@
 
 export type IngredientProfile = "complete" | "varies";
 
+/** What an ingredient is, for diets (brief 039): the animal kinds it holds. None is plant-only. */
+export const FOOD_KINDS = ["meat", "poultry", "fish", "shellfish", "dairy", "egg", "honey"] as const;
+export type FoodKind = (typeof FOOD_KINDS)[number];
+
 export interface Ingredient {
   id: string;
   label: string;
@@ -19,6 +23,8 @@ export interface Ingredient {
   known: boolean;
   /** Absent means `complete`. Every row of the product's table sets it. */
   profile?: IngredientProfile;
+  /** The animal kinds it holds (brief 039); an empty list is plant-only. Absent or null: unknown, so any diet removes it. */
+  kinds?: readonly FoodKind[] | null;
 }
 
 /** `V`: a prepared food whose makeup varies by brand. `U`: allergen status unknown. */
@@ -86,6 +92,33 @@ const ROWS: readonly Row[] = [
   ["frozen_peas", "frozen peas", "pea"],
 ];
 
+/**
+ * Brief 039: the kinds each ingredient holds, for its typical store version. Rennet and gelatin count as meat. A
+ * prepared food is `varies` above, and any diet removes it whatever its kinds say; its kinds are listed anyway.
+ */
+const KINDS: Readonly<Record<string, string>> = {
+  chicken_thigh: "poultry",
+  chicken_breast: "poultry",
+  ground_beef: "meat",
+  pork_chop: "meat",
+  salmon_fillet: "fish",
+  cod_fillet: "fish",
+  shrimp: "shellfish",
+  egg: "egg",
+  pasta: "egg",
+  flour_tortillas: "meat, dairy",
+  bread: "dairy, egg, honey",
+  peanut_butter: "honey",
+  parmesan: "dairy, meat",
+  cheddar: "dairy, meat",
+  butter: "dairy",
+  yogurt: "dairy, meat",
+  curry_paste: "fish, shellfish",
+  fish_sauce: "fish",
+  pesto: "dairy, meat",
+  mixed_seafood: "fish, shellfish",
+};
+
 const list = (s: string) => s.split(",").map((x) => x.trim()).filter((x) => x.length > 0);
 
 export const INGREDIENTS: readonly Ingredient[] = ROWS.map(([id, label, allergens, kind]) => ({
@@ -95,6 +128,8 @@ export const INGREDIENTS: readonly Ingredient[] = ROWS.map(([id, label, allergen
   known: kind !== U,
   // Unknown status removes the recipe anyway; it never claims a complete profile either.
   profile: kind === undefined ? "complete" : "varies",
+  // An ingredient of unknown status has unknown kinds too.
+  kinds: kind === U ? null : (list(KINDS[id] ?? "") as FoodKind[]),
 }));
 
 const BY_ID = new Map(INGREDIENTS.map((i) => [i.id, i]));
