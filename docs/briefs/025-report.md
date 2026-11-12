@@ -42,11 +42,12 @@ Checks at the tip:
 - **W-208.** Only extraction resolves names this way. The on-turn routes still derive by name through `mentionEid` in `writes/subject.ts`, which lane `fix8` owns. Finding.
 - **W-209.** "A relation of one person never closes another's" holds through keys only, since keys now differ by person. A transition target that the model names can still close another person's relation. A guard against that was built and then dropped, because it changed what the committed extraction check expects for `x-correct-1` (`d12442b`).
 - **W-210.** The rename index now answers only for a mention of type person whose stated role doesn't conflict. A mention of another type that uses a renamed name resolves by its own name.
-- **W-211.** Part 3 exempts only `griefAsk`. Every other kind about someone recorded deceased is dropped, mustSay ones included (a commitment due within 24 hours, a reminder). This needs a ruling against spec §6's floors.
+- **W-211.** Part 3 exempts `griefAsk` from the death rule. A must-say about someone recorded deceased is ruled by W-216.
 - **W-212.** For illness, part 3 suspends `wish` and `celebrate` (the spec's "celebrations"). A linked entity is one that shares an active row's subject or `entityIds` with the ill person, one hop, never `self`. The owner's own celebrations are not suspended.
 - **W-213.** A moment dropped for a death, an illness or resolved care is closed as `cancelled` with reason `policy`, because `CANCEL_REASONS` has no life reason. `chooseNow` and admission skip it. The tick cancels it at its next pass over that moment (when the lease expires, or when a pending moment comes due).
 - **W-214.** `momentVerdict` now reads every Memory (`readAllMemories`, paged by ID) on each call that reaches the life check. No declared index serves a read by predicate.
 - **W-215.** FT16's "two separate people" step is green. Its "Franki asks which Alex" step still waits on the reminder action, which is not this brief.
+- **W-216.** (The lead's provisional ruling on W-211, for the owner.) A must-say moment about someone recorded deceased plays only when the owner confirmed it strictly after the death was recorded: the reminder's `makeReminder` action `createdAt` against the `person.life = deceased` row's `createdAt`, both on the ops clock. Equal times, a missing time, or a confirmation before the death mean it is never chosen or admitted, and the tick closes it as `cancelled`, reason `policy`. Its action row stays in the ledger. A reminder is about the rows its action depends on, so "pick up Mom's ashes" is about Mom. Every other kind about the deceased is dropped whenever it was made, and `griefAsk` is exempt.
 
 ## Changed assertions in existing tests
 

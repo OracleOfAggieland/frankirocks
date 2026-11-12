@@ -2,8 +2,8 @@
 // server path: a wish, a check-in or a celebrate about someone recorded deceased is never chosen or admitted, a
 // celebration for someone gravely ill waits, a check-in about care recorded resolved is dropped, and each such moment
 // is closed with a reason code at the next tick, never left to fire later.
-import { type Memory, type Moment, localMinuteAt, msFromTs } from "@franki/core";
-import { testId } from "@franki/core/testing";
+import { type Memory, type Moment, localMinuteAt, msFromTs, tsFromMs } from "@franki/core";
+import { sampleTurn, testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import type { RouteContext } from "../routes/runtime";
 import { type TestRig, testRig } from "../testing/fakes";
@@ -12,6 +12,7 @@ import { admitMoments } from "./said";
 import { setWorld, timeTenant, writeOccasion, momentsOf, ofKind } from "./testing";
 import { memoryTick } from "./tick";
 import { momentNoteId } from "./verdict";
+import { confirmReminder, offerReminder, recordPendingRendered } from "./reminder";
 
 const UID = "owner-1";
 const ZONE = "America/Chicago";
@@ -113,5 +114,50 @@ describe("illness and resolved care (brief 041 part 3)", () => {
     await lifeRow(rig, "care-done", MOM, { kind: "care", predicate: "care", value: { kind: "enum", code: "resolved" }, args: { careSubjectRef: MOM, topic: "surgery" }, gravity: 3 });
     expect((await chooseNow(ctx, { kind: "opening" }, QUIET)).choice.spoken).toBeNull();
     expect(msFromTs(check![1].dueAt)).toBeGreaterThan(0);
+  });
+});
+
+// W-216 (the lead's provisional ruling on W-211): a must-say moment about someone recorded deceased plays only when
+// the owner confirmed it strictly after the death was recorded; otherwise it closes as the rest do.
+describe("a must-say reminder about someone recorded deceased (W-216)", () => {
+  /** "Remind me tomorrow to pick up Mom's ashes": offered, shown and confirmed now; leased tomorrow at 09:00. */
+  async function reminderAboutMom(rig: TestRig, ctx: RouteContext) {
+    const source = await lifeRow(rig, "ashes", MOM, { subjectId: "self", entityIds: [MOM], predicate: "fact", value: { kind: "text", text: "pick up Mom's ashes" }, args: { topic: "other", label: null }, gravity: 0 });
+    const world = localMinuteAt(DAY, 8 * 60, ZONE)!;
+    await setWorld(rig, UID, world);
+    const offer = offerReminder(rig.deps.hasher, { sourceId: source, note: "Pick up Mom's ashes", spoken: "tomorrow", worldNow: world, zone: ZONE })!;
+    await rig.store.transaction(UID, (tx) => recordPendingRendered(tx, UID, offer.pendingId, rig.clock.read().opsClock.now, rig.deps.hasher));
+    rig.clock.advance(MINUTE);
+    const yes = sampleTurn({ text: "Yes.", sourceClass: "U", final: true, role: "user", committedAt: tsFromMs(rig.clock.read().opsClock.now) });
+    const applied = await confirmReminder(ctx, offer, offer.yesId, yes);
+    if (applied.state !== "applied") throw new Error(applied.state);
+    return applied.momentId as string;
+  }
+  /** The death, recorded now on the ops clock. */
+  const deathNow = (rig: TestRig) => lifeRow(rig, "life-w216", MOM, { predicate: "person.life", value: { kind: "enum", code: "deceased" }, args: { detail: null }, gravity: 3, createdAt: tsFromMs(rig.clock.read().opsClock.now), updatedAt: tsFromMs(rig.clock.read().opsClock.now) });
+  async function onTheDay(rig: TestRig, ctx: RouteContext) {
+    await setWorld(rig, UID, localMinuteAt("2026-11-14", 9 * 60, ZONE)!);
+    await memoryTick(ctx);
+  }
+
+  it("confirmed before the death was recorded: never chosen, and closed with its reason", async () => {
+    const { rig, ctx } = await tenant();
+    const id = await reminderAboutMom(rig, ctx);
+    rig.clock.advance(MINUTE);
+    await deathNow(rig);
+    await onTheDay(rig, ctx);
+    expect((await chooseNow(ctx, { kind: "opening" }, QUIET)).choice.spoken?.momentId).not.toBe(id);
+    rig.clock.advance(16 * MINUTE);
+    await memoryTick(ctx);
+    expect((await momentsOf(rig, UID)).get(id)).toMatchObject({ status: "cancelled", cancelReason: "policy" });
+  });
+
+  it("confirmed after the death was recorded: chosen, as any must-say is", async () => {
+    const { rig, ctx } = await tenant();
+    await deathNow(rig);
+    rig.clock.advance(MINUTE);
+    const id = await reminderAboutMom(rig, ctx);
+    await onTheDay(rig, ctx);
+    expect((await chooseNow(ctx, { kind: "opening" }, QUIET)).choice.spoken?.momentId).toBe(id);
   });
 });

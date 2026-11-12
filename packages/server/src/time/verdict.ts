@@ -22,6 +22,7 @@ import {
   type SourceVerdict,
   docRef,
   eligible,
+  isMustSay,
   msFromTs,
   parseDep,
   sourceVerdict,
@@ -142,25 +143,41 @@ async function reminderSourceVerdict(r: Reader, uid: string, moment: Moment, dep
 /** What a reread says about `moment`'s source now. `r` is a transaction when the caller writes on the answer. */
 export async function momentVerdict(r: Reader, uid: string, moment: Moment, core: Core, clock: ClockPort, opts: VerdictOptions): Promise<MomentVerdict> {
   let v: MomentVerdict = "gone";
+  let action: StoredDoc<Ledger> | null = null;
   if (moment.memoryId !== null) v = await memoryVerdict(r, uid, moment, moment.memoryId, core, clock);
   else if (moment.rollupId !== null) v = opts.rollupLive === false ? "gone" : "ok";
   else if (moment.actionId !== null) {
-    const action = await r.get<Ledger>(paths.ledger(uid, moment.actionId));
+    action = await r.get<Ledger>(paths.ledger(uid, moment.actionId));
     if (action === null || action.data.kind !== "action" || action.data.state !== "complete") return "gone";
     v = await reminderSourceVerdict(r, uid, moment, action.data.dependsOn, core, clock);
   }
   // Brief 041 part 3 (spec §7, the death and illness rows), reread wherever this verdict is (the tick, `chooseNow`,
   // the render and admission), so a life change committed at any point before admission holds: a moment about
-  // someone recorded deceased is `gone`, except the one grief form the spec names; a wish or celebrate about someone
+  // someone recorded deceased is `gone`, except the one grief form the spec names and a must-say the owner confirmed
+  // strictly after the death was recorded (W-216); a wish or celebrate about someone
   // whose care is open at gravity 3, or about anyone one hop from them, waits as `gone`; a check-in about a person
   // whose care is all recorded resolved is `gone`. The tick then closes it with a reason code (`policy`).
   if (v !== "ok" || moment.kind === "griefAsk") return v;
   const source = moment.memoryId === null ? null : ((await r.get<Memory>(paths.memory(uid, moment.memoryId)))?.data ?? null);
-  const roots = new Set([...moment.subjectIds, ...(source === null ? [] : [source.subjectId, ...source.entityIds])].filter((e) => e !== "self"));
+  // A reminder is about the rows its action depends on (W-216).
+  const depends: Memory[] = [];
+  for (const d of action?.data.dependsOn ?? []) {
+    const p = parseDep(d);
+    const row = p === null || p.collection !== "memories" ? null : await r.get<Memory>(paths.memory(uid, p.id));
+    if (row !== null) depends.push(row.data);
+  }
+  const roots = new Set([...moment.subjectIds, ...[source, ...depends].flatMap((m) => (m === null ? [] : [m.subjectId, ...m.entityIds]))].filter((e) => e !== "self"));
   if (roots.size === 0) return v;
   const rows = (await readAllMemories(r, uid)).map((h) => h.memory).filter((m) => m.status === "active");
   const code = (m: Memory) => (m.value.kind === "enum" ? m.value.code : null);
-  if (rows.some((m) => m.predicate === "person.life" && roots.has(m.subjectId) && code(m) === "deceased")) return "gone";
+  const died = rows.filter((m) => m.predicate === "person.life" && roots.has(m.subjectId) && code(m) === "deceased").map((m) => msFromTs(m.createdAt));
+  if (died.length > 0) {
+    // W-216: a must-say plays only when its confirmation (the action's createdAt) is strictly after every death it is
+    // about (the life fact's createdAt), both on the ops clock. A missing time on either side counts as before.
+    const confirmedAt = action === null ? NaN : msFromTs(action.data.createdAt);
+    const after = Number.isFinite(confirmedAt) && died.every((t) => Number.isFinite(t) && confirmedAt > t);
+    if (!(isMustSay(moment.kind, msFromTs(moment.dueAt), ownerClock(core.state.data, clock).worldClock.now) && after)) return "gone";
+  }
   const careOf = (m: Memory): string | null => (m.predicate !== "care" ? null : String((m.args as { careSubjectRef?: unknown }).careSubjectRef ?? m.subjectId));
   if (moment.kind === "wish" || moment.kind === "celebrate") {
     const ill = new Set(rows.filter((m) => careOf(m) !== null && code(m) === "open" && m.gravity >= 3).map((m) => careOf(m)!));
