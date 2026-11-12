@@ -227,7 +227,6 @@ function beat3(variant: "as merged" | "past the seed mismatches"): Script {
       label: "the strip fills: $115 less",
       do: "read",
       view: "strip",
-      ...needsOffer("the comparison closing the loop (brief 023) and the strip's money figure from rollups (brief 020 'not built')"),
       expect: [
         {
           store: "every step complete",

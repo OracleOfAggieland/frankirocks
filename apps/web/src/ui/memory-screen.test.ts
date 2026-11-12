@@ -44,6 +44,13 @@ describe("memory screen view-model (brief 020)", () => {
     expect(stripProps({ loopId: null, steps: [] })).toBeNull();
   });
 
+  it("strip: a compared loop shows its fall as the last step's label (brief 030 P1-4)", () => {
+    const steps = FIXTURE_MEMORY.strip.strip!.steps.map((x) => ({ ...x, state: "complete" as const }));
+    const compared = { ...FIXTURE_MEMORY.strip.strip!, steps: steps.map((x) => (x.kind === "comparison" ? { ...x, label: "$115 less on takeout." } : x)) };
+    expect(stripProps(compared)).toEqual({ open: true, filled: 5, resultLabel: "$115 less on takeout." });
+    expect(stripProps({ ...compared, steps })).toMatchObject({ filled: 5, resultLabel: COPY.memory.stripResult });
+  });
+
   it("receipt: kinds and counts only, and only once blocked or cleaned", () => {
     expect(receiptProps(FIXTURE_MEMORY.receipt.items)).toEqual({
       blocked: true,

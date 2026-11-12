@@ -37,6 +37,7 @@ import { foregroundEC, readAllMemories, snapshotFor, storeReader } from "../head
 import { paths } from "../store/paths";
 import { barrierError, parseError, scopeError } from "./errors";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
+import { loopFalls } from "./strip-falls";
 
 /** The Lab reads at most this many Evidence and ledger rows each; past it, its coverage is partial. */
 export const LAB_READ_CAP = 2_000;
@@ -173,7 +174,7 @@ export async function getMemory(ctx: RouteContext, req: MemoryRequest): Promise<
       return { ...empty, lab, coverage: lab.coverage };
     }
     case "strip":
-      return { ...empty, strip: stripView(rows, view) };
+      return { ...empty, strip: stripView(rows, view, await loopFalls(reader, uid)) };
     default:
       req.view satisfies never;
       return empty;
