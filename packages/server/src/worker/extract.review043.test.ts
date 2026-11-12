@@ -47,3 +47,31 @@ describe("finding 1, extraction: a death is never written on words that don't ma
     expect(await run("My mom passed away last night.", "mom")).toEqual([["deceased", "active"]]);
   });
 });
+
+describe("finding 7: a delayed correction that meets a later row still marks what it refuted wrong", () => {
+  const tick = (rig: ReturnType<typeof testRig>, ms: number) => {
+    rig.clock.advance(ms);
+    rig.clock.setWorld(rig.clock.read().worldClock.now + ms);
+  };
+  const nameOut = (t: CommittedTurn, name: string, act: string) => {
+    const span = spanOf(t, name);
+    return ok(completed(JSON.stringify(extractOutput([{ ...factItem(act, "new", name, [span]), predicate: "identity.name", args: {} }]))));
+  };
+  it("Alec, then \"No, my name is Alex, not Alec.\" delayed, then Al: Al active, Alec wrong, Alex history", async () => {
+    const rig = testRig();
+    const run = (t: CommittedTurn) => settle(runExtractJob(UID, t.jobId, rig.deps), rig.clock, rig.timers);
+    const a = await commitUserTurnForTest(rig.store, UID, testId("ta"), "My name is Alec.", rig.clock, rig.deps.hasher);
+    rig.openai.script("responses.create", nameOut(a, "Alec", "statement"));
+    await run(a);
+    tick(rig, 60_000);
+    const b = await commitUserTurnForTest(rig.store, UID, testId("tb"), "No, my name is Alex, not Alec.", rig.clock, rig.deps.hasher);
+    tick(rig, 60_000);
+    const c = await commitUserTurnForTest(rig.store, UID, testId("tc"), "These days my name is Al.", rig.clock, rig.deps.hasher);
+    rig.openai.script("responses.create", nameOut(c, "Al", "statement"));
+    await run(c);
+    rig.openai.script("responses.create", nameOut(b, "Alex", "correction"));
+    await run(b);
+    const names = [...(await memoriesOf(rig.store)).values()].filter((m) => m.predicate === "identity.name").map((m) => [m.value.kind === "text" ? m.value.text : "", m.status]).sort();
+    expect(names).toEqual([["Al", "active"], ["Alec", "wrong"], ["Alex", "history"]]);
+  });
+});
