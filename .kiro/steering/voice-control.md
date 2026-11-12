@@ -1,6 +1,6 @@
 ---
 inclusion: fileMatch
-fileMatchPattern: "{packages/core/src/voice/machine.ts,packages/core/src/voice/fast-o.ts,packages/core/src/admission.ts,packages/server/src/admission/**,packages/server/src/routes/turn.ts,apps/web/src/client/voice-client.ts}"
+fileMatchPattern: "{packages/core/src/voice/**,packages/core/src/admission.ts,packages/server/src/admission/**,packages/server/src/routes/turn.ts,apps/web/src/client/voice-client.ts}"
 ---
 
 # Voice-control rules

@@ -5,14 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push to a pull request cancels its older run. A push run that has started is never cancelled. A push run
+# still waiting for it is replaced by a newer push to the same branch, so that waiting commit gets no run of its own.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
-  # gitleaks-action lists a pull request's commits to know what to scan.
-  pull-requests: read
 
 jobs:
   verify:
@@ -44,14 +44,23 @@ jobs:
       - name: Firestore rules tests (emulator)
         run: npm run test:emulator
 
+      # Fails closed: a missing or empty output folder, or a grep that could not read one (exit 2), fails the step.
+      # The history scan is its own workflow, secret-scan.yml.
       - name: No API keys in build output
         run: |
-          if grep -rEl '\b(sk-proj-|sk-[A-Za-z0-9]{20,}|ek_[A-Za-z0-9]{20,})' apps/web/.next/static functions/dist; then
+          for dir in apps/web/.next/static functions/dist; do
+            if [ ! -d "$dir" ] || [ -z "$(ls -A "$dir")" ]; then
+              echo "::error::Build output $dir is missing or empty, so it could not be checked for keys."
+              exit 1
+            fi
+          done
+          status=0
+          grep -rEl '\b(sk-proj-|sk-[A-Za-z0-9]{20,}|ek_[A-Za-z0-9]{20,})' apps/web/.next/static functions/dist || status=$?
+          if [ "$status" -eq 0 ]; then
             echo "::error::Something that looks like an OpenAI key is in the build output."
             exit 1
           fi
-
-      - name: Secret scan
-        uses: gitleaks/gitleaks-action@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          if [ "$status" -ne 1 ]; then
+            echo "::error::grep could not read the build output (exit $status), so it could not be checked for keys."
+            exit 1
+          fi
