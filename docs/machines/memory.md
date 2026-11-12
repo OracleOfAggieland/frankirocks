@@ -54,6 +54,7 @@ Three fields of the Session decide whether the room is trusted:
 | `packages/server/src/sessions.ts` (`beginCloseInTx`) | clears `activeSessionId` and `activeCallId` when they name the closing Session |
 | `packages/server/src/routes/turn.ts`, a Superseding_Post with a hit that changes what is said | `policyRev + 1` |
 | `packages/server/src/intents/repair.ts` (`runParseRepair`), a repaired hit that cuts | `policyRev + 1` |
+| `packages/server/src/seed/reset.ts` (`resetVisit`) | `barrier` up and through its phases (see `memory.forget`); at the end `seedCoreDocs` writes `epoch + 1`, `barrier` null, `activeSessionId` and `activeCallId` null, `policyRev` kept |
 
 These two are the only places that raise `policyRev`, each behind `changesWhatIsSaid`; `scripts/policy-rev-raises.test.ts` fails when another appears. No write, proposal, the repair's hardRule route or the extraction backstop raises it (`.kiro/steering/memory-writes.md`).
 
@@ -66,7 +67,11 @@ A raised `policyRev` is the counter that cancels speech, Decks and work in fligh
 | Status | documented |
 | File | `packages/core/src/schema/records.ts` |
 
-`core/epoch.barrier` is null or a forget in progress, whose `phase` is one of `fence`, `close`, `resolve`, `install`, `closure`, `resume`, with a deadline and up to 32 queued control operations. While it is not null, session open answers `blocked`, and the state, turn and tool routes refuse with the barrier error. The fence (`fenceForget` in `packages/server/src/forget/fence.ts`, planned by `planFence` in `packages/core/src/forget/fence.ts`) sets it at phase `close`, or adds to its queue; the forget executor moves it with the job through `close`, `resolve` and `install` and leaves it at `closure`. Nothing on this branch clears it: `releaseBarrier` is for the resume step, which is not built, and no route calls the fence. See [forget](forget.md).
+`core/epoch.barrier` is null or a forget in progress, whose `phase` is one of `fence`, `close`, `resolve`, `install`, `closure`, `resume`, with a deadline and up to 32 queued control operations. While it is not null, session open answers `blocked`, and the state, turn and tool routes refuse with the barrier error. Two pieces of code raise it.
+
+The seed reset (`packages/server/src/seed/reset.ts`, brief 019) is the one writer a route can reach today: `fence` when it starts, `close` while it closes Sessions and hangs up calls, `install` while it clears and reloads the tenant, then null in the transaction that writes the clone's core documents. It never uses `resolve`, `closure` or `resume`. A barrier held by another operation, or by a reset still inside its `RESET_BARRIER_MS` deadline, refuses the reset with the barrier error; the reset takes over only its own tenant's crashed reset after the deadline. `initialCoreDocs` writes it null.
+
+The forget fence (`fenceForget` in `packages/server/src/forget/fence.ts`, planned by `planFence` in `packages/core/src/forget/fence.ts`, brief 021) sets it at phase `close`, or adds to its queue; the forget executor moves it with the job through `close`, `resolve` and `install` and leaves it at `closure`. Nothing clears a forget's barrier yet: `releaseBarrier` is for the resume step, which is not built, and no route calls the fence. How a forget that arrives during a reset's barrier is queued is not decided. See [forget](forget.md).
 
 ### `memory.head`
 

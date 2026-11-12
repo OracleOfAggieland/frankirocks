@@ -112,6 +112,7 @@ export class MemoryStore implements StorePort {
     const reads = new Map<string, number | null>();
     let rereadConflict: string | null = null;
     const writes = new Map<string, PendingWrite>();
+    const deletes = new Set<string>();
 
     const observe = (path: string, rev: number | null) => {
       if (!reads.has(path)) reads.set(path, rev);
@@ -144,16 +145,26 @@ export class MemoryStore implements StorePort {
         }
         writes.set(path, { parsed, kind: "update", record: clone(record as Data), expectRev });
       },
+      delete: (path) => {
+        parseDocPath(uid, path);
+        if (writes.has(path) || deletes.has(path)) throw new StoreError("invalidInput", "record written twice in one transaction", path);
+        deletes.add(path);
+      },
     };
 
     const result = await fn(tx);
+    for (const path of deletes) if (writes.has(path)) throw new StoreError("invalidInput", "record written twice in one transaction", path);
 
     // Schema, size and tenant checks; `rev` is set at apply, and any rev >= 1 validates the same way.
     for (const w of writes.values()) checkRecord(uid, w.parsed, { ...w.record, rev: 1 });
     // Async checks next. Evidence is never deleted or edited in place, so these stay valid until apply.
     for (const w of writes.values()) {
       if (w.parsed.collection !== "memories") continue;
-      const failures = await lineageFailures(w.record as unknown as Memory, async (eid) => this.evidenceFor(uid, eid, writes), this.hasher);
+      const failures = await lineageFailures(
+        w.record as unknown as Memory,
+        async (eid) => (deletes.has(`users/${uid}/evidence/${eid}`) ? null : this.evidenceFor(uid, eid, writes)),
+        this.hasher,
+      );
       throwOnLineage(w.parsed.path, failures);
     }
 
@@ -184,6 +195,8 @@ export class MemoryStore implements StorePort {
       finals.push([w.parsed.path, final]);
     }
     for (const [path, data] of finals) this.docs.set(path, data);
+    // A deleted path that was read is checked by the read loop above; an absent one is not an error.
+    for (const path of deletes) this.docs.delete(path);
     return result;
   }
 

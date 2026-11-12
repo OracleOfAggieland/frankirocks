@@ -25,3 +25,7 @@ export { TAKE_MAX_BYTES, listTakes, liveTakesDeps, saveTake } from "./dev/takes"
 export * from "./forget/fence";
 export * from "./forget/executor";
 export * from "./forget/resolve-port";
+
+// Brief 019: the seeded persona, clone and reset.
+export { seedResetRoute } from "./routes/seed-reset";
+export { PERSONA_FIXTURE_ID } from "./seed/persona";

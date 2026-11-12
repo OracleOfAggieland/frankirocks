@@ -420,6 +420,9 @@ const MemoryResponse = obj({
   coverage: Cov,
 });
 const ResetResponse = obj({ fixtureNamespace: ID, worldClock: TS, sessionId: nullable(ID) });
+// Brief 019: POST /api/seed/reset (contracts §6 Routes). Its response is the stored shape above.
+export const SeedResetRequest = obj({ requestId: ID, sessionId: nullable(ID), fixtureId: ID, visitId: ID });
+export const SeedResetResponse = ResetResponse;
 const AdvanceResponse = obj({ worldClock: TS, jobId: ID, proactive: nullable(Proactive), deck: nullable(Deck) });
 const SeedEventResponse = obj({
   anchorId: ID,
