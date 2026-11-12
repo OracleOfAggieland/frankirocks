@@ -19,6 +19,8 @@ import type { StorePort } from "../store/port";
 import { drainExtractJobs } from "./drain";
 import { hangupAll, runHangupJob } from "./hangup";
 import { dueJobs } from "./jobs";
+// Brief 023: one-shot time.
+import { memoryTick } from "../time/tick";
 
 const MINUTE_MS = 60_000;
 export const EXPIRY_BATCH = 100;
@@ -131,6 +133,8 @@ export function startTick(ctx: RouteContext): Promise<number> | null {
     await expiry.catch(() => 0);
     await racing(ctx, "requeue", () => requeueExpiredLeases(ctx));
     await runDueJobs(ctx);
+    // Brief 023: derive and open due moments at the owner's world time, after extraction has written its rows.
+    await racing(ctx, "moments", () => memoryTick(ctx));
   });
   return expiry;
 }
