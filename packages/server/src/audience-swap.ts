@@ -204,14 +204,21 @@ export function audienceEffect(o: RuleOutcome, x: AudienceInput): AudienceEffect
  * on whether or not a close came first; only the Owner's own close makes it private (`userCloseCarry`). Finding 6:
  * once a set wait has expired, a non-private Session passes on `unknown`, never `private`.
  */
-export function inheritedAudience(prev: Session | null, opsNow: number): { audience: Au; crisis: boolean } | null {
+export function inheritedAudience(prev: Session | null, opsNow: number): { audience: Au; crisis: boolean; crisisAt: Session["modifiers"]["crisis"] } | null {
   if (prev === null) return null;
   const audience = effectiveAudience(expireLease(prev, opsNow), opsNow);
   if (audience === "private") return null;
   // Brief 035 (finding 6): an expired wait never yields private. It yields unknown, the S0 Head with no swap line.
   const expired = prev.waitDeadline !== null && msFromTs(prev.waitDeadline) < opsNow;
-  return { audience: expired ? "unknown" : audience, crisis: prev.modifiers.crisis !== null };
+  return { audience: expired ? "unknown" : audience, crisis: prev.modifiers.crisis !== null, crisisAt: prev.modifiers.crisis };
 }
+
+/** The inheriting Session: the fresh one with the inherited audience and, brief 035 (finding 13), the crisis modifier. */
+export const inheritedSession = (fresh: Session, i: NonNullable<ReturnType<typeof inheritedAudience>>): Session => ({
+  ...fresh,
+  audience: i.audience,
+  modifiers: { ...fresh.modifiers, crisis: i.crisisAt },
+});
 
 /**
  * Whether the inheriting open speaks the swap line (R14.3; question 81): only for a company audience, and never after

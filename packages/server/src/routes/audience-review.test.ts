@@ -265,3 +265,19 @@ describe("finding 6: the swap wait covers the browser's swap, and an expired wai
     expect(b.body.proactive).toBeNull();
   });
 });
+
+describe("finding 13: the swapped Session inherits the crisis modifier", () => {
+  it("row 6, then an open naming that Session: the new Session has the crisis modifier and no swap line", async () => {
+    const { rig, s } = await doorRig(true);
+    rig.openai.script("decisions.create", ok(decisionAnswer({ crisis: 0.6, company: 0.9 })));
+    const first = await postTurn(rig, voice(s.stamp, 1, "My boss is here and I can't do this anymore."));
+    expect(first.body.status).toBe("blocked");
+    const crisisAt = (await sessionOf(rig, s.sessionId)).modifiers.crisis;
+    expect(crisisAt).not.toBeNull();
+    const b = await openNaming(rig, s.sessionId, "open-b");
+    const next = await sessionOf(rig, b.body.sessionId);
+    expect(next.audience).toBe("company");
+    expect(next.modifiers.crisis).toEqual(crisisAt);
+    expect(b.body.proactive).toBeNull();
+  });
+});

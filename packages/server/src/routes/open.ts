@@ -46,7 +46,7 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 026: a narrowed audience carried into the fresh call, with the swap line (voice-control task 50).
 import { type Proactive, type Session, turnRef } from "@franki/core";
 import { admitRule } from "../admission/seam";
-import { inheritedAudience, speaksSwapLine, swapLineRule, swapLineTurnId } from "../audience-swap";
+import { inheritedAudience, inheritedSession, speaksSwapLine, swapLineRule, swapLineTurnId } from "../audience-swap";
 
 /**
  * Server time for one open, from runRoute's first line to the answer. The browser gives the whole request 5 s
@@ -178,7 +178,7 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
 
       const stamp = currentStamp(sessionId, 1, { epoch: core.epoch.data, rules, bundle });
       const fresh = newSession(uid, { stamp, now: ops, startedBy: req.initiator });
-      tx.create(paths.session(uid, sessionId), inherited === null ? fresh : { ...fresh, audience: inherited.audience });
+      tx.create(paths.session(uid, sessionId), inherited === null ? fresh : inheritedSession(fresh, inherited));
       const epoch: CoreEpoch = { ...core.epoch.data, activeSessionId: sessionId, activeCallId: null, updatedAt: now };
       tx.update(paths.core(uid, "epoch"), epoch);
       tx.update(paths.core(uid, "state"), { ...state, updatedAt: now });
