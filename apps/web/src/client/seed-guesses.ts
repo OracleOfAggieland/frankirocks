@@ -8,8 +8,11 @@
 export const RESET_PATH = "/api/seed/reset";
 export const ADVANCE_PATH = "/api/seed/advance";
 
-/** The one persona's fixture ID, in the contract's 43-character ID shape. Guessed: the seed lane names its persona. */
-export const PERSONA_FIXTURE_ID = `persona${"_".repeat(36)}`;
+/**
+ * The one persona's fixture ID. No longer a guess: it is the seed's own ID (`packages/server/src/seed/persona`),
+ * and `scripts/persona-fixture-id.test.ts` fails if the two ever differ.
+ */
+export const PERSONA_FIXTURE_ID = "seed-persona-riley-v1-000000000000000000000";
 
 /**
  * Where the browser keeps the visit, one entry per signed-in user, so a reload keeps the same month (spec §15,
