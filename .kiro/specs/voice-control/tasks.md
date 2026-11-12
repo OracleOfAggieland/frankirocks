@@ -467,9 +467,9 @@ Each task adds example tests to `machine.test.ts` for its rows of design §"The 
   - Witness: `machine.test.ts` › `blocked` with no Permit tears down, opens with `previousSessionId`, posts no close, stays `thinking`; `blocked` with a care Permit plays it, then swaps after it ends or a barge-in; the swap line plays from `proactive` once the ack matches; a swap failure goes to connection recovery; a lost connection with an Outstanding_Turn waits for its response or deadline. Property 10 green; properties 1–7 and 12 still green.
   - Commit: `feat(voice): call swap for company and quiet`
 
-- [ ] 48. `/api/turn`: company, quiet and the hang-up
+- [x] 48. `/api/turn`: company, quiet and the hang-up
   - Requirements: R14.1, R14.5, R14.7, R14.8; Q68, Q79, Q81
-  - Depends on: 45 · Estimate: 3 h · Actual:
+  - Depends on: 45 · Estimate: 3 h · Actual: about 0.6 h. Built by Claude Code (brief 026). The logic is in `packages/server/src/audience-swap.ts`; `/api/turn` runs the rule in wave B. Narrowed here means a live Session with a `waitDeadline` and a non-private audience; its turns answer `blocked` before the Stamp and clientSeq checks and store no Turn. Property 10's server half is `routes/turn.narrowing.property.test.ts`, red first at seed 749011380
   - Files: `packages/server/src/routes/turn.ts`, `packages/server/src/audience.ts`, `packages/server/src/routes/turn-audience.test.ts` (new)
   - Witness: `turn-audience.test.ts` › a company or quiet hit with a live call stores `company` (with `reasonCodes:["quiet"]` for quiet), raises `policyRev`, sets `waitDeadline` +10 s, moves the Session to `closing`, writes the hangup Job and answers `blocked`; with crisis also a candidate it answers `blocked` with the care Permit, `waitDeadline` +60 s and no hang-up; every later turn on that Session answers `blocked` (property 10, server half).
   - Commit: `feat(turn): company and quiet narrow and hang up`
