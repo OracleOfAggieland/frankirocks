@@ -4,6 +4,7 @@
 import type { ApiClient } from "../client/api";
 import type { BrowserClock } from "../client/clock";
 import { DebugPanelModel } from "../client/debug-panel";
+import { MemoryModel } from "../client/memory-model";
 import { PhoneWatch } from "../client/phone-watch";
 import { TypedTurns } from "../client/typed-turns";
 import { type AudioLike, type PeerLike, type StreamLike, VoiceClient } from "../client/voice-client";
@@ -31,6 +32,8 @@ export interface SignedInControllers {
   voice: VoiceClient | null;
   /** Follows an outbound phone call for the phone on the screen. Reads only. */
   phone: PhoneWatch;
+  /** The jar, the Lab, the strip, the receipt and the readout, from GET /api/memory (brief 020). Reads only. */
+  memory: MemoryModel;
 }
 
 export function createSignedInControllers(deps: ControllerDeps): SignedInControllers {
@@ -49,7 +52,14 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
           ...(deps.inputLevel === undefined ? {} : { inputLevel: deps.inputLevel }),
         });
   const phone = new PhoneWatch({ api, now: () => clock.mono() });
-  return { typed: new TypedTurns({ api, clock, onTurn: (turn) => phone.onTypedTurn(turn) }), debug: deps.debug ? new DebugPanelModel({ api, clock }) : null, voice, phone };
+  const memory = new MemoryModel({ api });
+  return {
+    typed: new TypedTurns({ api, clock, onTurn: (turn) => phone.onTypedTurn(turn), onReply: (reply) => memory.onReply(reply) }),
+    debug: deps.debug ? new DebugPanelModel({ api, clock }) : null,
+    voice,
+    phone,
+    memory,
+  };
 }
 
 export const EMPTY_COPIES: TurnCopies = { reply: null, caption: null, typedText: "", cards: [], jarItems: [] };

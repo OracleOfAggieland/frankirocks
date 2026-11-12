@@ -58,6 +58,8 @@ export interface TypedDeps {
   sleep?: (ms: number) => Promise<void>;
   /** Told the turn each answered typed line was, for the phone on the screen. Never changes what is sent. */
   onTurn?: (turn: { sessionId: string; turnId: string }) => void;
+  /** Told each answered line's words, Franki's reply lines and the turn's forget receipt (brief 020). Never changes what is sent. */
+  onReply?: (reply: { transcript: string; lines: string[]; receiptId: string | null }) => void;
 }
 
 /** Pure: whether the text may be sent (R18.1, R18.8). */
@@ -109,7 +111,19 @@ export class TypedTurns {
   /** One press of send or Enter. Returns false when nothing was sent. */
   async submit(): Promise<boolean> {
     if (!this.canSend()) return false;
-    const transcript = this.state.text;
+    return this.send(this.state.text, true);
+  }
+
+  /**
+   * Sends a chip's words down the same typed path, as the owner's own (spec §15), and leaves the box as it is. A
+   * chip is a code constant, never pasted text. Returns false when nothing was sent.
+   */
+  async sendLine(text: string): Promise<boolean> {
+    if (this.state.sending || !canSendText(text)) return false;
+    return this.send(text, false);
+  }
+
+  private async send(transcript: string, fromBox: boolean): Promise<boolean> {
     this.set({ sending: true, error: null });
     try {
       const stamp = this.stamp ?? (await this.openSession());
@@ -123,8 +137,9 @@ export class TypedTurns {
       const entries = [...this.state.entries, { key: pending.turnId, role: "user" as const, text: transcript }];
       // No call is open in this path, so the reply shows as text and no audio plays (R18.6).
       for (const note of result.notes) entries.push({ key: note.noteId, role: "franki", text: note.text });
-      this.set({ text: "", sending: false, error: null, entries });
+      this.set({ ...(fromBox ? { text: "" } : {}), sending: false, error: null, entries });
       this.deps.onTurn?.({ sessionId: result.stamp.sessionId, turnId: result.stamp.turnId });
+      this.deps.onReply?.({ transcript, lines: result.notes.map((n) => n.text), receiptId: result.receiptId });
       return true;
     } catch {
       return this.fail("Not sent: something went wrong in the browser.");
