@@ -7,7 +7,7 @@
  * these tests also check that the browser's payload hash equals the one the Admission_Seam approved.
  * Test-only imports of server test helpers; no browser module imports the Server_Library.
  */
-import { LATENCY_SAMPLE_MS, LOUD_LEVEL, type Session, type Turn, idParts } from "@franki/core";
+import { COMPANY_LINE, LATENCY_SAMPLE_MS, LOUD_LEVEL, type Session, type Turn, ackNote, avatarState, callButton, idParts } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { type RouteSpec, closeRoute, openRoute, receiptRoute, runRoute, sdpRoute, stateRoute, toolRoute, turnRoute } from "@franki/server";
 import { describe, expect, it } from "vitest";
@@ -19,6 +19,7 @@ import { commitUserTurnForTest, insertMemoryForTest } from "../../../../packages
 import { T0_MS, type TestRig, runScheduled, settle, testRig } from "../../../../packages/server/src/testing/fakes";
 import { type ApiClient, type FetchLike, createApiClient } from "./api";
 import { createBrowserClock } from "./clock";
+import { permitPayloadHash } from "./hash";
 import { type AudioLike, type ChannelLike, type PeerLike, type StreamLike, TURN_TIMEOUT_MS, type TimerApi, type TrackLike, VoiceClient } from "./voice-client";
 
 const UID = "owner-1";
@@ -610,5 +611,101 @@ describe("Voice_Client with the judge (voice-control R2.8, R3.7, R4.5, R7.5, R7.
     await flush(50);
     expect(replyCreates(ctx.sent())).toHaveLength(createsBefore);
     expect(vc.getSnapshot().missing).toHaveLength(0);
+  });
+});
+
+// voice-control task 52 (R14.3, R14.4, R14.6): the call swap through the Voice_Client. The server half of the
+// audience wave (tasks 48 and 50) is not built yet, so the `blocked` answer and the open's `proactive` swap line
+// are faked over the real routes' answers, in the wire shapes the spec gives.
+describe("Voice_Client call swap (voice-control R14.3, R14.4, R14.6)", () => {
+  /** Answers the first /api/turn `blocked` and the open after it with the COMPANY line in `proactive`. */
+  function swapApi(opts: { failSwapOpen?: boolean } = {}) {
+    let blockedOnce = false;
+    let opens = 0;
+    return (api: ApiClient): ApiClient => ({
+      call: async <T,>(path: string, o?: Parameters<ApiClient["call"]>[1]) => {
+        if (path === "/api/session/open" && ++opens === 2 && opts.failSwapOpen === true) return { ok: false, kind: "http", status: 503, error: null, retryAfterMs: 0 } as const;
+        const r = await api.call<any>(path, o);
+        if (path === "/api/turn" && !blockedOnce && r.ok) {
+          blockedOnce = true;
+          return { ...r, body: { ...r.body, status: "blocked", permit: null, notes: [], cards: [], pendingId: null, question: null, retryAfterMs: 0, receiptId: null, error: null } } as never;
+        }
+        if (path === "/api/session/open" && opens === 2 && r.ok && r.body.deck !== null) {
+          const deck = r.body.deck;
+          const turnId = testId("swapline");
+          const whisper = ackNote(COMPANY_LINE, testId("swapnote"), deck.expiresAt);
+          const stamp = { sessionId: r.body.sessionId, epoch: deck.epoch, policyRev: deck.policyRev, bundleRev: deck.bundleRev, rulesRev: deck.rulesRev, generation: r.body.generation, turnId };
+          const approvedPayloadHash = await permitPayloadHash({ stamp, head: deck.head, notes: [whisper], turns: deck.turns, audioIds: [], toolOutput: null });
+          const permit = { permitId: testId("swappermit"), stamp, kind: "postCommitControl", scope: "ack", approvedPayloadHash, noteIds: [whisper.noteId], momentIds: [], expiresAt: deck.expiresAt };
+          return { ...r, body: { ...r.body, proactive: { turnId, permit, whisper, cards: [] } } } as never;
+        }
+        return r as never;
+      },
+    });
+  }
+
+  /** Records the avatar and the call button on every state change. */
+  function watch(vc: VoiceClient) {
+    const seen: { phase: string; avatar: string; button: string }[] = [];
+    vc.subscribe(() => {
+      const st = vc.getSnapshot();
+      seen.push({ phase: st.phase, avatar: avatarState(st), button: callButton(st).form });
+    });
+    return seen;
+  }
+
+  it("a company line ends in a fresh call whose first audio is the COMPANY line, with no close from the browser, hang-up shown and thinking throughout", async () => {
+    const ctx = await setup({ wrapApi: swapApi() });
+    const { vc, peer, routeCalls, connect, rig, audio, timers } = ctx;
+    rig.openai.script("realtime.calls.create", ok({ answerSdp: "v=0 answer", location: "/v1/realtime/calls/rtc_test2" }));
+    await connect();
+    const first = peer();
+    const narrowed = vc.getSnapshot().session!.sessionId;
+    const seen = watch(vc);
+    expect(vc.sendTyped("my cousin just sat down")).toBe(true);
+    await until(() => vc.getSnapshot().phase === "SWAPPING", "SWAPPING");
+    const from = seen.findIndex((x) => x.phase === "SWAPPING");
+    // The old call is torn down here, in the browser, and no close is posted (R14.3).
+    expect(first.closed).toBe(true);
+    expect(audio.muted).toBe(true);
+    await until(() => routeCalls("/api/session/open").length === 2 && peer() !== first && peer().remote === "v=0 answer", "the fresh call's SDP answer");
+    expect(routeCalls("/api/session/open")[1]!.body).toMatchObject({ previousSessionId: narrowed });
+    // Real time passes before the fresh channel opens; an ack asked at the very instant of the blocked answer is
+    // dropped as stale by R4.4.
+    await timers.advance(50);
+    peer().channel.open();
+    await until(() => replyCreates(peer().channel.sent).length === 1, "the swap line's response.create");
+    const line = replyCreates(peer().channel.sent)[0];
+    expect(line.response).toMatchObject({ tools: [], instructions: expect.stringContaining(COMPANY_LINE) });
+    expect(audio.muted).toBe(true);
+    peer().channel.emit({ type: "response.created", response: { id: "resp_line", metadata: line.response.metadata } });
+    await flush();
+    const upTo = seen.length;
+    peer().channel.emit({ type: "output_audio_buffer.started", response_id: "resp_line" });
+    await until(() => !audio.muted, "the swap line's audio");
+    expect(vc.getSnapshot().phase).toBe("SPEAKING");
+    // From the blocked answer until the swap line is heard: thinking, and the call button stays "hang up" (R14.4).
+    const during = seen.slice(from, upTo);
+    expect(during.length).toBeGreaterThan(2);
+    for (const x of during) expect(x).toMatchObject({ avatar: "thinking", button: "hangup" });
+    expect(routeCalls("/api/session/close")).toHaveLength(0);
+    // Nothing of the narrowed call was played: its only reply create was none.
+    expect(replyCreates(first.channel.sent)).toHaveLength(0);
+  });
+
+  it("a failed swap shows recovery, and the reconnect names the narrowed Session", async () => {
+    const ctx = await setup({ wrapApi: swapApi({ failSwapOpen: true }) });
+    const { vc, routeCalls, connect, timers } = ctx;
+    await connect();
+    const narrowed = vc.getSnapshot().session!.sessionId;
+    vc.sendTyped("my cousin just sat down");
+    await until(() => vc.getSnapshot().phase === "RECOVERY", "RECOVERY");
+    expect(vc.getSnapshot().recovery?.kind).toBe("connection");
+    expect(avatarState(vc.getSnapshot())).toBe("recovery");
+    expect(routeCalls("/api/session/close")).toHaveLength(0);
+    await timers.advance(5_000);
+    // The failed swap open never reached the server, so the server's second open is the reconnect.
+    await until(() => routeCalls("/api/session/open").length >= 2, "the reconnect's open");
+    expect(routeCalls("/api/session/open")[1]!.body).toMatchObject({ previousSessionId: narrowed });
   });
 });
