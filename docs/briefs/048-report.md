@@ -8,7 +8,7 @@ Built by Claude Code from briefs 016 and 048, on branch `lane/forget-b`. No comm
 |---|---|
 | 1. Design note (`048-design.md`) | done |
 | 2. Rulings 1, 2, 16, 17 and the new No Resurrection property | done |
-| 3. Admission, the turn route, the fence, the hang-up, the driver, the tick | not started |
+| 3. Admission, the turn route, the fence, the hang-up, the driver, the tick | done |
 | 4. The acknowledgment, the voice machine, beat 5 | not started |
 | 5. The release-gate scripts | not started |
 | 6. The ask by words, "Forget last thing" | not started |
@@ -61,3 +61,24 @@ In plain words: the second forget's request turn was written after the first for
 - Ruling 16: a restamp moves the epoch only; a survivor dirty for another reason stays dirty.
 - Ruling 17 (`purgedArgs`): a purged Memory's string arguments and its hypothesis alternatives are emptied as far as the Memory schema allows. The store's immutability check accepts exactly that change (`packages/server/src/store/checks.ts`).
 - Purge reads every Session's turns, not only the request's (`packages/server/src/forget/executor.ts`), so a withheld reply in another Session is emptied too.
+
+## Stage 3: what changed
+
+- Admission row 11 (`packages/core/src/admission.ts`): a forget in a call is held `blocked` with `swap: "now"`; a typed forget with no call gets a `postCommitControl` ack. Both outcomes carry `forget: true`. `FORGET_NOT_YET` is no longer said by admission; the constant stays in `voice/lines.ts` until stage 4 replaces it.
+- The turn route (`routes/turn.ts`, `forget/on-turn.ts`): in the transaction that would commit the request turn, the turn is written `dead` with no Evidence, the fence goes up (`fenceInTx`), every Session with a registered call goes `closing` with its `hangup` Job due, and the admission row and request entry are written. After the commit the route drives the job for `FORGET_ROUTE_BUDGET_MS` (1,500 ms) or 32 steps.
+- Drivers (`forget/drive.ts`): the worker tick runs every due forget job; an open that meets a barrier gives it one pass inside the same budget, and schedules the rest.
+- Ports: resolve through the background model (`forget/resolve-live.ts`, 1.5 s a page, fails closed); calls close through the existing `hangup` Job (`forget/hangup-close.ts`).
+
+Store round trips of one spoken forget through `/api/turn` in a call, counted at the store port on the test rig (`forget/on-turn.test.ts`): 21 gets, 27 queries, 19 transactions. The job ended the route at `resume`, waiting for the call to be confirmed closed (the fake has no hang-up answer).
+
+## Not built
+
+Stages 4 to 6: the Fixed_Line acknowledgments and their delivery, the voice machine's swap on a forget, beat 5 green, the release-gate scripts, the ask by words and "Forget last thing". Ruling 1's withheld counts on beat 5 and on a forget of the oldest seeded Memory were not measured.
+
+## Rulings needed
+
+- F-204. The forget's resolve is the one model call that reads the request after admission chose forget. Its input is the request span and the candidates' labels only. Confirm that reading counts as the forget's own reader under ruling 4.
+- F-205. How many replies ruling 1 withheld is computed in closure (`withheldTurns`) and not stored, because `records.ts` is not this lane's file.
+- F-206. A queued forget's request Evidence is left to that forget by the forget ahead of it (`queuedEids`). Confirm that is the intended owner.
+- F-207. Purge empties every blocked assistant Evidence it finds, in any Session, not only the ones this op withheld (fails closed).
+- F-208. A phone call placed by `make_phone_call` is not closed by a forget (unchanged; ruling 5 names browser calls).
