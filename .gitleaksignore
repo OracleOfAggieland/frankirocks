@@ -1,2 +1,6 @@
 # The public Firebase web API key in the browser bundle (NEXT_PUBLIC_FIREBASE_API_KEY). An identifier, not a secret.
 85825bb292db2d721edadb293aaf248162e68d1a:apps/web/apphosting.yaml:gcp-api-key:31
+# Two encoded coastline rings in the radio globe's land data, written by scripts/radio-land.mjs from Natural Earth's
+# public-domain map. One ring ends in the letters "keyal", so the scan read the next ring as a key's value. Map data,
+# not a secret.
+a7077d4b710bb336c9990108202935e62a7a0c04:apps/web/src/components/radio/globe/land.ts:generic-api-key:129
