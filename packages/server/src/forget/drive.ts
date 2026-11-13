@@ -4,9 +4,8 @@
  * the barrier gives the tick one pass first. Every driver uses the same deps: the store, the live ForgetResolveV1 port
  * (or the one the route deps name), and the hang-up Job's CallClosePort.
  */
-import type { CoreEpoch, ID } from "@franki/core";
+import type { ID } from "@franki/core";
 import { raceLimit } from "../clock/timers";
-import { paths } from "../store/paths";
 import type { RouteContext } from "../routes/runtime";
 import { afterClosed } from "../sessions";
 import { dueJobs } from "../worker/jobs";
@@ -49,12 +48,11 @@ export async function runDueForgets(ctx: RouteContext, steps = FORGET_TICK_STEPS
 }
 
 /**
- * The open that meets a barrier gives the forget one pass first (ruling 6), inside the route's budget, so a fresh call
- * opened right after a forget usually finds the barrier cleared. What the budget does not cover runs after the response.
+ * The open that met a barrier gives the forget one pass (ruling 6), inside the route's budget, so the client's retry
+ * (the voice machine reconnects at 1, 2 and 5 s) usually finds the barrier cleared. What the budget does not cover runs
+ * after the response. The open answered `blocked` from its own read of core/epoch, so this reads nothing first.
  */
 export async function openForgetPass(ctx: RouteContext): Promise<void> {
-  const epoch = (await ctx.deps.store.get<CoreEpoch>(ctx.uid, paths.core(ctx.uid, "epoch")))?.data;
-  if (epoch === undefined || epoch.barrier === null) return;
   const pass = runDueForgets(ctx);
   if (!(await raceLimit(pass, FORGET_ROUTE_BUDGET_MS, ctx.deps.timers))) ctx.schedule(() => pass);
 }

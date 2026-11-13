@@ -153,7 +153,6 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
     times.drainWon(won);
     if (!won) ctx.schedule(() => drain);
     times.lap("drainMs");
-    await openForgetPass(ctx); // Brief 048 ruling 6: a forget behind the barrier gets one pass before the open reads it.
 
     const sessionId = deps.hasher.id(idParts.session(uid, req.requestId));
     const { response, prior, stamp, session, narrow } = await deps.store.transaction(uid, async (tx) => {
@@ -228,6 +227,8 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       return { response: opened, prior: prior === null ? null : { id: priorId!, ...prior }, stamp, session: created, narrow: inherited !== null };
     });
     times.lap("txMs");
+    // Brief 048 ruling 6: an open that met a barrier gives the forget behind it one pass, so the client's retry finds it cleared.
+    if (response.state === "blocked") await openForgetPass(ctx);
 
     if (prior !== null) {
       if (prior.closed) await afterClosed(ctx, prior.id);
