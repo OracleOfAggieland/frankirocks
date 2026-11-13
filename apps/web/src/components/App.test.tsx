@@ -8,6 +8,7 @@ import { createBrowserClock } from "../client/clock";
 import { TypedTurns } from "../client/typed-turns";
 import type { PeerLike, StreamLike } from "../client/voice-client";
 import { debugVisible } from "../ui/debug-flag";
+import { EVENT_MS } from "../ui/motion";
 import { ScreenController } from "../ui/hooks/screen-controller";
 import { EMPTY_COPIES, createSignedInControllers, onForgetComplete } from "./app-controllers";
 import { Avatar } from "./avatar/Avatar";
@@ -53,6 +54,15 @@ describe("App while signed out", () => {
     // A quiet way back to the front door (brief 015).
     expect(html).toMatch(/<a [^>]*href="\/"[^>]*>About Franki<\/a>/);
     expect(fetchSpy.mock.calls.filter(([url]) => String(url).startsWith("/api/") && !String(url).startsWith("/api/health"))).toEqual([]);
+  });
+
+  it("puts the radio on the stage, off, with its globe closed (brief 047)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({})));
+    const { App } = await import("./App");
+    const html = renderToStaticMarkup(<App />);
+    expect(html).toMatch(/<button[^>]*data-radio-button=""[^>]*aria-label="Turn on the radio"/);
+    expect(html).toContain('data-radio-power="off"');
+    expect(html).not.toContain("data-radio-panel");
   });
 });
 
@@ -114,6 +124,25 @@ describe("main-screen wiring", () => {
     const snap = r.screen.getSnapshot();
     expect(renderToStaticMarkup(<Avatar look={snap.look} input={snap.input} />)).toContain('data-look="Recovery"');
     expect(snap.live.message).toBe(`Franki is having trouble connecting. Reconnecting. ${CALL_ERRORS.open}`);
+  });
+
+  it("celebrate() shows the Celebrate look in a call, for the event's length, then goes back (brief 047)", () => {
+    const r = screenRig({ phase: "LISTENING" });
+    r.tick(0);
+    expect(r.screen.getSnapshot().look.name).toBe("Listening");
+    r.screen.celebrate();
+    expect(r.screen.getSnapshot().look.name).toBe("Celebrate");
+    r.tick(EVENT_MS.celebrate - 1);
+    expect(r.screen.getSnapshot().look.name).toBe("Celebrate");
+    r.tick(EVENT_MS.celebrate);
+    expect(r.screen.getSnapshot().look.name).toBe("Listening");
+  });
+
+  it("celebrate() leaves a closed call Dormant (brief 047)", () => {
+    const r = screenRig({});
+    r.tick(0);
+    r.screen.celebrate();
+    expect(r.screen.getSnapshot().look.name).toBe("Dormant");
   });
 
   it("onForgetComplete empties the reply line and every turn copy", () => {
