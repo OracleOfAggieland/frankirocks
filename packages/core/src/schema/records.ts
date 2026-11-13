@@ -583,7 +583,28 @@ const ForgetJob = obj({
   cursor: obj({ collection: SC, lastId: nullable(ID) }),
   closeCalls: arr(obj({ sessionId: ID, state: oneOf(["pending", "closed", "failed"]) }), 16),
   trustedRuleDeletes: arr(ID, 32),
+  // Brief 047 (forget, part two). Jobs written before it read these as null and empty (`withForgetJobDefaults`).
+  /** The queued op this one promoted when its closure ended, so the barrier passed to it rather than clearing. */
+  handedTo: nullable(ID),
+  /** What a fresh call owes the owner, as data (ruling 8); set by resume. */
+  ack: nullable(
+    tagged("kind", {
+      gone: obj({ kind: literal("gone"), askAllergies: bool }),
+      goneExceptRule: obj({ kind: literal("goneExceptRule"), ruleIds: arr(ID, 32, 1), askAllergies: bool }),
+      ask: obj({ kind: literal("ask"), reason: oneOf(["ambiguous", "vague"]) }),
+      offerRetell: obj({ kind: literal("offerRetell"), withdrawnCount: nat(1), askAllergies: bool }),
+    }),
+  ),
+  /** At most four eligible sanitized turns of the request's Session a fresh call carries (spec §8 step 7). */
+  carryTurnIds: arr(ID, 4),
+  /** The request turns' own Evidence, kept from closure's first step: closure unlinks the turns, purge still needs it. */
+  requestEids: arr(ID, 8),
 });
+
+/** A forget job's payload with the fields brief 047 added filled for jobs written before it. */
+export function withForgetJobDefaults<P extends { kind: "forget" }>(p: P & { handedTo?: unknown; ack?: unknown; carryTurnIds?: unknown; requestEids?: unknown }) {
+  return { ...p, handedTo: p.handedTo ?? null, ack: p.ack ?? null, carryTurnIds: p.carryTurnIds ?? [], requestEids: p.requestEids ?? [] };
+}
 
 export const JobShape = {
   ...C_SHAPE,
