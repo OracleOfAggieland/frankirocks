@@ -230,4 +230,38 @@ export const COPY = {
       disconnectUnknown: "I couldn't confirm that. Here are your banks as I read them now.",
     },
   },
+  /** Brief 047: the radio on the stage and its globe of stations. */
+  radio: {
+    /** The radio on the stage: what its button is to a screen reader, by what a press would do. */
+    prop: {
+      turnOn: "Turn on the radio",
+      openGlobe: "Open the radio globe",
+      closeGlobe: "Close the radio globe",
+      /** Shown as words when the 3D radio can't be drawn. */
+      fallback: "Radio",
+    },
+    panel: {
+      title: "Franki’s radio",
+      close: "Close the radio globe",
+      off: "Turn the radio off",
+      previous: "Previous station",
+      next: "Next station",
+      spin: "Spin the globe",
+      volume: "Volume",
+      retry: "Try again",
+      globe: "A globe of radio stations. Drag to spin it, and press a light to tune in.",
+      place: (city: string, country: string) => `${city}, ${country}`,
+      tuneTo: (name: string, city: string) => `Tune to ${name}, ${city}`,
+      /** Shown in place of the globe when it can't be drawn. */
+      list: "Stations",
+    },
+    /** The one word beside the station's name. */
+    signal: {
+      silent: "Off",
+      tuning: "Tuning",
+      playing: "On air",
+      noSignal: "No signal",
+      tapToPlay: "Tap to play",
+    },
+  },
 } as const;

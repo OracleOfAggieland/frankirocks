@@ -2,6 +2,13 @@
   "name": "@franki/web",
   "version": "0.1.0",
   "private": true,
+  "description": "Franki's web app: the front door, the lab and the API routes (Next.js on Firebase App Hosting).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OracleOfAggieland/frankirocks.git",
+    "directory": "apps/web"
+  },
   "engines": {
     "node": "24.x"
   },

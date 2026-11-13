@@ -15,6 +15,7 @@ This is a working build, not a mock-up. What runs today:
 - **A judge sits in every call.** Each thing you say is admitted before Franki may answer it, so a "forget that" or a hard moment is never talked over.
 - **The lab is open.** The front door walks a sample month, and the Lab, the memory jar, the receipt and the "What I know" sheet are all on screen.
 - **Franki can make a phone call for you** and shows where the call stands on a wooden wall phone.
+- **Say "Franki, you rock"** and the wooden radio at his feet turns on, Franki celebrates, and a globe of 50 radio stations opens, tuned to rock. Spin the globe and press a city's light to hear it. One press on the radio does the same.
 - **3,186 tests pass on every push,** with a full-history secret scan beside them.
 
 What comes next is listed plainly under [Still on the slab](#still-on-the-slab).
@@ -47,7 +48,7 @@ Kiro is the lab Franki was assembled in. Every body part below is a Kiro feature
 
 Kiro wrote the specs and built Franki's foundation and voice path from them: the first spoken call, the lab UI foundation, the judge spike, and the judge in the call. Those commits end `Built-with: Kiro`.
 
-Claude Code built the 3D avatar, the first wave of memory writes, the state machine safety net, the UI build-out and phone calls. Those commits carry its own trailer. The split is in the history, commit by commit.
+Claude Code built the 3D avatar, the first wave of memory writes, the state machine safety net, the UI build-out, phone calls and the radio with its globe. Those commits carry its own trailer. The split is in the history, commit by commit.
 
 ## Still on the slab
 
@@ -87,6 +88,10 @@ functions         Scheduled jobs
 docs              Briefs, design documents and the state machine pages
 tests             Smoke test and emulator tests
 ```
+
+## Credits
+
+The radio's station list comes from [Radio Browser](https://www.radio-browser.info/) (public domain). The globe's coastlines are [Natural Earth](https://www.naturalearthdata.com/) (public domain), via [world-atlas](https://github.com/topojson/world-atlas).
 
 ## License
 

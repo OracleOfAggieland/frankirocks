@@ -56,6 +56,13 @@ import { INITIAL_BANK, type BankState } from "../ui/bank/bank-machine";
 import { BankLinkHost } from "./bank/BankLinkHost";
 import { BankSheet } from "./bank/BankSheet";
 import { BankWayIn } from "./bank/BankWayIn";
+// Brief 047 part D: the radio and its globe.
+import { createLiveRadio, createRadioHost, feedRadioVoice, radioHears } from "../client/radio-live";
+import type { RadioWatch } from "../client/radio-watch";
+import { STATIONS } from "../ui/radio/stations";
+import { RADIO_OFF_VIEW, type RadioView, radioPropView } from "../ui/radio/types";
+import { RadioOnStage } from "./radio/RadioOnStage";
+import { RadioPanel } from "./radio/RadioPanel";
 
 const SIGNED_OUT_VOICE = initialVoiceState({ transcribeModel: "" });
 const noop = () => {};
@@ -77,6 +84,14 @@ const NO_TAP: CompanyTapState = { company: false, sending: false, error: null };
 const noTap = (): CompanyTapState => NO_TAP;
 /** Brief 046 part B: the bank sheet while signed out: closed, nothing known. */
 const noBank = (): BankState => INITIAL_BANK;
+/** Brief 047: the radio before its watch exists (the server render and the first client render): off. */
+const noRadio = (): RadioView => RADIO_OFF_VIEW;
+/** Brief 047: no radio watch during the server render. */
+const noWatch = (): RadioWatch | null => null;
+/** Brief 047: closing the globe puts focus back on the radio on the stage. */
+function focusRadioButton(): void {
+  document.querySelector<HTMLElement>("[data-radio-button]")?.focus();
+}
 
 /** The browser's localStorage, or null where it cannot be reached (brief 027: the visit is kept there). */
 function browserStorage(): Storage | null {
@@ -214,6 +229,23 @@ export function App() {
     };
   }, [signedIn]);
 
+  // Brief 047: one radio for the app's life, in both auth states. StrictMode runs this twice and dispose() is final,
+  // so each run makes its own watch. "Franki, you rock" makes Franki celebrate.
+  const [radioHost] = useState(() => createRadioHost(() => createLiveRadio(() => screen.celebrate())));
+  useEffect(() => {
+    radioHost.start();
+    return () => radioHost.stop();
+  }, [radioHost]);
+  const radio = useSyncExternalStore(radioHost.subscribe, radioHost.getSnapshot, noWatch);
+
+  // Brief 047: the radio follows the call's voice (ducking, and the owner's spoken phrase); when the feed ends
+  // (sign-out, or a new voice client) it is fed one closed call, so it stops ducking.
+  useEffect(() => {
+    const voice = signedIn?.voice ?? null;
+    if (radio === null || voice === null) return;
+    return feedRadioVoice(radio, voice);
+  }, [radio, signedIn]);
+
   const snap = useSyncExternalStore(screen.subscribe, screen.getSnapshot, screen.getSnapshot);
   const forget = () => {
     setCopies((c) => onForgetComplete(signedIn?.typed ?? null, c));
@@ -256,16 +288,23 @@ export function App() {
       <ForgetCompleteContext.Provider value={forget}>
         {/* The three.js ghost reads Franki's voice and the mic through the Level_Meter's second analysers (brief 013, D-1). */}
         <AvatarAudioContext.Provider value={meter.audio}>
-          <Screen snap={snap} auth={auth} controllers={signedIn} clock={clock} />
+          <Screen snap={snap} auth={auth} controllers={signedIn} clock={clock} radio={radio} />
         </AvatarAudioContext.Provider>
       </ForgetCompleteContext.Provider>
     </MotionConfig>
   );
 }
 
-function StageFor({ snap, phone }: { snap: ScreenSnapshot; phone: PhoneView }) {
+function StageFor({ snap, phone, radio, onRadio }: { snap: ScreenSnapshot; phone: PhoneView; radio: RadioView; onRadio: () => void }) {
+  // Brief 047: the radio stands on the floor beside the phone, in the stage's aside.
+  const aside = (
+    <>
+      <PhoneOnStage view={phone} />
+      <RadioOnStage view={radioPropView(radio)} onPress={onRadio} />
+    </>
+  );
   return (
-    <Stage reduced={snap.input.reducedMotion} aside={<PhoneOnStage view={phone} />}>
+    <Stage reduced={snap.input.reducedMotion} aside={aside}>
       <Avatar look={snap.look} input={snap.input} frameTime={snap.frameTime} />
     </Stage>
   );
@@ -282,7 +321,7 @@ function StageFor({ snap, phone }: { snap: ScreenSnapshot; phone: PhoneView }) {
  * Signed out or loading (`controllers` null): Dormant, FRANKIROCKS, the sign-in button, and disabled
  * call and typed controls (R13).
  */
-function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth: React.ReactNode; controllers: SignedInControllers | null; clock: BrowserClock }) {
+function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapshot; auth: React.ReactNode; controllers: SignedInControllers | null; clock: BrowserClock; radio: RadioWatch | null }) {
   const typed = controllers?.typed ?? null;
   const voice = controllers?.voice ?? null;
   const debug = controllers?.debug ?? null;
@@ -316,7 +355,22 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
   const getBank = controllers?.bank.getSnapshot ?? noBank;
   const bankState = useSyncExternalStore(controllers?.bank.subscribe ?? noSubscribe, getBank, getBank);
 
-  const stage = <StageFor snap={snap} phone={phone} />;
+  // Brief 047: the radio, its globe panel, and the owner's sent lines it hears.
+  const radioView = useSyncExternalStore(radio?.subscribe ?? noSubscribe, radio?.getSnapshot ?? noRadio, noRadio);
+  const pressRadio = () => radio?.controls.press();
+  const radioLayer = (
+    <AnimatePresence>
+      {radio !== null && radioView.panel === "open" ? (
+        <RadioPanel key="radio-panel" view={radioView} stations={STATIONS} controls={radio.controls} reduced={snap.input.reducedMotion} onClosed={focusRadioButton} />
+      ) : null}
+    </AnimatePresence>
+  );
+  const hear = (text: string, pasted: boolean) => {
+    const words = radioHears(text, pasted);
+    if (words !== null) radio?.onTypedLine(words);
+  };
+
+  const stage = <StageFor snap={snap} phone={phone} radio={radioView} onRadio={pressRadio} />;
   const live = <LiveRegion message={snap.live.message} seq={snap.live.seq} />;
   // Brief 038 finding 1, the input gate: no chip, typed line or new call until the server has said which account this is.
   const takesInput = inputAllowed(vis);
@@ -333,6 +387,7 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
         controls={<CallScreen key="call-signed-out" voice={SIGNED_OUT_VOICE} enabled={false} onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />}
         typed={<TypedLine key="typed-signed-out" text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />}
         live={live}
+        sheet={radioLayer}
       />
     );
   }
@@ -343,17 +398,29 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
     voice?.call();
   };
   const submit = () => {
-    if (!inCall || voice === null) return void typed.submit();
+    if (!inCall || voice === null) {
+      // Brief 047: the radio hears the line the box will send (never a pasted one); it does not wait for the server.
+      if (typed.canSend()) hear(t.text, t.pasted);
+      return void typed.submit();
+    }
     // Brief 040, item 3 (replaces the hold of W-179): a pasted line goes into the call as pasted text.
-    if (voice.sendTyped(t.text, t.pasted ? "pasted" : "typed")) typed.setText("");
+    if (voice.sendTyped(t.text, t.pasted ? "pasted" : "typed")) {
+      hear(t.text, t.pasted);
+      typed.setText("");
+    }
   };
 
   // Brief 020: a chip's words go down the typed path as the owner's own; in a call, over the call's typed line.
   const memory = controllers.memory;
   const chip = (text: string) => {
     if (text === MAIN_CHIPS[0]) void memory.openReadout();
-    if (inCall && voice !== null) voice.sendTyped(text, "typed");
-    else void typed.sendLine(text);
+    // Brief 047: the radio hears a chip's words once the line is taken (a chip is never pasted).
+    if (inCall && voice !== null) {
+      if (voice.sendTyped(text, "typed")) hear(text, false);
+    } else {
+      if (!t.sending) hear(text, false);
+      void typed.sendLine(text);
+    }
   };
   const memoryCards = [
     ...(mem.goneAsk ? [goneAskCard((a) => memory.answerGone(a), noop)] : []),
@@ -497,6 +564,7 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
         <>
           {sheetLayer}
           {bankLayer}
+          {radioLayer}
         </>
       }
       bank={<BankWayIn banks={bankState.banks} open={bankState.open} disabled={!takesInput} onOpen={() => bankModel.toggle()} />}

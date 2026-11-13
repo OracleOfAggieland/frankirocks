@@ -1,8 +1,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// next/font runs only in Next's compiler; the layout's metadata test needs the font calls to return a class name.
+vi.mock("next/font/google", () => {
+  const font = () => ({ variable: "", className: "", style: {} });
+  return { Geist: font, Geist_Mono: font, Fraunces: font };
+});
 import { COLOR } from "../../ui/motion";
+import { SITE } from "../../ui/site";
 import { FuseDrawing } from "./FuseDrawing";
 import { LANDING } from "../../ui/copy-landing";
 import { FuseRoom } from "./FuseRoom";
@@ -182,6 +189,36 @@ describe("icon and manifest", () => {
     expect(m.start_url).toBe("/");
     expect(m.background_color).toBe(COLOR["night-0"]);
     expect(m.theme_color).toBe(COLOR["night-0"]);
-    expect(m.icons).toEqual([{ src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }]);
+    expect(m.icons?.[0]).toEqual({ src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" });
+    expect(m.icons?.find((i) => i.purpose === "maskable")).toMatchObject({ sizes: "512x512", type: "image/png" });
+  });
+
+  it("every PNG icon the manifest lists is in public/ at the size it claims", () => {
+    const pngs = (manifest().icons ?? []).filter((i) => i.type === "image/png");
+    expect(pngs.length).toBeGreaterThanOrEqual(3);
+    for (const icon of pngs) {
+      const png = readFileSync(join(APP, "..", "..", "public", icon.src));
+      // The IHDR chunk follows the 8-byte signature and its own 8-byte header: width, then height.
+      expect(`${png.readUInt32BE(16)}x${png.readUInt32BE(20)}`, icon.src).toBe(icon.sizes);
+    }
+  });
+});
+
+describe("page metadata", () => {
+  it("the root layout sets the deployed origin as the base, the night theme colour and a large social card", async () => {
+    const { metadata, viewport } = await import("../../app/layout");
+    expect(String(metadata.metadataBase)).toBe(`${SITE.url}/`);
+    expect(viewport.themeColor).toBe(COLOR["night-0"]);
+    expect(metadata.twitter).toMatchObject({ card: "summary_large_image" });
+    expect(readFileSync(join(APP, "opengraph-image.alt.txt"), "utf8").trim().length).toBeGreaterThan(0);
+  });
+
+  it("robots.txt keeps crawlers off the API and names the sitemap", async () => {
+    const { default: robots } = await import("../../app/robots");
+    const { default: sitemap } = await import("../../app/sitemap");
+    const r = robots();
+    expect(r.rules).toEqual([{ userAgent: "*", allow: "/", disallow: "/api/" }]);
+    expect(r.sitemap).toBe(`${SITE.url}/sitemap.xml`);
+    expect(sitemap().map((e) => e.url)).toEqual([`${SITE.url}/`, `${SITE.url}/lab`]);
   });
 });

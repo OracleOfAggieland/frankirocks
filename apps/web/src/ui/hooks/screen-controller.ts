@@ -83,6 +83,15 @@ export class ScreenController {
     else this.loop.input({ kind: "frame" });
   }
 
+  /**
+   * Brief 047: Franki celebrates (the radio's "Franki, you rock"). The avatar's own celebrate event, through the frame
+   * loop; the Event_Controller and Look_Mapper decide as ever: it is dropped during the wake, and shows nothing while
+   * the call is closed (Dormant) or in recovery.
+   */
+  celebrate(): void {
+    this.loop.input({ kind: "event", event: "celebrate" });
+  }
+
   start(): void {
     this.offs.push(this.deps.visibility.subscribe((visible) => this.set({ paused: !visible })));
     this.offs.push(this.deps.reduced.subscribe(() => this.loop.input({ kind: "frame" })));
