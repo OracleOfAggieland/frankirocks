@@ -71,6 +71,12 @@ In plain words: the second forget's request turn was written after the first for
 
 Store round trips of one spoken forget through `/api/turn` in a call, counted at the store port on the test rig (`forget/on-turn.test.ts`): 21 gets, 27 queries, 19 transactions. The job ended the route at `resume`, waiting for the call to be confirmed closed (the fake has no hang-up answer).
 
+## Beat 5
+
+13 steps: 11 green, 2 waiting ("Franki says Gone" and "the receipt separates blocked from cleaned", both for stage 4's acknowledgment). "The next Head has no brother" went green in stage 3. The script now declares the forget's resolve answer, and no longer expects the dead request turn to be extracted (ruling 3). The typed reply that runs beside the parse is still made and then dropped once admission chooses forget.
+
+Also in stage 3: a forget's hold is no audience outcome (`audienceRow`), because the fence does its own hang-up; and the open runs its forget pass only after it met the barrier and answered `blocked`, so the seeded open keeps its 8 round trips.
+
 ## Not built
 
 Stages 4 to 6: the Fixed_Line acknowledgments and their delivery, the voice machine's swap on a forget, beat 5 green, the release-gate scripts, the ask by words and "Forget last thing". Ruling 1's withheld counts on beat 5 and on a forget of the oldest seeded Memory were not measured.
@@ -81,4 +87,14 @@ Stages 4 to 6: the Fixed_Line acknowledgments and their delivery, the voice mach
 - F-205. How many replies ruling 1 withheld is computed in closure (`withheldTurns`) and not stored, because `records.ts` is not this lane's file.
 - F-206. A queued forget's request Evidence is left to that forget by the forget ahead of it (`queuedEids`). Confirm that is the intended owner.
 - F-207. Purge empties every blocked assistant Evidence it finds, in any Session, not only the ones this op withheld (fails closed).
+- F-208a. The typed reply that runs beside the parse reads the forget request before admission chooses forget, and is dropped after. Ruling 4 speaks of reads after admission; confirm this one is allowed or have the reply wait on a forget regex hit.
 - F-208. A phone call placed by `make_phone_call` is not closed by a forget (unchanged; ruling 5 names browser calls).
+
+## Checks at the end of stage 3
+
+- `npx vitest run --maxWorkers=3 --shard=1/3`: exit 0, 213 files, 1,810 passed, 16 expected fail.
+- `--shard=2/3`: exit 0, 213 files, 1,707 passed, 4 expected fail.
+- `--shard=3/3`: exit 0, 212 files, 1,589 passed, 2 expected fail.
+- Total: 638 files, 5,106 passed, 22 expected fail (lane start: 635, 5,094, 23).
+- `npm run lint` (forced, no cache): exit 0, one warning in an untouched file (`apps/web/src/components/avatar/three/brass.ts`).
+- `npm run typecheck`: exit 0. `npm run build`: exit 0.
