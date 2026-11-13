@@ -67,6 +67,40 @@ stateDiagram-v2
 
 The shell is `PhoneWatch` in `apps/web/src/client/phone-watch.ts`, one per signed-in user. It sends `requested` and `settled` from each voice snapshot (`pendingPhoneCall`), `probe` from each answered typed turn, and `status` from `GET /api/phone/status`, read once at the start and then every `PHONE_POLL_MS` while `phonePolls` is true; a failed or malformed read counts as `unknown`. It keeps one timer: the next read, or the tick that ends the linger. The phone is built in three.js (`apps/web/src/components/phone/three/model.ts`, moved by `motion.ts`) and hung on the Stage by `PhoneOnStage` in `apps/web/src/components/phone/PhoneOnStage.tsx`. The server's side of the status is `phoneStatus` in `packages/server/src/phone/status.ts`.
 
+### `ui.radio`
+
+| Field | Value |
+|---|---|
+| Status | explicit |
+| File | `apps/web/src/ui/radio/radio-machine.ts` |
+| Decides | `radioStep`, `radioView`, `radioEffects` |
+| State | `RadioState` |
+| States | `RadioSignal` in `apps/web/src/ui/radio/types.ts` |
+| Events | `RadioEvent` |
+| Tests | `apps/web/src/ui/radio/radio-machine.transitions.test.ts`, `apps/web/src/ui/radio/radio-stale.property.test.ts`, `apps/web/src/ui/radio/radio-off-silent.property.test.ts`, `apps/web/src/ui/radio/radio-station-known.property.test.ts`, `apps/web/src/ui/radio/radio-hops.property.test.ts`, `apps/web/src/ui/radio/radio-volume.property.test.ts`, `apps/web/src/ui/radio/radio-press-twice.property.test.ts`, `apps/web/src/client/radio-watch.test.ts` |
+
+The radio on the stage and its globe of stations (brief 047). The state is the signal, with power, panel, station, volume, the call's duck level, a tune counter and the hop count beside it. `silent` exactly while off, and off means no station and the panel closed. A press from off, or the rock phrase, turns it on with the panel open and a rock station picked by the event's `pick` (0 to 1, so the machine stays pure); a press while on only opens or closes the panel, and closing it leaves the station playing. `tune`, `step` and `spin` act only while on, and `spin` always lands on a different station. Every tune and every switch off raises `tune`; a player report naming any other tune is stale and changes nothing. A failure, or `RADIO_START_LIMIT_MS` without sound, hops east to the next station of the same kind (rock stays rock while another exists), at most `RADIO_MAX_HOPS` times, then rests on `noSignal`; a stream that plays resets the count. A refused `play()` is `tapToPlay`, and `retry` (a press, so the browser lets sound start) tunes the same station again. The volume is clamped to 0 to 1; how far a call ducks it is `radioGain` in `apps/web/src/ui/radio/gain.ts`. `radioStep` is total and returns the same state when nothing changes.
+
+```mermaid
+stateDiagram-v2
+  [*] --> silent
+  silent --> tuning : press or the rock phrase, a rock station
+  tuning --> playing : the player plays
+  playing --> tuning : a stall, or another station
+  tuning --> tuning : a failure or the start limit, a hop
+  tuning --> noSignal : a failure after three hops
+  playing --> noSignal : a failure after three hops
+  tuning --> tapToPlay : play() refused
+  noSignal --> tuning : retry, tune, step, spin or the rock phrase
+  tapToPlay --> tuning : retry, tune, step, spin or the rock phrase
+  tuning --> silent : off, or the off phrase
+  playing --> silent : off, or the off phrase
+  noSignal --> silent : off, or the off phrase
+  tapToPlay --> silent : off, or the off phrase
+```
+
+The shell is `RadioWatch` in `apps/web/src/client/radio-watch.ts`, one for the app's life. It sends the controls, each player report from `apps/web/src/client/radio-player.ts`, the start limit's `timedOut`, the duck level from each voice snapshot (`radioDuck`), and the phrases: `radioPhrase` in `apps/web/src/ui/radio/phrase.ts` over each completed spoken item of an ASR Turn (once per item ID, the last `RADIO_FIRED_LIMIT` remembered) and each typed line passed to `onTypedLine`. `radioEffects` turns each step into the player's `load`, `stop` and gain and the one start timer; an event raised while those run waits its turn. The stations are the snapshot in `apps/web/src/ui/radio/stations.ts`, written by `scripts/radio-stations.mjs`.
+
 ### `ui.cardSource`
 
 | Field | Value |
