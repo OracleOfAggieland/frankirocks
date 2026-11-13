@@ -1,24 +1,30 @@
 /**
- * The forget executor (spec §8 steps 3 to 5; contracts §8; brief 021). `advanceForget` leases one forget job and
+ * The forget executor (spec §8 steps 3 to 8; contracts §8; briefs 021 and 047). `advanceForget` leases one forget job and
  * runs its phases in order, each committed with the job's new phase and cursor in one transaction that rechecks the
  * lease and the barrier, so a lost lease commits nothing and a retry resumes where the last commit left off:
  *
- *   close   records every registered call as `pending` in `closeCalls` (it hangs nothing up: ruling F-4);
+ *   close   records every registered call in `closeCalls` and asks the `CallClosePort` to hang it up (ruling 7);
  *   resolve builds the ForgetResolveV1 input, asks the port, checks the answer in code, stores the manifest
  *           (`candidateRefs`, `scopePending`) and writes a redact overlay for each verified range (ruling F-7);
  *   install writes `planInstall`'s pages: blocks and overlays, then the named Memories and effects, then the
- *           sanitized Evidence and `core/rules` in one page.
+ *           sanitized Evidence and `core/rules` in one page;
+ *   closure withdraws the derivatives and restamps the survivors, page by page, then promotes a queued op;
+ *   resume  clears the barrier only when ruling 6 holds, and stores the ack and the carried turns;
+ *   purge   removes the forgotten text, page by page, then sets `cleanupCompleteAt`.
  *
- * Then it stops: the job is left `blocked` in phase `closure` (FORGET_STOP_PHASE), the barrier stays up at
- * `closure`, and the receipt stays `pending` with `blockedAt` null. Closure, resume and purge are reserved, so no
- * forget can complete here, and nothing says or shows "Gone". No route calls this code.
+ * Each of the last three is documented at its function. No route calls this code.
  */
 import {
+  type Block,
+  CARRY_TURNS_MAX,
+  type ClosureWrite,
+  type CoreBundle,
   type CoreEpoch,
   type CoreRules,
   type Effect,
   type Evidence,
   FORGET_PAGE_DOCS,
+  type ForgetAck,
   type ForgetPhase,
   type Hasher,
   type ID,
@@ -26,33 +32,45 @@ import {
   type Job,
   type Ledger,
   type Memory,
+  type Moment,
   type Overlay,
+  type PurgeWrite,
   type SC,
   type ResolveTurn,
   type Session,
   type Span,
   type Turn,
+  bundleAfter,
   canonicalJSON,
   checkResolve,
+  closurePages,
   evidenceFieldText,
+  forgetAck,
   forgetPhaseRuns,
   installPages,
+  maxSens,
   msFromTs,
   nextForgetPhase,
+  planClosure,
   planInstall,
+  planPurge,
+  purgeKey,
   receiptPayload,
   redactOverlayId,
   releaseBarrier,
   resolveInput,
+  resumeDecision,
   targetRefs,
   tsFromMs,
+  walkDerivatives,
+  withForgetJobDefaults,
 } from "@franki/core";
 import { cFields } from "../records";
 import { paths } from "../store/paths";
 import type { StorePort, StoredDoc, Tx } from "../store/port";
-import { claimJob } from "../worker/jobs";
+import { claimJob, forgetJob } from "../worker/jobs";
 import { type CallClosePort, NO_CALL_CLOSE } from "./close-port";
-import { forgetReceiptId } from "./fence";
+import { forgetJobId, forgetReceiptId } from "./fence";
 import type { ForgetResolvePort } from "./resolve-port";
 
 export const FORGET_LEASE_MS = 30_000;
@@ -84,7 +102,7 @@ export type AdvanceResult =
   | { kind: "blocked"; reason: "notForget" | "barrier" | "limit" | "phase" };
 
 type ForgetPayload = Extract<Job["payload"], { kind: "forget" }>;
-const forgetOf = (job: Job): ForgetPayload => job.payload as ForgetPayload;
+const forgetOf = (job: Job): ForgetPayload => withForgetJobDefaults(job.payload as ForgetPayload);
 
 class LostLease extends Error {}
 class BarrierGone extends Error {}
@@ -426,27 +444,396 @@ async function runInstall(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease
   });
 }
 
+/** A row a step read moved before its page committed: the page commits nothing and the job retries. */
+class RowMoved extends Error {}
+
+/** The most rows of one collection closure and purge read in the floor; past it the job stops `blocked` with LIMIT. */
+export const FORGET_READ_MAX = 10_000;
+/** The most Sessions closure reads turns from. */
+export const FORGET_SESSIONS_MAX = 256;
+
+interface Row<T> {
+  id: ID;
+  data: T;
+}
+
+interface WorldRows {
+  memories: Row<Memory>[];
+  evidence: Row<Evidence>[];
+  effects: Row<Effect>[];
+  moments: Row<Moment>[];
+  sessions: Row<Session>[];
+  turns: { sessionId: ID; id: ID; data: Turn }[];
+  overlays: Row<Overlay>[];
+  blocks: Row<Block>[];
+}
+
+async function capped<T>(store: StorePort, uid: string, collection: Parameters<typeof paths.collection>[1], max: number): Promise<Row<T>[] | "limit"> {
+  const rows = await allPages<T>(store, uid, paths.collection(uid, collection), () => true, max + 1);
+  return rows.length > max ? "limit" : rows;
+}
+
+async function sessionTurns(store: StorePort, uid: string, sessionId: ID): Promise<{ sessionId: ID; id: ID; data: Turn }[] | "limit"> {
+  const out: { sessionId: ID; id: ID; data: Turn }[] = [];
+  let after: number | null = null;
+  for (;;) {
+    const page: StoredDoc<Turn>[] = await store.query<Turn>(uid, {
+      collection: paths.turns(uid, sessionId),
+      where: after === null ? [] : [{ field: "seq", op: ">", value: after }],
+      orderBy: { field: "seq", dir: "asc" },
+      limit: TURNS_PAGE,
+    });
+    out.push(...page.map((r) => ({ sessionId, id: r.id as ID, data: r.data })));
+    if (page.length < TURNS_PAGE) return out;
+    if (out.length >= TURNS_READ_MAX) return "limit";
+    after = page[page.length - 1]!.data.seq;
+  }
+}
+
+/** Every row closure and purge read: maintenance, never through `eligible` (ruling 3). */
+async function readWorld(store: StorePort, uid: string): Promise<WorldRows | "limit"> {
+  const memories = await capped<Memory>(store, uid, "memories", FORGET_READ_MAX);
+  const evidence = await capped<Evidence>(store, uid, "evidence", FORGET_READ_MAX);
+  const effects = await capped<Effect>(store, uid, "effects", FORGET_READ_MAX);
+  const moments = await capped<Moment>(store, uid, "moments", FORGET_READ_MAX);
+  const sessions = await capped<Session>(store, uid, "sessions", FORGET_SESSIONS_MAX);
+  const overlays = await capped<Overlay>(store, uid, "overlays", FORGET_READ_MAX);
+  const blocks = await capped<Block>(store, uid, "blocks", FORGET_READ_MAX);
+  if (memories === "limit" || evidence === "limit" || effects === "limit" || moments === "limit" || sessions === "limit" || overlays === "limit" || blocks === "limit") return "limit";
+  const turns: WorldRows["turns"] = [];
+  for (const s of sessions) {
+    const t = await sessionTurns(store, uid, s.id);
+    if (t === "limit") return "limit";
+    turns.push(...t);
+  }
+  return { memories, evidence, effects, moments, sessions, turns, overlays, blocks };
+}
+
+/** The Evidence this op blocked: install's ranged Evidence (its redact overlays) and the request turns' own Evidence. */
+function opBlockedEids(f: ForgetPayload, sessionId: ID, w: Pick<WorldRows, "overlays" | "evidence" | "turns">): { ranged: ID[]; request: ID[] } {
+  const ranged = [...new Set(w.overlays.filter((o) => o.data.opId === f.opId && o.data.verb === "redact" && o.data.targetRef.type === "evidence").map((o) => o.data.targetRef.id as ID))];
+  const requestTurns = new Set<string>(f.requestTurnIds);
+  const request = new Set<ID>(f.requestEids);
+  for (const t of w.turns) if (t.sessionId === sessionId && requestTurns.has(t.id) && t.data.evidenceId !== null) request.add(t.data.evidenceId);
+  // A turn's Evidence may not name its Session; the request turn's ID is enough (fails closed: more is removed).
+  for (const e of w.evidence) if ((e.data.sessionId === sessionId || e.data.sessionId === null) && e.data.turnId !== null && requestTurns.has(e.data.turnId) && e.data.kind === "turn") request.add(e.id);
+  return { ranged, request: [...request] };
+}
+
+const targetIdsOf = (f: ForgetPayload): ID[] => (f.scopePending ? [] : f.candidateRefs.filter((r) => r.type === "memory").map((r) => r.id as ID));
+
+function closureInput(f: ForgetPayload, sessionId: ID, w: WorldRows, stamps: { epoch: number; policyRev: number }, now: string, hasher: Hasher) {
+  const blocked = opBlockedEids(f, sessionId, w);
+  return {
+    opId: f.opId,
+    stamps,
+    now,
+    hasher,
+    targetIds: targetIdsOf(f),
+    blockedEids: [...blocked.ranged, ...blocked.request],
+    blockedKeys: f.blockedKeys,
+    providerBlocks: w.blocks.filter((b) => b.data.kind === "provider" && b.data.state === "active" && b.data.providerKey !== null).map((b) => ({ providerKey: b.data.providerKey!, allowedEvidenceId: b.data.allowedEvidenceId })),
+    requestTurns: f.requestTurnIds.map((id) => ({ sessionId, id })),
+    memories: w.memories.map((r) => ({ id: r.id, memory: r.data })),
+    evidence: w.evidence.map((r) => ({ id: r.id, evidence: r.data })),
+    effects: w.effects.map((r) => ({ id: r.id, effect: r.data })),
+    moments: w.moments.map((r) => ({ id: r.id, moment: r.data })),
+    turns: w.turns.map((t) => ({ sessionId: t.sessionId, id: t.id, turn: t.data })),
+    sessions: w.sessions.map((r) => ({ id: r.id, session: r.data })),
+  };
+}
+
+const writePath = (uid: string, w: ClosureWrite | PurgeWrite): string => {
+  switch (w.collection) {
+    case "memories":
+      return paths.memory(uid, w.id);
+    case "effects":
+      return paths.effect(uid, w.id);
+    case "moments":
+      return paths.moment(uid, w.id);
+    case "evidence":
+      return paths.evidence(uid, w.id);
+    case "turns":
+      return paths.turn(uid, w.sessionId, w.id);
+    case "sessions":
+      return paths.session(uid, w.id);
+  }
+};
+
+/** Equal apart from the store-owned `rev` and the times of the write. */
+const sameContent = (a: Record<string, unknown>, b: Record<string, unknown>) => {
+  const strip = ({ rev: _r, updatedAt: _u, createdAt: _c, ...rest }: Record<string, unknown>) => rest;
+  return canonicalJSON(strip(a)) === canonicalJSON(strip(b));
+};
+
+/** The doc a write puts in place over `prior`: a hold keeps its first `createdAt` and the higher `minSens` (F-11). */
+function merged(w: ClosureWrite | PurgeWrite, prior: Record<string, unknown> | null): Record<string, unknown> {
+  const doc = { ...(w.doc as unknown as Record<string, unknown>) };
+  if (prior === null) return doc;
+  doc.createdAt = prior.createdAt;
+  if (w.collection === "effects" && w.doc.kind === "withdrawnHold" && typeof prior.minSens === "string") doc.minSens = maxSens(prior.minSens as Effect["minSens"], w.doc.minSens);
+  return doc;
+}
+
+type Read = Map<string, Record<string, unknown>>;
+const readIndex = (uid: string, w: WorldRows | Pick<WorldRows, "memories" | "evidence" | "turns">): Read => {
+  const m: Read = new Map();
+  for (const r of w.memories) m.set(paths.memory(uid, r.id), r.data as unknown as Record<string, unknown>);
+  for (const r of w.evidence) m.set(paths.evidence(uid, r.id), r.data as unknown as Record<string, unknown>);
+  for (const t of w.turns) m.set(paths.turn(uid, t.sessionId, t.id), t.data as unknown as Record<string, unknown>);
+  if ("effects" in w) {
+    for (const r of w.effects) m.set(paths.effect(uid, r.id), r.data as unknown as Record<string, unknown>);
+    for (const r of w.moments) m.set(paths.moment(uid, r.id), r.data as unknown as Record<string, unknown>);
+    for (const r of w.sessions) m.set(paths.session(uid, r.id), r.data as unknown as Record<string, unknown>);
+  }
+  return m;
+};
+
+const pending = (uid: string, read: Read, w: ClosureWrite | PurgeWrite): boolean => {
+  const prior = read.get(writePath(uid, w)) ?? null;
+  return prior === null || !sameContent(prior, merged(w, prior));
+};
+
+/** Applies a page: every row must be as read (else RowMoved), and a write already in place is skipped. */
+async function applyPage(tx: Tx, uid: string, read: Read, page: readonly (ClosureWrite | PurgeWrite)[]): Promise<Map<SC, number>> {
+  const written = new Map<SC, number>();
+  for (const w of page) {
+    const path = writePath(uid, w);
+    const seen = read.get(path) ?? null;
+    const cur = await tx.get<Record<string, unknown>>(path);
+    if ((cur?.data.rev ?? null) !== (seen?.rev ?? null)) throw new RowMoved();
+    const doc = merged(w, cur?.data ?? null);
+    if (cur === null) tx.create(path, doc);
+    else if (!sameContent(cur.data, doc)) tx.update(path, doc);
+    else continue;
+    written.set(w.collection, (written.get(w.collection) ?? 0) + 1);
+  }
+  return written;
+}
+
 /**
- * RED-RUN SCAFFOLD (brief 047): closure does nothing, resume releases the barrier, purge does nothing. This is
- * "install as it stands today, then release", the target the No Resurrection property must first fail against.
+ * Hands the barrier to the first queued op (ruling 6, brief 047 "queue promotion"): `releaseBarrier` in this
+ * transaction raises the epoch for it, and its job, receipt and burned bundle are written here, as the fence writes
+ * them for an op that was not queued. Returns the promoted op, or null when the queue was empty.
  */
-async function runClosure(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, now: string): Promise<Job> {
-  return commitStep(deps.store, uid, jobId, lease, async (tx, job, epoch) => {
-    barrierAt(tx, epoch, "resume", now);
-    return withPhase(job, nextForgetPhase("closure"), now);
+async function promoteQueued(tx: Tx, uid: string, epoch: { path: string; data: CoreEpoch }, opId: ID, opsNow: number, hasher: Hasher, fallbackSessionId: ID): Promise<ID | null> {
+  const now = tsFromMs(opsNow);
+  const r = releaseBarrier(epoch.data, opId, now);
+  if (r.kind !== "promoted") return null;
+  const q = epoch.data.barrier!.queuedOps[0]!;
+  // A queued op that lost its Session (no requestRef) runs against the promoting op's Session: its resolve finds no
+  // request there, so it asks rather than guesses (fails closed; Rulings needed).
+  const sessionId = (q.requestRef?.type === "session" ? q.requestRef.id : fallbackSessionId) as ID;
+  const stamps = { epoch: r.epoch.epoch, policyRev: r.epoch.policyRev };
+  tx.update(epoch.path, r.epoch);
+  const jobPath = paths.job(uid, forgetJobId(r.opId, hasher));
+  const deadItems: { sessionId: ID; itemId: string }[] = [];
+  for (const turnId of q.requestTurnIds) {
+    const t = await tx.get<Turn>(paths.turn(uid, sessionId, turnId));
+    if (t !== null) for (const itemId of t.data.itemIds) deadItems.push({ sessionId, itemId });
+  }
+  if ((await tx.get(jobPath)) === null) {
+    tx.create(jobPath, forgetJob({ uid, now: opsNow, ...stamps, opId: r.opId, sessionId, requestTurnIds: [...q.requestTurnIds], deadItems }));
+  }
+  const receiptPath = paths.ledger(uid, forgetReceiptId(r.opId, hasher));
+  if ((await tx.get(receiptPath)) === null) {
+    const receipt: Ledger = { ...cFields(uid, now, stamps.epoch, stamps.policyRev), kind: "forgetReceipt", state: "pending", at: now, retainUntil: null, payload: receiptPayload(r.opId, null, false) };
+    tx.create(receiptPath, receipt);
+  }
+  const bundleDoc = await tx.get<CoreBundle>(paths.core(uid, "bundle"));
+  if (bundleDoc !== null) {
+    const b = bundleDoc.data;
+    tx.update(bundleDoc.path, { ...b, ...stamps, state: bundleAfter(b.state, "burned"), bundleRev: b.bundleRev + 1, head: null, headHash: null, selectedRefs: [], updatedAt: now });
+  }
+  return r.opId;
+}
+
+/**
+ * Closure (spec §8 step 6). Each step re-reads the store, plans the whole closure (`planClosure`), drops the writes
+ * already in place, and commits the first page of what is left (whole groups, at most FORGET_PAGE_DOCS writes). A
+ * lost lease or a moved row commits nothing; the re-run plans the same writes and skips the ones that landed. The
+ * step that finds nothing left records the withdrawn count, promotes a queued op (if any) and moves to resume.
+ */
+async function runClosure(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, job: Job, opsNow: number): Promise<Job | "limit"> {
+  const now = tsFromMs(opsNow);
+  const f = forgetOf(job);
+  const sessionId = job.sourceIds[0]!;
+  const w = await readWorld(deps.store, uid);
+  if (w === "limit") return "limit";
+  const epochDoc = (await deps.store.get<CoreEpoch>(uid, paths.core(uid, "epoch")))?.data;
+  if (epochDoc === undefined) throw new BarrierGone();
+  const stamps = { epoch: epochDoc.epoch, policyRev: epochDoc.policyRev };
+  const requestEids = opBlockedEids(f, sessionId, w).request.slice(0, 8);
+  const plan = planClosure(closureInput(f, sessionId, w, stamps, now, deps.hasher));
+  const read = readIndex(uid, w);
+  const left = plan.groups.filter((g) => g.writes.some((x) => pending(uid, read, x)));
+  const page = closurePages(left, FORGET_PAGE_DOCS)[0] ?? [];
+  const receiptPath = paths.ledger(uid, forgetReceiptId(f.opId, deps.hasher));
+  return commitStep(deps.store, uid, jobId, lease, async (tx, j, epoch) => {
+    if (epoch.data.epoch !== stamps.epoch) throw new RowMoved();
+    const receipt = await tx.get<Ledger>(receiptPath);
+    if (page.length > 0) {
+      const written = await applyPage(tx, uid, read, page);
+      if (receipt !== null && receipt.data.kind === "forgetReceipt") {
+        tx.update(receipt.path, { ...receipt.data, updatedAt: now, payload: { ...receipt.data.payload, touched: addTouched(receipt.data.payload.touched, written) } });
+      }
+      const last = page[page.length - 1]!;
+      return withPhase(j, "closure", now, { requestEids, cursor: { collection: last.collection, lastId: last.id } });
+    }
+    if (receipt !== null && receipt.data.kind === "forgetReceipt") {
+      tx.update(receipt.path, { ...receipt.data, updatedAt: now, payload: { ...receipt.data.payload, withdrawnCount: plan.withdrawnIds.length } });
+    }
+    const handedTo = await promoteQueued(tx, uid, epoch, f.opId, opsNow, deps.hasher, sessionId);
+    if (handedTo === null) barrierAt(tx, epoch, "resume", now);
+    return withPhase(j, nextForgetPhase("closure"), now, { handedTo, requestEids, cursor: { collection: "evidence", lastId: null } });
   });
 }
 
-async function runResume(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, now: string): Promise<Job> {
-  return commitStep(deps.store, uid, jobId, lease, async (tx, job, epoch) => {
-    const r = releaseBarrier(epoch.data, forgetOf(job).opId, now);
-    if (r.kind !== "notOwner") tx.update(epoch.path, r.epoch);
-    return withPhase(job, nextForgetPhase("resume"), now);
-  });
+/** True when closure, re-planned on the store as it is now, has nothing left to write (ruling 6). */
+async function closureSettled(deps: ForgetDeps, uid: string, job: Job, stamps: { epoch: number; policyRev: number }, now: string): Promise<{ finished: boolean; restamped: boolean } | "limit"> {
+  const w = await readWorld(deps.store, uid);
+  if (w === "limit") return "limit";
+  const plan = planClosure(closureInput(forgetOf(job), job.sourceIds[0]!, w, stamps, now, deps.hasher));
+  const read = readIndex(uid, w);
+  const left = plan.groups.filter((g) => g.writes.some((x) => pending(uid, read, x)));
+  return { finished: !left.some((g) => g.order === 1), restamped: !left.some((g) => g.order === 2) };
 }
 
-async function runPurge(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, now: string): Promise<Job> {
-  return commitStep(deps.store, uid, jobId, lease, async (_tx, job) => ({ ...withPhase(job, nextForgetPhase("purge"), now), status: "complete", leaseToken: null, leaseUntil: null }), false);
+/** The ack and the carried turns resume stores (ruling 8): data, not words. */
+async function resumeData(deps: ForgetDeps, uid: string, job: Job): Promise<{ ack: ForgetAck; carryTurnIds: ID[]; noneCleared: boolean }> {
+  const f = forgetOf(job);
+  const store = deps.store;
+  const view = await readSession(store, uid, job);
+  const receipt = (await store.get<Ledger>(uid, paths.ledger(uid, forgetReceiptId(f.opId, deps.hasher))))?.data;
+  const rules = (await store.get<CoreRules>(uid, paths.core(uid, "rules")))?.data;
+  const retained = receipt !== undefined && receipt.kind === "forgetReceipt" ? receipt.payload.retainedRuleIds : [];
+  const pendingRuleIds = retained.filter((id) => rules?.allergies.some((r) => r.id === id && r.state === "pending") ?? false);
+  // As install computes it: an unread or uncommitted older turn means install cleared confirmed-none state.
+  const noneCleared = !view.complete || view.others.some((t) => t.turn.parseState === "pending");
+  const withdrawnCount = receipt !== undefined && receipt.kind === "forgetReceipt" ? receipt.payload.withdrawnCount : 0;
+  const ack = forgetAck({ scopePending: f.scopePending, pendingRuleIds, withdrawnCount, noneCleared });
+  // The last eligible sanitized user turns of the request's Session: a turn on retained Evidence, never the request.
+  const carry: ID[] = [];
+  for (const t of view.others) {
+    if (t.turn.text === null || t.turn.evidenceId === null || t.turn.sourceClass === "T") continue;
+    const e = await store.get<Evidence>(uid, paths.evidence(uid, t.turn.evidenceId));
+    if (e === null || e.data.status !== "retained") continue;
+    carry.push(t.id);
+  }
+  return { ack, carryTurnIds: carry.slice(-CARRY_TURNS_MAX), noneCleared };
+}
+
+type ResumeOutcome = { job: Job; wait: "calls" | "closure" | null };
+
+/**
+ * Resume (spec §8 step 7; ruling 6). It clears the barrier only when it is this op's, every call is confirmed
+ * closed, closure has nothing left to write and the survivors are restamped, and the queue is empty; with a queued
+ * op it promotes that op instead, and the barrier stays up. Otherwise it waits (`retry`): there is no timeout path.
+ * After a hand-over at closure (`handedTo`), only the store half runs. The bundle stays burned: the next open
+ * compiles it from the cleared epoch.
+ */
+async function runResume(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, job: Job, opsNow: number): Promise<ResumeOutcome | "limit"> {
+  const now = tsFromMs(opsNow);
+  const f = forgetOf(job);
+  const receiptPath = paths.ledger(uid, forgetReceiptId(f.opId, deps.hasher));
+  const data = await resumeData(deps, uid, job);
+  const storeHalf = async (tx: Tx, j: Job, patch: Partial<ForgetPayload>) => {
+    const receipt = await tx.get<Ledger>(receiptPath);
+    if (receipt !== null && receipt.data.kind === "forgetReceipt" && receipt.data.payload.blockedAt === null) {
+      tx.update(receipt.path, { ...receipt.data, updatedAt: now, payload: { ...receipt.data.payload, blockedAt: now } });
+    }
+    return withPhase(j, nextForgetPhase("resume"), now, { ...patch, ack: data.ack, carryTurnIds: data.carryTurnIds, cursor: { collection: "evidence", lastId: null } });
+  };
+  const calls = await askClose(deps.closer ?? NO_CALL_CLOSE, deps.store, uid, f.closeCalls);
+  if (f.handedTo !== null) {
+    // The barrier is the promoted op's now, but this op still finishes only once its own calls are confirmed closed.
+    const closed = calls.every((c) => c.state === "closed");
+    const j = await commitStep(deps.store, uid, jobId, lease, (tx, cur) => (closed ? storeHalf(tx, cur, { closeCalls: calls }) : Promise.resolve(withPhase(cur, "resume", now, { closeCalls: calls }))), false);
+    return { job: j, wait: closed ? null : "calls" };
+  }
+  const epochNow = (await deps.store.get<CoreEpoch>(uid, paths.core(uid, "epoch")))?.data;
+  if (epochNow === undefined) throw new BarrierGone();
+  const settled = await closureSettled(deps, uid, job, { epoch: epochNow.epoch, policyRev: epochNow.policyRev }, now);
+  if (settled === "limit") return "limit";
+  let wait: ResumeOutcome["wait"] = null;
+  const next = await commitStep(deps.store, uid, jobId, lease, async (tx, j, epoch) => {
+    if (epoch.data.epoch !== epochNow.epoch) throw new RowMoved();
+    const decision = resumeDecision({
+      barrierIsThisOp: epoch.data.barrier?.opId === f.opId,
+      callsClosed: calls.every((c) => c.state === "closed"),
+      closureFinished: settled.finished,
+      survivorsRestamped: settled.restamped,
+      queueEmpty: (epoch.data.barrier?.queuedOps.length ?? 0) === 0,
+    });
+    if (decision.kind === "wait") {
+      wait = decision.reason === "calls" ? "calls" : "closure";
+      return withPhase(j, "resume", now, { closeCalls: calls });
+    }
+    if (decision.kind === "promote") {
+      const handedTo = await promoteQueued(tx, uid, epoch, f.opId, opsNow, deps.hasher, j.sourceIds[0]!);
+      return storeHalf(tx, j, { closeCalls: calls, handedTo });
+    }
+    const r = releaseBarrier(epoch.data, f.opId, now);
+    if (r.kind !== "cleared") throw new BarrierGone();
+    tx.update(epoch.path, r.epoch);
+    return storeHalf(tx, j, { closeCalls: calls });
+  });
+  return { job: next, wait };
+}
+
+/**
+ * Purge (spec §8 step 8; ruling 9). Each step plans the removals (`planPurge`) and commits the next page after the
+ * cursor; the cursor only advances. The step that finds nothing left sets `cleanupCompleteAt`, completes the
+ * receipt and the job. It never runs under its own barrier (the barrier is already down or handed over).
+ */
+async function runPurge(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, job: Job, opsNow: number): Promise<Job | "limit"> {
+  const now = tsFromMs(opsNow);
+  const f = forgetOf(job);
+  const sessionId = job.sourceIds[0]!;
+  const store = deps.store;
+  const memories = await capped<Memory>(store, uid, "memories", FORGET_READ_MAX);
+  const evidence = await capped<Evidence>(store, uid, "evidence", FORGET_READ_MAX);
+  const overlays = await capped<Overlay>(store, uid, "overlays", FORGET_READ_MAX);
+  const turns = await sessionTurns(store, uid, sessionId);
+  if (memories === "limit" || evidence === "limit" || overlays === "limit" || turns === "limit") return "limit";
+  const blocked = opBlockedEids(f, sessionId, { overlays, evidence, turns });
+  const derivatives = walkDerivatives({ targetIds: targetIdsOf(f), blockedEids: [...blocked.ranged, ...blocked.request], blockedKeys: f.blockedKeys, memories: memories.map((r) => ({ id: r.id, memory: r.data })) });
+  const writes = planPurge({
+    now,
+    blockedEids: [...blocked.ranged, ...blocked.request],
+    memoryIds: [...derivatives],
+    requestTurns: f.requestTurnIds.map((id) => ({ sessionId, id })),
+    evidence: evidence.map((r) => ({ id: r.id, evidence: r.data })),
+    memories: memories.map((r) => ({ id: r.id, memory: r.data })),
+    turns: turns.map((t) => ({ sessionId: t.sessionId, id: t.id, turn: t.data })),
+  });
+  const at = purgeKey(f.cursor);
+  const after = (x: PurgeWrite) => {
+    const k = purgeKey({ collection: x.collection, lastId: x.id });
+    return k[0] > at[0] || (k[0] === at[0] && k[1] > at[1]);
+  };
+  const page = writes.filter(after).slice(0, FORGET_PAGE_DOCS);
+  const read = readIndex(uid, { memories, evidence, turns });
+  const receiptPath = paths.ledger(uid, forgetReceiptId(f.opId, deps.hasher));
+  return commitStep(
+    store,
+    uid,
+    jobId,
+    lease,
+    async (tx, j) => {
+      if (page.length > 0) {
+        await applyPage(tx, uid, read, page);
+        const last = page[page.length - 1]!;
+        return withPhase(j, "purge", now, { cursor: { collection: last.collection, lastId: last.id } });
+      }
+      const receipt = await tx.get<Ledger>(receiptPath);
+      if (receipt !== null && receipt.data.kind === "forgetReceipt") {
+        tx.update(receipt.path, { ...receipt.data, state: "complete", updatedAt: now, payload: { ...receipt.data.payload, cleanupCompleteAt: receipt.data.payload.cleanupCompleteAt ?? now } });
+      }
+      return { ...withPhase(j, nextForgetPhase("purge"), now), status: "complete", leaseToken: null, leaseUntil: null };
+    },
+    false,
+  );
 }
 
 /** Receipt touched rows plus this page's real writes, at most 32 rows (contracts §1). */
@@ -524,9 +911,26 @@ export async function advanceForget(deps: ForgetDeps, uid: string, jobId: ID, op
           return { kind: "blocked", reason: "limit" };
         }
         job = r;
-      } else if (phase === "closure") job = await runClosure(deps, uid, jobId, lease, now);
-      else if (phase === "resume") job = await runResume(deps, uid, jobId, lease, now);
-      else job = await runPurge(deps, uid, jobId, lease, now);
+      } else if (phase === "closure" || phase === "purge") {
+        const r = phase === "closure" ? await runClosure(deps, uid, jobId, lease, job, opsNow) : await runPurge(deps, uid, jobId, lease, job, opsNow);
+        if (r === "limit") {
+          await block("LIMIT");
+          return { kind: "blocked", reason: "limit" };
+        }
+        job = r;
+      } else {
+        const r = await runResume(deps, uid, jobId, lease, job, opsNow);
+        if (r === "limit") {
+          await block("LIMIT");
+          return { kind: "blocked", reason: "limit" };
+        }
+        job = r.job;
+        if (r.wait !== null) {
+          // Ruling 6: no timeout path. The job waits as `retry` and asks again on its next attempt.
+          await settleJob(deps.store, uid, jobId, lease, (j) => ({ ...j, status: "retry", nextAttemptAt: tsFromMs(opsNow + FORGET_RETRY_MS), leaseToken: null, leaseUntil: null, updatedAt: now }));
+          return { kind: "waiting", phase: "resume", reason: r.wait };
+        }
+      }
     }
   } catch (error) {
     if (error instanceof LostLease) return { kind: "lostLease" };
