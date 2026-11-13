@@ -1,4 +1,4 @@
-import { FORGET_NOT_YET, type Ledger, Permit, type RuleInput, type Turn, admissionPayload, canonicalBytes, payloadHash, turnRef, validate } from "@franki/core";
+import { ALONE_LINE, type Ledger, Permit, type RuleInput, type Turn, admissionPayload, canonicalBytes, payloadHash, turnRef, validate } from "@franki/core";
 import { sampleHead, testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { createHasher } from "../crypto";
@@ -77,10 +77,11 @@ describe("Admission_Seam with the server rule", () => {
 
   it("a Fixed_Line travels as an S0 ack note named in noteIds and covered by the hash", async () => {
     const rig = testRig();
-    const r = await rig.store.transaction(UID, async (tx) => admitRule(tx, input({ parse: { kind: "hit", chosen: "forget", candidates: ["forget"], uncertain: false, candidateP: { forget: 0.9 } } }), { hasher }));
+    // Brief 048: forget no longer answers with a Fixed_Line (it hangs up), so the alone line carries this check.
+    const r = await rig.store.transaction(UID, async (tx) => admitRule(tx, input({ wave: "B", parse: { kind: "hit", chosen: "alone", candidates: ["alone"], uncertain: false, candidateP: { alone: 0.9 } } }), { hasher }));
     if (r.kind !== "permit") throw new Error("expected a permit");
     expect(r.notes).toHaveLength(1);
-    expect(r.notes[0]).toMatchObject({ kind: "ack", sens: "S0", text: FORGET_NOT_YET });
+    expect(r.notes[0]).toMatchObject({ kind: "ack", sens: "S0", text: ALONE_LINE });
     expect(r.permit).toMatchObject({ kind: "postCommitControl", scope: "ack", noteIds: [r.notes[0]!.noteId] });
     expect(r.permit.approvedPayloadHash).toBe(payloadHash({ ...input(), notes: r.notes }, hasher));
   });

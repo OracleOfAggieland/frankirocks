@@ -10,7 +10,7 @@ import { routeFires } from "./intents/route";
 import type { Au, Head, ReasonCode, Ref } from "./schema/primitives";
 import type { PermitKind } from "./schema/records";
 import type { SafeTurn, Stamp, W } from "./schema/wire";
-import { ALONE_LINE, COMPANY_LINE, FORGET_NOT_YET, type FixedLine, RECOVERY_LINE } from "./voice/lines";
+import { ALONE_LINE, COMPANY_LINE, type FixedLine, RECOVERY_LINE } from "./voice/lines";
 import type { TurnWrite } from "./writes/types";
 
 export const PERMIT_TTL_MS = 10_000;
@@ -62,13 +62,17 @@ export type RuleOutcome =
       /** This outcome stops a playing reply. */
       cut: boolean;
       reasons: ReasonCode[];
+      /** Brief 048 ruling 3: row 11 chose forget; the route fences in the turn's own transaction. */
+      forget?: true;
     }
   | {
       kind: "hold";
       reasons: ReasonCode[];
-      /** The route answers `blocked`: this call is being closed by narrowing (wave B). */
+      /** The route answers `blocked`: this call is being closed by narrowing (wave B), or by a forget (brief 048). */
       blocked: boolean;
       swap: "none" | "now";
+      /** Brief 048 ruling 3: row 11 chose forget; the route fences in the turn's own transaction. */
+      forget?: true;
     };
 
 const permit = (p: PermitKind, scope: "reply" | "ack", notes: NotesAllowed, cut: boolean, extra: { line?: FixedLine; swap?: "afterReply"; reasons?: ReasonCode[] } = {}): RuleOutcome => ({
@@ -132,8 +136,11 @@ export function serverRule(i: RuleInput): RuleOutcome {
     }
     // 10. Alone (R15.1).
     if (i.wave === "B" && p.chosen === "alone" && fires("alone")) return permit("postCommitControl", "ack", "none", true, { line: ALONE_LINE, reasons: ["audience"] });
-    // 11. Forget before forget exists (R12.3).
-    if (p.chosen === "forget" && fires("forget")) return permit("postCommitControl", "ack", "none", true, { line: FORGET_NOT_YET });
+    // 11. Forget (brief 048 ruling 3). The speculative reply is cancelled and never resumed, and nothing is said on a
+    // call opened before the fence: with a call live it hangs up and swaps as a company hit does (row 8), and only
+    // the fresh call acknowledges. With none, the typed answer carries no line until the receipt's `blockedAt` is
+    // set (ruling 8): the route adds the acknowledgment then, or the state route returns it once it is ready.
+    if (p.chosen === "forget" && fires("forget")) return i.callLive ? { ...hold(["blocked"], true, "now"), forget: true } : { ...permit("postCommitControl", "ack", "none", true), forget: true };
     // 12. Every other hit keeps its tools, no S1+ note except a typed line's own reply with no call open in a private
     // audience with no gap (R12.2, R12.5, R12.7; item 24). Its route doesn't change what is
     // said, so a reply already playing under fastO is not cut (design review of the build; question 92).

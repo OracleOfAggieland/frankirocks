@@ -6,7 +6,8 @@
  * the Session's `deadItemIds`. The request turn dies here: it is never a safe turn, never extracted, never chunked.
  * Every Extract_Job captured before the fence fails `STALE` at its commit, since the epoch rose.
  *
- * No route calls this in this part (brief 021).
+ * `fenceInTx` does the writes inside a caller's transaction: the turn route fences in the transaction that would have
+ * committed the request turn (brief 048 ruling 4). `fenceForget` wraps it in its own transaction.
  */
 import {
   type CoreBundle,
@@ -24,7 +25,7 @@ import {
 } from "@franki/core";
 import { cFields } from "../records";
 import { paths } from "../store/paths";
-import type { StorePort } from "../store/port";
+import type { StorePort, Tx } from "../store/port";
 import { forgetJob } from "../worker/jobs";
 
 export interface FenceInput {
@@ -42,12 +43,23 @@ export const forgetOpId = (uid: string, sessionId: ID, requestId: string, hasher
 export const forgetJobId = (opId: ID, hasher: Hasher): ID => hasher.id(["job", "forget", opId]);
 export const forgetReceiptId = (opId: ID, hasher: Hasher): ID => hasher.id(["ledger", "forgetReceipt", opId]);
 
+export interface FenceInTxOptions {
+  /** Items of request turns the caller writes in this same transaction (they cannot be read back yet). */
+  deadItems?: readonly { sessionId: ID; itemId: string }[];
+  /** False when the caller writes the request Session itself in this transaction; the dead items are then its own. */
+  touchSession?: boolean;
+}
+
 export async function fenceForget(store: StorePort, uid: string, input: FenceInput, opsNow: number, hasher: Hasher): Promise<FenceResult> {
+  return store.transaction(uid, (tx) => fenceInTx(tx, uid, input, opsNow, hasher));
+}
+
+export async function fenceInTx(tx: Tx, uid: string, input: FenceInput, opsNow: number, hasher: Hasher, opts: FenceInTxOptions = {}): Promise<FenceResult> {
   const opId = forgetOpId(uid, input.sessionId, input.requestId, hasher);
   const jobId = forgetJobId(opId, hasher);
   const receiptId = forgetReceiptId(opId, hasher);
   const now = tsFromMs(opsNow);
-  return store.transaction(uid, async (tx) => {
+  {
     const epochDoc = await tx.get<CoreEpoch>(paths.core(uid, "epoch"));
     if (epochDoc === null) throw new Error("fenceForget: core/epoch is missing");
     const prior = await tx.get<Job>(paths.job(uid, jobId));
@@ -59,8 +71,8 @@ export async function fenceForget(store: StorePort, uid: string, input: FenceInp
     if (plan.kind === "retry") return { kind: "retry", ...ids };
 
     // Dead-mark the request turns that exist (a request may fence before its transcript commits).
-    const session = await tx.get<Session>(paths.session(uid, input.sessionId));
-    const deadItems: { sessionId: ID; itemId: string }[] = [];
+    const session = opts.touchSession === false ? null : await tx.get<Session>(paths.session(uid, input.sessionId));
+    const deadItems: { sessionId: ID; itemId: string }[] = [...(opts.deadItems ?? [])];
     for (const turnId of input.requestTurnIds) {
       const turn = await tx.get<Turn>(paths.turn(uid, input.sessionId, turnId));
       if (turn === null) continue;
@@ -73,7 +85,6 @@ export async function fenceForget(store: StorePort, uid: string, input: FenceInp
     }
     tx.update(epochDoc.path, plan.epoch);
     if (plan.kind === "queued") return { kind: "queued", ...ids };
-
     const bundleDoc = await tx.get<CoreBundle>(paths.core(uid, "bundle"));
     if (bundleDoc !== null) {
       const b = bundleDoc.data;
@@ -103,5 +114,5 @@ export async function fenceForget(store: StorePort, uid: string, input: FenceInp
     };
     tx.create(paths.ledger(uid, receiptId), receipt);
     return { kind: "fenced", ...ids };
-  });
+  }
 }

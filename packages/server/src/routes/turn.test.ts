@@ -1,4 +1,4 @@
-import { FORGET_NOT_YET, type Session, type Turn, msFromTs } from "@franki/core";
+import { type Session, type Turn, msFromTs } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { fastODecisionId, recordFastO } from "../admission/seam";
@@ -6,7 +6,7 @@ import { effectiveAudience } from "../audience";
 import { never, ok } from "../openai/fake";
 import { paths } from "../store/paths";
 import { decisionAnswer } from "../testing/decisions";
-import { callRoute, settle, testRig } from "../testing/fakes";
+import { callRoute, patchRecord, settle, testRig } from "../testing/fakes";
 import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
 import { turnRoute } from "./turn";
 
@@ -32,12 +32,12 @@ describe("/api/turn with the slow parse and the server rule", () => {
     }
   });
 
-  it("forget: ready, postCommitControl, scope ack, the fixed line (R12.3)", async () => {
+  it("forget with a call: blocked, no Permit, no note; the call hangs up and only a fresh call speaks (brief 048 ruling 3)", async () => {
     const { rig, s } = await rigAndSession();
+    await patchRecord<Session>(rig.store, UID, paths.session(UID, s.sessionId), { callId: "rtc_1", registeredCallIds: ["rtc_1"] });
     rig.openai.script("decisions.create", ok(decisionAnswer({ forget: 0.95 })));
     const res = await post(rig, asrTurn(s.stamp, 1, "forget what I said about work", items(1)));
-    expect(res.body).toMatchObject({ status: "ready", permit: { kind: "postCommitControl", scope: "ack" } });
-    expect(res.body.notes).toEqual([expect.objectContaining({ kind: "ack", text: FORGET_NOT_YET })]);
+    expect(res.body).toMatchObject({ status: "blocked", permit: null, deck: null, notes: [] });
   });
 
   it("a hit whose route doesn't change what is said answers ordinary with postCommitControl (question 92)", async () => {
@@ -130,8 +130,9 @@ describe("/api/turn with the slow parse and the server rule", () => {
     expect(res.body.notes).toEqual([]);
     // With no fastO and the same request, the judge's value is not O, so forget takes its route.
     const b = await rigAndSession();
+    await patchRecord<Session>(b.rig.store, UID, paths.session(UID, b.s.sessionId), { callId: "rtc_1", registeredCallIds: ["rtc_1"] });
     b.rig.openai.script("decisions.create", ok(decisionAnswer({ forget: 0.5 })));
     const cut = await post(b.rig, asrTurn(b.s.stamp, 1, "I deleted an old game off my phone", items(1)));
-    expect(cut.body.notes.map((n: { text: string }) => n.text)).toEqual([FORGET_NOT_YET]);
+    expect(cut.body).toMatchObject({ status: "blocked", permit: null, notes: [] });
   });
 });

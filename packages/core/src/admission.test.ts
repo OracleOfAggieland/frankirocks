@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type RuleInput, serverRule } from "./admission";
 import type { ControlClass } from "./intents/classes";
-import { ALONE_LINE, COMPANY_LINE, FORGET_NOT_YET } from "./voice/lines";
+import { ALONE_LINE, COMPANY_LINE } from "./voice/lines";
 
 const base: RuleInput = {
   source: "asr",
@@ -81,8 +81,12 @@ describe("serverRule, one case per design row", () => {
     expect(rule({ wave: "B", parse: hit("alone") })).toMatchObject({ permit: "postCommitControl", scope: "ack", line: ALONE_LINE });
   });
 
-  it("11: forget says the fixed line", () => {
-    expect(rule({ parse: hit("forget") })).toMatchObject({ permit: "postCommitControl", scope: "ack", notes: "none", line: FORGET_NOT_YET, cut: true });
+  it("11: forget hangs up and swaps with a call live, and says nothing on it (brief 048 ruling 3)", () => {
+    expect(rule({ parse: hit("forget") })).toEqual({ kind: "hold", reasons: ["blocked"], blocked: true, swap: "now", forget: true });
+  });
+
+  it("11: a typed forget with no call open is a line-less ack Permit; the route adds the acknowledgment once blockedAt is set (ruling 8)", () => {
+    expect(rule({ source: "typed", judge: "typed", callLive: false, parse: hit("forget") })).toEqual({ kind: "permit", permit: "postCommitControl", scope: "ack", notes: "none", line: null, swap: "none", cut: true, reasons: [], forget: true });
   });
 
   it("12: every other hit, and wave A audience classes, keep their tools with S0 notes and cut nothing", () => {
@@ -94,7 +98,8 @@ describe("serverRule, one case per design row", () => {
 
   it("only routes that change what is said cut a playing reply", () => {
     expect(rule({ parse: hit("crisis") })).toMatchObject({ cut: true });
-    expect(rule({ parse: hit("forget") })).toMatchObject({ cut: true });
+    // Brief 048: a forget with a call live stops more than a cut: it hangs up, and nothing more is said on that call.
+    expect(rule({ parse: hit("forget") })).toMatchObject({ kind: "hold", blocked: true, swap: "now" });
     expect(rule({ wave: "B", parse: hit("alone") })).toMatchObject({ cut: true });
     expect(rule({ parse: { kind: "failed", why: "deadline" }, regexMatch: true })).toMatchObject({ cut: true });
     for (const chosen of ["company", "quiet", "alone", "rushed", "why"] as const) expect(rule({ wave: "A", parse: hit(chosen) })).toMatchObject({ cut: false });
@@ -121,9 +126,9 @@ describe("a route that changes what is said needs both nets (review of the live 
     expect(rule({ judge: "O", parse: hit("forget", ["forget"], false, 0.5) })).toMatchObject({ kind: "permit", permit: "postCommitControl", scope: "reply", notes: "S0", cut: false, line: null });
   });
   it("forget at 0.80 with judge O, or at 0.20 with any other judge value, takes its route", () => {
-    expect(rule({ judge: "O", parse: hit("forget", ["forget"], false, 0.8) })).toMatchObject({ scope: "ack", cut: true, line: FORGET_NOT_YET });
-    for (const judge of ["H", "U", "timeout", "error"] as const) expect(rule({ judge, parse: hit("forget", ["forget"], false, 0.2) }), judge).toMatchObject({ cut: true, line: FORGET_NOT_YET });
-    expect(rule({ source: "typed", judge: "typed", callLive: false, parse: hit("forget", ["forget"], false, 0.2) })).toMatchObject({ line: FORGET_NOT_YET });
+    expect(rule({ judge: "O", parse: hit("forget", ["forget"], false, 0.8) })).toMatchObject({ kind: "hold", blocked: true, swap: "now", forget: true });
+    for (const judge of ["H", "U", "timeout", "error"] as const) expect(rule({ judge, parse: hit("forget", ["forget"], false, 0.2) }), judge).toMatchObject({ kind: "hold", blocked: true, forget: true });
+    expect(rule({ source: "typed", judge: "typed", callLive: false, parse: hit("forget", ["forget"], false, 0.2) })).toMatchObject({ scope: "ack", cut: true, line: null, forget: true });
   });
   it("crisis at 0.20 with judge O still takes the reply", () => {
     expect(rule({ judge: "O", parse: hit("crisis", ["crisis"], false, 0.2) })).toMatchObject({ permit: "postCommitControl", scope: "ack", notes: "none", cut: true });
