@@ -4,17 +4,17 @@
  * sentence stays. The receipt separates blocked from cleaned, and lists what it touched. The seed holds no other
  * brother fact, so the cue isn't vague.
  *
- * The forget parts ("Gone", the receipt, the brother gone from the next Head) need closure and resume, which brief
- * 021 reserved, and a route that calls the forget code. The rule comes from brief 018's hard-rule route in /api/turn.
+ * Since brief 048 stage 3 the forget runs on /api/turn and the next Head has no brother. "Gone" and the receipt card
+ * wait for the acknowledgment (stage 4). The rule comes from brief 018's hard-rule route in /api/turn.
  */
 import type { Memory } from "@franki/core";
-import { type Script, type World, allMemories, extract, item, memoryText, parse, reply, rulesOf, scriptSuite, slots, spanOf } from "../testing/script-runner";
+import { type Script, type World, allMemories, extract, item, memoryText, parse, reply, resolveForget, rulesOf, scriptSuite, slots, spanOf } from "../testing/script-runner";
 
 const BREATH = "I'm allergic to shellfish, and my brother's in trouble again.";
 const FORGET = "Forget what I said about my brother.";
 const brother = { memory: "the brother line", pick: (m: Memory) => /brother|trouble/i.test(memoryText(m)) };
 
-const FORGET_WAITS = "brief 021's reserved closure and resume (no forget can complete) and the brief that wires forget into /api/turn: no route calls fenceForget or advanceForget";
+const FORGET_WAITS = "brief 048 stage 4: the forget's Fixed_Line acknowledgment and its delivery (the forget completes on /api/turn since stage 3)";
 
 /** Both halves of the breath, as a careful extractor files them. */
 const breathItems = (w: World) => [
@@ -48,6 +48,7 @@ async function shellfishActive(w: World): Promise<true | string> {
 
 async function brotherStored(w: World): Promise<true | string> {
   const found = (await allMemories(w)).filter((m) => brother.pick(m.data));
+  if (found.length === 1) w.vars.set("brotherId", found[0]!.id);
   return found.length === 1 && found[0]!.data.status === "active" ? true : `found ${found.map((m) => `${m.data.status} "${memoryText(m.data)}"`).join("; ") || "nothing"}`;
 }
 
@@ -99,7 +100,8 @@ const BEAT5: Script = {
       label: "ask to forget the brother",
       do: "type",
       text: FORGET,
-      answers: [reply("Okay."), parse({ forget: 0.95 }, "parse: a forget")],
+      // The typed reply runs beside the parse and is dropped once admission chooses forget; the resolve names the brother.
+      answers: [reply("Okay."), parse({ forget: 0.95 }, "parse: a forget"), resolveForget("the brother line", (w) => [String(w.vars.get("brotherId"))])],
     },
     {
       label: "Franki says Gone",
@@ -121,12 +123,12 @@ const BEAT5: Script = {
       of: "ask to forget the brother",
       expect: [{ store: "core/rules still holds the active shellfish allergy", check: shellfishActive }],
     },
-    { label: "run the worker until idle", do: "work", answers: [extract("the forget request holds no fact: no items", () => [])] },
+    // Brief 048 ruling 3: the forget request's turn is dead with no Evidence, so it is never extracted.
+    { label: "run the worker until idle", do: "work" },
     { label: "close the session", do: "close" },
     {
       label: "the next Head has no brother",
       do: "open",
-      waits: FORGET_WAITS,
       expect: [{ neverSay: [brother, "brother"], channels: ["head"] }],
     },
     {
