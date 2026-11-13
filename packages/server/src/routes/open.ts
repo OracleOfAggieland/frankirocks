@@ -37,6 +37,7 @@ import { completeRequest } from "../ledger/request";
 import { DECK_TTL_MS, afterClosed, beginCloseInTx, finishCloseInTx, newSession, stateAck } from "../sessions";
 import { paths } from "../store/paths";
 import { readSnapshot } from "../store/port";
+import { openForgetPass } from "../forget/drive";
 import { drainExtractJobs } from "../worker/drain";
 import { driveHangupJob, hangupAll, hangupJobId } from "../worker/hangup";
 import { startTick } from "../worker/tick";
@@ -152,6 +153,7 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
     times.drainWon(won);
     if (!won) ctx.schedule(() => drain);
     times.lap("drainMs");
+    await openForgetPass(ctx); // Brief 048 ruling 6: a forget behind the barrier gets one pass before the open reads it.
 
     const sessionId = deps.hasher.id(idParts.session(uid, req.requestId));
     const { response, prior, stamp, session, narrow } = await deps.store.transaction(uid, async (tx) => {
