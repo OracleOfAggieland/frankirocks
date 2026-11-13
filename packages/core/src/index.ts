@@ -62,3 +62,6 @@ export * from "./whisper/index";
 
 // Brief 023: one-shot time.
 export * from "./moments";
+
+// Brief 046: a bank's rows, the pure parts.
+export * from "./bank/index";

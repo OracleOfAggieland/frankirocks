@@ -51,6 +51,11 @@ import { proactiveCards, replyEntries, type ShownProactive } from "../ui/visit/p
 import { type ShownCallCards, callCardProps } from "../ui/call-cards";
 import type { CompanyTapState } from "../client/company-tap";
 import { CompanyToggle } from "./surfaces/CompanyToggle";
+// Brief 046 part B.
+import { INITIAL_BANK, type BankState } from "../ui/bank/bank-machine";
+import { BankLinkHost } from "./bank/BankLinkHost";
+import { BankSheet } from "./bank/BankSheet";
+import { BankWayIn } from "./bank/BankWayIn";
 
 const SIGNED_OUT_VOICE = initialVoiceState({ transcribeModel: "" });
 const noop = () => {};
@@ -70,6 +75,8 @@ const noShown = (): ShownProactive | null => null;
 const noCallCards = (): ShownCallCards | null => null;
 const NO_TAP: CompanyTapState = { company: false, sending: false, error: null };
 const noTap = (): CompanyTapState => NO_TAP;
+/** Brief 046 part B: the bank sheet while signed out: closed, nothing known. */
+const noBank = (): BankState => INITIAL_BANK;
 
 /** The browser's localStorage, or null where it cannot be reached (brief 027: the visit is kept there). */
 function browserStorage(): Storage | null {
@@ -175,6 +182,14 @@ export function App() {
       off();
       phone.stop();
     };
+  }, [signedIn]);
+
+  // Brief 046 part B: the bank sheet sends nothing until it is opened, and drops everything on sign-out.
+  useEffect(() => {
+    if (signedIn === null) return;
+    const { bank } = signedIn;
+    bank.start();
+    return () => bank.stop();
   }, [signedIn]);
 
   // The memory surfaces read once on sign-in, again after each answered typed line, and drop on sign-out (brief 020).
@@ -297,6 +312,9 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
   // Brief 044, item 3: the company toggle shows the audience the server last confirmed.
   const getTap = controllers?.company.getSnapshot ?? noTap;
   const tapped = useSyncExternalStore(controllers?.company.subscribe ?? noSubscribe, getTap, getTap);
+  // Brief 046 part B: the bank sheet.
+  const getBank = controllers?.bank.getSnapshot ?? noBank;
+  const bankState = useSyncExternalStore(controllers?.bank.subscribe ?? noSubscribe, getBank, getBank);
 
   const stage = <StageFor snap={snap} phone={phone} />;
   const live = <LiveRegion message={snap.live.message} seq={snap.live.seq} />;
@@ -384,6 +402,34 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
       ) : null}
     </AnimatePresence>
   );
+  // Brief 046 part B: the bank sheet's layer, and Plaid Link while a Link session is out.
+  const bankModel = controllers.bank;
+  const bankLayer = (
+    <>
+      <AnimatePresence>
+        {bankState.open ? (
+          <BankSheet
+            key="bank-sheet"
+            presentation="sheet"
+            state={bankState}
+            zone={pair.worldClock.zone}
+            onClose={() => bankModel.close()}
+            onRetry={() => bankModel.retry()}
+            onConnect={() => bankModel.connect()}
+            onDisconnect={(id) => bankModel.askDisconnect(id)}
+            onYes={() => bankModel.confirmDisconnect()}
+            onNotNow={() => bankModel.notNow()}
+          />
+        ) : null}
+      </AnimatePresence>
+      <BankLinkHost
+        link={bankState.phase === "linking" ? bankState.link : null}
+        onOpened={(s) => bankModel.linkOpened(s)}
+        onSuccess={(s, success) => bankModel.linkSuccess(s, success)}
+        onExit={(s, error) => bankModel.linkExit(s, error)}
+      />
+    </>
+  );
   const sheetNote = sheetState.open && sheetState.items.length === 0 ? (sheetState.loading ? COPY.sheetData.loading : sheetState.failed ? COPY.sheetData.failed : COPY.memory.readout.empty) : null;
 
   return (
@@ -447,7 +493,13 @@ function Screen({ snap, auth, controllers, clock }: { snap: ScreenSnapshot; auth
         </div>
       }
       timeBadge={badge === null ? null : <TimeBadge {...badge} />}
-      sheet={sheetLayer}
+      sheet={
+        <>
+          {sheetLayer}
+          {bankLayer}
+        </>
+      }
+      bank={<BankWayIn banks={bankState.banks} open={bankState.open} disabled={!takesInput} onOpen={() => bankModel.toggle()} />}
       debug={debug === null ? null : <DebugArea debug={debug} typed={typed} voice={v} />}
       live={live}
     />

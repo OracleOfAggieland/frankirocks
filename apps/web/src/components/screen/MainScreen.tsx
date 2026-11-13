@@ -61,6 +61,9 @@ export interface MainScreenProps {
   timeBadge?: ReactNode;
   /** The What I know sheet's modal layer, inside an AnimatePresence. */
   sheet?: ReactNode;
+  // Brief 046 part B: the way in to the bank sheet, in the corners beside the jar. Its sheet rides in `sheet`.
+  /** The bank sheet's way in. */
+  bank?: ReactNode;
 }
 
 export const GRID_AREAS = ["header", "strip", "stage", "dock", "chips", "controls", "reply", "corners"] as const;
@@ -100,7 +103,7 @@ function Glide({ name, reduced, className, children }: { name: "stage" | "contro
   );
 }
 
-export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed, reply, debug, live, reduced, paused, cards = [], strip, chips, jar, lab, visit, timeBadge, sheet }: MainScreenProps) {
+export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed, reply, debug, live, reduced, paused, cards = [], strip, chips, jar, lab, visit, timeBadge, sheet, bank }: MainScreenProps) {
   // The dock column stays from the first card until the last one has dematerialized (ui.dockLayout). The
   // cards event runs during render, so the column is there on the very render that brings the first card.
   const present = cards.some(cardHasContent);
@@ -164,6 +167,8 @@ export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed
         {/* Jar and Lab slots: from GET /api/memory (brief 020); empty until there is something true to show. */}
         <div data-area="corners" className="flex flex-col items-center gap-3 sm:flex-row sm:items-end sm:justify-between [grid-area:corners]">
           <div data-slot="jar">{jar}</div>
+          {/* Bank slot: the way in to the bank sheet (brief 046 part B). */}
+          <div data-slot="bank">{bank}</div>
           {/* Visit slot: the time bolt and Start over, beside the Lab (brief 027). */}
           <div data-slot="visit">{visit}</div>
           <div data-slot="lab">{lab}</div>

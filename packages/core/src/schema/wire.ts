@@ -25,6 +25,9 @@ import {
   Zone,
 } from "./primitives";
 import { CoreBundle, CoreRules, Evidence, Job, Ledger, Memory, PermitKind, Session, Turn, setWireResultFor } from "./records";
+// Brief 046.
+import { BANK_ACCOUNTS_MAX, CONNECTOR_STATES } from "./records";
+import { MONEY_GROUPS, MONEY_MERCHANT_CHARS, MONEY_PERIODS } from "../bank/money";
 import { type Infer, type Schema, arr, bool, literal, nat, nullable, obj, oneOf, str, tagged, union } from "./v";
 
 const Oid = str(128, { min: 1 });
@@ -221,7 +224,12 @@ export const SuggestCall = obj({
 // turn and reads the choice from the owner's own words (routes/tool-food.ts, answerTool). Contract question H-186.
 export const AnswerCall = obj({ name: literal("answer"), args: obj({ pendingId: nullable(ID), choiceId: nullable(ID) }) });
 
-export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall, suggest: SuggestCall, answer: AnswerCall });
+// Brief 046 part C: the money read. The model gives only the question's shape: never an amount, a total or a date.
+export const MoneyArgs = obj({ period: oneOf(MONEY_PERIODS), group: nullable(oneOf(MONEY_GROUPS)), merchant: nullable(str(MONEY_MERCHANT_CHARS)) });
+export type MoneyArgs = Infer<typeof MoneyArgs>;
+export const MoneyCall = obj({ name: literal("read_money"), args: MoneyArgs });
+
+export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall, suggest: SuggestCall, answer: AnswerCall, read_money: MoneyCall });
 export type ToolCall = Infer<typeof ToolCall>;
 
 export const RecallResult = obj({
@@ -252,7 +260,10 @@ export const AnswerResult = obj({
   pendingId: nullable(ID),
   cards: arr(Card, 2),
 });
-export const ToolResult = tagged("name", { recall: RecallResult, make_phone_call: PhoneResult, suggest: SuggestResult, answer: AnswerResult });
+// Brief 046 part C. Every amount is in a note, worded by code from bank rows and cited by them.
+export const MONEY_STATES = ["answered", "noBank", "importing", "narrow", "unclear", "held"] as const;
+export const MoneyResult = obj({ name: literal("read_money"), state: oneOf(MONEY_STATES), notes: arr(W, 4), cards: arr(Card, 2) });
+export const ToolResult = tagged("name", { recall: RecallResult, make_phone_call: PhoneResult, suggest: SuggestResult, answer: AnswerResult, read_money: MoneyResult });
 export type ToolResult = Infer<typeof ToolResult>;
 
 // The server reads the destination and assignment from the owner's turn.
@@ -264,6 +275,27 @@ export const PHONE_TOOL = {
 } as const;
 
 const nullableJson = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: "null" }] });
+
+/**
+ * Brief 046 part C: the money read, strict JSON Schema. The description is the model's only guide, so it says the
+ * two rules: use it only for the user's own spending, and never state an amount the tool did not return.
+ */
+export const MONEY_TOOL = {
+  type: "function",
+  name: "read_money",
+  description:
+    "Read the signed-in user's own spending from their connected bank. Use it only when the user asks about their own spending. Give only the period, optionally one spending group and optionally the merchant's name as the user said it. Never state an amount that the tool did not return, never add totals yourself, and give no financial advice.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    required: ["period", "group", "merchant"],
+    properties: {
+      period: { type: "string", enum: [...MONEY_PERIODS] },
+      group: nullableJson({ type: "string", enum: [...MONEY_GROUPS] }),
+      merchant: nullableJson({ type: "string", maxLength: MONEY_MERCHANT_CHARS }),
+    },
+  },
+} as const;
 const EID_JSON = { type: "string", maxLength: 43 };
 
 /**
@@ -442,6 +474,48 @@ const SeedEventResponse = obj({
   cards: arr(Card, 2),
 });
 
+// ---------------------------------------------------------------------------------------------
+// Brief 046 (lane plaid): /api/bank/*. `BankView` is what the screen may show and nothing more: no balances, no
+// token, no Plaid IDs.
+
+export const BankView = obj({
+  connectorId: ID,
+  institutionName: nullable(str(128)),
+  state: oneOf(CONNECTOR_STATES),
+  importing: bool,
+  accounts: arr(obj({ name: str(128), mask: nullable(str(8)), type: str(32), subtype: nullable(str(64)) }), BANK_ACCOUNTS_MAX),
+  lastSyncedAt: nullable(TS),
+  coveredFrom: nullable(TS),
+  coveredTo: nullable(TS),
+  needsReconnect: bool,
+});
+export type BankView = Infer<typeof BankView>;
+/** At most this many banks are connected at once (ruling 8). */
+export const BANK_LIMIT = 4;
+export const BankLinkTokenRequest = obj({});
+export const BankLinkTokenResponse = obj({ linkToken: str(512, { min: 1 }), expiresAt: TS });
+export type BankLinkTokenResponse = Infer<typeof BankLinkTokenResponse>;
+/** `institutionId` and `institutionName` may be left out; the parser reads a missing one as null. */
+export const BankConnectRequest = obj({
+  requestId: ID,
+  publicToken: str(512, { min: 1 }),
+  institutionId: nullable(str(64)),
+  institutionName: nullable(str(128)),
+});
+export type BankConnectRequest = Infer<typeof BankConnectRequest>;
+export const BankConnectResponse = obj({ bank: BankView, existing: bool });
+export type BankConnectResponse = Infer<typeof BankConnectResponse>;
+export const BankStatusResponse = obj({ banks: arr(BankView, 64), canConnect: bool });
+export type BankStatusResponse = Infer<typeof BankStatusResponse>;
+export const BankSyncRequest = obj({ connectorId: ID });
+export type BankSyncRequest = Infer<typeof BankSyncRequest>;
+export const BankSyncResponse = obj({ bank: BankView });
+export type BankSyncResponse = Infer<typeof BankSyncResponse>;
+export const BankDisconnectRequest = obj({ requestId: ID, connectorId: ID });
+export type BankDisconnectRequest = Infer<typeof BankDisconnectRequest>;
+export const BankDisconnectResponse = obj({ bank: BankView });
+export type BankDisconnectResponse = Infer<typeof BankDisconnectResponse>;
+
 /** WireResult by route: the stored `request.response` must be that route's response type. */
 export const RESPONSE_BY_ROUTE: Record<RouteName, Schema<unknown>> = {
   open: OpenResponse,
@@ -456,6 +530,9 @@ export const RESPONSE_BY_ROUTE: Record<RouteName, Schema<unknown>> = {
   reset: ResetResponse,
   advance: AdvanceResponse,
   seedEvent: SeedEventResponse,
+  // Brief 046.
+  bankConnect: BankConnectResponse,
+  bankDisconnect: BankDisconnectResponse,
 };
 export const WireResult = union(...Object.values(RESPONSE_BY_ROUTE));
 

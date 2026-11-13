@@ -57,6 +57,8 @@ import { admitRule } from "../admission/seam";
 import { effectiveAudience, hasParseGap } from "../audience";
 import type { ResponsesResult } from "../openai/responses";
 import { placePhoneCall } from "../phone/outbound";
+// Brief 046 part C.
+import { limitMoneyToS0, readMoney } from "../bank/money-read";
 import { answerTool, suggestForAudience, suggestTool } from "./tool-food";
 import { recordHeroDeclined } from "../time/answered";
 import { paths } from "../store/paths";
@@ -174,6 +176,8 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       ? { name: "make_phone_call", requestId: req.requestId, message: await placePhoneCall(ctx, req.stamp) }
       : req.tool.name === "suggest" ? answered!.result
       : req.tool.name === "answer" ? answered!.result
+      // Brief 046 part C: the money read, on the owner's own committed turn only (bank/money-read.ts).
+      : req.tool.name === "read_money" ? (await readMoney(ctx, { turn: check.turn, args: req.tool.args, generation: req.stamp.generation, deadlineAt: start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS, noteId: (n) => deps.hasher.id(["money-note", req.stamp.sessionId, req.stamp.turnId, req.callId, n]) as ID })).result
       : await readRecall(ctx, req, req.tool.args, check.turn, start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS);
 
     return deps.store.transaction(uid, async (tx) => {
@@ -223,7 +227,9 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       // Brief 045 finding 10: in company (or narrowed here), suggest asks nothing drawn from a Memory and shows only S0.
       const shaped = limited.name === "suggest" ? suggestForAudience(limited, narrowed ? "narrowed" : rule.audience) : limited;
       // Brief 030 part A: the Gate in front of the result, its rows written here.
-      const output = await gateToolOutput(tx, ctx, { session: s, turn, stamp: req.stamp, core, purpose: req.tool.name === "recall" ? req.tool.args.purpose : null }, shaped);
+      const gated = await gateToolOutput(tx, ctx, { session: s, turn, stamp: req.stamp, core, purpose: req.tool.name === "recall" ? req.tool.args.purpose : null }, shaped);
+      // Brief 046 part C: the Server_Rule's S0 limit holds for a money read too, after the Gate has written its rows.
+      const output = gated.name === "read_money" && planned.kind === "permit" && planned.notes !== "all" ? limitMoneyToS0(ctx, req.stamp, gated) : gated;
       const admitted = admitRule(
         tx,
         {

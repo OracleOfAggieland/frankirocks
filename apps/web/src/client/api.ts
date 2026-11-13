@@ -5,7 +5,26 @@
  *
  * The browser sets `Origin` itself on same-origin POSTs, which the Route_Guard checks (R10.3).
  */
-import { AdvanceRequest, AdvanceResponse, MemoryResponse, type MemoryView, ResetRequest, ResetResponse, type Schema, validate } from "@franki/core";
+import {
+  AdvanceRequest,
+  AdvanceResponse,
+  BankConnectRequest,
+  BankConnectResponse,
+  BankDisconnectRequest,
+  BankDisconnectResponse,
+  BankLinkTokenRequest,
+  BankLinkTokenResponse,
+  BankStatusResponse,
+  BankSyncRequest,
+  BankSyncResponse,
+  MemoryResponse,
+  type MemoryView,
+  ResetRequest,
+  ResetResponse,
+  type Schema,
+  validate,
+} from "@franki/core";
+import type { BankConnectAnswer, BankDisconnectAnswer, BankStatusAnswer, BankSyncAnswer, BankTokenAnswer } from "../ui/bank/bank-machine";
 import { ADVANCE_PATH, ADVANCE_TIMEOUT_MS, BARRIER_STATUS, RESET_PATH, RESET_TIMEOUT_MS } from "./seed-guesses";
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -169,4 +188,86 @@ export function resetVisit(api: ApiClient, body: ResetRequest): Promise<SeedCall
 /** Moves the visit's world clock forward to `to` (contracts §6 `POST /api/seed/advance`). */
 export function advanceVisit(api: ApiClient, body: AdvanceRequest): Promise<SeedCall<AdvanceResponse>> {
   return seedCall(api, ADVANCE_PATH, AdvanceRequest, AdvanceResponse, body, ADVANCE_TIMEOUT_MS);
+}
+
+// ---------------------------------------------------------------------------------------------
+// /api/bank/* (brief 046 part B): the bank sheet's five calls. Each answer is validated against its closed response
+// and mapped to what `ui/bank/bank-machine` needs; a body the contract would refuse is a failure, shown as nothing.
+
+export const BANK_STATUS_PATH = "/api/bank/status";
+export const BANK_LINK_TOKEN_PATH = "/api/bank/link-token";
+export const BANK_CONNECT_PATH = "/api/bank/connect";
+export const BANK_SYNC_PATH = "/api/bank/sync";
+export const BANK_DISCONNECT_PATH = "/api/bank/disconnect";
+/** Status reads Firestore only. */
+export const BANK_STATUS_TIMEOUT_MS = 6_000;
+/** Link token, connect, sync and disconnect each make one call to Plaid on the server. */
+export const BANK_CALL_TIMEOUT_MS = 30_000;
+/** The bank limit's answer: HTTP 409 with ErrorCode LIMIT. (A 429 LIMIT is a call already in flight.) */
+export const BANK_LIMIT_STATUS = 409;
+
+const isBankLimit = (r: Exclude<ApiResult<unknown>, { ok: true }>) => r.kind === "http" && r.status === BANK_LIMIT_STATUS && r.error === "LIMIT";
+/** The server answered and said no, as opposed to no answer, a call in flight, or a server failure. */
+const isRefusal = (r: Exclude<ApiResult<unknown>, { ok: true }>) => r.kind === "http" && r.status >= 400 && r.status < 500 && r.status !== 429 && r.status !== 408;
+
+async function bankPost(api: ApiClient, path: string, request: Schema<unknown>, body: unknown): Promise<ApiResult<unknown> | null> {
+  // A request the contract would refuse is never sent.
+  if (!validate(request, body).ok) return null;
+  return api.call<unknown>(path, { method: "POST", body, timeoutMs: BANK_CALL_TIMEOUT_MS });
+}
+
+/** GET /api/bank/status. */
+export async function readBankStatus(api: ApiClient): Promise<BankStatusAnswer> {
+  const r = await api.call<unknown>(BANK_STATUS_PATH, { method: "GET", timeoutMs: BANK_STATUS_TIMEOUT_MS });
+  if (!r.ok) return { ok: false };
+  const parsed = validate(BankStatusResponse, r.body);
+  if (!parsed.ok) return { ok: false };
+  const v = parsed.value as BankStatusResponse;
+  return { ok: true, banks: v.banks, canConnect: v.canConnect };
+}
+
+/** POST /api/bank/link-token. */
+export async function requestBankLinkToken(api: ApiClient): Promise<BankTokenAnswer> {
+  const r = await bankPost(api, BANK_LINK_TOKEN_PATH, BankLinkTokenRequest, {});
+  if (r === null) return { ok: false, why: "failed" };
+  if (!r.ok) return { ok: false, why: isBankLimit(r) ? "limit" : "failed" };
+  const parsed = validate(BankLinkTokenResponse, r.body);
+  return parsed.ok ? { ok: true, linkToken: (parsed.value as BankLinkTokenResponse).linkToken } : { ok: false, why: "failed" };
+}
+
+/** Link's institution fields, or null where they would not fit the closed request. */
+export function connectFields(institutionId: string | null | undefined, institutionName: string | null | undefined): { institutionId: string | null; institutionName: string | null } {
+  const fit = (v: string | null | undefined, max: number) => (typeof v === "string" && v.length > 0 && v.length <= max ? v : null);
+  return { institutionId: fit(institutionId, 64), institutionName: fit(institutionName, 128) };
+}
+
+/**
+ * POST /api/bank/connect, sent once. STALE (refused or unconfirmed exchange) and any other refusal are `refused`;
+ * no answer, a call in flight or a server failure is `unknown`. Neither is ever sent again with this public token.
+ */
+export async function connectBank(api: ApiClient, body: BankConnectRequest): Promise<BankConnectAnswer> {
+  const r = await bankPost(api, BANK_CONNECT_PATH, BankConnectRequest, body);
+  if (r === null) return { ok: false, why: "refused" };
+  if (!r.ok) return { ok: false, why: isBankLimit(r) ? "limit" : isRefusal(r) ? "refused" : "unknown" };
+  const parsed = validate(BankConnectResponse, r.body);
+  if (!parsed.ok) return { ok: false, why: "unknown" };
+  const v = parsed.value as BankConnectResponse;
+  return { ok: true, bank: v.bank, existing: v.existing };
+}
+
+/** POST /api/bank/sync: one pull. */
+export async function syncBank(api: ApiClient, body: BankSyncRequest): Promise<BankSyncAnswer> {
+  const r = await bankPost(api, BANK_SYNC_PATH, BankSyncRequest, body);
+  if (r === null || !r.ok) return { ok: false };
+  const parsed = validate(BankSyncResponse, r.body);
+  return parsed.ok ? { ok: true, bank: (parsed.value as BankSyncResponse).bank } : { ok: false };
+}
+
+/** POST /api/bank/disconnect. `failed`: the server answered that it did not; `unknown`: no answer reached here. */
+export async function disconnectBank(api: ApiClient, body: BankDisconnectRequest): Promise<BankDisconnectAnswer> {
+  const r = await bankPost(api, BANK_DISCONNECT_PATH, BankDisconnectRequest, body);
+  if (r === null) return { ok: false, why: "failed" };
+  if (!r.ok) return { ok: false, why: r.kind === "http" && r.status !== 429 && r.status !== 408 ? "failed" : "unknown" };
+  const parsed = validate(BankDisconnectResponse, r.body);
+  return parsed.ok ? { ok: true, bank: (parsed.value as BankDisconnectResponse).bank } : { ok: false, why: "unknown" };
 }

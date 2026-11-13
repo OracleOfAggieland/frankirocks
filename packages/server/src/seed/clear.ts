@@ -67,6 +67,9 @@ export async function clearTenant(store: StorePort, uid: string, keep: ReadonlyS
   };
   for (const collection of TOP_COLLECTIONS) {
     if (collection === "core") continue;
+    // Brief 046 ruling 9: "start over" keeps a connected bank. The reset's last transaction resets each connector's
+    // cursor and coverage instead (`resetBankCursors`), so the token is never orphaned.
+    if (collection === "connectors") continue;
     await pages(store, uid, paths.collection(uid, collection), async (page) => {
       if (collection === "sessions") for (const s of page) await pages(store, uid, paths.turns(uid, s.id), drop);
       await drop(page);

@@ -166,7 +166,7 @@ export type KernelError = (typeof KERNEL_ERRORS)[number];
 export const ReasonCode = oneOf([...new Set<string>([...ELIGIBILITY_REASONS, ...KERNEL_ERRORS, ...ERROR_CODES])] as const);
 export type ReasonCode = Infer<typeof ReasonCode>;
 
-export const ROUTE_NAMES = ["open", "sdp", "state", "close", "turn", "tool", "receipt", "memory", "control", "reset", "advance", "seedEvent"] as const;
+export const ROUTE_NAMES = ["open", "sdp", "state", "close", "turn", "tool", "receipt", "memory", "control", "reset", "advance", "seedEvent", "bankConnect", "bankDisconnect"] as const;
 export const RouteName = oneOf(ROUTE_NAMES);
 export type RouteName = Infer<typeof RouteName>;
 

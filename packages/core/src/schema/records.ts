@@ -333,7 +333,7 @@ export type Turn = Infer<typeof Turn>;
 // ---------------------------------------------------------------------------------------------
 // ledger/{entryId}
 
-const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate", "rule"] as const;
+const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate", "rule", "bank"] as const;
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
 /**
@@ -437,6 +437,18 @@ export const RuleRowPayload = obj({
 });
 export type RuleRowPayload = Infer<typeof RuleRowPayload>;
 
+// Brief 046 (lane plaid): one row per bank connect or disconnect, the audit entry for that side effect. IDs and
+// closed codes only: never a token, a Plaid ID or a bank's words.
+export const BANK_LEDGER_OPS = ["connect", "disconnect"] as const;
+export const BANK_LEDGER_OUTCOMES = ["connected", "existing", "disconnected", "rejected", "unconfirmed", "notRemoved", "failed"] as const;
+export const BankLedgerPayload = obj({
+  op: oneOf(BANK_LEDGER_OPS),
+  requestId: ID,
+  connectorId: ID,
+  outcome: nullable(oneOf(BANK_LEDGER_OUTCOMES)),
+});
+export type BankLedgerPayload = Infer<typeof BankLedgerPayload>;
+
 export const LEDGER_PAYLOADS = {
   // Earlier calls have no indexed call ID. Their receipts remain readable and replayable.
   phoneCall: union(obj({ ...phoneCallFields, phoneCallId: ID }), obj(phoneCallFields)),
@@ -477,6 +489,8 @@ export const LEDGER_PAYLOADS = {
   }),
   gate: GatePayload,
   rule: RuleRowPayload,
+  // Brief 046.
+  bank: BankLedgerPayload,
 } satisfies Record<LedgerKind, Schema<unknown>>;
 
 const LedgerBase = obj({
@@ -967,4 +981,79 @@ export type Moment = Infer<typeof Moment>;
 /** A stored moment with the fields added after brief 023 filled: rows written before brief 036 have no `rendered`. */
 export function withMomentDefaults(m: Omit<Moment, "rendered"> & { rendered?: Moment["rendered"] }): Moment {
   return { ...m, rendered: m.rendered ?? null };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Brief 046 (lane plaid): connectors/{connectorId} (contracts §1 `connectors`). The contract's fields, plus one
+// nullable `bank` sub-object for a bank connection (ruling 3). `syncPages` is not built (contract: deferred); a pull
+// is all or nothing instead (ruling 6).
+
+export const CONNECTOR_PROVIDERS = ["gmail", "calendar", "plaid", "tasks"] as const;
+export const CONNECTOR_STATES = ["connected", "syncing", "expired", "error", "disconnected"] as const;
+export type ConnectorState = (typeof CONNECTOR_STATES)[number];
+/** The closed set a bank's error maps to (brief 046 Part A). */
+export const BANK_PROBLEMS = ["needsReconnect", "revoked", "transient"] as const;
+export type BankProblem = (typeof BANK_PROBLEMS)[number];
+
+/** An access token sealed with AES-256-GCM (ruling 2): base64url IV (12 bytes) and base64url ciphertext plus tag. */
+export const SealedToken = obj({
+  v: literal(1),
+  iv: str(16, { min: 16, pattern: /^[A-Za-z0-9_-]{16}$/, label: "a base64url 12-byte IV" }),
+  body: str(4096, { min: 22, pattern: /^[A-Za-z0-9_-]+$/, label: "base64url ciphertext and tag" }),
+});
+export type SealedToken = Infer<typeof SealedToken>;
+
+export const BankAccount = obj({
+  accountId: str(128, { min: 1 }),
+  name: str(128),
+  mask: nullable(str(8)),
+  type: str(32),
+  subtype: nullable(str(64)),
+});
+export type BankAccount = Infer<typeof BankAccount>;
+export const BANK_ACCOUNTS_MAX = 32;
+
+export const BankConnection = obj({
+  itemId: str(128, { min: 1 }),
+  institutionId: nullable(str(64)),
+  institutionName: nullable(str(128)),
+  accounts: arr(BankAccount, BANK_ACCOUNTS_MAX),
+  /** Null once disconnected or revoked: the token is erased. */
+  token: nullable(SealedToken),
+  connectedAt: TS,
+  /** Plaid reported the historical import complete; until then the connector is `syncing`. */
+  historicalComplete: bool,
+  problem: nullable(oneOf(BANK_PROBLEMS)),
+  /** Rows the last completed pull skipped: no ISO currency, an amount not a whole number of cents, or no usable date. */
+  lastPullSkipped: obj({ noCurrency: nat(), badAmount: nat(), badDate: nat() }),
+});
+export type BankConnection = Infer<typeof BankConnection>;
+
+export const Connector = obj({
+  ...C_SHAPE,
+  provider: oneOf(CONNECTOR_PROVIDERS),
+  state: oneOf(CONNECTOR_STATES),
+  activeGeneration: nat(),
+  stagingGeneration: nullable(nat()),
+  cursor: nullable(Content),
+  coverage: Cov,
+  nextPollAt: TS,
+  watchExpiresAt: nullable(TS),
+  quota: obj({ nextAllowedAt: TS, leaseUntil: nullable(TS), leaseToken: nullable(ID) }),
+  lastSuccessAt: nullable(TS),
+  lastError: nullable(ErrorCode),
+  retainUntil: nullable(TS),
+  bank: nullable(BankConnection),
+});
+export type Connector = Infer<typeof Connector>;
+
+/**
+ * A stored connector with brief 046's fields filled (the record-shape rule): a connector written with only the
+ * contract's fields has no `bank` and reads as `bank: null`; a bank written before `lastPullSkipped` reads zeros.
+ */
+export function withConnectorDefaults(
+  c: Omit<Connector, "bank"> & { bank?: (Omit<BankConnection, "lastPullSkipped"> & { lastPullSkipped?: BankConnection["lastPullSkipped"] }) | null },
+): Connector {
+  const bank = c.bank ?? null;
+  return { ...c, bank: bank === null ? null : { ...bank, lastPullSkipped: bank.lastPullSkipped ?? { noCurrency: 0, badAmount: 0, badDate: 0 } } };
 }

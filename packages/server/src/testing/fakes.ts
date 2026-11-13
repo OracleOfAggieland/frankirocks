@@ -11,6 +11,13 @@ import { decisionAnswer } from "./decisions";
 import { FakeFastSlots } from "./fake-fast-slots";
 import { type HttpInput, type Log, type RouteDeps, type RouteSpec, type Schedule, runRoute } from "../routes/runtime";
 import { MemoryStore } from "../store/memory-store";
+import type { BankPort } from "../bank/plaid";
+
+const noBank = async (): Promise<never> => {
+  throw new Error("no bank in tests");
+};
+/** Brief 046: the default bank port in tests. Every method throws, so an unexpected call fails closed. */
+export const throwingBank: BankPort = { linkToken: noBank, exchange: noBank, accounts: noBank, sync: noBank, remove: noBank };
 import type { StorePort } from "../store/port";
 
 export const FAKE_HMAC_KEY = "test-only-franki-id-hmac-key-0000000000000";
@@ -168,7 +175,8 @@ export function testRig(env: Record<string, string> = TEST_ENV): TestRig {
   const log: Log = (event, fields) => logs.push({ event, fields });
   return {
     // No test reaches Twilio: a test that needs a call's status sets `deps.callStatus`.
-    deps: { store, clock, hasher, openai, fastSlots, env, timers, tokens, log, callStatus: async () => { throw new Error("no call status in tests"); } },
+    // No test reaches Plaid either: a test that needs the bank sets `deps.bank` (testing/fake-bank.ts).
+    deps: { store, clock, hasher, openai, fastSlots, env, timers, tokens, log, callStatus: async () => { throw new Error("no call status in tests"); }, bank: throwingBank },
     store,
     clock,
     timers,
