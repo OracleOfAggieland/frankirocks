@@ -60,6 +60,12 @@ export const PURE_MODULES = [
   "landing/stage-script.ts",
   "landing/switch-blade.ts",
   "landing/switch-machine.ts",
+  // Brief 047. Not here: client/radio-player.ts and client/radio-watch.ts, which own the audio element and timers.
+  "radio/types.ts",
+  "radio/stations.ts",
+  "radio/gain.ts",
+  "radio/phrase.ts",
+  "radio/radio-machine.ts",
 ].map((f) => UI + f);
 
 const BROWSER_WORDS = ["window", "document", "navigator", "localStorage", "fetch", "requestAnimationFrame", "AudioContext"];
@@ -181,7 +187,7 @@ export const SPECIMENS_DIR = APP + "specimens/";
 export const SPECIMENS_PAGE = SPECIMENS_DIR + "page.dev.tsx";
 export const RECORDER_DIR = APP + "recorder/";
 /** The only files that may use the development-only `.dev.tsx` and `.dev.ts` suffixes. */
-export const DEV_FILES = [SPECIMENS_PAGE, RECORDER_DIR + "page.dev.tsx", APP + "api/dev/takes/route.dev.ts"];
+export const DEV_FILES = [SPECIMENS_PAGE, SPECIMENS_DIR + "radio/page.dev.tsx", RECORDER_DIR + "page.dev.tsx", APP + "api/dev/takes/route.dev.ts"];
 const DEV_DIRS = [SPECIMENS_DIR, RECORDER_DIR];
 export const ENTRY_POINTS = [APP + "page.tsx", APP + "lab/page.tsx", APP + "layout.tsx"];
 /** The lab's own entry points: its page and the layout that wraps it. */
