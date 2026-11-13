@@ -13,6 +13,7 @@ import type { FastSlotsPort } from "../onturn/fast-slots-port";
 import type { OpenAIPort } from "../openai/fake";
 import type { CallStatus } from "../phone/status";
 import type { Dial } from "../phone/twilio";
+import type { BankPort } from "../bank/plaid";
 import type { StorePort } from "../store/port";
 import { type RouteError, dependencyLogFields, parseError, toRouteError } from "./errors";
 
@@ -29,6 +30,8 @@ export interface RouteDeps {
   dial?: Dial;
   /** Twilio's status for one call, read for the phone line in a reply's notes. Fake in tests. */
   callStatus?: CallStatus;
+  /** Brief 046: the bank (Plaid) port. Live when unset; a throwing fake in tests. */
+  bank?: BankPort;
   store: StorePort;
   clock: ClockPort;
   hasher: Hasher;

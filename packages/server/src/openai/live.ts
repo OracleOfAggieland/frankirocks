@@ -17,6 +17,12 @@ interface SdkResponse {
   usage?: { input_tokens?: number; output_tokens?: number } | null;
 }
 
+/** Brief 046 part C: a complete `read_money` call's arguments; the turn route validates them against `MoneyArgs`. */
+function moneyCall(r: SdkResponse): { moneyCallArguments?: string } {
+  const item = r.output?.find((i) => i.type === "function_call" && i.name === "read_money" && (i.status === undefined || i.status === "completed"));
+  return item !== undefined && typeof item.arguments === "string" && item.arguments.length <= 2048 ? { moneyCallArguments: item.arguments } : {};
+}
+
 export function normalizeResponse(r: SdkResponse): ResponsesResult {
   let refusal: string | null = null;
   for (const item of r.output ?? []) {
@@ -29,6 +35,7 @@ export function normalizeResponse(r: SdkResponse): ResponsesResult {
       item.type === "function_call" && item.name === "make_phone_call" &&
       (item.status === undefined || item.status === "completed") && /^\s*\{\s*\}\s*$/.test(item.arguments ?? "")
     ) ? { phoneCallRequested: true } : {}),
+    ...moneyCall(r),
     status,
     outputText: refusal === null ? text : null,
     refusal,

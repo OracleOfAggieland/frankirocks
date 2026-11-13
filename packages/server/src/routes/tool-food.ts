@@ -63,6 +63,8 @@ import {
   takeoutLateMeetingV1,
   tsFromMs,
 } from "@franki/core";
+// Brief 046 ruling 5.
+import { isConnectedBankRow } from "@franki/core";
 import { readCoreDocs, ownerClock } from "../core-docs";
 import { heroAnchor } from "../time/hero-anchor";
 import { forgetRowsFor } from "../forget/snapshot-rows";
@@ -191,7 +193,9 @@ async function readMoneyRows(ctx: RouteContext, generation: number, scopeOf: (cl
   if (docs === null) return null;
   const anchor = await heroAnchor(reader, uid, deps.hasher, clock.worldClock.now);
   const money = inScope(
-    docs.filter((d) => ["transaction", "receipt", "calendar"].includes(d.data.kind)),
+    // Brief 046 ruling 5: a connected bank's rows are read only by the bank's own money read, never by the hero,
+    // the compare loop or the moments, so persona rows and real rows never meet in one total.
+    docs.filter((d) => ["transaction", "receipt", "calendar"].includes(d.data.kind) && !isConnectedBankRow(d.data)),
     scopeOf(clock, anchor),
     clock.worldClock.zone,
   );

@@ -81,3 +81,16 @@ env:
   - variable: OPENAI_PROJECT_ID
     secret: OPENAI_PROJECT_ID
     availability: [RUNTIME]
+
+  # A connected bank, read-only (brief 046). PLAID_ENV is `production` or `sandbox`.
+  - variable: PLAID_ENV
+    value: production
+  - variable: PLAID_CLIENT_ID
+    secret: PLAID_CLIENT_ID
+    availability: [RUNTIME]
+  - variable: PLAID_SECRET
+    secret: PLAID_SECRET
+    availability: [RUNTIME]
+  - variable: FRANKI_BANK_TOKEN_KEY
+    secret: FRANKI_BANK_TOKEN_KEY
+    availability: [RUNTIME]

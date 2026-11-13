@@ -5,7 +5,7 @@
 import { CORE_DOC_IDS, type CoreDocId, isIdShape } from "@franki/core";
 import { StoreError } from "./errors";
 
-export const TOP_COLLECTIONS = ["evidence", "memories", "sessions", "jobs", "ledger", "core", "blocks", "overlays", "effects", "moments"] as const;
+export const TOP_COLLECTIONS = ["evidence", "memories", "sessions", "jobs", "ledger", "core", "blocks", "overlays", "effects", "moments", "connectors"] as const;
 export type TopCollection = (typeof TOP_COLLECTIONS)[number];
 export type Collection = TopCollection | "turns";
 
@@ -36,6 +36,8 @@ export const paths = {
   effect: (uid: string, effectId: string) => `users/${uid}/effects/${effectId}`,
   // Moments (brief 023).
   moment: (uid: string, momentId: string) => `users/${uid}/moments/${momentId}`,
+  // Bank connections (brief 046).
+  connector: (uid: string, connectorId: string) => `users/${uid}/connectors/${connectorId}`,
 };
 
 const UID_PATTERN = /^[^/]{1,128}$/;

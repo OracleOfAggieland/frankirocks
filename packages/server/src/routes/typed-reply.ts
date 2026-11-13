@@ -15,6 +15,8 @@ import {
   type ID,
   type Memory,
   PHONE_TOOL,
+  MONEY_TOOL,
+  MoneyArgs,
   type SafeTurn,
   type Sens,
   type Session,
@@ -23,7 +25,9 @@ import {
   type W,
   maxSens,
   tsFromMs,
+  validate,
 } from "@franki/core";
+import type { MoneyAsk } from "../bank/money-typed";
 import { withDeadline } from "../clock/timers";
 import { requireModel } from "../config/models";
 import type { ResponsesResult } from "../openai/responses";
@@ -56,13 +60,25 @@ export function typedReplyRequest(model: string, instructions: string, turns: re
     model,
     reasoning: { effort: "low" },
     store: false,
-    tools: allowPhone ? [{ ...PHONE_TOOL, strict: true }] : [],
+    // Brief 046 part C: the money read is offered beside the phone, to the owner's own typed line only.
+    tools: allowPhone ? [{ ...PHONE_TOOL, strict: true }, { ...MONEY_TOOL, strict: true }] : [],
     instructions,
     input: [...turns.map((t) => ({ role: t.role, content: t.text })), { role: "user", content: text }],
     max_output_tokens: 512,
   };
 }
 
+/** The model's `read_money` arguments as the closed `MoneyArgs`, or null. */
+export function moneyArgsOf(json: string): MoneyArgs | null {
+  try {
+    const v: unknown = JSON.parse(json);
+    return validate(MoneyArgs, v).ok ? (v as MoneyArgs) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The typed reply as before brief 046 part C: a money read asked for gives no note here (see `typedReplyOutcome`). */
 export async function typedReplyNote(
   ctx: RouteContext,
   req: TurnRequest,
@@ -71,6 +87,19 @@ export async function typedReplyNote(
   allowPhone: boolean,
   phoneLine: Promise<string | null> = Promise.resolve(null),
 ): Promise<W | "make_phone_call" | null> {
+  const out = await typedReplyOutcome(ctx, req, text, safeTurns, allowPhone, phoneLine);
+  return out !== null && typeof out === "object" && "readMoney" in out ? null : out;
+}
+
+/** The typed reply, or the phone or money tool the brain model asked for (the turn route runs either after commit). */
+export async function typedReplyOutcome(
+  ctx: RouteContext,
+  req: TurnRequest,
+  text: string,
+  safeTurns: (reader: Reader) => Promise<SafeTurn[]>,
+  allowPhone: boolean,
+  phoneLine: Promise<string | null> = Promise.resolve(null),
+): Promise<W | "make_phone_call" | MoneyAsk | null> {
   const { uid, deps } = ctx;
   if (req.source === "asr") return null;
   const session = await deps.store.get<Session>(uid, paths.session(uid, req.sessionId));
@@ -97,6 +126,11 @@ Notes:
     return null;
   }
   if (allowPhone && result.phoneCallRequested && result.status === "completed" && result.refusal === null) return "make_phone_call";
+  // Brief 046 part C: a money read asked for by the brain model, with arguments that parse as the closed shape.
+  if (allowPhone && said === text && result.moneyCallArguments !== undefined && result.status === "completed" && result.refusal === null) {
+    const args = moneyArgsOf(result.moneyCallArguments);
+    return args === null ? null : { readMoney: args };
+  }
   const reply = result.status === "completed" && result.refusal === null ? result.outputText?.trim() : undefined;
   if (reply === undefined || reply.length === 0) return null;
 

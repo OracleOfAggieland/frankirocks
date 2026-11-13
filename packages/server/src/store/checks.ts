@@ -4,6 +4,7 @@
  */
 import {
   Block,
+  Connector,
   Effect,
   Overlay,
   CORE_DOCS,
@@ -56,6 +57,9 @@ export function schemaFor(p: ParsedPath): Schema<unknown> {
     // Moments (brief 023).
     case "moments":
       return Moment;
+    // Bank connections (brief 046).
+    case "connectors":
+      return Connector;
   }
 }
 

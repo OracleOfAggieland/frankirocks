@@ -52,7 +52,7 @@ import { extractJobId, extractJobRecord } from "../worker/extract-jobs";
 import { barrierError, parseError, scopeError, staleError } from "./errors";
 import { missingSessionError } from "./open-visit";
 import { Unrecorded, mutation } from "./mutation";
-import { typedReplyNote } from "./typed-reply";
+import { typedReplyOutcome } from "./typed-reply";
 import { type HardRuleResult, type HardRuleRun, applyOpenProposals, applyPastedAllergy, executeHardRule, executeOnTurn, refreshDirtyTurn, ruleRowAt } from "../onturn/execute";
 import { writeRuleRows } from "../onturn/rule-rows";
 import { readOnTurnContext } from "../onturn/context";
@@ -65,6 +65,9 @@ import { storeReader } from "../head-build";
 import { turnEvidenceId } from "../turns";
 import { finishTypedPhoneCall } from "../phone/typed";
 import { phoneId } from "../phone/outbound";
+// Brief 046 part C.
+import { finishTypedMoney, isMoneyAsk, moneyPendingId } from "../bank/money-typed";
+import type { MoneyArgs } from "@franki/core";
 import { phoneCallLineSafe, phoneNote } from "../phone/aware";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 026: company, quiet and alone (voice-control tasks 48, 49).
@@ -178,6 +181,8 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
   // The Owner's latest phone call, read beside the parse so the reply can say where it stands (phone/aware.ts).
   const phoneLineP = req.supersedesRequestId === null && req.transcriptState === "final" && cls.cls === "U" ? phoneCallLineSafe(ctx) : Promise.resolve(null);
   await ensureCoreDocs(uid, deps);
+  // Brief 046 part C: the model's money question, kept for the step after the commit (a replay has none).
+  let moneyArgs: MoneyArgs | null = null;
   const result = await mutation<TurnRes>(ctx, "turn", req.requestId, req, async (key) => {
     if (req.supersedesRequestId !== null) return postSupersede(ctx, req, req.supersedesRequestId, key);
     // The on-turn hardRule route (brief 012 design 3.0): RX4 or an asked question at arrival, else a parse candidate.
@@ -191,7 +196,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
     const replyP =
       typedNoCall && (regex || anyMemoryRoute(memoryRegexOpens(arrival)) || askedAtArrival !== null)
         ? Promise.resolve(null)
-        : typedReplyNote(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx), cls.cls === "U" && req.source === "typed", phoneLineP);
+        : typedReplyOutcome(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx), cls.cls === "U" && req.source === "typed", phoneLineP);
     replyP.catch(() => {});
     const eid = turnEvidenceId(req.turnId as ID, deps.hasher);
     const routeP =
@@ -315,7 +320,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           // With no call open the typed reply is kept on a hit too: the rule decides its notes, and a Fixed_Line
           // replaces it (review of wave A, item 17). With a call, typedReplyNote makes no reply. A pasted (T) turn
           // never carries an S1+ note.
-          let candidateNotes: W[] = reply === null || reply === "make_phone_call" ? [] : [reply];
+          let candidateNotes: W[] = reply === null || reply === "make_phone_call" || isMoneyAsk(reply) ? [] : [reply];
           // With a call open the reply is spoken from the Head and these notes, so the phone line travels as an S0
           // note. With no call the typed reply already read it, and a note here would be shown as text.
           if (phoneLine !== null && (req.source === "asr" || s0.callId !== null)) candidateNotes.push(phoneNote(ctx, req.sessionId, req.turnId, phoneLine, ops));
@@ -495,6 +500,11 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           if (reply === "make_phone_call" && admitted.kind === "permit" && admitted.permit.scope === "reply" && admitted.permit.kind !== "recoveryOnly") {
             response.pendingId = phoneId(ctx, stampOut2);
           }
+          // Brief 046 part C: a typed money read runs after this commit, as the phone does (bank/money-typed.ts).
+          if (isMoneyAsk(reply) && admitted.kind === "permit" && admitted.permit.scope === "reply" && admitted.permit.kind !== "recoveryOnly") {
+            response.pendingId = moneyPendingId(ctx, stampOut2);
+            moneyArgs = reply.readMoney;
+          }
           await completeRequest(tx, key, response, ops);
           return { kind: "committed" as const, response, jobId, repair, hangup };
         });
@@ -518,6 +528,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
   });
   // The original turn and its admission must commit before any external dial. Replays
   // can resume this step if the process stopped between the commit and the HTTP response.
+  if (result.pendingId !== null && result.pendingId === moneyPendingId(ctx, result.stamp)) return finishTypedMoney(ctx, result, moneyArgs);
   return result.pendingId !== null && result.pendingId === phoneId(ctx, result.stamp) ? finishTypedPhoneCall(ctx, result) : result;
 }
 

@@ -38,6 +38,21 @@ For local development, use `apps/web/.env.local`. App Hosting reads the same fiv
 
 In the OpenAI project, subscribe a webhook to `realtime.call.incoming` at `https://<your-public-host>/api/phone/openai`. Local testing needs a public HTTPS tunnel to the running app. Twilio receives the SIP address in each call's TwiML. On a Twilio trial account, verify the destination as well. [OpenAI SIP setup](https://developers.openai.com/api/docs/guides/voice-sip?voice-api=realtime) · [Twilio outbound calls](https://www.twilio.com/docs/voice/api/call-resource)
 
+## A connected bank (read-only)
+
+The owner connects a bank through Plaid Link, Plaid's own window, so Franki never sees a bank password. The server asks Plaid for the `transactions` product only and reaches five Plaid endpoints, none of which can move money: `/link/token/create`, `/item/public_token/exchange`, `/accounts/get`, `/transactions/sync` and `/item/remove`. The routes are under `/api/bank/` (`link-token`, `connect`, `status`, `sync`, `disconnect`). The access token is sealed with AES-256-GCM before it is stored, and it never appears in a route answer, a ledger row or a log line.
+
+| Variable | Kind | Value |
+| --- | --- | --- |
+| `PLAID_CLIENT_ID` | Secret | The Plaid client ID from the Plaid dashboard |
+| `PLAID_SECRET` | Secret | The Plaid secret for the environment named in `PLAID_ENV` |
+| `PLAID_ENV` | Plain value | `production` or `sandbox`; anything else is refused |
+| `FRANKI_BANK_TOKEN_KEY` | Secret | 32 random bytes in standard base64 (44 characters), for example from `openssl rand -base64 32`. Changing it makes every stored bank token unreadable, so each bank must be connected again |
+
+`apps/web/apphosting.yaml` sets `PLAID_ENV` to `production`. Because `npm run dev` copies plain values from that file into `apps/web/.env.development.local`, local development also uses `production` unless you change it there. A missing or malformed setting makes every bank route answer `CONFIG`.
+
+Known gaps: there is no Plaid webhook; banks are read on connect, when the screen asks, and before a money read when the last read is over an hour old. No real Plaid call has been tested.
+
 ## Deploy
 
 Set each runtime secret listed in `apps/web/apphosting.yaml` in Secret Manager and grant the `franki-web` backend access. For example:

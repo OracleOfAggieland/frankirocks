@@ -4,6 +4,7 @@
 import type { Proactive } from "@franki/core";
 import type { ApiClient } from "../client/api";
 import type { BrowserClock } from "../client/clock";
+import { BankWatch } from "../client/bank-watch";
 import { CallCardShelf } from "../client/call-cards";
 import { CompanyTap } from "../client/company-tap";
 import { DebugPanelModel } from "../client/debug-panel";
@@ -57,6 +58,8 @@ export interface SignedInControllers {
   callCards: CallCardShelf;
   /** Brief 044, item 3: the company toggle's tap, and the audience the server last confirmed. */
   company: CompanyTap;
+  /** Brief 046 part B: the bank sheet and its /api/bank/* calls. Sends nothing until the sheet is opened. */
+  bank: BankWatch;
 }
 
 /**
@@ -180,7 +183,10 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     // Brief 044, item 1: cards from a Session or generation the call has left go.
     voice.subscribe(() => callCards.onVoice(voice.getSnapshot()));
   }
+  // Brief 046 part B. A start over keeps a connected bank (ruling 9), so the visit's reset leaves this alone.
+  const bank = new BankWatch({ api, now: () => clock.mono(), newId: () => randomId() });
   return {
+    bank,
     typed,
     debug: deps.debug ? new DebugPanelModel({ api, clock }) : null,
     voice,

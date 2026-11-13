@@ -39,3 +39,7 @@ export * from "./time/tick";
 export * from "./time/said";
 export * from "./time/proactive";
 export * from "./time/reminder";
+
+// Brief 046: the bank connection (read-only). The five routes, and the pull and gate for the money read (part C).
+export { bankConnectRoute, bankDisconnectRoute, bankLinkTokenRoute, bankStatusRoute, bankSyncRoute, readableBankIds } from "./bank/routes";
+export { STALE_AFTER_MS as BANK_STALE_AFTER_MS, pullIfStale } from "./bank/pull";

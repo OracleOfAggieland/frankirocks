@@ -5,6 +5,8 @@
 export interface ResponsesResult {
   /** True only for a complete, argument-free phone tool call. */
   phoneCallRequested?: boolean;
+  /** Brief 046 part C: the arguments of a complete `read_money` call, as the model wrote them (unparsed). */
+  moneyCallArguments?: string;
   status: "completed" | "incomplete" | "failed";
   /** The concatenated output text, or null when there is none. */
   outputText: string | null;

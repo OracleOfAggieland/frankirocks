@@ -4,6 +4,7 @@
 // `use cache`, `next/og`, ISR or /api/ call.
 import type { Metadata } from "next";
 import { AvatarSection } from "./_sections/AvatarSection";
+import { BankSection } from "./_sections/BankSection";
 import { CallScreenSection } from "./_sections/CallScreenSection";
 import { CardExtrasSection } from "./_sections/CardExtrasSection";
 import { ControlsSection } from "./_sections/ControlsSection";
@@ -30,6 +31,7 @@ export default function SpecimensPage() {
       <MemoryScreenSection />
       <VisitSection />
       <PhoneSection />
+      <BankSection />
       <MaterialsSection />
       <SurfaceSections />
       <CardExtrasSection />

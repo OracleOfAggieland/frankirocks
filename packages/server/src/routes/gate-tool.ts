@@ -45,6 +45,8 @@ import { writeGateDecision } from "../ledger/said";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import type { RouteContext } from "./runtime";
+// Brief 046 part C.
+import { gateMoneyResult } from "../bank/money-gate";
 
 /**
  * Ruling needed: the Gate silences every recall that isn't asked, S0 included, and asks need a certain speaker (a
@@ -186,7 +188,9 @@ export async function gateToolOutput(
   x: { session: Session; turn: Turn; stamp: { sessionId: string; turnId: string }; core: { state: { data: CoreDocs["state"] }; epoch: { data: CoreDocs["epoch"] } }; purpose: string | null },
   output: Result,
 ): Promise<Result> {
-  if (output.name !== "recall" || x.purpose === null || x.purpose === "inspect" || output.notes.length === 0) return output;
+  // Brief 046 part C: a money read's notes go to the Gate as the owner's own S1 bank rows (bank/money-gate.ts).
+  const moneyAsked = output.name === "read_money";
+  if (!moneyAsked && (output.name !== "recall" || x.purpose === null || x.purpose === "inspect" || output.notes.length === 0)) return output;
   const pair = ownerClock(x.core.state.data, ctx.deps.clock);
   const input: ToolGateInput = {
     session: x.session,
@@ -199,5 +203,7 @@ export async function gateToolOutput(
     epoch: x.core.epoch.data.epoch,
     policyRev: x.core.epoch.data.policyRev,
   };
+  if (output.name === "read_money") return gateMoneyResult(tx, ctx, input, output);
+  if (output.name !== "recall") return output;
   return { ...output, notes: await gateRecallNotes(tx, ctx, input, output.notes) };
 }

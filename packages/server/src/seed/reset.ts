@@ -18,6 +18,7 @@
  * clear leaves nothing of an earlier visit in the same tenant.
  */
 import { type CoreDocs, type ID, type Infer, type ResetRequest, type SeedResetResponse, type Session, msFromTs, tsFromMs } from "@franki/core";
+import { resetBankCursors } from "../bank/connector";
 import { readCoreDocs } from "../core-docs";
 import { type RequestKey, completeRequest } from "../ledger/request";
 import { barrierError, configError, dependencyError, scopeError, staleError } from "../routes/errors";
@@ -158,6 +159,8 @@ export async function resetVisit(ctx: RouteContext, req: ResetReq, key: RequestK
       prior: { epoch: core.epoch.data, state: core.state.data, counters: core.counters.data, rules: core.rules.data, bundle: core.bundle.data },
     });
     for (const id of ["epoch", "state", "counters", "rules", "bundle"] as const) tx.update(paths.core(uid, id), { ...docs[id], updatedAt: tsFromMs(deps.clock.read().opsClock.now) });
+    // Brief 046 ruling 9: a connected bank stays; its rows were cleared, so the next pull imports again.
+    await resetBankCursors(tx, uid, deps.clock.read().opsClock.now);
     await completeRequest(tx, key, res, deps.clock.read().opsClock.now);
   });
   deps.log("seed.reset", { rows: rows.groups.reduce((n, g) => n + g.writes.length, 0) });
