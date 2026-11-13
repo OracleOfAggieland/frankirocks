@@ -2,6 +2,13 @@
   "name": "@franki/server",
   "version": "0.0.0",
   "private": true,
+  "description": "Franki's server logic behind the web app's route handlers: store, admission, tools and connectors.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OracleOfAggieland/frankirocks.git",
+    "directory": "packages/server"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

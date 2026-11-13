@@ -2,6 +2,13 @@
   "name": "@franki/core",
   "version": "0.0.0",
   "private": true,
+  "description": "Franki's pure core: schemas, the memory model, the gate and the clock port. No I/O.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OracleOfAggieland/frankirocks.git",
+    "directory": "packages/core"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
