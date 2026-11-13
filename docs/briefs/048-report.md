@@ -7,7 +7,7 @@ Built by Claude Code from briefs 016 and 048, on branch `lane/forget-b`. No comm
 | Stage | State |
 |---|---|
 | 1. Design note (`048-design.md`) | done |
-| 2. Rulings 1, 2, 16, 17 and the new No Resurrection property | not started |
+| 2. Rulings 1, 2, 16, 17 and the new No Resurrection property | done |
 | 3. Admission, the turn route, the fence, the hang-up, the driver, the tick | not started |
 | 4. The acknowledgment, the voice machine, beat 5 | not started |
 | 5. The release-gate scripts | not started |
@@ -42,3 +42,22 @@ replies: Oh, bibimbap! Tell me more about Danny.
 ```
 
 In plain words: the owner said "Danny loves bibimbap.", Franki answered "Oh, bibimbap! Tell me more about Danny.", and the owner asked to forget it; closure restamped Franki's reply Evidence to the new epoch (`rev 2`, `epoch 2`) as an unrelated survivor, so once the barrier cleared `eligible` let Franki's own sentence, with the forgotten food in it, through to speech.
+
+### A second counterexample, from the same property after the stage 2 fix
+
+With rulings 1, 2, 16 and 17 in place, a 1,000-run pass of the same property found a forget that never finishes. Not a leak: a job that waits at `resume` forever.
+
+- Seed: `1495687112`
+- Path: `3:1:1:1:1:1:1:1:1:1:1:1:1:1:1:2:6:5:4:2:11:2:4:2:2:2:3:3:4:4:4:4:4:4:3:3:3:3:3:4:3:9:9`
+- Counterexample: two turns ("Danny loves ceviche.", "Danny loves risotto."), a Memory on each, the first forget aimed at memory 0, and a second forget (`forget2`) at step 9.
+- Seen: the first job sat in `retry` at `resume` with the wait reason `closure`.
+
+In plain words: the second forget's request turn was written after the first forget's closure had finished, below the barrier's epoch, so the first forget's resume re-planned closure, found that row "not yet restamped", and waited for a restamp nothing would ever write. The fix (`queuedEids` in `ClosureInput`): closure leaves the request Evidence of every forget queued behind the barrier to that forget, neither blocking nor restamping it. It fails closed: that row is never lifted to the cleared epoch before its own forget runs. The world now passes, and the property passes at its default 300 runs.
+
+## Stage 2: what changed
+
+- Ruling 1 (`withheldSpeech` in `packages/core/src/forget/closure.ts`): Franki's own replies said after the forgotten Evidence and before the fence are withheld. Their Evidence goes `blocked` in closure order 1, and purge empties their text (`packages/core/src/forget/purge.ts`). A Fixed_Line is never withheld. A delivered moment of a forgotten Memory loses its rendered words.
+- Ruling 2 (`turnEvidenceUsable` in `packages/server/src/turns.ts`): a dead turn, or a turn whose Evidence is not retained, is never a safe turn.
+- Ruling 16: a restamp moves the epoch only; a survivor dirty for another reason stays dirty.
+- Ruling 17 (`purgedArgs`): a purged Memory's string arguments and its hypothesis alternatives are emptied as far as the Memory schema allows. The store's immutability check accepts exactly that change (`packages/server/src/store/checks.ts`).
+- Purge reads every Session's turns, not only the request's (`packages/server/src/forget/executor.ts`), so a withheld reply in another Session is emptied too.

@@ -151,9 +151,16 @@ export function userTurnRecords(init: UserTurnInit): { turn: Turn; evidence: { e
   return { turn, evidence };
 }
 
+/**
+ * Brief 048 ruling 2 (answers F-200): a reader never trusts a Turn's own text. A Turn whose Evidence is not retained
+ * (a forget blocked or purged it) or that died at a fence gives nothing, whatever `Turn.text` still holds.
+ */
+export const turnEvidenceUsable = (turn: Turn, evidence: Evidence): boolean => turn.state !== "dead" && evidence.status === "retained";
+
 /** A SafeTurn from a committed Turn and its Evidence, or null when its Sensitivity keeps it off the wire. */
 export function safeTurn(turnId: ID, turn: Turn, evidence: Evidence, eid: ID, hasher: Hasher): SafeTurn | null {
   const slice = evidence.fieldSlices[0];
+  if (!turnEvidenceUsable(turn, evidence)) return null;
   if (turn.text === null || slice === undefined || slice.sens === "S2") return null;
   // Brief 045, finding 1 (V-193): third-party text never reaches the model, so a T Turn is never in a Deck's `turns`.
   if (turn.sourceClass === "T") return null;
