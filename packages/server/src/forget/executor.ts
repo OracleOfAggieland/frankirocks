@@ -18,15 +18,18 @@ import {
   type Block,
   CARRY_TURNS_MAX,
   type ClosureWrite,
+  type ClockPair,
   type CoreBundle,
   type CoreEpoch,
   type CoreRules,
+  type CoreState,
   type Effect,
   type Evidence,
   FORGET_PAGE_DOCS,
   type ForgetAck,
   type ForgetPhase,
   type Hasher,
+  type Head,
   type ID,
   type InstallWrite,
   type Job,
@@ -48,6 +51,7 @@ import {
   forgetAck,
   forgetPhaseRuns,
   installPages,
+  livePair,
   maxSens,
   msFromTs,
   nextForgetPhase,
@@ -62,12 +66,16 @@ import {
   resumeDecision,
   targetRefs,
   tsFromMs,
+  utf8,
   walkDerivatives,
   withForgetJobDefaults,
 } from "@franki/core";
+import { ownerClock } from "../core-docs";
+import { buildHead } from "../head-build";
 import { cFields } from "../records";
+import { DECK_TTL_MS } from "../sessions";
 import { paths } from "../store/paths";
-import type { StorePort, StoredDoc, Tx } from "../store/port";
+import { type StorePort, type StoredDoc, type Tx, readSnapshot } from "../store/port";
 import { claimJob, forgetJob } from "../worker/jobs";
 import { type CallClosePort, NO_CALL_CLOSE } from "./close-port";
 import { forgetJobId, forgetReceiptId } from "./fence";
@@ -723,14 +731,62 @@ async function resumeData(deps: ForgetDeps, uid: string, job: Job): Promise<{ ac
   return { ack, carryTurnIds: carry.slice(-CARRY_TURNS_MAX), noneCleared };
 }
 
+type Compiled = { head: Head; rulesRev: number } | null;
+
+/**
+ * The Head a fresh call would get once this op's barrier clears (spec §8 step 7: the bundle compiled again from
+ * eligible rows only), compiled by the existing `buildHead` against the cleared epoch. Null when it cannot be: the
+ * barrier is not this op's, a fixture clock has no world time, or the fixed sections are over the cap. A null
+ * leaves the bundle burned, and the next open compiles it (fails closed).
+ */
+async function compileCleared(deps: ForgetDeps, uid: string, epoch: CoreEpoch, opId: ID, opsNow: number): Promise<Compiled> {
+  const r = releaseBarrier(epoch, opId, tsFromMs(opsNow));
+  if (r.kind !== "cleared") return null;
+  const state = (await deps.store.get<CoreState>(uid, paths.core(uid, "state")))?.data;
+  const rules = (await deps.store.get<CoreRules>(uid, paths.core(uid, "rules")))?.data;
+  if (state === undefined || rules === undefined) return null;
+  let pair: ClockPair;
+  try {
+    pair = ownerClock(state, { read: () => livePair(opsNow, state.currentZone) });
+  } catch {
+    return null;
+  }
+  const out = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: r.epoch, rules }, pair, 1));
+  return out.ok ? { head: out.head, rulesRev: rules.rulesRev } : null;
+}
+
+async function writeBundle(tx: Tx, uid: string, compiled: Compiled, epoch: CoreEpoch, opsNow: number, hasher: Hasher): Promise<void> {
+  if (compiled === null) return;
+  const doc = await tx.get<CoreBundle>(paths.core(uid, "bundle"));
+  const rules = await tx.get<CoreRules>(paths.core(uid, "rules"));
+  // Rules that moved since the compile would make the Head stale: leave the bundle burned for the next open.
+  if (doc === null || rules === null || rules.data.rulesRev !== compiled.rulesRev || doc.data.state === "blocked") return;
+  const now = tsFromMs(opsNow);
+  const head = compiled.head;
+  tx.update(doc.path, {
+    ...doc.data,
+    epoch: epoch.epoch,
+    policyRev: epoch.policyRev,
+    state: bundleAfter(doc.data.state, "compiled"),
+    bundleRev: doc.data.bundleRev + 1,
+    rulesRev: compiled.rulesRev,
+    head,
+    headHash: hasher.sha256(utf8(head.text)),
+    selectedRefs: head.selectedRefs,
+    compiledAt: now,
+    expiresAt: tsFromMs(opsNow + DECK_TTL_MS),
+    updatedAt: now,
+  });
+}
+
 type ResumeOutcome = { job: Job; wait: "calls" | "closure" | null };
 
 /**
  * Resume (spec §8 step 7; ruling 6). It clears the barrier only when it is this op's, every call is confirmed
  * closed, closure has nothing left to write and the survivors are restamped, and the queue is empty; with a queued
  * op it promotes that op instead, and the barrier stays up. Otherwise it waits (`retry`): there is no timeout path.
- * After a hand-over at closure (`handedTo`), only the store half runs. The bundle stays burned: the next open
- * compiles it from the cleared epoch.
+ * After a hand-over at closure (`handedTo`), only the store half runs. On a clear it writes the bundle compiled
+ * at the cleared epoch (`compileCleared`).
  */
 async function runResume(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, job: Job, opsNow: number): Promise<ResumeOutcome | "limit"> {
   const now = tsFromMs(opsNow);
@@ -755,6 +811,7 @@ async function runResume(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease,
   if (epochNow === undefined) throw new BarrierGone();
   const settled = await closureSettled(deps, uid, job, { epoch: epochNow.epoch, policyRev: epochNow.policyRev }, now);
   if (settled === "limit") return "limit";
+  const compiled = await compileCleared(deps, uid, epochNow, f.opId, opsNow);
   let wait: ResumeOutcome["wait"] = null;
   const next = await commitStep(deps.store, uid, jobId, lease, async (tx, j, epoch) => {
     if (epoch.data.epoch !== epochNow.epoch) throw new RowMoved();
@@ -776,6 +833,7 @@ async function runResume(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease,
     const r = releaseBarrier(epoch.data, f.opId, now);
     if (r.kind !== "cleared") throw new BarrierGone();
     tx.update(epoch.path, r.epoch);
+    await writeBundle(tx, uid, compiled, r.epoch, opsNow, deps.hasher);
     return storeHalf(tx, j, { closeCalls: calls });
   });
   return { job: next, wait };

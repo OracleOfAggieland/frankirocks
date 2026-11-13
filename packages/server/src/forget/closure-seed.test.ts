@@ -1,6 +1,6 @@
 // Brief 047, ruling 1: closure restamps every surviving row in pages before resume. This forgets one Memory of the
 // seeded persona (brief 019) and reports how many closure pages and writes that took. Test-only; no model is called.
-import { type CoreEpoch, type Job, type Ledger, type Memory, tsFromMs } from "@franki/core";
+import { type CoreBundle, type CoreEpoch, type Job, type Ledger, type Memory, tsFromMs } from "@franki/core";
 import { sampleSession, testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { paths } from "../store/paths";
@@ -57,6 +57,10 @@ describe("closure on the seeded persona (ruling 1)", () => {
     const job = (await store.get<Job>(UID, paths.job(UID, fenced.jobId)))!.data;
     expect(job.payload.kind === "forget" && job.payload.phase).toBe("done");
     expect((await store.get<CoreEpoch>(UID, paths.core(UID, "epoch")))!.data.barrier).toBeNull();
+    // Resume compiled the bundle again from eligible rows; the target is not in it.
+    const bundle = (await store.get<CoreBundle>(UID, paths.core(UID, "bundle")))!.data;
+    expect(bundle.head).not.toBeNull();
+    expect(bundle.selectedRefs.some((r) => r.id === target.id)).toBe(false);
 
     const closureWrites = Object.fromEntries(Object.entries(afterClosure ?? {}).map(([c, n]) => [c, n - (atClosure?.[c] ?? 0)]).filter(([, n]) => (n as number) > 0));
     // Closure runs one empty step after its last page (the step that moves to resume).
