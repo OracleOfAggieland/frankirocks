@@ -33,6 +33,18 @@ In plain words: the owner said "Danny loves gumbo." and asked to forget it; once
 
 A smoke copy of the same property (not committed) that counted hits instead of failing, 300 runs against the scaffold, found resurrection through two readers only: `earlierSafeTurns` (turn text) and `peopleRoster` (entity IDs of Memories that were never withdrawn). Every reader that goes through `eligible` showed nothing, because the epoch fence hides every row stored before the forget; the same runs fail the survivors clause, since nothing is restamped.
 
+### The other five properties
+
+Each is a new file under `packages/server/src/forget/`, driven through the executor on the same generated worlds (`forget/testing/world.ts`), and first run against the same scaffold (`36b0d11`), 150 runs each.
+
+| Property | File | First run | Seed and path | Shrunk counterexample, and what failed |
+|---|---|---|---|---|
+| The barrier clears only when it may | `barrier-clears.property.test.ts` | red | `1162036081`, `0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0` | One turn "Danny loves jambalaya.", one Memory on it, the target; no close answers scripted (all `closed`), no second forget. Once the barrier was down, the turn's Evidence was still at epoch 1 under epoch 2: the barrier cleared with a survivor not restamped. |
+| Purge only removes | `purge-removes.property.test.ts` | red | `1381910281`, `0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0` | One turn "Danny loves jambalaya.", one Memory, the target. At `done`, `cleanupCompleteAt` was still null. |
+| Restraint survives closure | `restraint-closure.property.test.ts` | red | `-797424518`, `2:0:0:0:0:0:0:0:0:0:1:1:1:1:1:1:3:2:2:2:2:2:5:2:2:2:2:2:2:6:5:6:2:3:2:3:3:3:3` | One turn "Danny loves ceviche."; two Memories on it ("Danny likes ceviche at the orchard", "... at the vineyard"); an exclude premised on the first; the second is the target. The first withdrew by packet membership, and its exclude was still `active`, with no `withdrawnHold`. |
+| Closure can be re-run | `closure-rerun.property.test.ts` | green | none | Green on its first run: against a closure that writes nothing, a lost step has nothing to change. It pins the re-run once closure writes. |
+| A hard rule outlives closure and purge | `rule-outlives-closure.property.test.ts` | green | none | Green on its first run: install already re-anchors the rule (FP1), and the scaffold's closure and purge touch nothing. It pins that through `done` once they do. |
+
 ## Built, by piece
 
 In progress.
