@@ -51,7 +51,9 @@ export async function fenceForget(store: StorePort, uid: string, input: FenceInp
     const epochDoc = await tx.get<CoreEpoch>(paths.core(uid, "epoch"));
     if (epochDoc === null) throw new Error("fenceForget: core/epoch is missing");
     const prior = await tx.get<Job>(paths.job(uid, jobId));
-    const plan = planFence(epochDoc.data, { opId, requestRef: null, requestTurnIds: input.requestTurnIds }, now, prior === null ? null : { epoch: prior.data.epoch, policyRev: prior.data.policyRev });
+    // A queued op keeps its Session in `requestRef`, so the job promotion writes for it can read its request (brief 047).
+    const requestRef = { type: "session" as const, id: input.sessionId, rev: 0 };
+    const plan = planFence(epochDoc.data, { opId, requestRef, requestTurnIds: input.requestTurnIds }, now, prior === null ? null : { epoch: prior.data.epoch, policyRev: prior.data.policyRev });
     if (plan.kind === "refused") return plan;
     const ids = { opId, jobId, receiptId, epoch: plan.captured.epoch, policyRev: plan.captured.policyRev };
     if (plan.kind === "retry") return { kind: "retry", ...ids };

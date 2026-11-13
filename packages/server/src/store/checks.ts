@@ -23,6 +23,7 @@ import {
   Turn,
   canonicalJSON,
   evidenceFieldText,
+  purgedValue,
   rootKey,
   sliceHashMatches,
   validate,
@@ -81,11 +82,25 @@ export function checkRecord(uid: string, p: ParsedPath, record: Record<string, u
 
 const same = (a: unknown, b: unknown) => canonicalJSON(a) === canonicalJSON(b);
 
+/**
+ * Forget's purge (spec §8 step 8, brief 047 ruling 9) is the one in-place change: it only removes. Evidence content
+ * may go to null (`recipient` to empty, `observation` to none) when the next status is `purged`; `fieldSlices` keep
+ * their hashes and never change. A Memory's value may go to its content-free form while it is blocked, retracted
+ * or wrong.
+ */
+export const PURGED_MEMORY_STATUS: ReadonlySet<string> = new Set(["blocked", "retracted", "wrong"]);
+function purgeRemoves(field: (typeof EVIDENCE_CONTENT_FIELDS)[number], next: Record<string, unknown>): boolean {
+  if (next.status !== "purged" || field === "fieldSlices") return false;
+  if (field === "recipient") return Array.isArray(next.recipient) && next.recipient.length === 0;
+  if (field === "observation") return same(next.observation, { kind: "none" });
+  return next[field] === null;
+}
+
 /** KC02: Evidence content and Memory value/args never change in place (R4.12, R4.13, R20.6). */
 export function checkImmutable(p: ParsedPath, prior: Record<string, unknown>, next: Record<string, unknown>): void {
   if (p.collection === "evidence") {
     for (const field of EVIDENCE_CONTENT_FIELDS) {
-      if (!same(prior[field], next[field])) {
+      if (!same(prior[field], next[field]) && !purgeRemoves(field, next)) {
         throw new StoreError("invalidInput", `Evidence is immutable: ${field} changed in place; write a new revision`, p.path);
       }
     }
@@ -95,6 +110,9 @@ export function checkImmutable(p: ParsedPath, prior: Record<string, unknown>, ne
   }
   if (p.collection === "memories") {
     for (const field of ["value", "args", "predicate", "subjectId", "scopeId", "key"] as const) {
+      if (field === "value" && PURGED_MEMORY_STATUS.has(next.status as string) && same(next.value, purgedValue(prior.value as MemoryT["value"]))) {
+        continue;
+      }
       if (!same(prior[field], next[field])) {
         throw new StoreError("invalidInput", `Memory ${field} is immutable; write a new Memory`, p.path);
       }
@@ -125,6 +143,8 @@ export async function lineageFailures(
       failures.push(`missingEvidence[${i}]`);
       continue;
     }
+    // Purge removed the text the slice hashed; a content-free Memory on it stays writable (its state may still move).
+    if (evidence.status === "purged" && PURGED_MEMORY_STATUS.has(m.status)) continue;
     const text = evidenceFieldText(evidence, slice.fieldPath);
     if (text === null || !sliceHashMatches(slice, text, hasher)) failures.push(`sliceHashMismatch[${i}]`);
   }

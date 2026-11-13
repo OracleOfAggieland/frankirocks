@@ -161,6 +161,11 @@ export function forgetJob(init: ForgetJobInit): Job {
       cursor: { collection: "memories", lastId: null },
       closeCalls: [],
       trustedRuleDeletes: [],
+      // Brief 047.
+      handedTo: null,
+      ack: null,
+      carryTurnIds: [],
+      requestEids: [],
     },
     resultRefs: [],
     error: null,
