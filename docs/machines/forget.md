@@ -10,7 +10,7 @@ Forget, part one (brief 021; design note `docs/briefs/021-design.md`) built the 
 | File | `packages/core/src/forget/forget-phase.ts` |
 | Decides | `nextForgetPhase`, `forgetPhaseRuns` (part one's `forgetPhaseBuilt` is kept for its committed test only) |
 | State | `ForgetPhase` in `packages/core/src/forget/forget-phase.ts` |
-| Tests | `packages/core/src/forget/forget-phase.transitions.test.ts`, `packages/core/src/forget/forget-runs.transitions.test.ts`, `packages/server/src/forget/executor.test.ts`, the six properties in `packages/server/src/forget/*.property.test.ts` |
+| Tests | `packages/core/src/forget/forget-phase.transitions.test.ts`, `packages/core/src/forget/forget-runs.transitions.test.ts`, `packages/server/src/forget/executor.test.ts`, `packages/server/src/forget/no-resurrection.property.test.ts`, `packages/server/src/forget/closure-rerun.property.test.ts`, `packages/server/src/forget/barrier-clears.property.test.ts`, `packages/server/src/forget/purge-removes.property.test.ts`, `packages/server/src/forget/rule-outlives-closure.property.test.ts`, `packages/server/src/forget/restraint-closure.property.test.ts` |
 
 A forget job's `payload.phase` moves in the spec's order: `fence`, `close`, `resolve`, `install`, `closure`, `resume`, `purge`, `done`. File-private tables typed `Record<ForgetPhase, ...>` answer what comes next (`nextForgetPhase`) and whether the executor runs a phase (`forgetPhaseRuns`: `close` through `purge`). `done` is the only phase that maps to itself.
 
