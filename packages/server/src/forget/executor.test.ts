@@ -92,8 +92,8 @@ describe("advanceForget (spec §8 steps 3 to 5; brief 021)", () => {
     const fence = await fenceForget(store, UID, { sessionId: SESSION, requestId: "req-1", requestTurnIds: [T2] }, T0_MS + 6_000, hasher);
     if (fence.kind === "refused") throw new Error("refused");
     const resolver = fakeForgetResolve(() => exact([dannyId]));
-    const r = await advanceForget({ store, hasher, resolver }, UID, fence.jobId, T0_MS + 7_000);
-    expect(r).toEqual({ kind: "stopped", phase: "closure" });
+    const r = await advanceForget({ store, hasher, resolver }, UID, fence.jobId, T0_MS + 7_000, { until: "closure" });
+    expect(r).toEqual({ kind: "paused", phase: "closure" });
 
     // The request text is the request; it is never a committed turn the model reads.
     expect(resolver.calls).toHaveLength(1);
@@ -101,7 +101,7 @@ describe("advanceForget (spec §8 steps 3 to 5; brief 021)", () => {
     expect(resolver.calls[0]!.committed.map((t) => t.text)).toEqual([TEXT]);
 
     const job = await get<Job>(paths.job(UID, fence.jobId));
-    expect(job.status).toBe("blocked");
+    expect(job.status).toBe("queued");
     expect(job.payload).toMatchObject({ phase: "closure", scopePending: false, closeCalls: [{ sessionId: SESSION, state: "pending" }] });
     expect((await get<Memory>(paths.memory(UID, dannyId))).status).toBe("blocked");
     expect((await get<Evidence>(paths.evidence(UID, turn.eid))).status).toBe("blocked");
@@ -119,8 +119,8 @@ describe("advanceForget (spec §8 steps 3 to 5; brief 021)", () => {
     expect(receipt.state).toBe("pending");
     expect(receipt.payload).toMatchObject({ blockedAt: null, cleanupCompleteAt: null, retainedRuleIds: [RULE], scopePending: false, withdrawnCount: 0 });
 
-    // A blocked job is never leased again.
-    expect(await advanceForget({ store, hasher, resolver }, UID, fence.jobId, T0_MS + 60_000)).toEqual({ kind: "notClaimed" });
+    // Handed back before closure, the job is leased again and runs on from there (brief 047).
+    expect(await advanceForget({ store, hasher, resolver }, UID, fence.jobId, T0_MS + 60_000, { until: "resume" })).toEqual({ kind: "paused", phase: "resume" });
   });
 
   it("an ambiguous answer holds the candidates for review and removes nothing", async () => {
@@ -128,7 +128,7 @@ describe("advanceForget (spec §8 steps 3 to 5; brief 021)", () => {
     const fence = await fenceForget(store, UID, { sessionId: SESSION, requestId: "req-1", requestTurnIds: [T2] }, T0_MS + 6_000, hasher);
     if (fence.kind === "refused") throw new Error("refused");
     const resolver = fakeForgetResolve(() => ({ ...exact([dannyId]), resolution: "ambiguous" }));
-    expect(await advanceForget({ store, hasher, resolver }, UID, fence.jobId, T0_MS + 7_000)).toEqual({ kind: "stopped", phase: "closure" });
+    expect(await advanceForget({ store, hasher, resolver }, UID, fence.jobId, T0_MS + 7_000, { until: "closure" })).toEqual({ kind: "paused", phase: "closure" });
     const job = await get<Job>(paths.job(UID, fence.jobId));
     expect(job.payload).toMatchObject({ scopePending: true, phase: "closure" });
     expect((await get<Memory>(paths.memory(UID, dannyId))).status).toBe("active");
@@ -146,10 +146,10 @@ describe("advanceForget (spec §8 steps 3 to 5; brief 021)", () => {
       if (fail) throw new Error("port down");
       return exact([dannyId]);
     });
-    expect(await advanceForget({ store, hasher, resolver }, UID, fence.jobId, T0_MS + 7_000)).toEqual({ kind: "retry", phase: "resolve" });
+    expect(await advanceForget({ store, hasher, resolver }, UID, fence.jobId, T0_MS + 7_000, { until: "closure" })).toEqual({ kind: "retry", phase: "resolve" });
     expect(await get<Job>(paths.job(UID, fence.jobId))).toMatchObject({ status: "retry", attempts: 1, payload: { phase: "resolve" } });
     fail = false;
-    expect(await advanceForget({ store, hasher, resolver }, UID, fence.jobId, T0_MS + 7_000 + FORGET_RETRY_MS)).toEqual({ kind: "stopped", phase: "closure" });
+    expect(await advanceForget({ store, hasher, resolver }, UID, fence.jobId, T0_MS + 7_000 + FORGET_RETRY_MS, { until: "closure" })).toEqual({ kind: "paused", phase: "closure" });
     expect((await get<Memory>(paths.memory(UID, dannyId))).status).toBe("blocked");
   });
 });

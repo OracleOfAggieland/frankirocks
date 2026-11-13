@@ -35,6 +35,27 @@ const BUILT = {
 /** Where the executor stops, with the job `blocked` (brief 021: "a phase that is not complete"). */
 export const FORGET_STOP_PHASE: ForgetPhase = "closure";
 
+/**
+ * The phases the executor runs since brief 047: every phase but `fence` (written by the fence's own transaction) and
+ * `done`. `BUILT` and `FORGET_STOP_PHASE` above record part one's table and are kept only for its committed
+ * transition test; the executor reads this table.
+ */
+const RUNS = {
+  fence: false,
+  close: true,
+  resolve: true,
+  install: true,
+  closure: true,
+  resume: true,
+  purge: true,
+  done: false,
+} as const satisfies Record<ForgetPhase, boolean>;
+
+/** True when the executor runs phase `p`. */
+export function forgetPhaseRuns(p: ForgetPhase): boolean {
+  return RUNS[p] ?? false;
+}
+
 export function nextForgetPhase(p: ForgetPhase): ForgetPhase {
   return NEXT[p] ?? "done";
 }

@@ -60,7 +60,7 @@ describe("finding 6: resolve finds the request in a long session", () => {
   it("reads the request turn after 150 earlier turns", async () => {
     const { store, hasher, dannyId, get, fence, at } = await setup(150);
     const resolver = fakeForgetResolve(() => exact([dannyId]));
-    expect(await advanceForget({ store, hasher, resolver }, UID, fence.jobId, at)).toEqual({ kind: "stopped", phase: "closure" });
+    expect(await advanceForget({ store, hasher, resolver }, UID, fence.jobId, at, { until: "closure" })).toEqual({ kind: "paused", phase: "closure" });
     expect(resolver.calls[0]!.request.quote).toBe("Forget that Danny relapsed");
     expect((await get<Memory>(paths.memory(UID, dannyId))).status).toBe("blocked");
   });
@@ -94,9 +94,9 @@ describe("finding 7: a hard rule added mid-install is never lost", () => {
       });
     });
     const resolver = fakeForgetResolve(() => exact([dannyId]));
-    let r = await advanceForget({ store: racing, hasher, resolver }, UID, fence.jobId, at);
-    if (r.kind === "retry") r = await advanceForget({ store: racing, hasher, resolver }, UID, fence.jobId, at + FORGET_RETRY_MS);
-    expect(r).toEqual({ kind: "stopped", phase: "closure" });
+    let r = await advanceForget({ store: racing, hasher, resolver }, UID, fence.jobId, at, { until: "closure" });
+    if (r.kind === "retry") r = await advanceForget({ store: racing, hasher, resolver }, UID, fence.jobId, at + FORGET_RETRY_MS, { until: "closure" });
+    expect(r).toEqual({ kind: "paused", phase: "closure" });
     const rules = await get<CoreRules>(rulesPath);
     expect(rules.allergies.map((a) => a.id).sort()).toEqual([NEW, RULE].sort());
     expect(rules.allergies.find((a) => a.id === RULE)!.state).toBe("active");
@@ -131,8 +131,8 @@ describe("finding 8: a retry after the evidence page keeps what it committed", (
         }),
     };
     const resolver = fakeForgetResolve(() => exact([dannyId]));
-    expect(await advanceForget({ store: flaky, hasher, resolver }, UID, fence.jobId, at)).toEqual({ kind: "retry", phase: "install" });
-    expect(await advanceForget({ store: flaky, hasher, resolver }, UID, fence.jobId, at + FORGET_RETRY_MS)).toEqual({ kind: "stopped", phase: "closure" });
+    expect(await advanceForget({ store: flaky, hasher, resolver }, UID, fence.jobId, at, { until: "closure" })).toEqual({ kind: "retry", phase: "install" });
+    expect(await advanceForget({ store: flaky, hasher, resolver }, UID, fence.jobId, at + FORGET_RETRY_MS, { until: "closure" })).toEqual({ kind: "paused", phase: "closure" });
     const job = await get<Job>(paths.job(UID, fence.jobId));
     const staged = (job.payload as { stagedSanitizedEids: string[] }).stagedSanitizedEids;
     expect(staged).toHaveLength(1);

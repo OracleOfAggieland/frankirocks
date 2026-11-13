@@ -19,7 +19,6 @@ import {
   type Effect,
   type Evidence,
   FORGET_PAGE_DOCS,
-  FORGET_STOP_PHASE,
   type ForgetPhase,
   type Hasher,
   type ID,
@@ -36,13 +35,14 @@ import {
   canonicalJSON,
   checkResolve,
   evidenceFieldText,
-  forgetPhaseBuilt,
+  forgetPhaseRuns,
   installPages,
   msFromTs,
   nextForgetPhase,
   planInstall,
   receiptPayload,
   redactOverlayId,
+  releaseBarrier,
   resolveInput,
   targetRefs,
   tsFromMs,
@@ -51,6 +51,7 @@ import { cFields } from "../records";
 import { paths } from "../store/paths";
 import type { StorePort, StoredDoc, Tx } from "../store/port";
 import { claimJob } from "../worker/jobs";
+import { type CallClosePort, NO_CALL_CLOSE } from "./close-port";
 import { forgetReceiptId } from "./fence";
 import type { ForgetResolvePort } from "./resolve-port";
 
@@ -66,14 +67,21 @@ export interface ForgetDeps {
   store: StorePort;
   hasher: Hasher;
   resolver: ForgetResolvePort;
+  /** Hangs up the registered calls (ruling 7). Absent: no call is ever confirmed closed, so nothing completes. */
+  closer?: CallClosePort;
 }
 
 export type AdvanceResult =
   | { kind: "notClaimed" }
-  | { kind: "stopped"; phase: ForgetPhase }
+  /** The job reached `done`. */
+  | { kind: "done" }
+  /** `maxSteps` steps committed; the job is `queued` again at `phase`. */
+  | { kind: "paused"; phase: ForgetPhase }
+  /** Resume may not clear the barrier yet (ruling 6); the job is `retry` at `phase`. */
+  | { kind: "waiting"; phase: ForgetPhase; reason: "calls" | "closure" | "queue" }
   | { kind: "lostLease" }
   | { kind: "retry"; phase: ForgetPhase }
-  | { kind: "blocked"; reason: "notForget" | "barrier" | "limit" };
+  | { kind: "blocked"; reason: "notForget" | "barrier" | "limit" | "phase" };
 
 type ForgetPayload = Extract<Job["payload"], { kind: "forget" }>;
 const forgetOf = (job: Job): ForgetPayload => job.payload as ForgetPayload;
@@ -95,12 +103,15 @@ async function commitStep(
   jobId: ID,
   lease: Lease,
   fn: (tx: Tx, job: Job, epoch: { path: string; data: CoreEpoch }) => Promise<Job>,
+  /** False for a step that may run after the barrier moved on (purge, and resume after a hand-over). */
+  ownBarrier = true,
 ): Promise<Job> {
   return store.transaction(uid, async (tx) => {
     const doc = await tx.get<Job>(paths.job(uid, jobId));
     if (doc === null || doc.data.status !== "leased" || doc.data.leaseToken !== lease.token || doc.data.generation !== lease.generation) throw new LostLease();
     const epoch = await tx.get<CoreEpoch>(paths.core(uid, "epoch"));
-    if (epoch === null || epoch.data.barrier === null || epoch.data.barrier.opId !== forgetOf(doc.data).opId) throw new BarrierGone();
+    if (epoch === null) throw new BarrierGone();
+    if (ownBarrier && (epoch.data.barrier === null || epoch.data.barrier.opId !== forgetOf(doc.data).opId)) throw new BarrierGone();
     const next = await fn(tx, doc.data, epoch);
     tx.update(doc.path, next);
     return next;
@@ -228,8 +239,30 @@ async function readEvidence(store: StorePort, uid: string, eids: Iterable<ID>): 
   return out;
 }
 
+type CloseCall = ForgetPayload["closeCalls"][number];
+
+/** Asks the port to hang up each call not yet confirmed closed; anything but `closed` (a throw included) stays open. */
+export async function askClose(closer: CallClosePort, store: StorePort, uid: string, calls: readonly CloseCall[]): Promise<CloseCall[]> {
+  const out: CloseCall[] = [];
+  for (const c of calls) {
+    if (c.state === "closed") {
+      out.push(c);
+      continue;
+    }
+    const s = await store.get<Session>(uid, paths.session(uid, c.sessionId));
+    const callIds = s === null ? [] : [...new Set([...(s.data.callId === null ? [] : [s.data.callId]), ...s.data.registeredCallIds])];
+    let answer: "closed" | "failed" | undefined;
+    try {
+      answer = await closer.close({ sessionId: c.sessionId, callIds });
+    } catch {
+      answer = undefined;
+    }
+    out.push({ sessionId: c.sessionId, state: answer === "closed" ? "closed" : answer === "failed" ? "failed" : "pending" });
+  }
+  return out;
+}
+
 async function runClose(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, now: string): Promise<Job> {
-  const calls: { sessionId: ID; state: "pending" }[] = [];
   const live = await allPages<Session>(
     deps.store,
     uid,
@@ -237,7 +270,7 @@ async function runClose(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, 
     (s) => (SESSION_STATUSES_WITH_CALLS as readonly string[]).includes(s.status) && (s.callId !== null || s.registeredCallIds.length > 0),
     16,
   );
-  for (const r of live) calls.push({ sessionId: r.id, state: "pending" });
+  const calls = await askClose(deps.closer ?? NO_CALL_CLOSE, deps.store, uid, live.map((r) => ({ sessionId: r.id, state: "pending" as const })));
   return commitStep(deps.store, uid, jobId, lease, async (tx, job, epoch) => {
     barrierAt(tx, epoch, "resolve", now);
     return withPhase(job, nextForgetPhase("close"), now, { closeCalls: calls.slice(0, 16) });
@@ -354,36 +387,66 @@ async function runInstall(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease
   const baseRulesRev = rules.rulesRev;
   const pages = installPages(plan.writes);
   const receiptPath = paths.ledger(uid, forgetReceiptId(f.opId, deps.hasher));
-  // Review 028 finding 8: the stop commits with the last page, so the sanitized eids and the rules' counts come
-  // from the plan whose evidence page committed; the receipt's touched counts add up the writes each page really made,
-  // so a retry that finds earlier pages committed still counts them.
-  let current = job;
-  for (let k = 0; k < Math.max(pages.length, 1); k++) {
-    const page = pages[k] ?? [];
-    const final = k >= pages.length - 1;
-    current = await commitStep(store, uid, jobId, lease, async (tx, j, epoch) => {
-      // Review 028 finding 7: a hard rule written since install read core/rules is never overwritten.
-      const coreWrite = page.find((w) => w.collection === "core");
-      if (coreWrite !== undefined) {
-        const cur = await tx.get<CoreRules>(paths.core(uid, "rules"));
-        if (cur === null || (cur.data.rulesRev !== baseRulesRev && !sameRecord(cur.data as unknown as Record<string, unknown>, coreWrite.doc as unknown as Record<string, unknown>))) throw new RulesMoved();
-      }
-      const receipt = await tx.get<Ledger>(receiptPath);
-      const written = await putAll(tx, uid, page);
-      if (receipt !== null && receipt.data.kind === "forgetReceipt") {
-        const payload = receiptPayload(f.opId, plan, f.scopePending);
-        tx.update(receipt.path, { ...receipt.data, updatedAt: now, payload: { ...payload, touched: addTouched(receipt.data.payload.touched, written) } });
-      }
-      if (!final) {
-        const last = page[page.length - 1]!;
-        return withPhase(j, "install", now, { cursor: { collection: last.collection, lastId: last.collection === "core" ? null : last.id } });
-      }
-      barrierAt(tx, epoch, FORGET_STOP_PHASE, now);
-      const stopped = withPhase(j, nextForgetPhase("install"), now, { blockedKeys: plan.blockedKeys.slice(0, 128), stagedSanitizedEids: plan.sanitizedEids.slice(0, 128) });
-      return { ...stopped, status: "blocked", leaseToken: null, leaseUntil: null };
+  // One page per step (brief 047: install pages interleave with everything else). The cursor names the last write of
+  // the last committed page. Pages before the evidence page do not change when earlier pages commit (a write already
+  // in place is skipped), so the next page is the one after the cursor's; a cursor that names no page starts again
+  // from the first, which writes nothing that is already there.
+  const at = pages.findIndex((p) => {
+    const last = p[p.length - 1]!;
+    return last.collection === f.cursor.collection && (last.collection === "core" ? f.cursor.lastId === null : last.id === f.cursor.lastId);
+  });
+  const k = at < 0 ? 0 : at + 1;
+  const page = pages[k] ?? [];
+  const final = k >= pages.length - 1;
+  // Review 028 finding 8: the sanitized eids and the rules' counts come from the plan whose evidence page committed;
+  // the receipt's touched counts add up the writes each page really made, so a retry still counts earlier pages.
+  return commitStep(store, uid, jobId, lease, async (tx, j, epoch) => {
+    // Review 028 finding 7: a hard rule written since install read core/rules is never overwritten.
+    const coreWrite = page.find((w) => w.collection === "core");
+    if (coreWrite !== undefined) {
+      const cur = await tx.get<CoreRules>(paths.core(uid, "rules"));
+      if (cur === null || (cur.data.rulesRev !== baseRulesRev && !sameRecord(cur.data as unknown as Record<string, unknown>, coreWrite.doc as unknown as Record<string, unknown>))) throw new RulesMoved();
+    }
+    const receipt = await tx.get<Ledger>(receiptPath);
+    const written = await putAll(tx, uid, page);
+    if (receipt !== null && receipt.data.kind === "forgetReceipt") {
+      const payload = receiptPayload(f.opId, plan, f.scopePending);
+      tx.update(receipt.path, { ...receipt.data, updatedAt: now, payload: { ...payload, touched: addTouched(receipt.data.payload.touched, written) } });
+    }
+    if (!final) {
+      const last = page[page.length - 1]!;
+      return withPhase(j, "install", now, { cursor: { collection: last.collection, lastId: last.collection === "core" ? null : last.id } });
+    }
+    barrierAt(tx, epoch, "closure", now);
+    return withPhase(j, nextForgetPhase("install"), now, {
+      blockedKeys: plan.blockedKeys.slice(0, 128),
+      stagedSanitizedEids: plan.sanitizedEids.slice(0, 128),
+      cursor: { collection: "memories", lastId: null },
     });
-  }
-  return current;
+  });
+}
+
+/**
+ * RED-RUN SCAFFOLD (brief 047): closure does nothing, resume releases the barrier, purge does nothing. This is
+ * "install as it stands today, then release", the target the No Resurrection property must first fail against.
+ */
+async function runClosure(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, now: string): Promise<Job> {
+  return commitStep(deps.store, uid, jobId, lease, async (tx, job, epoch) => {
+    barrierAt(tx, epoch, "resume", now);
+    return withPhase(job, nextForgetPhase("closure"), now);
+  });
+}
+
+async function runResume(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, now: string): Promise<Job> {
+  return commitStep(deps.store, uid, jobId, lease, async (tx, job, epoch) => {
+    const r = releaseBarrier(epoch.data, forgetOf(job).opId, now);
+    if (r.kind !== "notOwner") tx.update(epoch.path, r.epoch);
+    return withPhase(job, nextForgetPhase("resume"), now);
+  });
+}
+
+async function runPurge(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, now: string): Promise<Job> {
+  return commitStep(deps.store, uid, jobId, lease, async (_tx, job) => ({ ...withPhase(job, nextForgetPhase("purge"), now), status: "complete", leaseToken: null, leaseUntil: null }), false);
 }
 
 /** Receipt touched rows plus this page's real writes, at most 32 rows (contracts §1). */
@@ -402,10 +465,31 @@ async function settleJob(store: StorePort, uid: string, jobId: ID, lease: Lease,
 }
 
 /**
- * Leases the forget job and runs it to its stop phase, or as far as it gets. Resumable: each phase commits with the
- * job, and a retry starts from the committed phase.
+ * Q18 for a forget job: a lease that expired (its worker died mid-step) goes back to `retry`, so the next claim
+ * re-runs the step whose commit never landed. Returns true when it requeued the job.
  */
-export async function advanceForget(deps: ForgetDeps, uid: string, jobId: ID, opsNow: number): Promise<AdvanceResult> {
+export async function requeueExpiredForget(store: StorePort, uid: string, jobId: ID, opsNow: number): Promise<boolean> {
+  const now = tsFromMs(opsNow);
+  return store.transaction(uid, async (tx) => {
+    const doc = await tx.get<Job>(paths.job(uid, jobId));
+    if (doc === null || doc.data.kind !== "forget" || doc.data.status !== "leased" || doc.data.leaseUntil === null || msFromTs(doc.data.leaseUntil) > opsNow) return false;
+    tx.update(doc.path, { ...doc.data, status: "retry", leaseToken: null, leaseUntil: null, nextAttemptAt: now, updatedAt: now });
+    return true;
+  });
+}
+
+export interface AdvanceOptions {
+  /** Commit at most this many steps (a phase, or one page), then hand the job back `queued`. Unbounded when absent. */
+  maxSteps?: number;
+  /** Hand the job back `queued` on reaching this phase, before running it. */
+  until?: ForgetPhase;
+}
+
+/**
+ * Leases the forget job and runs it to `done`, or as far as it gets. Resumable: each step commits with the job, and
+ * a retry starts from the committed phase and cursor.
+ */
+export async function advanceForget(deps: ForgetDeps, uid: string, jobId: ID, opsNow: number, opts: AdvanceOptions = {}): Promise<AdvanceResult> {
   const claimed = await claimJob(deps.store, uid, jobId, opsNow, deps.hasher, FORGET_LEASE_MS);
   if (claimed === null) return { kind: "notClaimed" };
   const lease = { token: claimed.token, generation: claimed.generation };
@@ -417,23 +501,32 @@ export async function advanceForget(deps: ForgetDeps, uid: string, jobId: ID, op
     return { kind: "blocked", reason: "notForget" };
   }
   let job = claimed.job;
+  let steps = 0;
   try {
     for (;;) {
       const phase = forgetOf(job).phase;
-      if (!forgetPhaseBuilt(phase)) {
-        if (job.status !== "blocked") await block(null);
-        return { kind: "stopped", phase };
+      if (phase === "done") return { kind: "done" };
+      if (!forgetPhaseRuns(phase)) {
+        await block(null);
+        return { kind: "blocked", reason: "phase" };
       }
+      if ((opts.maxSteps !== undefined && steps >= opts.maxSteps) || opts.until === phase) {
+        await settleJob(deps.store, uid, jobId, lease, (j) => ({ ...j, status: "queued", nextAttemptAt: now, leaseToken: null, leaseUntil: null, updatedAt: now }));
+        return { kind: "paused", phase };
+      }
+      steps++;
       if (phase === "close") job = await runClose(deps, uid, jobId, lease, now);
       else if (phase === "resolve") job = await runResolve(deps, uid, jobId, lease, job, now);
-      else {
+      else if (phase === "install") {
         const r = await runInstall(deps, uid, jobId, lease, job, now);
         if (r === "limit") {
           await block("LIMIT");
           return { kind: "blocked", reason: "limit" };
         }
-        return { kind: "stopped", phase: forgetOf(r).phase };
-      }
+        job = r;
+      } else if (phase === "closure") job = await runClosure(deps, uid, jobId, lease, now);
+      else if (phase === "resume") job = await runResume(deps, uid, jobId, lease, now);
+      else job = await runPurge(deps, uid, jobId, lease, now);
     }
   } catch (error) {
     if (error instanceof LostLease) return { kind: "lostLease" };
