@@ -2,6 +2,13 @@
   "name": "@franki/functions",
   "version": "0.0.0",
   "private": true,
+  "description": "Franki's Cloud Functions (2nd gen): scheduled work, today the heartbeat that /api/health reads.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OracleOfAggieland/frankirocks.git",
+    "directory": "functions"
+  },
   "type": "module",
   "main": "dist/index.js",
   "engines": {

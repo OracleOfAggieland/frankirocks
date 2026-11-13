@@ -1,7 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import { Footer } from "../components/Footer";
 import { SpiderCursor } from "../components/cursor/SpiderCursor";
+import { COLOR } from "../ui/motion";
+import { SITE, SITE_OPEN_GRAPH } from "../ui/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,10 +26,26 @@ const fraunces = Fraunces({
   axes: ["SOFT", "WONK", "opsz"],
 });
 
+// The social card (opengraph-image.jpg), the icons (icon.svg, apple-icon.png, favicon.ico) and the manifest are
+// file conventions in this folder; Next adds their tags.
 export const metadata: Metadata = {
-  title: "Franki",
-  description:
-    "A friendly Frankenstein ghost you talk to, with one powerful memory for your whole life.",
+  metadataBase: new URL(SITE.url),
+  title: SITE.name,
+  description: SITE.description,
+  applicationName: SITE.name,
+  authors: [{ name: SITE.author }],
+  creator: SITE.author,
+  openGraph: SITE_OPEN_GRAPH,
+  twitter: { card: "summary_large_image" },
+  appleWebApp: { title: SITE.name, statusBarStyle: "black-translucent" },
+  // Phone numbers, amounts and addresses on screen stay plain text, not links iOS adds on its own.
+  formatDetection: { telephone: false, email: false, address: false },
+};
+
+// The browser chrome and the overscroll take the lab's night colour; the page is dark only.
+export const viewport: Viewport = {
+  themeColor: COLOR["night-0"],
+  colorScheme: "dark",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
