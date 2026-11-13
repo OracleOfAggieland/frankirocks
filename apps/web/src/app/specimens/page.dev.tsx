@@ -14,6 +14,7 @@ import { MemoryScreenSection } from "./_sections/MemoryScreenSection";
 import { MaterialsSection } from "./_sections/MaterialsSection";
 import { MemoryExtrasSection } from "./_sections/MemoryExtrasSection";
 import { PhoneSection } from "./_sections/PhoneSection";
+import { RadioSection } from "./_sections/RadioSection";
 import { SurfaceSections } from "./_sections/SurfaceSections";
 import { ThreeSection } from "./_sections/ThreeSection";
 import { VisitSection } from "./_sections/VisitSection";
@@ -31,6 +32,7 @@ export default function SpecimensPage() {
       <MemoryScreenSection />
       <VisitSection />
       <PhoneSection />
+      <RadioSection full={false} />
       <BankSection />
       <MaterialsSection />
       <SurfaceSections />
