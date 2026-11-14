@@ -212,9 +212,14 @@ function mailArgs(a: unknown): { from: string | null; words: string[]; when: str
   return { from, words: ws as string[], when, unread: x.unread === true };
 }
 
+/**
+ * What the Errand keeps of a message for its card. Review fix T2: for a sender the owner hasn't mailed, nothing the
+ * stranger chose (no display name, no subject); the card names them by address only (review fix T5).
+ */
 function mailSource(h: { sender: MailHit["sender"]; subject: string | null; at: string }, mailed: boolean): ErrandSource {
-  return { kind: "mail", from: h.sender.name, subject: h.subject ?? "", at: h.at, mailedByOwner: mailed };
+  return mailed ? { kind: "mail", from: h.sender.name, subject: h.subject ?? "", at: h.at, mailedByOwner: true } : { kind: "mail", from: "", subject: "", at: h.at, mailedByOwner: false };
 }
+const senderOf = (s: MailHit["sender"], mailed: boolean) => ({ name: mailed ? s.name : "", address: s.address ?? "", mailed });
 
 const searchMailTool: ErrandTool = {
   name: "search_mail",
@@ -254,10 +259,11 @@ const searchMailTool: ErrandTool = {
       const mailed = mailedOf[i]!;
       const row = await rowOf(ctx.route, h.eid);
       if (row === null) continue;
-      const ref = ctx.read({ evidenceId: h.eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: mailed, sender: { name: h.sender.name, address: h.sender.address ?? "", mailed }, source: mailSource(h, mailed) });
+      const ref = ctx.read({ evidenceId: h.eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: mailed, sender: senderOf(h.sender, mailed), source: mailSource(h, mailed) });
       if (ref === null) continue;
       mem.searched.set(ref, h.eid);
-      messages.push(mailed ? { ref, from: h.sender.address, name: h.sender.name, at: h.at, subject: h.subject, unread: h.unread } : { ref, from: h.sender.address, at: h.at, unread: h.unread });
+      // Review fix T2: an unmailed sender's message is a ref, a date and unread, and nothing else.
+      messages.push(mailed ? { ref, from: h.sender.address, name: h.sender.name, at: h.at, subject: h.subject, unread: h.unread } : { ref, at: h.at, unread: h.unread });
     }
     return { messages, partial: r.value.partial };
   },
@@ -296,7 +302,7 @@ const readMailTool: ErrandTool = {
     if (out === null) return failure("The reader's answer did not parse.");
     const mailed = await senderMailed(mem.g, m.value);
     // The gist is the message's text: shown, so the framework's taint follows the row's class.
-    const ref = ctx.read({ evidenceId: eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: true, sender: { name: m.value.sender.name, address: m.value.sender.address ?? "", mailed }, source: mailSource(m.value, mailed) });
+    const ref = ctx.read({ evidenceId: eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: true, sender: senderOf(m.value.sender, mailed), source: mailSource(m.value, mailed) });
     if (ref === null) return failure("failed");
     return { ref, bears: out.bears, gist: out.gist, when: out.when, where: out.where };
   },

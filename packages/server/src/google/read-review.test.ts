@@ -120,7 +120,8 @@ describe("D4 (a): quoted and forwarded text in the owner's sent mail is T", () =
       expect(evidenceClass(row)).toBe("T");
       const read = value<{ body: string }>(await readableMessage(g, eid));
       expect(read.body).toContain("Sounds good");
-      expect(read.body).toContain("Please wire");
+      // Review T3 (part C): the reader gets the owner's own part only, never the quoted stranger's.
+      expect(read.body).not.toContain("Please wire");
     });
   }
 

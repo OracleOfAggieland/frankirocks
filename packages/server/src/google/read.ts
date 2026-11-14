@@ -323,9 +323,13 @@ function senderOf(e: Evidence): MailSender {
   return { name: safeName(parsed.name ?? address ?? s), address };
 }
 
-/** The text the reader is given: the whole body, or the owner's own part and the quoted part (review D4). */
+/**
+ * The text the reader is given: the whole body, or the owner's own part and the quoted part (review D4). Review T3:
+ * for the owner's own sent message, the owner's own part only, so a stranger's quoted words never read as the owner's.
+ */
 function bodyText(e: Evidence): string {
   const inline = (c: Evidence["body"]) => (c !== null && c.kind === "inline" ? c.text : null);
+  if (e.authorship === "self") return inline(e.bodyOwn) ?? inline(e.body) ?? "";
   const whole = inline(e.body);
   if (whole !== null) return whole;
   return [inline(e.bodyOwn), inline(e.bodyQuoted)].filter((t): t is string => t !== null).join("\n\n");
