@@ -21,5 +21,6 @@ A response never waits for scheduled work. What each task leaves behind when it 
 | the tick's Q13 | hangups and `finishCloseInTx` of an expired Session | the Session stays `closing` with a `hangup` Job | as above |
 | the SDP route | `orphanHangup` for a call no Session knows | retries for `ORPHAN_RETRY_LIMIT_MS`, then logs `sdp.orphanCall` | nothing: a raw call ID has no Job |
 | `/api/session/state` | the whole tick (`scheduleTick`) | the Owner's minute slot is spent | the next minute's tick |
+| `/api/tool` (`start_errand`), and the state poll for a run that lapsed | an Errand's run (`runErrand`, brief 049) | the Job stays `queued`, or `leased` until `ERRAND_LEASE_MS` passes; the Errand stays `running` | the next state poll (each second in a call) schedules it again once its Job is due or its lease has lapsed, and the tick's Q18 and Q17 do the same; a third claim never runs, and the Errand ends `failed` |
 
 Not modelled: a runner that wakes on time with no request. Every row above but the orphan hangup is finished by a later request.

@@ -8,6 +8,7 @@ import { BankSection } from "./_sections/BankSection";
 import { CallScreenSection } from "./_sections/CallScreenSection";
 import { CardExtrasSection } from "./_sections/CardExtrasSection";
 import { ControlsSection } from "./_sections/ControlsSection";
+import { ErrandSection } from "./_sections/ErrandSection";
 import { InstrumentExtrasSection } from "./_sections/InstrumentExtrasSection";
 import { MainScreenSection } from "./_sections/MainScreenSection";
 import { MemoryScreenSection } from "./_sections/MemoryScreenSection";
@@ -34,6 +35,7 @@ export default function SpecimensPage() {
       <PhoneSection />
       <RadioSection full={false} />
       <BankSection />
+      <ErrandSection />
       <MaterialsSection />
       <SurfaceSections />
       <CardExtrasSection />

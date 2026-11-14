@@ -7,6 +7,7 @@ import type { BrowserClock } from "../client/clock";
 import { BankWatch } from "../client/bank-watch";
 import { CallCardShelf } from "../client/call-cards";
 import { CompanyTap } from "../client/company-tap";
+import { ErrandShelf } from "../client/errand-shelf";
 import { DebugPanelModel } from "../client/debug-panel";
 import { MemoryModel } from "../client/memory-model";
 import { PhoneWatch } from "../client/phone-watch";
@@ -56,6 +57,8 @@ export interface SignedInControllers {
   proactive: ProactiveShelf;
   /** Brief 044, item 1: the cards the last tool answer of a call brought. */
   callCards: CallCardShelf;
+  /** Brief 049 part A: the errands' running word and cards, from the call's state polls. */
+  errands: ErrandShelf;
   /** Brief 044, item 3: the company toggle's tap, and the audience the server last confirmed. */
   company: CompanyTap;
   /** Brief 046 part B: the bank sheet and its /api/bank/* calls. Sends nothing until the sheet is opened. */
@@ -91,6 +94,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
   );
   const api = deps.api;
   const callCards = new CallCardShelf();
+  const errands = new ErrandShelf();
   const voice =
     deps.transcribeModel === null
       ? null
@@ -109,6 +113,8 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
           onToolCards: (cards, stamp) => callCards.show(cards, stamp),
           // Brief 045 part S: the toggle shows the audience the call's answers confirm.
           onAudience: (stamp, audience) => company.adopt(stamp, audience),
+          // Brief 049 part A: the errands' word and cards.
+          onErrands: (stamp, view) => errands.onState(stamp, view),
         });
   const phone = new PhoneWatch({ api, now: () => clock.mono() });
   const memory = new MemoryModel({ api });
@@ -166,6 +172,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
       typed.dropTurnCopies();
       proactive.clear();
       callCards.clear();
+      errands.clear();
       company.clear();
       sheet.clear();
       memory.clear();
@@ -182,6 +189,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     visit.subscribe(() => voice.setVisit(named()));
     // Brief 044, item 1: cards from a Session or generation the call has left go.
     voice.subscribe(() => callCards.onVoice(voice.getSnapshot()));
+    voice.subscribe(() => errands.onVoice(voice.getSnapshot()));
   }
   // Brief 046 part B. A start over keeps a connected bank (ruling 9), so the visit's reset leaves this alone.
   const bank = new BankWatch({ api, now: () => clock.mono(), newId: () => randomId() });
@@ -196,6 +204,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     sheet,
     proactive,
     callCards,
+    errands,
     company,
   };
 }

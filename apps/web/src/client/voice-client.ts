@@ -32,6 +32,7 @@ import {
   type Card,
   type SS,
   type Stamp,
+  type ErrandsView,
 } from "@franki/core";
 import { toolCardsThatFit } from "../ui/call-cards";
 import type { ApiClient, ApiResult } from "./api";
@@ -135,6 +136,12 @@ export interface VoiceClientDeps {
    * behavior.
    */
   onAudience?: (stamp: SS, audience: Infer<typeof Au> | null) => void;
+  /**
+   * Brief 049 part A: what a state poll's answer says of the owner's errands (the running word and the cards), when
+   * it answers the call's own Session and generation. A server without errands answers none. Never changes call
+   * behavior.
+   */
+  onErrands?: (stamp: SS, errands: ErrandsView | undefined) => void;
 }
 
 const liveTimers: TimerApi = { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
@@ -269,6 +276,7 @@ export class VoiceClient {
         void this.post("/api/session/state", c.body, STATE_TIMEOUT_MS, StateResponse).then((res) => {
           this.dispatch(res === null ? { type: "stateFailed" } : { type: "stateOk", response: res, sentAt });
           if (res !== null) this.tellAudience(res.stamp, res.audience);
+          if (res !== null) this.tellErrands(res.stamp, "errands" in res ? res.errands : undefined);
         });
         return;
       }
@@ -353,6 +361,17 @@ export class VoiceClient {
     if (res.deck !== null) this.deps.clock.syncToServer(msFromTs(res.deck.issuedAt), sentAt, this.deps.clock.mono());
     this.dispatch({ type: "openOk", response: res });
     if (res.ack !== null) this.tellAudience(res.ack.stamp, res.audience);
+  }
+
+  /** The errands in a state answer of the call's own Session (brief 049 part A). A throwing screen never reaches the call. */
+  private tellErrands(stamp: SS, errands: ErrandsView | undefined): void {
+    const held = this.state.session;
+    if (held === null || held.sessionId !== stamp.sessionId || held.generation !== stamp.generation) return;
+    try {
+      this.deps.onErrands?.(stamp, errands);
+    } catch {
+      // the screen's problem, not the call's
+    }
   }
 
   /** The audience in an answer of the call's own Session, as the machine holds it now (brief 045 part S). */

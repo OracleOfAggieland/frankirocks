@@ -49,6 +49,8 @@ import { INITIAL_VISIT, type VisitState, badgeFor, boltEnabled, inputAllowed } f
 import { boltTargets } from "../ui/visit/bolt-targets";
 import { proactiveCards, replyEntries, type ShownProactive } from "../ui/visit/proactive-view";
 import { type ShownCallCards, callCardProps } from "../ui/call-cards";
+import { NO_ERRANDS_SHOWN, type ShownErrands, errandCardProps, errandWord } from "../ui/errands/errand-view";
+import { ErrandWord } from "./errands/ErrandWord";
 import type { CompanyTapState } from "../client/company-tap";
 import { CompanyToggle } from "./surfaces/CompanyToggle";
 // Brief 046 part B.
@@ -80,6 +82,7 @@ const noVisit = (): VisitState => INITIAL_VISIT;
 const noSheet = (): SheetState => CLOSED_SHEET;
 const noShown = (): ShownProactive | null => null;
 const noCallCards = (): ShownCallCards | null => null;
+const noErrands = (): ShownErrands => NO_ERRANDS_SHOWN;
 const NO_TAP: CompanyTapState = { company: false, sending: false, error: null };
 const noTap = (): CompanyTapState => NO_TAP;
 /** Brief 046 part B: the bank sheet while signed out: closed, nothing known. */
@@ -295,12 +298,14 @@ export function App() {
   );
 }
 
-function StageFor({ snap, phone, radio, onRadio }: { snap: ScreenSnapshot; phone: PhoneView; radio: RadioView; onRadio: () => void }) {
+function StageFor({ snap, phone, radio, onRadio, errandText }: { snap: ScreenSnapshot; phone: PhoneView; radio: RadioView; onRadio: () => void; errandText: string | null }) {
   // Brief 047: the radio stands on the floor beside the phone, in the stage's aside.
   const aside = (
     <>
       <PhoneOnStage view={phone} />
       <RadioOnStage view={radioPropView(radio)} onPress={onRadio} />
+      {/* Brief 049 part A, ruling 12: a small word while an errand runs. */}
+      <ErrandWord text={errandText} />
     </>
   );
   return (
@@ -346,6 +351,9 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
   const getShown = controllers?.proactive.getSnapshot ?? noShown;
   const shown = useSyncExternalStore(controllers?.proactive.subscribe ?? noSubscribe, getShown, getShown);
   // Brief 044, item 1: the cards the call's last tool answer brought.
+  // Brief 049 part A: the errands' running word and cards.
+  const getErrands = controllers?.errands.getSnapshot ?? noErrands;
+  const errandsShown = useSyncExternalStore(controllers?.errands.subscribe ?? noSubscribe, getErrands, getErrands);
   const getCallCards = controllers?.callCards.getSnapshot ?? noCallCards;
   const called = useSyncExternalStore(controllers?.callCards.subscribe ?? noSubscribe, getCallCards, getCallCards);
   // Brief 044, item 3: the company toggle shows the audience the server last confirmed.
@@ -370,7 +378,7 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
     if (words !== null) radio?.onTypedLine(words);
   };
 
-  const stage = <StageFor snap={snap} phone={phone} radio={radioView} onRadio={pressRadio} />;
+  const stage = <StageFor snap={snap} phone={phone} radio={radioView} onRadio={pressRadio} errandText={errandWord(errandsShown)} />;
   const live = <LiveRegion message={snap.live.message} seq={snap.live.seq} />;
   // Brief 038 finding 1, the input gate: no chip, typed line or new call until the server has said which account this is.
   const takesInput = inputAllowed(vis);
@@ -428,7 +436,7 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
   ];
   const receipt = mem.surfaces.receipt === null ? null : <Receipt {...mem.surfaces.receipt} />;
   // Brief 027: the proactive line's cards join the dock; the badge reads the real clock through the clock port.
-  const allCards = [...memoryCards, ...callCardProps(called), ...proactiveCards(shown)];
+  const allCards = [...memoryCards, ...callCardProps(called), ...errandCardProps(errandsShown), ...proactiveCards(shown)];
   const pair = clock.read();
   // Brief 038 finding 5: no clock until the server has said which one the account runs on.
   const badge = badgeFor(vis, pair.opsClock.now, pair.worldClock.zone);

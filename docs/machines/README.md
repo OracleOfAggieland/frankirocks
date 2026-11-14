@@ -73,6 +73,7 @@ Every piece of code that holds state and moves it between named states is listed
 | `server.open` | documented | The order of the steps of a session open | `packages/server/src/routes/open.ts` | [server-tick](server-tick.md) |
 | `server.turn` | documented | The order of the steps of one `/api/turn` request | `packages/server/src/routes/turn.ts` | [server-tick](server-tick.md) |
 | `server.background` | documented | What runs after a response is sent | `apps/web/src/app/api/_lib/adapter.ts` | [server-background](server-background.md) |
+| `server.errand` | explicit | An Errand's stored status, from its start to its one delivery or drop (brief 049) | `packages/core/src/errands/errand-machine.ts` | [errands](errands.md) |
 | `server.job` | documented | A Job's status and lease | `packages/server/src/worker/jobs.ts` | [server-jobs](server-jobs.md) |
 | `server.drain` | documented | Which Extract_Job runs next for an Owner | `packages/server/src/worker/drain.ts` | [server-jobs](server-jobs.md) |
 | `server.storeTx` | documented | Whether a transaction commits | `packages/server/src/store/port.ts` | [server-store-tx](server-store-tx.md) |
