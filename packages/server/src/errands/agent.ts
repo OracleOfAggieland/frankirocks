@@ -44,7 +44,27 @@ export interface ErrandToolContext {
    */
   signal: AbortSignal;
   read(r: ErrandReadInput): string | null;
+  /** The forget epoch the Errand was claimed under. */
+  epoch: number;
+  /**
+   * Review fix T11: this claim's own scratch, made by the runner when the claim starts and discarded when it ends.
+   * An agent keeps its per-run state here (search refs, a read context, access tokens), never in module state.
+   */
+  scratch: Map<string, unknown>;
+  /** How many more reads `read` registers in this run (`ERRAND_READS_MAX` in all). */
+  readsLeft(): number;
+  /** Review fix T8: tells the runner what a tool met, so code (not the planner) words an outcome with no line. */
+  flag(f: ErrandToolFlag): void;
 }
+
+/**
+ * Review fix T8: what a tool tells the runner. `read`: a read that answered (it found something or nothing);
+ * `failed`: the provider couldn't be read; `expired`: the grant needs connecting again; `unresolved`: a time phrase
+ * code couldn't place; `partial`: part of what was asked couldn't be read (a message that didn't load, a list cut
+ * short); `unmailed`: a search found mail only shown to the runner, from someone the owner hasn't written to.
+ */
+export const ERRAND_TOOL_FLAGS = ["read", "failed", "expired", "unresolved", "partial", "unmailed"] as const;
+export type ErrandToolFlag = (typeof ERRAND_TOOL_FLAGS)[number];
 
 export interface ErrandTool {
   name: string;

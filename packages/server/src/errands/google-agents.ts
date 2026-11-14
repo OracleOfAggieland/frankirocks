@@ -48,8 +48,6 @@ export const READER_GIST_CHARS = 240;
 export const READER_PHRASE_CHARS = 80;
 /** The reader's own deadline, inside the tool's. */
 export const READER_CALL_MS = 6_000;
-/** How many runs' search refs are remembered at once (per server instance). */
-export const RUN_MEMORY_MAX = 64;
 
 export const MAIL_AGENT_ID = "google-mail";
 export const CALENDAR_AGENT_ID = "google-calendar";
@@ -125,26 +123,37 @@ export function parseReader(r: unknown): ReaderOutput | null {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Per-run state: the read context and the refs this Errand's own search returned.
+// Per-run state (review fix T11): in the claim's own scratch, never in module state. The runner makes the scratch
+// when the claim starts and discards it when the claim ends, so refs, the read context and access tokens never
+// outlive the claim, and a second claim starts from nothing.
 
-interface RunMemory {
+interface RunState {
   g: GoogleReadContext;
-  /** ref -> eid, for refs `search_mail` returned in this run. */
+  /** ref -> eid, for refs `search_mail` returned in this claim. */
   searched: Map<string, string>;
 }
-const runs = new Map<string, RunMemory>();
+const SCRATCH_KEY = "google";
 
-async function memoryOf(ctx: ErrandToolContext): Promise<RunMemory | null> {
-  const errand = await ctx.route.deps.store.get<{ claimedEpoch: number }>(ctx.route.uid, paths.errand(ctx.route.uid, ctx.errandId));
-  if (errand === null) return null;
-  const key = `${ctx.route.uid}/${ctx.errandId}/${errand.data.claimedEpoch}`;
-  let m = runs.get(key);
-  if (m === undefined) {
-    m = { g: googleReadContext(ctx.route, errand.data.claimedEpoch), searched: new Map() };
-    runs.set(key, m);
-    while (runs.size > RUN_MEMORY_MAX) runs.delete(runs.keys().next().value as string);
-  }
-  return m;
+function stateOf(ctx: ErrandToolContext): RunState {
+  const known = ctx.scratch.get(SCRATCH_KEY) as RunState | undefined;
+  if (known !== undefined) return known;
+  const s: RunState = { g: googleReadContext(ctx.route, ctx.epoch), searched: new Map() };
+  ctx.scratch.set(SCRATCH_KEY, s);
+  return s;
+}
+
+/** Review fix T11: at most this many sent-mail checks at once, inside the tool's deadline. */
+export const SENT_CHECKS_PARALLEL = 3;
+
+/** `work` over `items`, at most `limit` at a time, in order. */
+export async function mapLimit<T, R>(items: readonly T[], limit: number, work: (item: T, i: number) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const lane = async () => {
+    for (let i = next++; i < items.length; i = next++) out[i] = await work(items[i]!, i);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
+  return out;
 }
 
 /** Stored class, sensitivity and rev of a row this read touched. */
@@ -224,8 +233,7 @@ const searchMailTool: ErrandTool = {
   async run(ctx, raw) {
     const a = mailArgs(raw);
     if (a === null) return failure("invalid");
-    const mem = await memoryOf(ctx);
-    if (mem === null) return failure("failed");
+    const mem = stateOf(ctx);
     let afterMs: number | null = null;
     let beforeMs: number | null = null;
     if (a.when !== null) {
@@ -238,13 +246,16 @@ const searchMailTool: ErrandTool = {
     const q: MailQuery = { from: a.from, words: a.words, afterMs, beforeMs, unread: a.unread };
     const r = await searchMail(mem.g, q);
     if (!r.ok) return failure(r.why);
+    // Review fix T11: the sent-mail checks run a few at a time, inside the tool's deadline.
+    const mailedOf = await mapLimit(r.value.hits, SENT_CHECKS_PARALLEL, async (h) => {
+      if (h.fromSelf) return true;
+      if (h.sender.address === null || ctx.signal.aborted) return false;
+      const m = await ownerHasMailed(mem.g, h.sender.address);
+      return m.ok && m.value;
+    });
     const messages = [];
-    for (const h of r.value.hits) {
-      let mailed = h.fromSelf;
-      if (!mailed && h.sender.address !== null) {
-        const m = await ownerHasMailed(mem.g, h.sender.address);
-        mailed = m.ok && m.value;
-      }
+    for (const [i, h] of r.value.hits.entries()) {
+      const mailed = mailedOf[i]!;
       const row = await rowOf(ctx.route, h.eid);
       if (row === null) continue;
       const ref = ctx.read({ evidenceId: h.eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: mailed, sender: { name: h.sender.name, address: h.sender.address ?? "", mailed }, source: mailSource(h, mailed) });
@@ -263,8 +274,7 @@ const readMailTool: ErrandTool = {
   async run(ctx, raw) {
     const x = raw as Record<string, unknown> | null;
     if (typeof x !== "object" || x === null || Object.keys(x).length !== 1 || typeof x.ref !== "string") return failure("invalid");
-    const mem = await memoryOf(ctx);
-    if (mem === null) return failure("failed");
+    const mem = stateOf(ctx);
     // Ruling 23: a ref from this Errand's own search, and nothing else.
     const eid = mem.searched.get(x.ref);
     if (eid === undefined) return failure("That ref is not from this errand's search.");
@@ -281,7 +291,9 @@ const readMailTool: ErrandTool = {
     const ms = Math.min(READER_CALL_MS, Math.max(0, ctx.deadlineAt - ctx.route.deps.clock.read().opsClock.now));
     let out: ReaderOutput | null;
     try {
-      out = parseReader(await withDeadline(ctx.route.deps.openai.call("responses.create", readerRequest(model, ctx.ownerWords, m.value)), ms, ctx.route.deps.timers));
+      // Review fix T11: the reader's own timeout and the run's abort signal go to the request itself.
+      if (ms <= 0) return failure("The reader could not answer just now.");
+      out = parseReader(await withDeadline(ctx.route.deps.openai.call("responses.create", readerRequest(model, ctx.ownerWords, m.value), { timeoutMs: ms, signal: ctx.signal }), ms, ctx.route.deps.timers));
     } catch {
       return failure("The reader could not answer just now.");
     }
@@ -316,8 +328,7 @@ const listEventsTool: ErrandTool = {
   async run(ctx, raw) {
     const a = whenArg(raw);
     if (a === null) return failure("invalid");
-    const mem = await memoryOf(ctx);
-    if (mem === null) return failure("failed");
+    const mem = stateOf(ctx);
     const now = await worldNow(ctx.route);
     const w = windowOf(a.when, now.nowMs, now.zone, true);
     if (w === null) return UNRESOLVED;
@@ -343,8 +354,7 @@ const freeTimeTool: ErrandTool = {
     const a = whenArg(raw, ["minutes"]);
     const minutes = a?.rest.minutes;
     if (a === null || typeof minutes !== "number" || !Number.isInteger(minutes) || minutes < 1 || minutes > FREE_MINUTES_MAX) return failure("invalid");
-    const mem = await memoryOf(ctx);
-    if (mem === null) return failure("failed");
+    const mem = stateOf(ctx);
     const now = await worldNow(ctx.route);
     const w = windowOf(a.when, now.nowMs, now.zone, true);
     if (w === null) return UNRESOLVED;

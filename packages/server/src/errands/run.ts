@@ -63,7 +63,7 @@ import type { RouteContext } from "../routes/runtime";
 import { isStoreError, retryStale } from "../store/errors";
 import { paths } from "../store/paths";
 import { type Lease, claimJob } from "../worker/jobs";
-import { type ErrandAgent, type ErrandReadInput, type ErrandTool, errandAgentsOf } from "./agent";
+import { ERRAND_TOOL_FLAGS, type ErrandAgent, type ErrandReadInput, type ErrandTool, type ErrandToolContext, type ErrandToolFlag, errandAgentsOf } from "./agent";
 import { assignmentWords } from "./assignment";
 
 /** The developer message: fixed text, never built from data (ruling 5; OpenAI's guidance for untrusted text). */
@@ -226,6 +226,8 @@ interface HelperRun {
   done: Done;
   reads: ErrandRead[];
   opaque: boolean;
+  /** Review fix T8: what the tools told the runner. */
+  flags: ReadonlySet<ErrandToolFlag>;
   modelCalls: number;
   toolCalls: number;
 }
@@ -234,10 +236,22 @@ async function helper(ctx: RouteContext, lease: Lease, errand: Errand, start: nu
   const { uid, deps } = ctx;
   const errandId = lease.jobId;
   const reads: ErrandRead[] = [];
-  const taint: RunTaint = { opaque: false };
+  const taint: RunTaint = { opaque: false, flags: new Set() };
+  // Review fix T11: this claim's scratch for the agents' per-run state, discarded when the claim ends.
+  const scratch = new Map<string, unknown>();
+  try {
+    return await helperLoop(ctx, lease, errand, start, reads, taint, scratch);
+  } finally {
+    scratch.clear();
+  }
+}
+
+async function helperLoop(ctx: RouteContext, lease: Lease, errand: Errand, start: number, reads: ErrandRead[], taint: RunTaint, scratch: Map<string, unknown>): Promise<HelperRun> {
+  const { uid, deps } = ctx;
+  const errandId = lease.jobId;
   let modelCalls = 0;
   let toolCalls = 0;
-  const run = (done: Done): HelperRun => ({ done, reads, opaque: taint.opaque, modelCalls, toolCalls });
+  const run = (done: Done): HelperRun => ({ done, reads, opaque: taint.opaque, flags: taint.flags, modelCalls, toolCalls });
   // A second claim starts again from nothing (ruling 4).
   await step(ctx, lease, errandId, [], true);
   const agents = errandAgentsOf(ctx).filter((a) => errand.agentIds.includes(a.id) && errand.about.includes(a.about));
@@ -293,7 +307,7 @@ async function helper(ctx: RouteContext, lease: Lease, errand: Errand, start: nu
       if (left() <= 0) return run({ kind: "failed", why: "limit" });
       toolCalls++;
       await step(ctx, lease, errandId, reads, true);
-      const output = await runTool(ctx, errandId, tools, call, words, reads, now() + Math.min(ERRAND_TOOL_CALL_MS, left()), taint);
+      const output = await runTool(ctx, { errandId, epoch: errand.claimedEpoch, scratch }, tools, call, words, reads, now() + Math.min(ERRAND_TOOL_CALL_MS, left()), taint);
       input.push({ type: "function_call_output", call_id: call.callId, output });
     }
     await step(ctx, lease, errandId, reads, false);
@@ -382,10 +396,12 @@ export function registeredRead(ref: string, r: ErrandReadInput): ErrandRead | nu
 /** Fails closed: set when a tool read something it could not register, so the planner may have seen unknown text. */
 interface RunTaint {
   opaque: boolean;
+  /** Review fix T8: every flag a tool raised in this run. */
+  flags: Set<ErrandToolFlag>;
 }
 
 /** One tool call: its JSON output for the planner, wrapped as data. Never throws. */
-async function runTool(ctx: RouteContext, errandId: ID, tools: readonly ErrandTool[], call: { name: string; arguments: string }, words: readonly string[], reads: ErrandRead[], deadlineAt: number, taint: RunTaint): Promise<string> {
+async function runTool(ctx: RouteContext, run: { errandId: ID; epoch: number; scratch: Map<string, unknown> }, tools: readonly ErrandTool[], call: { name: string; arguments: string }, words: readonly string[], reads: ErrandRead[], deadlineAt: number, taint: RunTaint): Promise<string> {
   const wrap = (data: unknown) => {
     const text = JSON.stringify({ note: TOOL_OUTPUT_NOTE, data });
     return text.length <= ERRAND_TOOL_OUTPUT_CHARS ? text : JSON.stringify({ note: TOOL_OUTPUT_NOTE, data: { error: "The tool's answer was too large." } });
@@ -423,8 +439,24 @@ async function runTool(ctx: RouteContext, errandId: ID, tools: readonly ErrandTo
   const deps = ctx.deps;
   const ms = Math.max(0, deadlineAt - deps.clock.read().opsClock.now);
   try {
-    return wrap(await withDeadline(tool.run({ route: ctx, errandId, ownerWords: words, deadlineAt, signal: stop.signal, read }, args), ms, deps.timers));
+    const tctx: ErrandToolContext = {
+      route: ctx,
+      errandId: run.errandId,
+      ownerWords: words,
+      deadlineAt,
+      signal: stop.signal,
+      read,
+      epoch: run.epoch,
+      scratch: run.scratch,
+      readsLeft: () => Math.max(0, ERRAND_READS_MAX - reads.length),
+      flag: (f) => {
+        if (!stop.signal.aborted && (ERRAND_TOOL_FLAGS as readonly string[]).includes(f)) taint.flags.add(f);
+      },
+    };
+    return wrap(await withDeadline(tool.run(tctx, args), ms, deps.timers));
   } catch {
+    // Review fix T8: a tool that threw or ran out of time could not be read.
+    taint.flags.add("failed");
     return wrap({ error: "The tool could not answer just now." });
   } finally {
     stop.abort();

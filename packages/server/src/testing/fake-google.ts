@@ -4,6 +4,7 @@
  */
 import { CALENDAR_SCOPE, GMAIL_SCOPE } from "../google/oauth";
 import { GoogleCallError, type EventList, type GmailMessage, type GooglePort, type GoogleRefreshed, type GoogleTokens, type MessageRef } from "../google/port";
+import type { Timers } from "../clock/timers";
 import { BANK_TEST_KEY } from "./fake-bank";
 
 export const GOOGLE_CLIENT_ID = "1234567890-testclient.apps.googleusercontent.com";
@@ -53,9 +54,26 @@ export class FakeGoogle implements GooglePort {
     return this;
   }
 
-  private async hook(method: Method): Promise<void> {
+  /** Review T11: every call of a method can take virtual time, to test deadlines and parallel calls. */
+  slow: { timers: Timers; ms: (method: Method, args: unknown[]) => number } | null = null;
+  /** Calls in flight now, and the most there ever were at once, per method. */
+  inFlight = new Map<Method, number>();
+  maxInFlight = new Map<Method, number>();
+
+  private async hook(method: Method, args: unknown[] = []): Promise<void> {
     const next = this.hooks.get(method)?.shift();
     if (next !== undefined) await next();
+    const ms = this.slow?.ms(method, args) ?? 0;
+    if (ms > 0) {
+      const n = (this.inFlight.get(method) ?? 0) + 1;
+      this.inFlight.set(method, n);
+      this.maxInFlight.set(method, Math.max(n, this.maxInFlight.get(method) ?? 0));
+      try {
+        await this.slow!.timers.sleep(ms);
+      } finally {
+        this.inFlight.set(method, (this.inFlight.get(method) ?? 1) - 1);
+      }
+    }
   }
 
   failNext(method: Method, error: GoogleCallError | Error): this {
@@ -90,20 +108,20 @@ export class FakeGoogle implements GooglePort {
   }
   async listMessages(...args: Parameters<GooglePort["listMessages"]>) {
     this.take("listMessages", args);
-    await this.hook("listMessages");
+    await this.hook("listMessages", args);
     const all = this.listed ?? [...this.messages.values()].map((m) => ({ id: m.id, threadId: m.threadId }));
     return all.slice(0, Math.max(1, args[2]));
   }
   async getMessage(...args: Parameters<GooglePort["getMessage"]>) {
     this.take("getMessage", args);
-    await this.hook("getMessage");
+    await this.hook("getMessage", args);
     const m = this.messages.get(args[1]);
     if (m === undefined) throw new GoogleCallError("notFound", true);
     return structuredClone(m);
   }
   async listEvents(...args: Parameters<GooglePort["listEvents"]>) {
     this.take("listEvents", args);
-    await this.hook("listEvents");
+    await this.hook("listEvents", args);
     const from = args[1].pageToken === undefined ? 0 : Number(args[1].pageToken);
     const max = Math.max(1, args[1].max);
     const items = this.events.items.slice(from, from + max);
