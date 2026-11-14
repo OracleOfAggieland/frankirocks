@@ -35,12 +35,20 @@ export function sourceLine(s: ErrandSource, zone: string, sender: ErrandRead["se
 export const readStrangers = (reads: readonly ErrandRead[]): boolean =>
   reads.some((r) => r.shown && (r.cls === "T" || r.cls === "M") && !(r.source.kind === "mail" && r.sender !== null && r.sender.mailed));
 
+/**
+ * Whether a line's verdict puts it on the card for this audience. Review fix T9: delivery asks the same question
+ * before it says "It's on your screen".
+ */
+export function cardShows(v: Pick<LineVerdict, "shown" | "line">, audience: Au | undefined): boolean {
+  const company = audience !== "private";
+  return v.shown !== "none" && v.line.sens !== "S2" && (!company || (v.line.sens === "S0" && v.line.cls !== "T" && v.line.cls !== "M"));
+}
+
 /** The card, or null when no line may show. */
 export function errandCard(errand: Errand, verdicts: readonly LineVerdict[], x: { id: ID; zone: string; audience?: Au }): Card | null {
   // S2 never goes on the wire (KC09), on a card or anywhere else. Review fix V5: outside private (and when the
   // audience isn't given, which fails closed) only S0 lines that rest on no third party's text show.
-  const company = x.audience !== "private";
-  const shown = verdicts.filter((v) => v.shown !== "none" && v.line.sens !== "S2" && (!company || (v.line.sens === "S0" && v.line.cls !== "T" && v.line.cls !== "M")));
+  const shown = verdicts.filter((v) => cardShows(v, x.audience));
   if (shown.length === 0) return null;
   const lines = shown.map((v) => (v.line.attribution === null ? v.line.text : `${v.line.attribution} ${v.line.text}`));
   const refs = [...new Set(shown.flatMap((v) => v.line.refs))];

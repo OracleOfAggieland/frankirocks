@@ -69,7 +69,7 @@ import { paths } from "../store/paths";
 import type { StoredDoc } from "../store/port";
 import type { ProactiveDeck } from "../time/proactive";
 import { errandsReady } from "./agent";
-import { errandCard, sourceLine } from "./card";
+import { cardShows, errandCard, sourceLine } from "./card";
 import { type LineVerdict, gateErrandLines } from "./gate";
 import { errandDeliveryId } from "./records";
 import { runErrand } from "./run";
@@ -216,7 +216,8 @@ export function errandWords(e: Pick<Errand, "outcome" | "about" | "notice" | "li
   if (e.outcome === "failed" || e.outcome === null) return { text: errandFailedLine(e.about), sens: "S0", said: [] };
   if (e.outcome === "nothing" || verdicts.length === 0) return { text: errandNothingLine(e.about), sens: "S0", said: [] };
   const said = verdicts.filter((v) => v.shown === "say" && v.line.sens !== "S2" && v.line.speak);
-  const carded = verdicts.some((v) => v.shown === "card");
+  // Review fix T9: "on your screen" only when the card shows that line to this audience; else the held line.
+  const carded = verdicts.some((v) => v.shown === "card" && cardShows(v, audience));
   if (said.length === 0) return { text: carded ? ERRAND_ON_SCREEN_LINE : ERRAND_HELD_LINE, sens: "S0", said: [] };
   const lines = said.map((v) => (v.line.attribution === null ? v.line.text : `${v.line.attribution} ${v.line.text}`));
   const text = [ERRAND_FOUND_LEAD, ...lines, ...(carded ? [ERRAND_REST_ON_SCREEN_LINE] : [])].join(" ").slice(0, 1024);
