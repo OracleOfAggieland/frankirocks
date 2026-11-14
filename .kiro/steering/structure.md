@@ -34,4 +34,5 @@ The owner's rule for work Kiro does in this repo:
 - Every commit message Kiro makes ends with the trailer line `Built-with: Kiro`.
 - Every pull request description mentions Kiro.
 - The web app shows a small "Built with Kiro" footer on every page.
+- Every place a page says Franki was built with Kiro is a link to `https://kiro.dev/` (`KIRO_URL` in `apps/web/src/ui/site.ts`), opened in a new tab.
 - `/api/health` output stays unchanged; attribution never goes into API responses.

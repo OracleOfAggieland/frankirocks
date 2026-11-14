@@ -13,6 +13,9 @@ export const SITE = {
   locale: "en_US",
 } as const;
 
+/** Kiro's own site. Every place a page says Franki was built with Kiro links here, in a new tab. */
+export const KIRO_URL = "https://kiro.dev/";
+
 /**
  * The Open Graph fields every page shares. A page that sets its own `openGraph` replaces the layout's whole
  * object, so it spreads this first. og:title and og:description follow the page's own title and description.

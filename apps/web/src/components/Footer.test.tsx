@@ -51,7 +51,18 @@ describe("Built with Kiro footer (R16.7)", () => {
       expect(footer, label).toBeDefined();
       expect(footer!.indexOf("data-footer-seam"), label).toBeGreaterThanOrEqual(0);
       expect(footer!.indexOf("data-footer-seam"), label).toBeLessThan(footer!.indexOf(">Built with Kiro<"));
+      // The text is a link to Kiro's site, opened in a new tab.
+      expect(footer, label).toMatch(/<a href="https:\/\/kiro\.dev\/" target="_blank" rel="noopener noreferrer"[^>]*>Built with Kiro<\/a>/);
     }
+  });
+
+  it("every mention of Kiro on the home page links to Kiro's site", () => {
+    const html = renderToStaticMarkup(RootLayout(layoutProps(<Home />)));
+    const linked = html.replace(/<a href="https:\/\/kiro\.dev\/"[^>]*>[^<]*<\/a>/g, "");
+    // Outside those links, the name is left only in the page's metadata and attributes, never in text a reader sees.
+    const text = linked.replace(/<(script|style|title)[\s\S]*?<\/\1>/g, "").replace(/<[^>]*>/g, " ");
+    expect(text).not.toMatch(/\bKiro\b/);
+    expect(html.match(/<a href="https:\/\/kiro\.dev\/"/g)).toHaveLength(2);
   });
 
   it("the layout loads the display font beside the Geist fonts", () => {
