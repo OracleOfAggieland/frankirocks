@@ -246,7 +246,7 @@ export const COPY = {
     notConfigured: "Google isn't set up on this server yet.",
     none: "Not connected yet.",
     starting: "Opening Google",
-    authorizing: "Google's window is open. Finish there, then come back.",
+    authorizing: "Google's sign-in is open. Finish there, then come back.",
     stopWaiting: "Stop waiting",
     disconnecting: "Disconnecting",
     /** The lamp beside the account, in words for screen readers. */
@@ -263,7 +263,7 @@ export const COPY = {
     yes: "Yes",
     notNow: "Not now",
     notes: {
-      popupBlocked: "Your browser blocked Google's window. Allow pop-ups for this site, then try again.",
+      popupBlocked: "Your browser blocked Google's pop-up. Allow pop-ups for this site, then try again.",
       startFailed: "I couldn't reach Google just now. Try again in a moment.",
       connected: "Google is connected.",
       nothingGranted: "You didn't allow mail or calendar, so nothing was connected.",
@@ -276,12 +276,12 @@ export const COPY = {
       disconnectFailed: "I couldn't disconnect it just now.",
       disconnectUnknown: "I couldn't confirm that. Here's your connection as I read it now.",
     },
-    /** The callback page, in Google's window. Nothing from the address bar is ever shown. */
+    /** The callback page, in Google's pop-up. Nothing from the address bar is ever shown. */
     callback: {
       title: "Connecting Google",
       working: "Connecting your Google account",
-      done: "Done. You can close this window.",
-      failed: "That didn't connect. You can close this window and try again.",
+      done: "Done. You can close this pop-up.",
+      failed: "That didn't connect. You can close this pop-up and try again.",
     },
   },
   /** Brief 047: the radio on the stage and its globe of stations. */
