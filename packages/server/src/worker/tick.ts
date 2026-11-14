@@ -25,6 +25,7 @@ import { memoryTick } from "../time/tick";
 // Brief 048: forget is a job kind the tick runs.
 import { runDueForgets } from "../forget/drive";
 // Brief 049 part A.
+import { stripStaleErrands } from "../errands/forget";
 import { runErrand } from "../errands/run";
 
 const MINUTE_MS = 60_000;
@@ -141,6 +142,8 @@ export async function runDueJobs(ctx: RouteContext): Promise<void> {
   // Brief 049 ruling 4: due errand runs (a lapsed lease is requeued by Q18 first). Review fix R10: each is scheduled,
   // never awaited here, so a run of up to a minute never holds the extract drain or the moments behind it.
   for (const jobId of await dueJobs(deps.store, uid, deps.clock.read().opsClock.now, "errand")) ctx.schedule(() => racing(ctx, "errand", () => runErrand(ctx, jobId)));
+  // Review fix R12: results past their card window are stripped bare, whether or not a call polls.
+  await racing(ctx, "errandStrip", () => stripStaleErrands(ctx));
   await drainExtractJobs(uid, deps);
 }
 

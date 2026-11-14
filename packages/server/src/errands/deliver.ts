@@ -302,7 +302,7 @@ async function move(ctx: RouteContext, errandId: ID, event: "forget" | "expired"
   }
 }
 
-/** What a dropped or stripped Errand keeps of what it found: nothing. */
+/** What a dropped or stripped Errand keeps of what it found: nothing (the forget drop and the tick strip use the same). */
 export const BARE = { lines: [], reads: [], gate: null, offer: null, retainUntil: null } as const satisfies Partial<Errand>;
 
 /** Ruling 4: a running Errand whose Job is due, or whose lease lapsed, gets a runner after the response. */

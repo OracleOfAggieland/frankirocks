@@ -31,6 +31,7 @@ function queryLabel(spec: QuerySpec): string {
   const fields = spec.where.map((w) => w.field);
   if (spec.collection.endsWith("/sessions")) return "q13 sessions";
   if (fields.includes("leaseUntil")) return "q18 expired leases";
+  if (fields.includes("retainUntil")) return "errand strip";
   if (fields.includes("nextAttemptAt")) return "due jobs";
   if (fields.length === 1 && fields[0] === "status") return "leased jobs";
   return "other";
@@ -123,8 +124,8 @@ describe("tick order", () => {
     expect(labels).toEqual(["q13 sessions", "q13 sessions", "q13 sessions", "q13 sessions"]);
     expect(rig.sched.pending).toBe(1);
     await runScheduled(rig);
-    // Q18; Q17 (queued, then retry); the drain's leased read, then its own due read.
-    expect(collapse(labels)).toEqual(["q13 sessions", "q18 expired leases", "due jobs", "leased jobs", "due jobs"]);
+    // Q18; Q17 (queued, then retry); the errand strip (review fix R12 of brief 049); the drain's leased read, then its own due read.
+    expect(collapse(labels)).toEqual(["q13 sessions", "q18 expired leases", "due jobs", "errand strip", "leased jobs", "due jobs"]);
   });
 
   it("the scheduled steps do not start while Q13 is still running", async () => {
@@ -149,7 +150,7 @@ describe("tick order", () => {
     release();
     await settle(expiry, rig.clock, rig.timers);
     await settle(tail, rig.clock, rig.timers);
-    expect(collapse(labels)).toEqual(["q13 sessions", "q18 expired leases", "due jobs", "leased jobs", "due jobs"]);
+    expect(collapse(labels)).toEqual(["q13 sessions", "q18 expired leases", "due jobs", "errand strip", "leased jobs", "due jobs"]);
   });
 
   it("the scheduled steps run even when Q13 rejected", async () => {
@@ -166,7 +167,7 @@ describe("tick order", () => {
     const expiry = startTick(ctxOf(rig, store));
     await expect(settle(expiry!, rig.clock, rig.timers)).rejects.toThrow("injected query failure");
     await runScheduled(rig);
-    expect(collapse(labels)).toEqual(["q18 expired leases", "due jobs", "leased jobs", "due jobs"]);
+    expect(collapse(labels)).toEqual(["q18 expired leases", "due jobs", "errand strip", "leased jobs", "due jobs"]);
   });
 });
 

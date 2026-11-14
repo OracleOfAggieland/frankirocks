@@ -1,5 +1,5 @@
 /** Brief 049 part A, the review fixes: each test reproduces one reviewer finding on fakes (see brief 049's report). */
-import { ERRAND_LEASE_MS, ERRAND_OFFER_MS, ERRAND_TOOL_CALL_MS, ERRAND_ON_SCREEN_LINE, ERRAND_RESULT_TTL_MS, ERRAND_SILENCE_MS, type ID, type Ledger, type Session, type Turn, errandFailedLine, errandNothingLine } from "@franki/core";
+import { ERRAND_CARD_KEEP_MS, ERRAND_LEASE_MS, ERRAND_OFFER_MS, ERRAND_TOOL_CALL_MS, type Errand, tsFromMs, ERRAND_ON_SCREEN_LINE, ERRAND_RESULT_TTL_MS, ERRAND_SILENCE_MS, type ID, type Ledger, type Session, type Turn, errandFailedLine, errandNothingLine } from "@franki/core";
 import { describe, expect, it } from "vitest";
 import { receiptRoute } from "../routes/receipt";
 import { stateRoute } from "../routes/state";
@@ -15,6 +15,8 @@ import { StoreError } from "../store/errors";
 import { claimJob } from "../worker/jobs";
 import { runDueJobs } from "../worker/tick";
 import { errandsOnState, pickUp } from "./deliver";
+import { dropAllErrands } from "./forget";
+import { testId } from "@franki/core/testing";
 
 const ctxOf = (x: ErrandSetup) => ({ uid: UID, deps: x.rig.deps, schedule: x.rig.sched.schedule });
 const stampOf = (x: ErrandSetup) => ({ sessionId: x.stamp.sessionId, epoch: x.stamp.epoch, policyRev: x.stamp.policyRev, bundleRev: x.stamp.bundleRev, rulesRev: x.stamp.rulesRev, generation: x.stamp.generation });
@@ -522,5 +524,48 @@ describe("R11: a run's own writes retry a lost compare-and-set, and fail fast on
     await callRoute(x.rig, toolRoute, tool(x));
     await runScheduled(x.rig);
     expect((await errandOf(x))?.status).toBe("failed");
+  });
+});
+
+describe("R12: what an Errand found is kept only for its window, and a forget erases all of it", () => {
+  /** Runs one real Errand to `ready`, then stores `copies` more like it. */
+  async function many(copies: number) {
+    const x = await setup(found());
+    await callRoute(x.rig, toolRoute, tool(x));
+    await runScheduled(x.rig);
+    const real = (await errandOf(x))!;
+    expect(real.lines.length).toBeGreaterThan(0);
+    for (let i = 0; i < copies; i += 100) {
+      await x.rig.store.transaction(UID, async (tx) => {
+        for (let k = i; k < Math.min(copies, i + 100); k++) tx.create(paths.errand(UID, testId(`errand-copy-${k}`)), { ...real, rev: 1 });
+      });
+    }
+    return x;
+  }
+  const holding = async (x: ErrandSetup) => {
+    const all: { data: Errand }[] = [];
+    for (let after: string | null = null; ; ) {
+      const page = await x.rig.store.query<Errand>(UID, { collection: paths.collection(UID, "errands"), where: after === null ? [] : [{ field: "__name__", op: ">", value: after }], orderBy: { field: "__name__", dir: "asc" }, limit: 100 });
+      all.push(...page);
+      if (page.length < 100) break;
+      after = page[page.length - 1]!.id;
+    }
+    expect(all.length).toBeGreaterThan(0);
+    return all.filter((r) => r.data.lines.length > 0 || r.data.reads.length > 0 || r.data.gate !== null || r.data.offer !== null || r.data.retainUntil !== null);
+  };
+
+  it("a forget erases every Errand's lines, reads, Gate inputs and offer, past any cap", async () => {
+    const x = await many(230);
+    const now = tsFromMs(x.rig.clock.read().opsClock.now);
+    await dropAllErrands(x.rig.store, UID, now);
+    expect(await holding(x)).toEqual([]);
+  });
+
+  it("the tick strips a result past its window, with no poll", async () => {
+    const x = await many(3);
+    x.rig.clock.advance(ERRAND_RESULT_TTL_MS + ERRAND_CARD_KEEP_MS + 1);
+    await settle(runDueJobs(ctxOf(x)), x.rig.clock, x.rig.timers);
+    expect(await holding(x)).toEqual([]);
+    expect((await errandOf(x))?.status).toBe("cardOnly");
   });
 });
