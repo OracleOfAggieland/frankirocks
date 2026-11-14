@@ -17,7 +17,7 @@
  */
 import type { Class, Sens } from "../schema/primitives";
 import type { ErrandLine, ErrandRead } from "../schema/records";
-import { safeName } from "../safe-name";
+import { SAFE_NAME_FALLBACK, safeName } from "../safe-name";
 import { civilDay } from "../time";
 import { cleanErrandText } from "./clean";
 import { ERRAND_LINE_CHARS } from "./limits";
@@ -51,7 +51,10 @@ function when(atIso: string, nowMs: number, zone: string): string | null {
 }
 
 const nameOf = (r: ErrandRead): string => safeName(r.sender?.name ?? (r.source.kind === "mail" ? r.source.from : ""));
-const keyOf = (r: ErrandRead): string => (r.sender !== null && r.sender.address.length > 0 ? r.sender.address.trim().toLowerCase() : `name:${nameOf(r)}`);
+// Review fix V8: one address under two names is two senders, so each is named (or the line is card only).
+const keyOf = (r: ErrandRead): string => `${r.sender !== null ? r.sender.address.trim().toLowerCase() : ""}|${nameOf(r)}`;
+/** Review fix V8: a sender whose name does not pass `safeName` cannot be named, so its line is card only. */
+const nameable = (r: ErrandRead): boolean => nameOf(r) !== SAFE_NAME_FALLBACK;
 
 /**
  * Code's attribution for the third-party reads a line cites: "From Dana Park, Tuesday:", "From Dana Park and Pat Lee,
@@ -103,7 +106,7 @@ export function taintErrandLines(lines: readonly CheckedLine[], reads: readonly 
       // Card only, unless every shown third-party read is mail from a mailed sender and this line cites one to
       // name, with at most two senders.
       const senders = new Set(citedThird.map((e) => keyOf(e.read)));
-      const speak = !untrusted && citedThird.length > 0 && citedThird.every(mailedThird) && senders.size <= ERRAND_ATTRIBUTED_SENDERS_MAX;
+      const speak = !untrusted && citedThird.length > 0 && citedThird.every(mailedThird) && citedThird.every((e) => nameable(e.read)) && senders.size <= ERRAND_ATTRIBUTED_SENDERS_MAX;
       out.push({ text, refs, cls: lowerTrust(cited.reduce<Class>((a, e) => lowerTrust(a, e.cls), l.cls), runCls), sens, attribution, speak });
       continue;
     }
