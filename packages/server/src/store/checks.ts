@@ -23,6 +23,7 @@ import {
   Turn,
   canonicalJSON,
   evidenceFieldText,
+  purgedArgs,
   purgedValue,
   rootKey,
   sliceHashMatches,
@@ -111,6 +112,10 @@ export function checkImmutable(p: ParsedPath, prior: Record<string, unknown>, ne
   if (p.collection === "memories") {
     for (const field of ["value", "args", "predicate", "subjectId", "scopeId", "key"] as const) {
       if (field === "value" && PURGED_MEMORY_STATUS.has(next.status as string) && same(next.value, purgedValue(prior.value as MemoryT["value"]))) {
+        continue;
+      }
+      // Brief 048 ruling 17: purge empties the owner's words in `args` too, and nothing else about them.
+      if (field === "args" && PURGED_MEMORY_STATUS.has(next.status as string) && same(next.args, purgedArgs(prior as unknown as MemoryT))) {
         continue;
       }
       if (!same(prior[field], next[field])) {

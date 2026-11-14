@@ -131,6 +131,13 @@ export const slots = (why: string, items: (eid: string) => unknown[]): SlotsAnsw
 /** The typed reply's Responses answer. */
 export const reply = (text: string): Answer => ({ endpoint: "responses.create", why: `reply: "${text}"`, result: ok(completed(text)) });
 
+/** The forget's own resolve (ForgetResolveOutputV1, brief 048 ruling 6): exactly the Memories `ids` names. */
+export const resolveForget = (why: string, ids: (w: World) => string[]): Answer => ({
+  endpoint: "responses.create",
+  why: `forget resolve: ${why}`,
+  result: (w) => ok(completed(JSON.stringify({ resolution: "exact", remove: [], candidateIds: ids(w), entityIds: [], topicKeys: [], needsMore: false, clarification: null }))),
+});
+
 /** The slow parse's Decisions answer. Probabilities default to 0.01 each: an ordinary line. */
 export const parse = (p: Parameters<typeof decisionAnswer>[0] = {}, why = "parse: ordinary"): Answer => ({ endpoint: "decisions.create", why, result: ok(decisionAnswer(p)) });
 
@@ -209,8 +216,8 @@ export const TEMPLATES = {
   "occasion.wish": /Good luck at \d{1,2}(:\d\d)? (AM|PM): /,
   /** The check-in after an occasion (spec §15 beat 2): a moment whisper from brief 024's `checkIn` template. */
   "occasion.checkin": whisperPattern("checkIn"),
-  /** "Gone." after a completed forget (spec §8 step 7). Reserved in brief 021. */
-  "forget.gone": null,
+  /** "Gone." after a forget (spec §8 step 7; brief 048 ruling 7): voice/lines.ts GONE_LINE or GONE_EXCEPT_RULE_LINE first. */
+  "forget.gone": /^Gone(\.|, except one safety rule\. It's on your screen\.)/,
   /** Care before help on a hard disclosure (spec §15 beat 4). Persona and policy wording: brief 024. */
   "care.first": null,
 } as const satisfies Record<string, RegExp | null>;

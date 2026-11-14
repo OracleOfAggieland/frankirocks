@@ -6,7 +6,8 @@
  * the Session's `deadItemIds`. The request turn dies here: it is never a safe turn, never extracted, never chunked.
  * Every Extract_Job captured before the fence fails `STALE` at its commit, since the epoch rose.
  *
- * No route calls this in this part (brief 021).
+ * `fenceInTx` does the writes inside a caller's transaction: the turn route fences in the transaction that would have
+ * committed the request turn (brief 048 ruling 4). `fenceForget` wraps it in its own transaction.
  */
 import {
   type CoreBundle,
@@ -24,7 +25,7 @@ import {
 } from "@franki/core";
 import { cFields } from "../records";
 import { paths } from "../store/paths";
-import type { StorePort } from "../store/port";
+import type { StorePort, Tx } from "../store/port";
 import { forgetJob } from "../worker/jobs";
 
 export interface FenceInput {
@@ -42,15 +43,29 @@ export const forgetOpId = (uid: string, sessionId: ID, requestId: string, hasher
 export const forgetJobId = (opId: ID, hasher: Hasher): ID => hasher.id(["job", "forget", opId]);
 export const forgetReceiptId = (opId: ID, hasher: Hasher): ID => hasher.id(["ledger", "forgetReceipt", opId]);
 
+export interface FenceInTxOptions {
+  /** Items of request turns the caller writes in this same transaction (they cannot be read back yet). */
+  deadItems?: readonly { sessionId: ID; itemId: string }[];
+  /** False when the caller writes the request Session itself in this transaction; the dead items are then its own. */
+  touchSession?: boolean;
+}
+
 export async function fenceForget(store: StorePort, uid: string, input: FenceInput, opsNow: number, hasher: Hasher): Promise<FenceResult> {
+  return store.transaction(uid, (tx) => fenceInTx(tx, uid, input, opsNow, hasher));
+}
+
+export async function fenceInTx(tx: Tx, uid: string, input: FenceInput, opsNow: number, hasher: Hasher, opts: FenceInTxOptions = {}): Promise<FenceResult> {
   const opId = forgetOpId(uid, input.sessionId, input.requestId, hasher);
   const jobId = forgetJobId(opId, hasher);
   const receiptId = forgetReceiptId(opId, hasher);
   const now = tsFromMs(opsNow);
-  return store.transaction(uid, async (tx) => {
+  {
     const epochDoc = await tx.get<CoreEpoch>(paths.core(uid, "epoch"));
     if (epochDoc === null) throw new Error("fenceForget: core/epoch is missing");
     const prior = await tx.get<Job>(paths.job(uid, jobId));
+    // Brief 048 stage 5: a forget never queues behind a reset. The reset clears the barrier and its queue when it
+    // unblocks, so a forget queued there would never run. Refused, and the owner asks again.
+    if (prior === null && (await heldByReset(tx, uid, epochDoc.data, opId, hasher))) return { kind: "refused", code: "BARRIER" };
     // A queued op keeps its Session in `requestRef`, so the job promotion writes for it can read its request (brief 047).
     const requestRef = { type: "session" as const, id: input.sessionId, rev: 0 };
     const plan = planFence(epochDoc.data, { opId, requestRef, requestTurnIds: input.requestTurnIds }, now, prior === null ? null : { epoch: prior.data.epoch, policyRev: prior.data.policyRev });
@@ -59,8 +74,8 @@ export async function fenceForget(store: StorePort, uid: string, input: FenceInp
     if (plan.kind === "retry") return { kind: "retry", ...ids };
 
     // Dead-mark the request turns that exist (a request may fence before its transcript commits).
-    const session = await tx.get<Session>(paths.session(uid, input.sessionId));
-    const deadItems: { sessionId: ID; itemId: string }[] = [];
+    const session = opts.touchSession === false ? null : await tx.get<Session>(paths.session(uid, input.sessionId));
+    const deadItems: { sessionId: ID; itemId: string }[] = [...(opts.deadItems ?? [])];
     for (const turnId of input.requestTurnIds) {
       const turn = await tx.get<Turn>(paths.turn(uid, input.sessionId, turnId));
       if (turn === null) continue;
@@ -73,7 +88,6 @@ export async function fenceForget(store: StorePort, uid: string, input: FenceInp
     }
     tx.update(epochDoc.path, plan.epoch);
     if (plan.kind === "queued") return { kind: "queued", ...ids };
-
     const bundleDoc = await tx.get<CoreBundle>(paths.core(uid, "bundle"));
     if (bundleDoc !== null) {
       const b = bundleDoc.data;
@@ -103,5 +117,17 @@ export async function fenceForget(store: StorePort, uid: string, input: FenceInp
     };
     tx.create(paths.ledger(uid, receiptId), receipt);
     return { kind: "fenced", ...ids };
-  });
+  }
+}
+
+/**
+ * True when the barrier is up and held by something other than a forget: a reset (seed/reset.ts), whose op has no
+ * forget job. A forget's barrier always has its job, since the fence writes both in one transaction. One read, and
+ * only while a barrier is up. Fails closed: a barrier whose holder cannot be told is a reset's.
+ */
+export async function heldByReset(tx: Pick<Tx, "get">, uid: string, epoch: CoreEpoch, opId: ID, hasher: Hasher): Promise<boolean> {
+  const barrier = epoch.barrier;
+  if (barrier === null || barrier.opId === opId || barrier.queuedOps.some((q) => q.opId === opId)) return false;
+  const holder = await tx.get<Job>(paths.job(uid, forgetJobId(barrier.opId as ID, hasher)));
+  return holder === null || holder.data.kind !== "forget";
 }

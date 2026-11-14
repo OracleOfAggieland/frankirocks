@@ -150,6 +150,8 @@ export interface AudienceInput {
 
 /** Which audience row an outcome is (rows 6 to 10, and row 7 with company or quiet), or null for none. */
 export function audienceRow(o: RuleOutcome): "hangup" | "care" | "company" | "careNoCall" | "alone" | null {
+  // Brief 048 ruling 5: a forget's hold hangs up through the fence (forget/on-turn.ts), and is no audience outcome.
+  if (o.forget === true) return null;
   if (o.kind === "hold") return o.swap === "now" ? "hangup" : null;
   if (o.swap === "afterReply") return "care";
   if (o.line === COMPANY_LINE) return "company";

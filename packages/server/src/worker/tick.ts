@@ -1,7 +1,7 @@
 /**
  * `tick` (contracts §9 tickUser; design "Tick"; R14.4). At most once per ops minute per Owner:
  *   Q13  close expired live Sessions (at most 100 per run) through the hangup path, hangups scheduled;
- *   Q17  run due `queued` and `retry` jobs (hangup here; extract through the drain);
+ *   Q17  run due `queued` and `retry` jobs (hangup, then forget (brief 048 ruling 6), here; extract through the drain);
  *   Q18  requeue jobs whose lease expired.
  * `startTick` returns the bounded Q13 part as a promise (session open awaits it) and schedules the rest; the state
  * and receipt routes schedule all of it and never await it.
@@ -21,6 +21,8 @@ import { hangupAll, runHangupJob } from "./hangup";
 import { dueJobs } from "./jobs";
 // Brief 023: one-shot time.
 import { memoryTick } from "../time/tick";
+// Brief 048: forget is a job kind the tick runs.
+import { runDueForgets } from "../forget/drive";
 
 const MINUTE_MS = 60_000;
 export const EXPIRY_BATCH = 100;
@@ -131,6 +133,8 @@ export async function runDueJobs(ctx: RouteContext): Promise<void> {
     // The attempt's commit can race Q13's expiry close of the same Session.
     await racing(ctx, "hangup", () => runHangupJob(uid, jobId, deps, (sessionId) => afterClosed(ctx, sessionId)));
   }
+  // Brief 048 ruling 6: due forget jobs, after the hang-ups their close step reads.
+  await racing(ctx, "forget", () => runDueForgets(ctx));
   await drainExtractJobs(uid, deps);
 }
 

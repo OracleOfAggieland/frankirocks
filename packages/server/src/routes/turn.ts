@@ -78,12 +78,17 @@ import { holdMark, holdsOnTurn } from "../audience-swap";
 import { afterClosed } from "../sessions";
 import { driveHangupJob, ensureHangupJob } from "../worker/hangup";
 import { checkTapRequest, isControlTurn, isTap, postTap } from "./turn-tap";
+// Brief 048: forget on the wire.
+import { ackTypedForget, forgetInTurn } from "../forget/on-turn";
+import { FORGET_ROUTE_BUDGET_MS, driveForget } from "../forget/drive";
 
 type TurnReq = Infer<typeof TurnRequest>;
 type TurnRes = Infer<typeof TurnResponse>;
 
 /** Retry delay for a turn that arrived ahead of its predecessor. */
 export const HOLD_RETRY_MS = 250;
+/** Brief 048: the most job steps the turn route drives (a seeded-persona forget is 16). */
+export const FORGET_ROUTE_MAX_STEPS = 32;
 /** Compare-and-set attempts before the route answers STALE and the browser retries. */
 const MAX_CAS_ATTEMPTS = 8;
 
@@ -300,7 +305,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             admitRule(tx, { uid, requestId: req.requestId, requestEntryId: key.keyHash, turnRef: turnRef(req.turnId, req.sessionId, 1), core: core0, opsNow: ops, stamp, head: null, notes: [], turns: [], audioIds: [], toolOutput: null, rule: closed }, deps);
             const response: TurnRes = { ...base, status: "blocked" };
             await completeRequest(tx, key, response, ops);
-            return { kind: "committed" as const, response, jobId: null, repair: null, hangup: null };
+            return { kind: "committed" as const, response, jobId: null, repair: null, hangup: null, forget: null };
           }
 
           // Stamp revisions must be current; a stale Stamp commits nothing.
@@ -317,6 +322,43 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           // An earlier failed parse whose repair window ran out is a failed repair (R15.6).
           const s = expireLease(s0, ops);
           const text = typedText;
+
+          // Brief 048 (rulings 3 to 5): a forget that fires fences here, in the transaction that would have committed
+          // the turn. Row 11 is reached only by a hit, which no note changes, so the rule is asked with no notes.
+          const forgetRule: RuleInput = {
+            source: req.source === "asr" ? "asr" : cls.cls === "T" ? "pasted" : "typed",
+            transcript: req.transcriptState,
+            judge: fastO !== null ? "O" : req.judge,
+            parse: slow === null ? { kind: "none" } : slow.parse,
+            regexMatch: (slow?.regex.length ?? 0) > 0,
+            audience: effectiveAudience(s, ops),
+            narrowedHere: held,
+            callLive: s.registeredCallIds.length > 0,
+            parseGap: hasParseGap(s),
+            noteSens: "none",
+            wordsPer2s: wordsPer2s(text, req.items),
+            allFinal: req.items.every((i) => i.final),
+            toolParseCommitted: false,
+            wave: "B",
+          };
+          if (serverRule(forgetRule).forget === true) {
+            const f = await forgetInTurn(tx, ctx, {
+              req,
+              text,
+              cls,
+              pair,
+              epoch: core.epoch.data,
+              sessionPath: doc.path,
+              session: s,
+              rule: forgetRule,
+              stamp,
+              base,
+              key,
+              judge: req.judge === "O" || req.judge === "H" || req.judge === "U" ? req.judge : null,
+              uncertainSpeaker: slow?.probabilities?.uncertainSpeaker ?? 0,
+            });
+            return { kind: "committed" as const, response: f.response, jobId: null, repair: null, hangup: null, forget: f };
+          }
           // With no call open the typed reply is kept on a hit too: the rule decides its notes, and a Fixed_Line
           // replaces it (review of wave A, item 17). With a call, typedReplyNote makes no reply. A pasted (T) turn
           // never carries an S1+ note.
@@ -506,9 +548,16 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             moneyArgs = reply.readMoney;
           }
           await completeRequest(tx, key, response, ops);
-          return { kind: "committed" as const, response, jobId, repair, hangup };
+          return { kind: "committed" as const, response, jobId, repair, hangup, forget: null };
         });
         if (outcome.kind === "unrecorded") throw new Unrecorded(outcome.response);
+        // Brief 048 ruling 6: the route drives the forget job after the fence commits, inside one named budget; the
+        // hang-ups run inside its close step. What is left is the tick's.
+        if (outcome.forget !== null) {
+          await driveForget(ctx, outcome.forget.jobId, FORGET_ROUTE_BUDGET_MS, FORGET_ROUTE_MAX_STEPS);
+          // Ruling 8: a typed forget's answer says gone only once blockedAt is set.
+          return await ackTypedForget(ctx, outcome.forget);
+        }
         // Extraction and the Parse_Repair start after the response is sent (R18.4, R22.12, R15.3).
         if (outcome.repair !== null) {
           const target = { sessionId: req.sessionId as ID, turnId: req.turnId as ID, token: outcome.repair };

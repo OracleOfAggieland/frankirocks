@@ -9,7 +9,8 @@
  * Writes are ordered by `PURGE_ORDER` and then ID, so the executor's cursor (the last write committed) only advances.
  */
 import type { ID, TS } from "../schema/primitives";
-import { EVIDENCE_CONTENT_FIELDS, type Evidence, type Memory, type Turn } from "../schema/records";
+import { EVIDENCE_CONTENT_FIELDS, type Evidence, Memory as MemorySchema, type Memory, type Turn } from "../schema/records";
+import { validate } from "../schema/v";
 
 export const PURGE_ORDER = ["evidence", "memories", "turns"] as const;
 export type PurgeCollection = (typeof PURGE_ORDER)[number];
@@ -47,9 +48,48 @@ export function purgedEvidence(e: Evidence, now: TS): Evidence {
   return { ...e, ...cleared, recipient: [], observation: { kind: "none" }, status: "purged", purgedAt: e.purgedAt ?? now, updatedAt: now } as Evidence;
 }
 
+/**
+ * Brief 048 ruling 17: every string in a Memory's `args` emptied, keeping the row valid for its predicate. Each string
+ * (or list of strings) tries null, then "", then an empty list, and keeps the first the Memory schema accepts; a value
+ * none of them fits (an enum code such as `allergenCode`) is kept, and named by `keptArgs`.
+ */
+export function purgedArgs(m: Memory): Memory["args"] {
+  let args: Record<string, unknown> = { ...m.args };
+  for (const [k, v] of Object.entries(m.args)) {
+    const stringy = typeof v === "string" ? v !== "" : Array.isArray(v) && v.some((x) => typeof x === "string");
+    if (!stringy) continue;
+    for (const empty of [null, "", []] as const) {
+      const next = { ...args, [k]: empty };
+      if (validate(MemorySchema, { ...m, args: next }).ok) {
+        args = next;
+        break;
+      }
+    }
+  }
+  return args;
+}
+
+/** The `args` keys purge had to keep because their predicate allows no empty value (for the report). */
+export const keptArgs = (m: Memory): string[] => Object.entries(purgedArgs(m)).filter(([, v]) => (typeof v === "string" && v !== "") || (Array.isArray(v) && v.some((x) => typeof x === "string"))).map(([k]) => k);
+
+/**
+ * Brief 048 ruling 1: the Evidence of every assistant Turn closure withheld (blocked), with the Turn. Only a forget
+ * blocks an assistant Turn's Evidence, so every blocked one is emptied (fails closed: more is removed).
+ */
+function speechEids(i: PurgeInput): Set<ID> {
+  const status = new Map(i.evidence.map((e) => [e.id, e.evidence.status] as const));
+  const out = new Set<ID>();
+  for (const t of i.turns) {
+    const s = t.turn.evidenceId === null ? undefined : status.get(t.turn.evidenceId);
+    if (t.turn.role === "assistant" && s !== undefined && s !== "retained") out.add(t.turn.evidenceId!);
+  }
+  return out;
+}
+
 export function planPurge(i: PurgeInput): PurgeWrite[] {
   const out: PurgeWrite[] = [];
-  const eids = new Set(i.blockedEids);
+  const speech = speechEids(i);
+  const eids = new Set([...i.blockedEids, ...speech]);
   const byId = (a: { id: ID }, b: { id: ID }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   for (const { id, evidence } of [...i.evidence].sort(byId)) {
     if (!eids.has(id) || evidence.status === "retained") continue;
@@ -59,15 +99,30 @@ export function planPurge(i: PurgeInput): PurgeWrite[] {
   const mids = new Set(i.memoryIds);
   for (const { id, memory } of [...i.memories].sort(byId)) {
     if (!mids.has(id) || !["blocked", "retracted", "wrong"].includes(memory.status)) continue;
-    const doc: Memory = { ...memory, value: purgedValue(memory.value), texture: [], sayAs: null, watchTokens: [], watches: [], embedding: null, vectorVersion: null, updatedAt: i.now };
-    const lines = (m: Memory) => JSON.stringify([m.value, m.texture, m.sayAs, m.watchTokens, m.watches, m.embedding, m.vectorVersion]);
+    const doc: Memory = {
+      ...memory,
+      value: purgedValue(memory.value),
+      texture: [],
+      sayAs: null,
+      watchTokens: [],
+      watches: [],
+      embedding: null,
+      vectorVersion: null,
+      // Brief 048 ruling 17: the owner's words in `args` and in a hypothesis's alternatives go too.
+      args: purgedArgs(memory),
+      hypothesis: memory.hypothesis === null ? null : { ...memory.hypothesis, alternatives: [] },
+      updatedAt: i.now,
+    };
+    const lines = (m: Memory) => JSON.stringify([m.value, m.texture, m.sayAs, m.watchTokens, m.watches, m.embedding, m.vectorVersion, m.args, m.hypothesis?.alternatives ?? null]);
     if (lines(doc) === lines(memory)) continue;
     out.push({ collection: "memories", id, doc });
   }
   const requests = new Set(i.requestTurns.map((t) => `${t.sessionId}/${t.id}`));
   for (const t of [...i.turns].sort(byId)) {
-    if (!requests.has(`${t.sessionId}/${t.id}`) || t.turn.text === null) continue;
-    out.push({ collection: "turns", id: t.id, sessionId: t.sessionId, doc: { ...t.turn, text: null, evidenceId: null, updatedAt: i.now } });
+    if (t.turn.text === null) continue;
+    if (requests.has(`${t.sessionId}/${t.id}`)) out.push({ collection: "turns", id: t.id, sessionId: t.sessionId, doc: { ...t.turn, text: null, evidenceId: null, updatedAt: i.now } });
+    // Brief 048 ruling 1: a withheld assistant Turn keeps its row and its Evidence link; its words go.
+    else if (t.turn.role === "assistant" && t.turn.evidenceId !== null && speech.has(t.turn.evidenceId)) out.push({ collection: "turns", id: t.id, sessionId: t.sessionId, doc: { ...t.turn, text: null, updatedAt: i.now } });
   }
   return out;
 }

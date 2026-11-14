@@ -114,6 +114,13 @@ export const STATE_STALE_MS = 5_000;
 export const SPEAK_CAP_MS = 45_000;
 /** The call swap (design SWAPPING row 1): the fresh call has this long from the swap to a matching ack (R14.4). */
 export const SWAP_LIMIT_MS = 12_000;
+/**
+ * Brief 048 ruling 7: an open answered `blocked` (a forget's barrier is up) is sent again after this. The retry is
+ * the wait; the server gives the forget a pass on each blocked open.
+ */
+export const BARRIER_RETRY_MS = 1_000;
+/** Brief 048 ruling 7: a swap whose fresh call is still behind a barrier this long after the swap began shows recovery. */
+export const BARRIER_WAIT_MS = 5_000;
 export { LATE_TURN_MS };
 
 // ---------------------------------------------------------------------------------------------
@@ -195,6 +202,10 @@ export type VoicePhase =
  *                 ends the wait early (and a bare stateFailed also counts a failure against this Session).
  *   swap          SWAPPING (startSwap): the fresh call has SWAP_LIMIT_MS to reach a matching ack. Fires in SWAPPING:
  *                 connection recovery, closing the fresh Session if it has one (R14.4).
+ *   barrierRetry  SWAPPING (barrierInSwap): an open answered `blocked` while the forget's barrier is up is sent again
+ *                 BARRIER_RETRY_MS later, until BARRIER_WAIT_MS from the swap's start (the `swap` deadline less
+ *                 SWAP_LIMIT_MS). Fires in SWAPPING with no open awaited and no Session: past that wait, connection
+ *                 recovery; otherwise the swap's open again (brief 048 ruling 7).
  *   speakCap      HELD, RECOVERY or TOOL_WAIT at admission (admit; TOOL_WAIT when the adopted speculative reply
  *                 already holds a recall call), re-armed in SPEAKING when audio starts: SPEAK_CAP_MS. Fires with an
  *                 active reply: cancel all, LISTENING.
@@ -223,7 +234,9 @@ export type TimerName =
   /** Contracts §6 States SPEAKING "45scap": an active reply that never starts or never stops ends here. */
   | "speakCap"
   /** R7.6: the t0 + ADMITTED_TRANSCRIPT_LIMIT_MS wait of a Turn whose admitted reply ended before its transcript. */
-  | "heldBack";
+  | "heldBack"
+  /** Brief 048 ruling 7: in SWAPPING, the next open after a `blocked` one (a forget's barrier). */
+  | "barrierRetry";
 
 export interface VoiceItem {
   itemId: string;
@@ -1093,6 +1106,8 @@ function onOpen(s: Step, res: Infer<typeof OpenResponse>): void {
   }
   s.disarm("openWait");
   s.set({ awaitingOpen: false });
+  if (res.state === "blocked" && s.st.phase === "SWAPPING") return barrierInSwap(s);
+  if (res.state === "blocked" && s.st.recovery?.kind === "connection") return barrierInRecovery(s);
   if (res.state === "blocked" || res.deck === null || res.ack === null) {
     openFailed(s);
     return;
@@ -1137,6 +1152,32 @@ function visitGone(s: Step, visitId: string): void {
   flushRecent(s);
   if (st.session !== null) s.push({ kind: "close", body: { sessionId: st.session.sessionId, generation: st.session.generation, reason: MACHINE_CLOSE_REASON } });
   s.set({ ...closedFields(st), awaitingOpen: false, staleOpen: false, error: "visit" });
+}
+
+/** When the swap began: its `swap` deadline is armed once, at the start, SWAP_LIMIT_MS ahead. */
+const swapStartedAt = (s: Step): number => (s.st.deadlines.swap ?? s.now + SWAP_LIMIT_MS) - SWAP_LIMIT_MS;
+
+/**
+ * Brief 048 ruling 7: the swap's fresh open met a forget's barrier. The old call stays closed and muted; the open is
+ * sent again after BARRIER_RETRY_MS, inside SWAPPING (the avatar shows thinking), until BARRIER_WAIT_MS from the swap's
+ * start, and then the call shows connection recovery and stays muted. It is never resumed.
+ */
+function barrierInSwap(s: Step): void {
+  const until = swapStartedAt(s) + BARRIER_WAIT_MS;
+  if (s.now >= until) return connectionRecovery(s, false);
+  s.arm("barrierRetry", Math.min(s.now + BARRIER_RETRY_MS, until));
+}
+
+/**
+ * Brief 048 ruling 7: a reconnect's open met a barrier. The server is up and busy, so the attempt is given back and the
+ * same reconnect delay runs again: recovery keeps waiting, muted, for as long as the barrier lasts ("Try again" still
+ * shows at RETRY_UI_MS).
+ */
+function barrierInRecovery(s: Step): void {
+  const r = s.st.recovery!;
+  s.disarm("openWait");
+  s.set({ awaitingOpen: false, phase: "RECOVERY", recovery: { ...r, attempts: Math.max(0, r.attempts - 1) } });
+  scheduleReconnect(s);
 }
 
 function openFailed(s: Step): void {
@@ -2575,6 +2616,14 @@ function onTimer(s: Step, name: TimerName): void {
     case "swap":
       // R14.4: the swap did not bring the fresh call up in time: the existing connection recovery.
       if (st.phase === "SWAPPING") connectionRecovery(s, st.session !== null);
+      return;
+    case "barrierRetry":
+      // Brief 048 ruling 7: the swap's open again, or recovery once the barrier wait is over.
+      if (st.phase !== "SWAPPING" || st.awaitingOpen || st.session !== null) return;
+      if (s.now >= swapStartedAt(s) + BARRIER_WAIT_MS) return connectionRecovery(s, false);
+      s.set({ awaitingOpen: true });
+      s.push({ kind: "open", body: { initiator: "user", previousSessionId: st.narrowedFrom ?? st.lastSessionId, clientZone: st.zone, visitId: openVisit(st) } });
+      s.arm("openWait", s.now + OPEN_LIMIT_MS);
       return;
     default:
       // Compile-time only: a TimerName with no case fails the typecheck. At run time nothing happens.

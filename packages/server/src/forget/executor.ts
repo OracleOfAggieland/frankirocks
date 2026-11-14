@@ -530,9 +530,19 @@ function opBlockedEids(f: ForgetPayload, sessionId: ID, w: Pick<WorldRows, "over
 
 const targetIdsOf = (f: ForgetPayload): ID[] => (f.scopePending ? [] : f.candidateRefs.filter((r) => r.type === "memory").map((r) => r.id as ID));
 
-function closureInput(f: ForgetPayload, sessionId: ID, w: WorldRows, stamps: { epoch: number; policyRev: number }, now: string, hasher: Hasher) {
+/** The request Evidence of every forget queued behind the barrier (closure leaves it to that op). */
+function queuedEidsOf(epoch: CoreEpoch | undefined, w: Pick<WorldRows, "evidence" | "turns">): ID[] {
+  const turnIds = new Set<string>((epoch?.barrier?.queuedOps ?? []).flatMap((q) => q.requestTurnIds));
+  const out = new Set<ID>();
+  for (const t of w.turns) if (turnIds.has(t.id) && t.data.evidenceId !== null) out.add(t.data.evidenceId);
+  for (const e of w.evidence) if (e.data.kind === "turn" && e.data.turnId !== null && turnIds.has(e.data.turnId)) out.add(e.id);
+  return [...out];
+}
+
+function closureInput(f: ForgetPayload, sessionId: ID, w: WorldRows, stamps: { epoch: number; policyRev: number }, now: string, hasher: Hasher, epoch?: CoreEpoch) {
   const blocked = opBlockedEids(f, sessionId, w);
   return {
+    queuedEids: queuedEidsOf(epoch, w),
     opId: f.opId,
     stamps,
     now,
@@ -672,7 +682,7 @@ async function runClosure(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease
   if (epochDoc === undefined) throw new BarrierGone();
   const stamps = { epoch: epochDoc.epoch, policyRev: epochDoc.policyRev };
   const requestEids = opBlockedEids(f, sessionId, w).request.slice(0, 8);
-  const plan = planClosure(closureInput(f, sessionId, w, stamps, now, deps.hasher));
+  const plan = planClosure(closureInput(f, sessionId, w, stamps, now, deps.hasher, epochDoc));
   const read = readIndex(uid, w);
   const left = plan.groups.filter((g) => g.writes.some((x) => pending(uid, read, x)));
   const page = closurePages(left, FORGET_PAGE_DOCS)[0] ?? [];
@@ -701,7 +711,8 @@ async function runClosure(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease
 async function closureSettled(deps: ForgetDeps, uid: string, job: Job, stamps: { epoch: number; policyRev: number }, now: string): Promise<{ finished: boolean; restamped: boolean } | "limit"> {
   const w = await readWorld(deps.store, uid);
   if (w === "limit") return "limit";
-  const plan = planClosure(closureInput(forgetOf(job), job.sourceIds[0]!, w, stamps, now, deps.hasher));
+  const epoch = (await deps.store.get<CoreEpoch>(uid, paths.core(uid, "epoch")))?.data;
+  const plan = planClosure(closureInput(forgetOf(job), job.sourceIds[0]!, w, stamps, now, deps.hasher, epoch));
   const read = readIndex(uid, w);
   const left = plan.groups.filter((g) => g.writes.some((x) => pending(uid, read, x)));
   return { finished: !left.some((g) => g.order === 1), restamped: !left.some((g) => g.order === 2) };
@@ -852,8 +863,15 @@ async function runPurge(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, 
   const memories = await capped<Memory>(store, uid, "memories", FORGET_READ_MAX);
   const evidence = await capped<Evidence>(store, uid, "evidence", FORGET_READ_MAX);
   const overlays = await capped<Overlay>(store, uid, "overlays", FORGET_READ_MAX);
-  const turns = await sessionTurns(store, uid, sessionId);
-  if (memories === "limit" || evidence === "limit" || overlays === "limit" || turns === "limit") return "limit";
+  // Brief 048 ruling 1: Franki's withheld words may be in any Session, so purge reads every Session's turns.
+  const sessions = await capped<Session>(store, uid, "sessions", FORGET_SESSIONS_MAX);
+  if (memories === "limit" || evidence === "limit" || overlays === "limit" || sessions === "limit") return "limit";
+  const turns: WorldRows["turns"] = [];
+  for (const s of sessions) {
+    const t = await sessionTurns(store, uid, s.id);
+    if (t === "limit") return "limit";
+    turns.push(...t);
+  }
   const blocked = opBlockedEids(f, sessionId, { overlays, evidence, turns });
   const derivatives = walkDerivatives({ targetIds: targetIdsOf(f), blockedEids: [...blocked.ranged, ...blocked.request], blockedKeys: f.blockedKeys, memories: memories.map((r) => ({ id: r.id, memory: r.data })) });
   const writes = planPurge({

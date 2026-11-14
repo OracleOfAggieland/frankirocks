@@ -14,6 +14,7 @@ import type { OpenAIPort } from "../openai/fake";
 import type { CallStatus } from "../phone/status";
 import type { Dial } from "../phone/twilio";
 import type { BankPort } from "../bank/plaid";
+import type { ForgetResolvePort } from "../forget/resolve-port";
 import type { StorePort } from "../store/port";
 import { type RouteError, dependencyLogFields, parseError, toRouteError } from "./errors";
 
@@ -32,6 +33,8 @@ export interface RouteDeps {
   callStatus?: CallStatus;
   /** Brief 046: the bank (Plaid) port. Live when unset; a throwing fake in tests. */
   bank?: BankPort;
+  /** Brief 048: the forget job's ForgetResolveV1 port. Over `openai` when unset (`forget/resolve-live.ts`). */
+  forgetResolve?: ForgetResolvePort;
   store: StorePort;
   clock: ClockPort;
   hasher: Hasher;

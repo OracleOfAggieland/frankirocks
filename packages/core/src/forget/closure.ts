@@ -17,7 +17,9 @@
  *     this op blocked carry the sanitized text and Evidence, or none; the request turns lose their Evidence. Opened
  *     topics and grants on a derivative's topics are cleared from every Session.
  *   - Restamp (ruling 1, answers F-163). Every surviving Memory and retained Evidence below the barrier's epoch is
- *     stamped to it, `dirty: false`, so `eligible`'s clause 5 lets it through once the barrier clears.
+ *     stamped to it, so `eligible`'s clause 5 lets it through once the barrier clears. Its own `dirty` is kept (brief
+ *     048 ruling 16): only a code survivor that closure re-anchors is set clean.
+ *   - Franki's own words (brief 048 ruling 1): see `withheldSpeech`.
  *
  * Writes come in groups (one withdrawn Memory with its effects and holds, or one row), so a page never splits a
  * retraction from the hold that keeps its restraint. The executor pages them (at most `FORGET_PAGE_DOCS`) and skips a
@@ -31,6 +33,7 @@ import type { ID, Ref, TS } from "../schema/primitives";
 import type { Effect, Evidence, Memory, Moment, Session, Turn } from "../schema/records";
 import { FIRST_PERSON } from "../writes/subject";
 import { evidenceFieldText } from "../evidence";
+import { isFixedLine } from "../voice/lines";
 import type { Stamps } from "./fence";
 import { planWithdrawal } from "./withdraw";
 
@@ -70,6 +73,12 @@ export interface ClosureInput {
   moments: readonly { id: ID; moment: Moment }[];
   turns: readonly { sessionId: ID; id: ID; turn: Turn }[];
   sessions: readonly { id: ID; session: Session }[];
+  /**
+   * Evidence of a forget queued behind this one (its request turns' Evidence). That op blocks it; this one neither
+   * blocks nor restamps it, so a row the queued request wrote after this closure finished never holds this op's
+   * resume open, and is never lifted to the cleared epoch before its own forget runs (fails closed).
+   */
+  queuedEids?: readonly ID[];
 }
 
 export interface ClosurePlan {
@@ -80,6 +89,41 @@ export interface ClosurePlan {
   withdrawnIds: ID[];
   /** Derivatives kept by code (ruling 4). */
   survivorIds: ID[];
+  /** Franki's own turns whose words closure withholds (brief 048 ruling 1), by Session. */
+  withheldTurns: { sessionId: ID; id: ID; eid: ID }[];
+}
+
+/**
+ * Brief 048 ruling 1: code cannot search Franki's free speech, so once something forgotten was stored any reply Franki
+ * made afterwards may repeat it. Every assistant Turn whose Evidence was written at or after the earliest forgotten
+ * Evidence was stored, and below the barrier's epoch (before the fence), is withheld: its Evidence is blocked here and
+ * purge empties it. "Forgotten Evidence" is the Evidence this op blocked and the root and packet Evidence of every
+ * derivative (fails closed: the earliest of all of them). A Fixed_Line is worded from no row, so it keeps its text.
+ * With no forgotten Evidence found (a pending scope), nothing is withheld.
+ */
+export function withheldSpeech(i: Pick<ClosureInput, "stamps" | "blockedEids" | "memories" | "evidence" | "turns">, derivative: ReadonlySet<ID>): { sessionId: ID; id: ID; eid: ID }[] {
+  const forgotten = new Set<ID>(i.blockedEids);
+  for (const { id, memory } of i.memories) {
+    if (!derivative.has(id)) continue;
+    for (const s of memory.rootSlices) forgotten.add(s.eid);
+    for (const e of memory.packetEids) forgotten.add(e);
+  }
+  const byId = new Map(i.evidence.map((e) => [e.id, e.evidence] as const));
+  let earliest: string | null = null;
+  for (const eid of forgotten) {
+    const e = byId.get(eid);
+    if (e !== undefined && (earliest === null || e.createdAt < earliest)) earliest = e.createdAt;
+  }
+  if (earliest === null) return [];
+  const out: { sessionId: ID; id: ID; eid: ID }[] = [];
+  for (const { sessionId, id, turn } of i.turns) {
+    if (turn.role !== "assistant" || turn.evidenceId === null) continue;
+    if (turn.text !== null && isFixedLine(turn.text)) continue;
+    const e = byId.get(turn.evidenceId);
+    if (e === undefined || e.createdAt < earliest || e.epoch >= i.stamps.epoch) continue;
+    out.push({ sessionId, id, eid: turn.evidenceId });
+  }
+  return out;
 }
 
 const MOMENT_DONE: readonly Moment["status"][] = ["delivered", "expired", "skipped", "cancelled"];
@@ -213,16 +257,31 @@ export function planClosure(i: ClosureInput): ClosurePlan {
 
   // Moments of every derivative, targets included, are cancelled; the anchor stays as busy time (install's overlay).
   for (const { id, moment } of i.moments) {
-    if (moment.memoryId === null || !derivative.has(moment.memoryId) || MOMENT_DONE.includes(moment.status)) continue;
+    if (moment.memoryId === null || !derivative.has(moment.memoryId)) continue;
+    if (MOMENT_DONE.includes(moment.status)) {
+      // Brief 048 ruling 1: a line worded from a forgotten row loses its text whenever it was written, a delivered
+      // moment's rendered line included. The row, its state and its counts stay.
+      if (moment.rendered !== null) order1.push({ order: 1, writes: [{ collection: "moments", id, doc: { ...moment, rendered: null, updatedAt: i.now } }] });
+      continue;
+    }
     order1.push({ order: 1, writes: [{ collection: "moments", id, doc: { ...moment, status: "cancelled", cancelReason: "forgotten", leaseToken: null, leaseUntil: null, rendered: null, updatedAt: i.now } }] });
   }
 
   // The request turns' own Evidence is blocked (it never enters safe turns, spec §8 step 2).
   const requestIds = new Set(i.requestTurns.map((t) => `${t.sessionId}/${t.id}`));
+  const queuedEids = new Set<ID>(i.queuedEids ?? []);
   const requestEids = new Set<ID>();
   for (const t of i.turns) if (requestIds.has(`${t.sessionId}/${t.id}`) && t.turn.evidenceId !== null) requestEids.add(t.turn.evidenceId);
   for (const { id, evidence } of i.evidence) {
     if (!requestEids.has(id) || evidence.status !== "retained") continue;
+    order1.push({ order: 1, writes: [{ collection: "evidence", id, doc: { ...evidence, status: "blocked", updatedAt: i.now } }] });
+  }
+
+  // Brief 048 ruling 1: Franki's free speech since the earliest forgotten Evidence is withheld (its Evidence blocked).
+  const withheldTurns = withheldSpeech(i, derivative);
+  const withheldEids = new Set(withheldTurns.map((t) => t.eid));
+  for (const { id, evidence } of i.evidence) {
+    if (!withheldEids.has(id) || evidence.status !== "retained") continue;
     order1.push({ order: 1, writes: [{ collection: "evidence", id, doc: { ...evidence, status: "blocked", updatedAt: i.now } }] });
   }
 
@@ -254,18 +313,19 @@ export function planClosure(i: ClosureInput): ClosurePlan {
   const reanchored = new Set(survivorIds);
   for (const { id, memory } of i.memories) {
     if ((derivative.has(id) && !reanchored.has(id)) || withdrawn.has(id) || reanchored.has(id)) continue;
-    if (memory.epoch >= i.stamps.epoch && !memory.dirty) continue;
+    // Brief 048 ruling 16: a restamp moves the epoch only; a survivor dirty for another reason stays dirty.
+    if (memory.epoch >= i.stamps.epoch) continue;
     if (memory.status === "blocked" || memory.status === "retracted") continue;
-    order2.push({ order: 2, writes: [{ collection: "memories", id, doc: { ...memory, epoch: i.stamps.epoch, dirty: false, updatedAt: i.now } }] });
+    order2.push({ order: 2, writes: [{ collection: "memories", id, doc: { ...memory, epoch: i.stamps.epoch, updatedAt: i.now } }] });
   }
   const deniedByProvider = (e: Evidence, id: ID) => e.providerKey !== null && i.providerBlocks.some((b) => b.providerKey === e.providerKey && b.allowedEvidenceId !== id);
   for (const { id, evidence } of i.evidence) {
-    if (evidence.status !== "retained" || blockedEids.has(id) || requestEids.has(id) || deniedByProvider(evidence, id)) continue;
-    if (evidence.epoch >= i.stamps.epoch && !evidence.dirty) continue;
-    order2.push({ order: 2, writes: [{ collection: "evidence", id, doc: { ...evidence, epoch: i.stamps.epoch, dirty: false, updatedAt: i.now } }] });
+    if (evidence.status !== "retained" || blockedEids.has(id) || requestEids.has(id) || withheldEids.has(id) || queuedEids.has(id) || deniedByProvider(evidence, id)) continue;
+    if (evidence.epoch >= i.stamps.epoch) continue;
+    order2.push({ order: 2, writes: [{ collection: "evidence", id, doc: { ...evidence, epoch: i.stamps.epoch, updatedAt: i.now } }] });
   }
 
-  return { groups: [...order1, ...order2], derivativeIds: [...derivative], withdrawnIds, survivorIds };
+  return { groups: [...order1, ...order2], derivativeIds: [...derivative], withdrawnIds, survivorIds, withheldTurns };
 }
 
 /** Pages of whole groups, at most `size` writes each (a group larger than `size` is a page alone), one order each. */

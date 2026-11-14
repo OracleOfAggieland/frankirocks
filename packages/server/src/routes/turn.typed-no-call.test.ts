@@ -1,4 +1,4 @@
-import { DECISIONS_CONTRACT_DEADLINE_MS, DECISIONS_DEADLINE_MS, FORGET_NOT_YET, RECOVERY_LINE, type Session } from "@franki/core";
+import { DECISIONS_CONTRACT_DEADLINE_MS, DECISIONS_DEADLINE_MS, ALONE_LINE, RECOVERY_LINE, type Session } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { paths } from "../store/paths";
 import { commitUserTurnForTest, insertMemoryForTest } from "../testing/extract-fixtures";
@@ -53,10 +53,11 @@ describe("a typed line with no call open (review of wave A, item 17)", () => {
   it("a class with a Fixed_Line shows its line, not the typed reply", async () => {
     const rig = testRig();
     const s = await openTestSession(rig);
-    rig.openai.script("decisions.create", ok(decisionAnswer({ forget: 0.9 })));
-    rig.openai.script("responses.create", ok(completed("Sure, forgotten.")));
-    const { value: res } = await post(rig, typedTurn(s.stamp, 1, "forget what I said about work"));
-    expect(texts(res.body)).toEqual([FORGET_NOT_YET]);
+    // Brief 048: forget no longer answers with a Fixed_Line, so the alone line carries this check.
+    rig.openai.script("decisions.create", ok(decisionAnswer({ alone: 0.9 })));
+    rig.openai.script("responses.create", ok(completed("Sure, it's just us.")));
+    const { value: res } = await post(rig, typedTurn(s.stamp, 1, "it's just us now"));
+    expect(texts(res.body)).toEqual([ALONE_LINE]);
   });
 
   it("a failed parse shows the Neutral_Line as text", async () => {
@@ -132,10 +133,10 @@ describe("a typed hit keeps its reply whatever its sensitivity, when no one else
 
   it("a Fixed_Line class still shows its line", async () => {
     const { rig, s } = await s1Head();
-    rig.openai.script("decisions.create", ok(decisionAnswer({ forget: 0.9 })));
+    rig.openai.script("decisions.create", ok(decisionAnswer({ alone: 0.9 })));
     rig.openai.script("responses.create", ok(completed("Sure.")));
-    const { value: res } = await post(rig, typedTurn(s.stamp, 1, "forget what I said about my sister"));
-    expect(texts(res.body)).toEqual([FORGET_NOT_YET]);
+    const { value: res } = await post(rig, typedTurn(s.stamp, 1, "it's just us, my sister left"));
+    expect(texts(res.body)).toEqual([ALONE_LINE]);
   });
 });
 

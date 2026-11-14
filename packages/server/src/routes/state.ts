@@ -5,7 +5,7 @@
  * ignores core/bundle.expiresAt. The route does only its own reads and one write, and schedules `tick` without
  * awaiting it, so OpenAI or extraction never delay it.
  */
-import { type Infer, type Session, StateRequest, type StateResponse, type Turn, msFromTs, tsFromMs } from "@franki/core";
+import { type ID, type Infer, type Session, StateRequest, type StateResponse, type Turn, msFromTs, tsFromMs } from "@franki/core";
 import { effectiveAudience, expireLease, hasParseGap } from "../audience";
 import { ensureCoreDocs, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck } from "../deck";
@@ -21,6 +21,8 @@ import { STATE_BUDGET_MS, idleProactive } from "./delivery-wire";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 035: no ack and no Deck on a Session narrowed here (finding 9).
 import { narrowedHere } from "../audience-swap";
+// Brief 048: the typed forget's acknowledgment, once it is ready.
+import { typedAckOnState } from "../forget/on-turn";
 
 type StateReq = Infer<typeof StateRequest>;
 type StateRes = Infer<typeof StateResponse>;
@@ -95,14 +97,18 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
           updatedAt: tsFromMs(ops),
         });
       }
-      return { stamp, state: "LISTENING", deck: narrowedHere(next) ? null : issueDeck(stamp, head, ops, safe), ack, barrierReceiptId: null, proactive: null, audience: effectiveAudience(next, ops) } satisfies StateRes;
+      const deck = narrowedHere(next) ? null : issueDeck(stamp, head, ops, safe);
+      // Brief 048 ruling 8: a typed forget whose answer went out before blockedAt was set gets its acknowledgment
+      // here, once, on its own Session with no call (a call's fresh open says it instead).
+      const proactive = deck === null ? null : await typedAckOnState(tx, ctx, { sessionId: req.sessionId as ID, session: next, stamp, head, audience: effectiveAudience(next, ops), opsNow: ops });
+      return { stamp, state: "LISTENING", deck, ack, barrierReceiptId: null, proactive, audience: effectiveAudience(next, ops) } satisfies StateRes;
     }),
   );
   // Brief 030 part A: an idle whisper, gated inside `chooseNow`, only where the ack checks passed.
   // Coordinator ruling on brief 042: the poll's budget holds; the whisper gets what is left of it, or waits.
   const spent = ctx.deps.clock.read().opsClock.now - (ctx.startedOpsAt ?? ctx.deps.clock.read().opsClock.now);
   // Brief 045, finding 3: no Deck, no line (its Permit binds the Deck's Head and safe turns).
-  return res.ack === null || res.deck === null ? res : { ...res, proactive: await idleProactive(ctx, res.stamp, STATE_BUDGET_MS - spent, res.deck) };
+  return res.ack === null || res.deck === null || res.proactive !== null ? res : { ...res, proactive: await idleProactive(ctx, res.stamp, STATE_BUDGET_MS - spent, res.deck) };
 }
 
 export const stateRoute: RouteSpec<StateReq> = {

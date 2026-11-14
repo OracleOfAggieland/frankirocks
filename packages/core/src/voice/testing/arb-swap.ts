@@ -21,7 +21,7 @@ import { payloadHash } from "../../admission";
 import { tsFromMs } from "../../schema/primitives";
 import type { Infer } from "../../schema/v";
 import type { Permit, Proactive, Stamp, TurnResponse } from "../../schema/wire";
-import { COMPANY_LINE, ackNote } from "../lines";
+import { type AckText, COMPANY_LINE, ackNote } from "../lines";
 import { OPEN_LIMIT_MS, type TurnBody } from "../machine";
 import type { Trace } from "./arb-call";
 import { type WideAction, WideDriver, type WideStep, arbFastOScene, arbSetup, arbSlowScene, arbWideNoise, judged } from "./arb-call-wide";
@@ -79,7 +79,7 @@ export class SwapDriver extends WideDriver {
     }
   }
 
-  private syncOpens(): void {
+  protected syncOpens(): void {
     for (const st of this.trace.steps.slice(this.seenOpens)) for (const c of st.commands) if (c.kind === "open") this.opensPrev.push({ prev: c.body.previousSessionId, at: st.i });
     this.seenOpens = this.trace.steps.length;
   }
@@ -154,15 +154,18 @@ export class SwapDriver extends WideDriver {
     return { permitId: this.fresh("p"), stamp, kind: "postCommitControl", scope: "ack", approvedPayloadHash: hash, noteIds: [], momentIds: [], expiresAt: tsFromMs(at + 10_000) };
   }
 
+  /** The Fixed_Line an open naming a narrowed Session carries (brief 048's forget driver says the acknowledgment). */
+  protected swapLine: AckText = COMPANY_LINE;
+
   /** An open that inherits a narrowed audience: a new Session, and the swap line in `proactive`. */
-  private swapOpen(dt: number): void {
+  protected swapOpen(dt: number): void {
     const at = this.now + dt;
     const sessionId = this.fresh("s");
     this.sessions.push(sessionId);
     this.serverDeck = this.deckNow(at, { bundleRev: this.serverDeck.bundleRev + 1 });
     const deck = this.serverDeck;
     const turnId = this.fresh("t");
-    const whisper = ackNote(COMPANY_LINE, this.fresh("n"), tsFromMs(at + 10_000));
+    const whisper = ackNote(this.swapLine, this.fresh("n"), tsFromMs(at + 10_000));
     const stamp: Stamp = { sessionId, epoch: deck.epoch, policyRev: deck.policyRev, bundleRev: deck.bundleRev, rulesRev: deck.rulesRev, generation: deck.generation, turnId };
     const hash = payloadHash({ stamp, head: deck.head, notes: [whisper], turns: deck.turns, audioIds: [], toolOutput: null }, this.hasher);
     const permit: Permit = { permitId: this.fresh("p"), stamp, kind: "postCommitControl", scope: "ack", approvedPayloadHash: hash, noteIds: [whisper.noteId], momentIds: [], expiresAt: tsFromMs(at + 10_000) };
