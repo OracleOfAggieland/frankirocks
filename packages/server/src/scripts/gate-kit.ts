@@ -11,7 +11,8 @@ import { paths } from "../store/paths";
 // ---------------------------------------------------------------------------------------------
 // The gates, and what a waiting step waits for. One constant per reason, so the summary groups them.
 
-export type Gate = "food" | "poison" | "exposure" | "friend";
+/** `forget`: brief 048 stage 5, the gates "old speech after forget" and "a forget leak" (`gate-forget.ts`). */
+export type Gate = "food" | "poison" | "exposure" | "friend" | "forget";
 
 export interface GateScript extends Script {
   gate: Gate;
