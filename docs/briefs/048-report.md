@@ -10,7 +10,7 @@ Built by Claude Code from briefs 016 and 048, on branch `lane/forget-b`. No comm
 | 2. Rulings 1, 2, 16, 17 and the new No Resurrection property | done |
 | 3. Admission, the turn route, the fence, the hang-up, the driver, the tick | done |
 | 4. The acknowledgment, the voice machine, beat 5 | done (items a to h; commits `daa06bb` to `03b14a0`) |
-| 5. The release-gate scripts | not started |
+| 5. The release-gate scripts, and three properties on the routes | done (commits `ce6ce7f` to `e34baa4`) |
 | 6. The ask by words, "Forget last thing" | not started |
 
 ## Lane start
@@ -62,6 +62,44 @@ Red on `daa06bb` (the lines, with no delivery yet): seed -645418995, path `0:0:0
 
 Red on the machine at `aaefb41`, with the final forget driver: seed 1775935755, path `2:0:0:0:0:0:0:3:2:4:4:6:6:6:7:7:7:7`. Shrunk counterexample: a call is set up, a spoken line is judged `H` and answered `blocked` for the forget, the server answers four opens `blocked` behind its barrier, then lets a fresh call through (openOk, channelOpen, two state reads, hash, created, started, speechStart). Message: `nothing said after the forget answer; phases SWAPPING RECOVERY CONNECTING RECOVERY CONNECTING RECOVERY CONNECTING RECOVERY RECOVERY RECOVERY RECOVERY`. In one sentence: four barrier answers used up the browser's three reconnects, so the call stopped trying and the acknowledgment was never said. Green from `0f077a3`, 300 runs.
 
+### No Resurrection on the routes (`packages/server/src/forget/no-resurrection-routes.property.test.ts`)
+
+The forget is asked on `/api/turn` (spoken in a call, or typed with no call), the route and the worker tick finish it, and then a fresh open (its Head and first line), the state route's idle line, a typed turn (its notes and what its reply model was given), `recall` (answer and why), `suggest` (food and connection), `answer`, `read_money` (each result and what any model was given), the memory views (overview, lab, strip, receipt) and the item and why reads of every Memory and every turn's Evidence are searched for the forgotten words. Survivors stay usable. The world and oracle are the first property's (`oracleDerivatives`). Shared rig: `forget/testing/route-world.ts`.
+
+Red on `abe1e15` (end of stage 2, before the route fenced), run as an untracked file: seed 1862798129, path `0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0`. Counterexample, verbatim:
+
+```
+[{"sentences":[{"person":"Danny","food":"bibimbap","text":"Danny loves bibimbap."}],"turns":[{"sentences":[0],"mail":false,"allergy":false}],"memories":[{"turn":0,"sentence":0,"place":"glacier","parent":null,"context":null}],"effects":[],"target":0,"secondPick":0,"extractPick":0,"events":[],"fresh":{"person":"Danny","food":"risotto","place":"orchard"}},false]
+```
+
+Message: `"bibimbap" came back through open`. In one sentence: the turn route answered the forget with "I can't forget things yet" and fenced nothing, so the fresh call's Head still held the forgotten food. Green on the current code at 200 runs.
+
+### The request's words go nowhere (`packages/server/src/forget/request-words-nowhere.property.test.ts`)
+
+For any order of ordinary turns, turns posted `missing` and later superseded, turns whose parse fails, and worker runs, before and after a forget asked on `/api/turn` (spoken or typed), the request says one marker word ("quokka") that nothing else says. After admission chose forget it is in no model call, no Evidence, no Job, no safe turn of either Session and no carried turn; inside the forget's own turn only the parse and the typed reply beside it read it (F-208a); the fresh open carries none of it; and once the job is done no stored row holds it.
+
+Red on `abe1e15`: seed -1503327144, path `0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0`. Counterexample, verbatim:
+
+```
+[{"sentences":[{"person":"Danny","food":"pierogi","text":"Danny loves pierogi."}],"turns":[{"sentences":[0],"mail":false,"allergy":false}],"memories":[{"turn":0,"sentence":0,"place":"quarry","parent":null,"context":null}],"effects":[],"target":0,"secondPick":0,"extractPick":0,"events":[],"fresh":{"person":"Danny","food":"moussaka","place":"vineyard"}},false,[],[]]
+```
+
+Message: `after forget: the request's words are in evidence/fhcAbRGgy4eQFjQ9R-uw31fELbb4I4Y6RcXXWnhVmrc`. In one sentence: the turn route committed the forget request as an ordinary turn, so its words were stored as Evidence for extraction to read. Green on the current code at 100 runs.
+
+### Every route waits (`packages/server/src/forget/every-route-waits.property.test.ts`)
+
+The forget is asked on `/api/turn` and its resolve fails until the test lets it answer, so the barrier stays up. Then any sequence of doors, called on a second device's open Session with no call: an ordinary turn, a second forget, a trusted tap, `recall`, the state route, a receipt, every memory view, the clock advance, the open, and tick passes. Each answers 423 `BARRIER`, and the open answers `blocked` with no Deck and no line. No second forget gets a job or a queue entry. Once the resolve answers, the job finishes and state, memory and open answer again. A second case: a reset that cannot hang up a call keeps its barrier; a forget asked then is refused on the route (`BARRIER`) and at the fence (`refused`), with no job and no queue entry.
+
+Red on `abe1e15`, the main case: seed -1258705460, path `0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0:0`. Counterexample, verbatim:
+
+```
+[{"sentences":[{"person":"Danny","food":"risotto","text":"Danny loves risotto."}],"turns":[{"sentences":[0],"mail":false,"allergy":false}],"memories":[{"turn":0,"sentence":0,"place":"boardwalk","parent":null,"context":null}],"effects":[],"target":0,"secondPick":0,"extractPick":0,"events":[],"fresh":{"person":"Danny","food":"falafel","place":"orchard"}},false,["turn"]]
+```
+
+Message: `no barrier after the forget`. In one sentence: the turn route did not fence, so no barrier went up for any door to wait on.
+
+The reset case was red on the **current** code too, which is a real finding: seed -690108805, path `0:0`, counterexample `[false]` (a typed forget), message `a forget fenced during a reset: expected 'queued' to be 'refused'`. In one sentence: the route refused the forget, but the fence itself queued it behind the reset's barrier, and the reset's unblock (`seed/load.ts`) clears the barrier with its queue, so that forget would never have run. (On `abe1e15` the same case gives seed 2082152265, path `0:0`, the same message.) Fixed in `d6cfb5e`: `fenceInTx` refuses when the barrier is held by an op with no forget job (`heldByReset` in `forget/fence.ts`, F-219). Green at 60 runs, and the reset case at 4.
+
 ## Stage 2: what changed
 
 - Ruling 1 (`withheldSpeech` in `packages/core/src/forget/closure.ts`): Franki's own replies said after the forgotten Evidence and before the fence are withheld. Their Evidence goes `blocked` in closure order 1, and purge empties their text (`packages/core/src/forget/purge.ts`). A Fixed_Line is never withheld. A delivered moment of a forgotten Memory loses its rendered words.
@@ -109,14 +147,37 @@ Stage 3: 13 steps: 11 green, 2 waiting ("Franki says Gone" and "the receipt sepa
 
 Also in stage 3: a forget's hold is no audience outcome (`audienceRow`), because the fence does its own hang-up; and the open runs its forget pass only after it met the barrier and answered `blocked`, so the seeded open keeps its 8 round trips.
 
+## Stage 5: the release-gate scripts
+
+`packages/server/src/scripts/gate-forget.ts` (registered in `gate-forget.test.ts`; gate `forget` added to `gate-kit.ts`). Each asks for the forget on `/api/turn` and checks what a person would hear or see. The brother line is filed S0, so a leak would be said and not held back by the Gate for its sensitivity. Every worker step after a forget checks the model calls it makes (`neverSay` on channel `model`), and every fresh open checks its Head, its first line and its drain's model input.
+
+| ID | Scene | State | What it checks |
+|---|---|---|---|
+| FG01 | A forget in the middle of a spoken reply, in a call | green | The forget (judge `H`, a call registered) answers `blocked` with no Permit and no notes; the old reply's transcript, sent after it, is refused and no assistant turn holds "brother"; the job finishes; the fresh call's first line is the forget.gone acknowledgment; no brother on Head, first line or model input |
+| FG02 | A forget with a whisper pending | green | A check-in on the brother line is due and leased by the memory tick; after the forget, the idle line (old and fresh call) never names it, and the moment is never admitted or delivered and holds no words |
+| FG03 | A forget, then the moment that was due | green | The same check-in, due in 30 minutes; after the forget the world clock moves past it (seed advance, which forces the tick); the idle line and the moment as in FG02 |
+| FG04 | A forget, then a recall about it | green | A typed "What did I tell you about my brother?" (notes, reply model input), `recall` answer (result, notes, any model input), the overview: never the brother Memory's ID or "trouble" |
+| FG05 | A forget, then "why did you bring that up?" | green | Before: a recall says "Your brother's in trouble again." (checked said). After: the typed question, the `recall` why, the why read of the Memory and of the turn's Evidence, the item read: never the Memory's ID or "trouble" |
+| FG06 | A forget of a guess from mail, then the same mail synced again | waiting, one step | The mail arrives, the forget runs, the same mail arrives again, then the fresh open and the overview never name the guess. The step "the guess from the mail is stored" waits on `W.MAIL_READ`: no mail claim becomes a guess on this branch, so there is nothing to forget and nothing a re-sync could bring back. Marked `silentGreen` for that reason |
+| FG07 | "Don't let me forget to call my brother" | green | The reply note is said; no forget job, no receipt, no barrier, the epoch unchanged, no "Gone"; extraction files the line as any line, and the next Head has it |
+
+No script found a leak on the current code. Control runs (each script without its forget step, not committed) failed where they should: FG02 on the fresh Head, FG04 on the typed question's reply model input, FG05 on the why question's reply model input. FG01, FG04 and FG05 show the checks would catch a leak; see "Not verified" for FG02 and FG03.
+
+Two scene details, neither an expectation change: FG01 moves the clock four seconds while the reply plays, since a forget less than a second after the line before is read as a fragment of it (`FRAGMENT_CONFIRM_MS`) and asks instead; every script lets a minute pass before the forget, as beat 5 does.
+
+The `forget.gone` template is now `/^Gone(\.|, except one safety rule\. It's on your screen\.)/` (dots escaped). Beat 5 stays green.
+
 ## Not built
 
-Stages 5 and 6: the release-gate scripts, the ask by words and "Forget last thing".
+Stage 6: the ask by words and "Forget last thing".
 
 ## Not verified
 
 - No emulator, browser or live call. The voice machine's barrier retry and recovery are checked by the reducer tests and the property only. The typed watch in `typed-turns.ts` has no test of its own; it typechecks.
 - The Q33 receipt query runs on the in-memory store, which accepts only declared index shapes. It was not run against Firestore.
+- Stage 5: FG02 and FG03's idle lines are weak checks. In a control run with no forget, the idle never delivered the brother check-in either (the seeded "Good luck at 2 PM" wish is chosen first, and after it is played the next idle says nothing), so those two scripts rest on the moment's stored state and the fresh Head, not on a line that would otherwise have been said.
+- Stage 5: FG01 drives the turn and receipt routes the way the voice client would, not the real voice machine (`call` steps). The machine's side of a forget in a call is covered by `old-call-silent.property.test.ts`.
+- The three stage 5 properties run on fakes for every model; nothing was run in a browser, on a live call or against the emulator.
 
 ## Rulings needed
 
@@ -136,12 +197,17 @@ Stages 5 and 6: the release-gate scripts, the ask by words and "Forget last thin
 - F-216. The state route says an acknowledgment only to a Session with no call, and only for that Session's own forgets (the job's `sourceIds[0]`). A call hears it on its fresh open.
 - F-217. The delivery row is a `decision` ledger row with purpose `proactive` (as the reminders' delivery rows are; only the Admission_Seam writes `answer` decisions, `admission/seam.test.ts`) and state `complete`, keyed by the op, and its `acceptedRefs` name the receipt, the job and the turn the words are said as. No new kind or field was added.
 - F-218. The false-gone check clears only for the exact merged acknowledgment text, said as its delivered turn. A model reply that says "gone" in the same call still asks.
+- F-219. A forget during a reset is refused at the fence, not queued behind the reset (`heldByReset`, `forget/fence.ts`): the reset's unblock clears the barrier and its queue, so a queued forget would never run. A barrier whose holder has no forget job is taken to be a reset's (fails closed). The owner asks again once the reset is done; nothing says so yet.
+- F-220. A spoken forget whose final transcript arrives late, as a Superseding_Post on a turn first posted `missing`, is not a forget: `postSupersede` admits nothing, so the request is committed as an ordinary turn, with its Evidence and an Extract_Job, and nothing is forgotten. Read from `routes/turn.ts`, not tested, and not changed here: the supersede path has no admission to choose forget. Needs a ruling (fence on a late forget, or answer it with the ask).
+- F-221. The script runner's `proactive` channel holds a Proactive's JSON as its text (`proactiveText` reads `text` or `line`, and a Proactive's words are `whisper.text`), so a template on that channel never matches. FG01 reads the whisper directly (`saysGone`). Changing `proactiveText` would change what other scripts' proactive checks match, so it is left for a ruling.
+- F-222. FG06 waits on `W.MAIL_READ` with a longer sentence after it, so the gate summary groups it under that wait. No connector re-syncs mail on this branch; the script's "synced again" is the runner's `mail` step, which skips rows already stored.
 
 ## Files outside the hot list
 
 - `packages/core/src/voice/testing/arb-call.ts` (the `readyAck` line is `GONE_LINE`) and `golden-traces.json` (re-recorded).
 - `packages/core/src/voice/testing/arb-swap.ts` (the swap line is a protected field; two helpers made protected) and the new `packages/core/src/voice/testing/arb-forget.ts`: test-only drivers.
 - `packages/server/src/testing/script-runner.ts`: one template.
+- Stage 5 touched only hot files of this lane: `forget/fence.ts`, `forget/testing/route-world.ts` (new), three new property files under `forget/`, `scripts/gate-forget.ts` and its test (new), `scripts/gate-kit.ts` (the `forget` gate), `testing/script-runner.ts` (the template). No committed property file and no committed script expectation changed.
 
 ## Checks at the end of stage 3
 
@@ -161,3 +227,12 @@ Stages 5 and 6: the release-gate scripts, the ask by words and "Forget last thin
 - Total: 643 files, 5,121 passed, 20 expected fail (end of stage 3: 638, 5,106, 22).
 - `npm run lint` (forced, no cache): exit 0, the same one warning in an untouched file (`apps/web/src/components/avatar/three/brass.ts`).
 - `npm run typecheck`: exit 0. `npm run build`: exit 0 (both after `31780df`).
+
+## Checks at the end of stage 5
+
+- `npx vitest run --maxWorkers=3 --shard=1/3`: exit 0, 216 files, 1,825 passed, 17 expected fail.
+- `--shard=2/3`: exit 0, 216 files, 1,715 passed, 2 expected fail.
+- `--shard=3/3`: exit 0, 215 files, 1,593 passed, 2 expected fail.
+- Total: 647 files, 5,133 passed, 21 expected fail (end of stage 4: 643, 5,121, 20). The one new expected fail is FG06's waiting step; no earlier expected fail came back.
+- `npm run lint` (forced, no cache): exit 0, the same one warning in an untouched file (`apps/web/src/components/avatar/three/brass.ts`).
+- `npm run typecheck`: exit 0. `npm run build`: exit 0.
