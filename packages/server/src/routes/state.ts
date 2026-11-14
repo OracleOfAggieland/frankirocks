@@ -114,8 +114,9 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
   // Brief 045, finding 3: no Deck, no line (its Permit binds the Deck's Head and safe turns).
   const mayOffer = res.ack !== null && res.deck !== null && res.proactive === null && spent < STATE_BUDGET_MS;
   // Brief 049 ruling 9: a waiting Errand result goes before an idle whisper; at most one line per poll.
-  const errands = seen === null ? null : await errandsOnState(ctx, { sessionId: req.sessionId as ID, session: seen, stamp: res.stamp, deck: res.deck, mayOffer });
-  const withErrands: StateRes = errands === null ? res : { ...res, errands: errands.view, proactive: res.proactive ?? errands.proactive };
+  // Review fix R1: inside what is left of the poll's budget; out of it, no `errands` (the screen keeps what it has).
+  const errands = seen === null ? null : await errandsOnState(ctx, { sessionId: req.sessionId as ID, session: seen, stamp: res.stamp, deck: res.deck, mayOffer, budgetMs: STATE_BUDGET_MS - spent });
+  const withErrands: StateRes = errands === null ? res : { ...res, ...(errands.view === null ? {} : { errands: errands.view }), proactive: res.proactive ?? errands.proactive };
   if (errands?.proactive != null) return withErrands;
   const spentNow = ctx.deps.clock.read().opsClock.now - (ctx.startedOpsAt ?? ctx.deps.clock.read().opsClock.now);
   return !mayOffer ? withErrands : { ...withErrands, proactive: await idleProactive(ctx, res.stamp, STATE_BUDGET_MS - spentNow, res.deck!) };

@@ -64,4 +64,9 @@ export const ERRAND_LABEL_CHARS = 120;
  * time a result waits to be said, and the card window. At `finish` it is set again from `readyAt`
  * (`ERRAND_RESULT_TTL_MS + ERRAND_CARD_KEEP_MS`). Past it the row is stripped bare.
  */
+/** Review fix R4: the longest a run can last, both claims: a running Errand older than this is stranded. */
+export const ERRAND_RUN_SPAN_MS = ERRAND_RUNS_MAX * (ERRAND_WALL_MS + ERRAND_LEASE_MS);
 export const ERRAND_RETAIN_MS = ERRAND_RUNS_MAX * (ERRAND_WALL_MS + ERRAND_LEASE_MS) + ERRAND_RESULT_TTL_MS + ERRAND_CARD_KEEP_MS;
+
+/** Review fix V2: one offer of a waiting result lives this long; offered again only after it, with no receipt. */
+export const ERRAND_OFFER_MS = 10_000;

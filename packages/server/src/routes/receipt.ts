@@ -42,9 +42,14 @@ import { askAfterSpoken } from "../onturn/ask";
 import { goneCheck, receiptMoments } from "./receipt-moments";
 // Brief 048: the forget's acknowledgment is a receipted "gone".
 import { ackDeliveredAs } from "../forget/ack";
+// Brief 049 review fixes V2 and V11: an Errand's line is delivered on its receipt, and its transcript keeps its class.
+import { errandReceipt, errandSaidRow } from "../errands/receipt";
 
 type ReceiptReq = Infer<typeof ReceiptRequest>;
 type ReceiptRes = Infer<typeof ReceiptResponse>;
+
+const SENS_ORDER = ["S0", "S1", "S2"] as const;
+const higherSens = (a: (typeof SENS_ORDER)[number], b: (typeof SENS_ORDER)[number]) => (SENS_ORDER.indexOf(b) > SENS_ORDER.indexOf(a) ? b : a);
 
 export function checkReceiptRequest(req: ReceiptReq): ReceiptReq {
   if (req.kind === "transcript") {
@@ -77,6 +82,7 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
         const check = goneCheck(req) === "pending" && (await ackDeliveredAs(tx, deps.store, uid, req.stamp, req.text, deps.hasher)) ? "none" : goneCheck(req);
         const accepted: ReceiptRes = { accepted: true, controlCheck: check };
         const live = s.status === "minting" || s.status === "active";
+        const errandHeard = await errandReceipt(tx, ctx, req, ops);
 
         if (req.kind === "transcript") {
           const turnId = deps.hasher.id(idParts.assistantTurn(req.stamp.sessionId, req.responseId));
@@ -90,7 +96,9 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
           const coreVals = { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev };
           const logicalId = deps.hasher.id(idParts.evidenceLogical(turnId));
           const eid = evidenceId(logicalId, 1, deps.hasher);
-          const slice = buildSlice({ eid, fieldPath: "text", fieldText: text, start: 0, end: text.length, class: "M", sens: sensFloor(text) }, deps.hasher);
+          // Review fix V11: an Errand's line heard keeps its own class and sensitivity (a T line is never a safe turn).
+          const heardSens = errandHeard === null ? sensFloor(text) : higherSens(sensFloor(text), errandHeard.sens);
+          const slice = buildSlice({ eid, fieldPath: "text", fieldText: text, start: 0, end: text.length, class: errandHeard?.cls ?? "M", sens: heardSens }, deps.hasher);
           const evidence: Evidence = {
             ...cFields(uid, now, coreVals.epoch, coreVals.policyRev),
             logicalId,
@@ -163,7 +171,7 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
             final: true,
             audioDurationMs: 0,
             lastFragmentOpsAt: null,
-            sourceClass: "M",
+            sourceClass: errandHeard?.cls ?? "M",
             uncertainSpeaker: 0,
             noteIds: [],
             noteTokens: [],
@@ -179,6 +187,7 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
           // The open allergy question (brief 012 design 6.4): asked only once Franki's words held it.
           const ask = askAfterSpoken(core.rules.data, req.stamp.sessionId, turn.seq, text);
           if (ask !== null) tx.update(paths.core(uid, "rules"), { ...core.rules.data, ask });
+          if (errandHeard !== null) await errandSaidRow(tx, ctx, req, errandHeard, coreVals, ops);
         }
         if (live) tx.update(doc.path, { ...s, lastTurnAt: now, expiresAt: tsFromMs(ops + SESSION_IDLE_MS), updatedAt: now });
         // Brief 030 P1-6: the moments this receipt names (admitted, said, rendered).

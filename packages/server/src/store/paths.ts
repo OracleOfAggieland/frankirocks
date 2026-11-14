@@ -5,7 +5,7 @@
 import { CORE_DOC_IDS, type CoreDocId, isIdShape } from "@franki/core";
 import { StoreError } from "./errors";
 
-export const TOP_COLLECTIONS = ["evidence", "memories", "sessions", "jobs", "ledger", "core", "blocks", "overlays", "effects", "moments", "connectors", "errands"] as const;
+export const TOP_COLLECTIONS = ["evidence", "memories", "sessions", "jobs", "ledger", "core", "blocks", "overlays", "effects", "moments", "connectors", "errands", "errandMarks"] as const;
 export type TopCollection = (typeof TOP_COLLECTIONS)[number];
 export type Collection = TopCollection | "turns";
 
@@ -40,6 +40,8 @@ export const paths = {
   connector: (uid: string, connectorId: string) => `users/${uid}/connectors/${connectorId}`,
   // Errands (brief 049 part A).
   errand: (uid: string, errandId: string) => `users/${uid}/errands/${errandId}`,
+  // Review fix R1: one mark per Session that started an Errand.
+  errandMark: (uid: string, sessionId: string) => `users/${uid}/errandMarks/${sessionId}`,
 };
 
 const UID_PATTERN = /^[^/]{1,128}$/;

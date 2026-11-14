@@ -1,11 +1,12 @@
 /** Brief 049 part A: the errand framework end to end on fakes, with the test-only agent. */
 import { ERRAND_LEASE_MS, ERRAND_RESULT_TTL_MS, ERRAND_SILENCE_MS, type Job, errandFailedLine } from "@franki/core";
 import { describe, expect, it } from "vitest";
+import { receiptRoute } from "../routes/receipt";
 import { stateRoute } from "../routes/state";
 import { toolRoute } from "../routes/tool";
 import { turnRoute } from "../routes/turn";
 import { paths } from "../store/paths";
-import { ASK, ERRAND_OWNER as UID, errandOf, plannerRequests, poll, seedMail, errandSetup as setup, testMailAgent, tool } from "../testing/errand-agent";
+import { ASK, ERRAND_OWNER as UID, errandOf, errandReceipt, plannerRequests, poll, seedMail, errandSetup as setup, testMailAgent, tool } from "../testing/errand-agent";
 import { callRoute, recordingSchedule, runScheduled } from "../testing/fakes";
 import { claimJob } from "../worker/jobs";
 import { asrTurn } from "../testing/session-fixtures";
@@ -63,6 +64,9 @@ describe("the run and its delivery", () => {
     expect(first.body.proactive?.whisper.text).toContain("From Pat Plumber");
     expect(first.body.proactive?.permit.kind).toBe("proactive");
     expect(first.body.proactive?.whisper.momentId).toBe(errandIdOf(x.rig.deps.hasher, x.sessionId, x.stamp.turnId));
+    // Review fix V2: an offer is not a delivery; the browser's `admitted` receipt is.
+    expect((await errandOf(x))?.status).toBe("ready");
+    await callRoute(x.rig, receiptRoute, errandReceipt(first.body.proactive));
     expect((await errandOf(x))?.status).toBe("delivered");
     const second = await callRoute(x.rig, stateRoute, poll(x));
     expect(second.body.proactive?.whisper.momentId ?? null).not.toBe(first.body.proactive.whisper.momentId);

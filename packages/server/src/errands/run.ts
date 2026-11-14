@@ -38,6 +38,9 @@ import {
   ERRAND_CARD_KEEP_MS,
   ERRAND_RESULT_TTL_MS,
   tokenize,
+  ERRAND_RUN_SPAN_MS,
+  type Session,
+  msFromTs,
   ERRAND_LABEL_CHARS,
   ErrandRead,
   cleanErrandText,
@@ -107,7 +110,7 @@ class RunStopped extends Error {
   }
 }
 
-type Fail = { kind: "failed"; why: "limit" | "model" | "noWords" | "noAgent" | "parse" };
+type Fail = { kind: "failed"; why: "limit" | "model" | "noWords" | "noAgent" | "parse" | "stranded" };
 type Done = { kind: "done"; outcome: ErrandOutcome; lines: { text: string; refs: string[] }[] } | Fail;
 
 /** The planner's request for one step. On the last allowed call no tool may be called, so it must answer. */
@@ -172,6 +175,13 @@ export async function runErrand(ctx: RouteContext, errandId: ID): Promise<void> 
       await settleJob(ctx, held, "complete");
       return;
     }
+    // Review fix R4: a run picked up after its bounds, or once its Session is no longer the live one, never runs
+    // again: it ends `failed`, and it is said (if ever) only in its own Session.
+    if (start - msFromTs(errand.startedAt) > ERRAND_RUN_SPAN_MS || !(await sessionLive(ctx, errand))) {
+      await finish(ctx, held, { kind: "failed", why: "stranded" }, [], true, false);
+      deps.log("errand.stranded", { errandId });
+      return;
+    }
     const outcome = await helper(ctx, held, errand, start);
     await finish(ctx, held, outcome.done, outcome.reads, false, outcome.opaque);
     deps.log("errand.run", { errandId, outcome: outcome.done.kind === "done" ? outcome.done.outcome : `failed:${outcome.done.why}`, modelCalls: outcome.modelCalls, toolCalls: outcome.toolCalls });
@@ -183,6 +193,12 @@ export async function runErrand(ctx: RouteContext, errandId: ID): Promise<void> 
     if (isStoreError(error, "staleRevision")) return;
     deps.log("errand.error", { errandId, error: error instanceof Error ? error.name : "unknown" });
   }
+}
+
+/** The Errand's Session is still the live one: active or minting, on the Errand's generation. */
+async function sessionLive(ctx: RouteContext, e: Errand): Promise<boolean> {
+  const s = (await ctx.deps.store.get<Session>(ctx.uid, paths.session(ctx.uid, e.sessionId)))?.data ?? null;
+  return s !== null && (s.status === "active" || s.status === "minting") && s.generation === e.generation;
 }
 
 /** The run's own checks, in a transaction: the lease is still this runner's, the Errand runs, the epoch holds. */

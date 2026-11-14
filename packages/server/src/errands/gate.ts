@@ -17,7 +17,7 @@
  *
  * The rows for every line not said are written by the caller, in the transaction that claims the delivery.
  */
-import { type Au, type Errand, type ErrandLine, type GateCandidate, type GateContext, type GateResult, type ID, gate, tokenize, tsFromMs } from "@franki/core";
+import { type Au, type Errand, type ErrandGateInputs, type ErrandLine, type GateCandidate, type GateContext, type GateResult, type GateTopic, type ID, gate, tsFromMs } from "@franki/core";
 
 export type LineShown = "say" | "card" | "none";
 
@@ -31,9 +31,16 @@ export interface LineVerdict {
 
 export interface ErrandGateInput {
   errand: Errand;
-  /** The assignment's words, and whether its speaker is certain (typed, or judge O). */
-  ownerWords: readonly string[];
-  certain: boolean;
+  /**
+   * Review fix R1: the Gate's inputs stored at `finish`: the assignment words' tokens and whether the asking Turn's
+   * speaker is certain (typed, or judge O). Null (none stored): no aliases, and an uncertain speaker (fails closed).
+   */
+  inputs: ErrandGateInputs | null;
+  /**
+   * Review fix V7: the quiet topic a line falls under, if any. A late line is unprompted, so a quiet topic of either
+   * kind keeps it silent. No server path builds a quiet topic today (contract question E-273); this is the seam.
+   */
+  topicOf?: (line: ErrandLine, index: number) => GateTopic | null;
   audience: Au;
   modifiers: { rushed: boolean; crisis: boolean };
   worldNow: number;
@@ -62,9 +69,9 @@ export function errandCandidate(x: ErrandGateInput, line: ErrandLine, index: num
     // Every ref behind the line was reread as retained Evidence when the result was checked.
     eligibility: { allow: true, reason: "ok" },
     toldAt: null,
-    topic: null,
+    topic: x.topicOf?.(line, index) ?? null,
     queryTerms: [],
-    aliases: [...new Set(x.ownerWords.flatMap((w) => tokenize(w)))],
+    aliases: [...(x.inputs?.aliases ?? [])],
     purpose: "item",
     gravity: 0,
     food: false,
@@ -88,7 +95,7 @@ export function errandGateContext(x: ErrandGateInput, notesThisReply: number): G
     modifiers: x.modifiers,
     trigger: "recall",
     moment: null,
-    ownerTurn: { text: x.ownerWords.join("\n"), sourceClass: "U", certain: x.certain },
+    ownerTurn: { text: (x.inputs?.aliases ?? []).join(" "), sourceClass: "U", certain: x.inputs?.certain ?? false },
     openedTopics: [],
     recentTurns: [],
     counts: { proactive: 0, heavy: 0, senderAsks: 0, notesThisReply },
@@ -97,6 +104,7 @@ export function errandGateContext(x: ErrandGateInput, notesThisReply: number): G
   };
 }
 
+const silenced = (r: GateResult, reason: GateResult["reasons"][number]): GateResult => ({ ...r, verdict: "silent", form: null, render: null, carveOut: null, reasons: [...r.reasons.filter((x) => x !== "ok"), reason] });
 const lowered = (r: GateResult, reason: GateResult["reasons"][number]): GateResult => ({ ...r, verdict: "card", form: r.form ?? "item", render: null, carveOut: null, reasons: [...r.reasons.filter((x) => x !== "ok"), reason] });
 
 /** Each line's verdict, in order. Pure. */
@@ -106,6 +114,9 @@ export function gateErrandLines(x: ErrandGateInput): LineVerdict[] {
   x.errand.lines.forEach((line, index) => {
     const c = errandCandidate(x, line, index);
     let r = gate(c, errandGateContext(x, said));
+    // Review fix V7: in crisis an Errand says and shows nothing; a quiet topic keeps a late line silent.
+    if (x.modifiers.crisis) r = silenced(r, "crisis");
+    else if (c.topic?.quiet != null) r = silenced(r, "quiet");
     if (r.verdict === "say") {
       // Review fix V1: a line the run's taint left card only is never spoken.
       if (!line.speak) r = lowered(r, "ceiling");

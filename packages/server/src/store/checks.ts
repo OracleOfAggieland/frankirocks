@@ -6,6 +6,7 @@ import {
   Block,
   Connector,
   Errand,
+  ErrandMark,
   Effect,
   Overlay,
   CORE_DOCS,
@@ -66,6 +67,8 @@ export function schemaFor(p: ParsedPath): Schema<unknown> {
     // Errands (brief 049 part A).
     case "errands":
       return Errand;
+    case "errandMarks":
+      return ErrandMark;
   }
 }
 

@@ -8,8 +8,11 @@ import { paths } from "../store/paths";
 import type { Reader, StoredDoc } from "../store/port";
 
 export const errandIdOf = (hasher: Hasher, sessionId: string, turnId: string): ID => hasher.id(["errand", sessionId, turnId]) as ID;
-/** The delivery's decision row: one per Errand, so a second claim finds it (ruling 9). */
-export const errandDeliveryId = (hasher: Hasher, errandId: string): ID => hasher.id(["ledger", "errandDelivery", errandId]) as ID;
+/**
+ * The delivery's decision row: one per offer of an Errand, so a second claim of the same attempt finds it (ruling 9;
+ * review fix V2: a result is offered again, as attempt n + 1, only after attempt n expired with no receipt).
+ */
+export const errandDeliveryId = (hasher: Hasher, errandId: string, attempt = 1): ID => hasher.id(["ledger", "errandDelivery", errandId, String(attempt)]) as ID;
 export const errandLedgerId = (hasher: Hasher, errandId: string): ID => hasher.id(["ledger", "errand", errandId]) as ID;
 
 /** The most recent Errands one read looks at: more than any Session runs and keeps on screen at once. */

@@ -1158,9 +1158,10 @@ export const ErrandOffer = obj({
   noteId: ID,
   turnId: ID,
   expiresAt: TS,
-  /** What the offered line was, for the assistant Turn its transcript writes (review fix V11). */
+  /** What the offered line was, for the assistant Turn its transcript writes and its said row (review fix V11). */
   cls: Class,
   sens: Sens,
+  text: str(1024, { min: 1 }),
 });
 export type ErrandOffer = Infer<typeof ErrandOffer>;
 
@@ -1198,3 +1199,18 @@ export const Errand = obj({
   retainUntil: nullable(TS),
 });
 export type Errand = Infer<typeof Errand>;
+
+/** Review fix R1: the most recent Errands one Session's mark names. */
+export const ERRAND_MARK_IDS_MAX = 12;
+/**
+ * Review fix R1: errandMarks/{sessionId}. Written when an Errand of that Session starts, so the once-a-second state
+ * poll reads one document it can name, and nothing at all for a Session that never started one. IDs and times only.
+ */
+export const ErrandMark = obj({
+  ...C_SHAPE,
+  sessionId: ID,
+  errandIds: arr(ID, ERRAND_MARK_IDS_MAX, 1),
+  /** Past this, no Errand of the Session has anything to run, say or show. */
+  openUntil: TS,
+});
+export type ErrandMark = Infer<typeof ErrandMark>;

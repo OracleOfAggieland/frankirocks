@@ -4,8 +4,8 @@
  * Brief 049 part A: an Errand's stored status, one table (rulings 4, 7, 9, 13 and 14). Pure.
  *
  * Always: `running` ends once, as `ready` (a checked result), `failed` (a run that could not finish, said once) or
- * `dropped` (a forget); `ready` and `failed` wait to be said and end once, as `delivered` (the decision row that
- * claims the line was written), `cardOnly` (nobody heard it within `ERRAND_RESULT_TTL_MS`, or its Session closed) or
+ * `dropped` (a forget); `ready` and `failed` wait to be said and end once, as `delivered` (a receipt from the
+ * browser named one of its offers; review fix V2), `cardOnly` (nobody heard it within `ERRAND_RESULT_TTL_MS`) or
  * `dropped`; a forget drops every status but `dropped`. Never: leaves `delivered`, `cardOnly` or `dropped` except
  * to `dropped`, or returns to `running`.
  */

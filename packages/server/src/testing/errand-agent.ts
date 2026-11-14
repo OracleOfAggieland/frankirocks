@@ -137,3 +137,18 @@ export const tool = (x: ErrandSetup, label = "1", about: string[] = ["mail"]) =>
 export const poll = (x: ErrandSetup) => ({ sessionId: x.sessionId, generation: 1, seen: { epoch: x.stamp.epoch, policyRev: x.stamp.policyRev, bundleRev: x.stamp.bundleRev, rulesRev: x.stamp.rulesRev }, ackStamp: null, speechStartedOpsAt: null });
 export const errandOf = async (x: ErrandSetup) => (await x.rig.store.get<Errand>(ERRAND_OWNER, paths.errand(ERRAND_OWNER, errandIdOf(x.rig.deps.hasher, x.sessionId, x.stamp.turnId))))?.data ?? null;
 
+
+let receiptN = 0;
+/** A receipt the browser would send for a state answer's errand line (review fix V2). */
+export const errandReceipt = (p: { permit: { stamp: Stamp; momentIds: string[]; noteIds: string[] } }, kind = "admitted", extra: Record<string, unknown> = {}) => ({
+  requestId: testId(`errand-rc-${++receiptN}`),
+  stamp: p.permit.stamp,
+  responseId: `resp_errand_${receiptN}`,
+  kind,
+  momentIds: p.permit.momentIds,
+  noteIds: p.permit.noteIds,
+  pendingId: null,
+  permitKind: kind === "admitted" ? "proactive" : null,
+  text: null,
+  ...extra,
+});
