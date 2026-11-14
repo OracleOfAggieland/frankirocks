@@ -76,7 +76,8 @@ describe("freeGaps (ruling 25)", () => {
   });
 
   it("all-day and free events don't block; a gap shorter than asked is left out; the window clips", () => {
-    expect(freeGaps([ev(0, 24, { allDay: true }), ev(9, 17, { free: true }), ev(9.5, 17.5)], { fromMs: DAY + 9 * H, toMs: DAY + 17.75 * H }, "UTC", DEFAULT_DAY_BOUNDS, 30)).toEqual([
+    // Review D10: an all-day event blocks unless it is free (transparent); this one is.
+    expect(freeGaps([ev(0, 24, { allDay: true, free: true }), ev(9, 17, { free: true }), ev(9.5, 17.5)], { fromMs: DAY + 9 * H, toMs: DAY + 17.75 * H }, "UTC", DEFAULT_DAY_BOUNDS, 30)).toEqual([
       { startMs: DAY + 9 * H, endMs: DAY + 9.5 * H },
     ]);
   });

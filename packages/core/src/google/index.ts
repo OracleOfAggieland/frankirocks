@@ -7,6 +7,9 @@
  *   characters, then quoted, so a word can't become a Gmail operator. Spam, trash, promotions and social are always
  *   left out.
  * - `mailText`: an HTML body reduced to plain text, bounded before and after, with no regex that can backtrack.
+ *   Review D9: every URL-like token in the text it returns is the fixed marker `[link]` (an attribute's tail can
+ *   leak past a `>` inside quotes, so links are replaced in the text, not only dropped with their tags), and
+ *   invisible and format characters are stripped from everything that leaves this layer.
  * - `freeGaps`: ruling 25's free time, computed by code between the owner's busy events inside named day bounds.
  */
 import { addCivilDays, civilDateAt, localMinuteAt } from "../dates";
@@ -54,10 +57,17 @@ export function quotedTerm(raw: string): string | null {
   return clean === "" ? null : `"${clean}"`;
 }
 
-const epochSeconds = (ms: number | null) => (ms === null || !Number.isSafeInteger(ms) || ms < 0 ? null : Math.floor(ms / 1000));
+const epochSeconds = (ms: number | null) => (ms === null ? null : Math.floor(ms / 1000));
+const validTime = (ms: number | null) => ms === null || (Number.isSafeInteger(ms) && ms >= 0);
 
-/** The Gmail `q` for one search. */
+/** Review D12: a time that is not a whole, non-negative number of milliseconds is refused, never ignored. */
+export function mailQueryValid(q: MailQuery): boolean {
+  return validTime(q.afterMs) && validTime(q.beforeMs);
+}
+
+/** The Gmail `q` for one search. Throws RangeError for a query `mailQueryValid` refuses. */
 export function gmailQuery(q: MailQuery): string {
+  if (!mailQueryValid(q)) throw new RangeError("gmailQuery: afterMs and beforeMs must be whole, non-negative milliseconds");
   const parts: string[] = [];
   const from = q.from === null ? null : quotedTerm(q.from);
   if (from !== null) parts.push(`from:${from}`);
@@ -97,12 +107,21 @@ const SKIPPED = new Set(["script", "style", "head", "title", "template", "noscri
 /** Tags that end a line. */
 const LINE_ENDS = new Set(["br", "/p", "/div", "/li", "/tr", "/h1", "/h2", "/h3", "/h4", "/h5", "/h6", "/blockquote", "/table"]);
 
+/** The first `</name` at or after `from`, matched ASCII case-insensitively on the original string (review D9). */
+function closeTagAt(html: string, name: string, from: number): number {
+  for (let j = html.indexOf("</", from); j >= 0; j = html.indexOf("</", j + 2)) {
+    if (html.slice(j + 2, j + 2 + name.length).toLowerCase() === name) return j;
+  }
+  return -1;
+}
+
 /**
  * Removes tags in one left-to-right pass with `indexOf` only, so the work is linear in the input whatever its shape
- * (no backtracking regex over attacker text). An unclosed tag, comment or skipped element drops the rest.
+ * (no backtracking regex over attacker text). An unclosed tag, comment or skipped element drops the rest, and says
+ * so. Names are matched case-insensitively on the original string: lower-casing the whole input first can change
+ * its length (`İ`) and shift every offset after it (review D9).
  */
-function stripTags(html: string): string {
-  const lower = html.toLowerCase();
+function stripTags(html: string): { text: string; dropped: boolean } {
   const out: string[] = [];
   let i = 0;
   while (i < html.length) {
@@ -114,19 +133,19 @@ function stripTags(html: string): string {
     out.push(html.slice(i, lt));
     if (html.startsWith("<!--", lt)) {
       const end = html.indexOf("-->", lt + 4);
-      if (end < 0) break;
+      if (end < 0) return { text: out.join(""), dropped: true };
       out.push(" ");
       i = end + 3;
       continue;
     }
     const gt = html.indexOf(">", lt + 1);
-    if (gt < 0) break;
-    const head = /^(\/?)([a-z0-9]{1,16})/.exec(lower.slice(lt + 1, Math.min(gt, lt + 20)));
-    const name = head === null ? "" : `${head[1]}${head[2]}`;
+    if (gt < 0) return { text: out.join(""), dropped: true };
+    const head = /^(\/?)([a-z0-9]{1,16})/i.exec(html.slice(lt + 1, Math.min(gt, lt + 20)));
+    const name = head === null ? "" : `${head[1]}${head[2]!.toLowerCase()}`;
     if (SKIPPED.has(name)) {
-      const close = lower.indexOf(`</${name}`, gt + 1);
+      const close = closeTagAt(html, name, gt + 1);
       const closeGt = close < 0 ? -1 : html.indexOf(">", close);
-      if (closeGt < 0) break;
+      if (closeGt < 0) return { text: out.join(""), dropped: true };
       out.push(" ");
       i = closeGt + 1;
       continue;
@@ -134,30 +153,77 @@ function stripTags(html: string): string {
     out.push(LINE_ENDS.has(name) ? "\n" : " ");
     i = gt + 1;
   }
-  return out.join("");
+  return { text: out.join(""), dropped: false };
+}
+
+/** What every URL-like token becomes in text this layer returns (review D9). */
+export const LINK_MARKER = "[link]";
+/** A scheme and `//`, `www.`, or a scheme that needs no slashes; the URL runs to whitespace, a quote or a bracket. */
+const URL_RUN = /(?:[a-z][a-z0-9+.-]{0,30}:\/\/|www\.|(?:mailto|javascript|vbscript|data|tel|sms):)[^\s"'<>]*/gi;
+/** A bare host with a path (`evil.example/login`), checked per whitespace-free token of bounded length. */
+const HOST_PATH = /^[(\[{]?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z][a-z0-9-]*\/\S*$/i;
+const HOST_PATH_TOKEN_MAX = 512;
+
+/**
+ * Every URL-like token replaced with `[link]`: anything with a scheme (`https://`, `mailto:`, `javascript:`), a
+ * `www.` host, or a bare host followed by a path. A bare `name.tld` with no scheme and no path is left as it is
+ * (it can't be told apart from ordinary words like file names), and so is an email address.
+ */
+export function linkless(text: string): string {
+  return text.replace(URL_RUN, LINK_MARKER).replace(/\S+/g, (tok) => (tok.length <= HOST_PATH_TOKEN_MAX && HOST_PATH.test(tok) ? LINK_MARKER : tok));
 }
 
 /**
- * Plain text from an HTML body, at most `maxChars` long. Scripts, styles and comments are dropped with their
- * contents; block ends become line breaks; every other tag is removed; a few entities are decoded; control
- * characters become spaces. Links keep only their text: an `href` never survives.
+ * Format and invisible characters (Unicode Cf: the tag block, bidi controls, joiners, the soft hyphen, the BOM) and
+ * the line and paragraph separators each become a space, so nothing hidden survives and no two words run together.
  */
+const INVISIBLE = /\p{Cf}/gu;
+const SEPARATORS = /[\u2028\u2029]/g;
+
+/** A one-line field (a subject, a title, a name) as this layer lets it leave: no invisible characters, one line. */
+export function visibleText(s: string): string {
+  return s.replace(INVISIBLE, " ").replace(SEPARATORS, " ").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** `s` cut to at most `n` UTF-16 units, never between the two halves of a surrogate pair (review D8). */
+export function cutAt(s: string, n: number): string {
+  if (s.length <= n) return s;
+  const end = n > 0 && s.charCodeAt(n - 1) >= 0xd800 && s.charCodeAt(n - 1) <= 0xdbff ? n - 1 : n;
+  return s.slice(0, Math.max(0, end));
+}
+
+/**
+ * Plain text from an HTML body, at most `maxChars` long, and whether part of it was dropped (an unclosed tag,
+ * comment or skipped element, or an input past `MAIL_HTML_INPUT_MAX`). Scripts, styles and comments are dropped with
+ * their contents; block ends become line breaks; every other tag is removed; a few entities are decoded; control and
+ * invisible characters go; every URL-like token is `[link]` (`linkless`).
+ */
+export function mailTextOf(html: string, maxChars: number): { text: string; dropped: boolean } {
+  const stripped = stripTags(html.slice(0, MAIL_HTML_INPUT_MAX));
+  const text = stripped.text.replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]{2,8}|#39);/gi, decodeEntity);
+  return { text: plainText(text, maxChars), dropped: stripped.dropped || html.length > MAIL_HTML_INPUT_MAX };
+}
+
+/** `mailTextOf`'s text. */
 export function mailText(html: string, maxChars: number): string {
-  const text = stripTags(html.slice(0, MAIL_HTML_INPUT_MAX)).replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]{2,8}|#39);/gi, decodeEntity);
-  return plainText(text, maxChars);
+  return mailTextOf(html, maxChars).text;
 }
 
 /** A plain-text body tidied and bounded the same way. */
 export function plainText(text: string, maxChars: number): string {
-  return text
-    .slice(0, MAIL_HTML_INPUT_MAX)
-    .replace(/\r\n?/g, "\n")
-    .replace(/[\u0000-\u0008\u000b-\u001f\u007f​-‏‪-‮⁦-⁩﻿]/g, " ")
+  const tidy = linkless(
+    text
+      .slice(0, MAIL_HTML_INPUT_MAX)
+      .replace(/\r\n?/g, "\n")
+      .replace(INVISIBLE, " ")
+      .replace(SEPARATORS, " ")
+      .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, " "),
+  )
     .replace(/[ \t ]+/g, " ")
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
-    .trim()
-    .slice(0, maxChars);
+    .trim();
+  return cutAt(tidy, maxChars);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -172,7 +238,7 @@ export interface BusyEvent {
   startMs: number;
   endMs: number;
   allDay: boolean;
-  /** Cancelled, declined or transparent: it does not block time. */
+  /** Cancelled, declined or transparent: it does not block time. An opaque all-day event blocks its whole span. */
   free: boolean;
 }
 
@@ -182,6 +248,15 @@ export interface DayBounds {
   endMinute: number;
 }
 
+/**
+ * Review D10: whether a free-time ask can be answered at all. A length that is not a whole number of minutes, is not
+ * positive, or is longer than the day bounds allow is `invalid`, never an empty "no gaps" answer.
+ */
+export function freeTimeAsk(minutes: number, bounds: DayBounds): "ok" | "invalid" {
+  if (!(Number.isInteger(bounds.startMinute) && Number.isInteger(bounds.endMinute) && bounds.startMinute >= 0 && bounds.endMinute <= 1440 && bounds.startMinute < bounds.endMinute)) return "invalid";
+  return Number.isInteger(minutes) && minutes >= 1 && minutes <= bounds.endMinute - bounds.startMinute ? "ok" : "invalid";
+}
+
 /** The default day the owner can be booked in: 9:00 to 18:00 local. A named constant, not a model's guess. */
 export const DEFAULT_DAY_BOUNDS: DayBounds = { startMinute: 9 * 60, endMinute: 18 * 60 };
 
@@ -189,7 +264,7 @@ const instantOf = (day: string, minute: number, zone: string) => (minute >= 1440
 
 /**
  * Gaps of at least `minutes` between busy events, inside the day bounds of each civil day in `zone` that the window
- * touches, clipped to the window. All-day events and free events don't block. Pure; the window must be at most
+ * touches, clipped to the window. Free events don't block; an opaque all-day event does (review D10). Pure; the window must be at most
  * `FREE_TIME_DAYS_MAX` days, or the answer is empty.
  */
 export function freeGaps(events: readonly BusyEvent[], window: { fromMs: number; toMs: number }, zone: string, bounds: DayBounds, minutes: number): { startMs: number; endMs: number }[] {
@@ -197,7 +272,7 @@ export function freeGaps(events: readonly BusyEvent[], window: { fromMs: number;
   if (!(toMs > fromMs) || toMs - fromMs > FREE_TIME_DAYS_MAX * 86_400_000 || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440) return [];
   if (!(bounds.startMinute >= 0 && bounds.endMinute <= 1440 && bounds.startMinute < bounds.endMinute)) return [];
   const busy = events
-    .filter((e) => !e.free && !e.allDay && e.endMs > e.startMs)
+    .filter((e) => !e.free && e.endMs > e.startMs)
     .map((e) => ({ s: e.startMs, e: e.endMs }))
     .sort((a, b) => a.s - b.s || a.e - b.e);
   const need = minutes * 60_000;
