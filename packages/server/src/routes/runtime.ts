@@ -14,6 +14,7 @@ import type { OpenAIPort } from "../openai/fake";
 import type { CallStatus } from "../phone/status";
 import type { Dial } from "../phone/twilio";
 import type { BankPort } from "../bank/plaid";
+import type { GooglePort } from "../google/port";
 import type { ForgetResolvePort } from "../forget/resolve-port";
 import type { StorePort } from "../store/port";
 import { type RouteError, dependencyLogFields, parseError, toRouteError } from "./errors";
@@ -33,6 +34,8 @@ export interface RouteDeps {
   callStatus?: CallStatus;
   /** Brief 046: the bank (Plaid) port. Live when unset; a throwing fake in tests. */
   bank?: BankPort;
+  /** Brief 049 (lane google): the Google port. Live when unset; a throwing fake in tests. */
+  google?: GooglePort;
   /** Brief 048: the forget job's ForgetResolveV1 port. Over `openai` when unset (`forget/resolve-live.ts`). */
   forgetResolve?: ForgetResolvePort;
   store: StorePort;
@@ -53,6 +56,8 @@ export interface RouteContext {
   schedule: Schedule;
   /** opsClock time when runRoute started, before the Route_Guard. Routes with a total budget count from it. */
   startedOpsAt?: number;
+  /** Brief 049 (lane google): the request's `Origin`, set only on a non-GET request the Route_Guard has passed. */
+  origin?: string | null;
 }
 
 export interface HttpInput {
@@ -103,7 +108,8 @@ export async function runRoute<Req>(spec: RouteSpec<Req>, http: HttpInput, deps:
       }
     }
     const req = spec.parse({ body, query: new URL(http.url).searchParams });
-    const result = await spec.run({ uid, deps, schedule, startedOpsAt }, req);
+    const origin = http.method.toUpperCase() === "GET" ? null : http.header("origin");
+    const result = await spec.run({ uid, deps, schedule, startedOpsAt, origin }, req);
     return { status: 200, body: result };
   } catch (error) {
     const e: RouteError = toRouteError(error);

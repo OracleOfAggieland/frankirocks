@@ -12,6 +12,7 @@ import { FakeFastSlots } from "./fake-fast-slots";
 import { type HttpInput, type Log, type RouteDeps, type RouteSpec, type Schedule, runRoute } from "../routes/runtime";
 import { MemoryStore } from "../store/memory-store";
 import type { BankPort } from "../bank/plaid";
+import { throwingGoogle } from "./fake-google";
 
 const noBank = async (): Promise<never> => {
   throw new Error("no bank in tests");
@@ -176,7 +177,7 @@ export function testRig(env: Record<string, string> = TEST_ENV): TestRig {
   return {
     // No test reaches Twilio: a test that needs a call's status sets `deps.callStatus`.
     // No test reaches Plaid either: a test that needs the bank sets `deps.bank` (testing/fake-bank.ts).
-    deps: { store, clock, hasher, openai, fastSlots, env, timers, tokens, log, callStatus: async () => { throw new Error("no call status in tests"); }, bank: throwingBank },
+    deps: { store, clock, hasher, openai, fastSlots, env, timers, tokens, log, callStatus: async () => { throw new Error("no call status in tests"); }, bank: throwingBank, google: throwingGoogle },
     store,
     clock,
     timers,

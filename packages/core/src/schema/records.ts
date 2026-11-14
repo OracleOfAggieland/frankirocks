@@ -333,7 +333,7 @@ export type Turn = Infer<typeof Turn>;
 // ---------------------------------------------------------------------------------------------
 // ledger/{entryId}
 
-const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate", "rule", "bank"] as const;
+const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate", "rule", "bank", "google"] as const;
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
 /**
@@ -449,6 +449,32 @@ export const BankLedgerPayload = obj({
 });
 export type BankLedgerPayload = Infer<typeof BankLedgerPayload>;
 
+// Brief 049 (lane google): one row per Google connect or disconnect, the audit entry for that side effect. Closed
+// codes and what was granted only: never a token, a code, a state, a verifier or an address.
+export const GOOGLE_LEDGER_OPS = ["connect", "disconnect"] as const;
+export const GOOGLE_LEDGER_OUTCOMES = [
+  "connected",
+  "badState",
+  "rejected",
+  "unconfirmed",
+  "noRefreshToken",
+  "nothingGranted",
+  "unexpectedScope",
+  "badIdentity",
+  "otherAccount",
+  "disconnected",
+  "notRevoked",
+  "failed",
+] as const;
+export const GoogleLedgerPayload = obj({
+  op: oneOf(GOOGLE_LEDGER_OPS),
+  requestId: ID,
+  outcome: nullable(oneOf(GOOGLE_LEDGER_OUTCOMES)),
+  mail: bool,
+  calendar: bool,
+});
+export type GoogleLedgerPayload = Infer<typeof GoogleLedgerPayload>;
+
 export const LEDGER_PAYLOADS = {
   // Earlier calls have no indexed call ID. Their receipts remain readable and replayable.
   phoneCall: union(obj({ ...phoneCallFields, phoneCallId: ID }), obj(phoneCallFields)),
@@ -491,6 +517,8 @@ export const LEDGER_PAYLOADS = {
   rule: RuleRowPayload,
   // Brief 046.
   bank: BankLedgerPayload,
+  // Brief 049 (lane google).
+  google: GoogleLedgerPayload,
 } satisfies Record<LedgerKind, Schema<unknown>>;
 
 const LedgerBase = obj({
@@ -1050,6 +1078,34 @@ export const BankConnection = obj({
 });
 export type BankConnection = Infer<typeof BankConnection>;
 
+// Brief 049 (lane google) rulings 15 to 18. One Google account per owner, two documents (`gmail`, `calendar`). The
+// refresh token is sealed per document (AAD label `franki-google-token`, bound to the owner and the connector). The
+// one pending authorization lives on the `gmail` document only: the state's SHA-256 (never the state), the PKCE
+// verifier sealed (AAD label `franki-google-verifier`), the redirect URI fixed at start, and its end.
+export const GooglePending = obj({
+  stateHash: Hash,
+  verifier: SealedToken,
+  redirectUri: str(256, { min: 1, pattern: /^https?:\/\/[A-Za-z0-9.:-]+\/google\/callback$/, label: "an origin and /google/callback" }),
+  issuedAt: TS,
+  expiresAt: TS,
+});
+export type GooglePending = Infer<typeof GooglePending>;
+
+export const GoogleConnection = obj({
+  /** H(Google's `sub`), so a second account is recognised without storing the raw ID. Null until connected. */
+  accountKey: nullable(ID),
+  /** The account's address from the ID token, shown on the sheet. Null until connected and after disconnect. */
+  email: nullable(str(320)),
+  /** This document's scope was granted on the last connect. */
+  granted: bool,
+  /** The refresh token, sealed for this document. Null when not granted, expired, revoked or disconnected. */
+  token: nullable(SealedToken),
+  connectedAt: nullable(TS),
+  /** Only on the `gmail` document. */
+  pending: nullable(GooglePending),
+});
+export type GoogleConnection = Infer<typeof GoogleConnection>;
+
 export const Connector = obj({
   ...C_SHAPE,
   provider: oneOf(CONNECTOR_PROVIDERS),
@@ -1065,6 +1121,8 @@ export const Connector = obj({
   lastError: nullable(ErrorCode),
   retainUntil: nullable(TS),
   bank: nullable(BankConnection),
+  // Brief 049 (lane google) ruling 18: the Google part, beside `bank`.
+  google: nullable(GoogleConnection),
 });
 export type Connector = Infer<typeof Connector>;
 
@@ -1073,8 +1131,16 @@ export type Connector = Infer<typeof Connector>;
  * contract's fields has no `bank` and reads as `bank: null`; a bank written before `lastPullSkipped` reads zeros.
  */
 export function withConnectorDefaults(
-  c: Omit<Connector, "bank"> & { bank?: (Omit<BankConnection, "lastPullSkipped"> & { lastPullSkipped?: BankConnection["lastPullSkipped"] }) | null },
+  c: Omit<Connector, "bank" | "google"> & {
+    bank?: (Omit<BankConnection, "lastPullSkipped"> & { lastPullSkipped?: BankConnection["lastPullSkipped"] }) | null;
+    google?: GoogleConnection | null;
+  },
 ): Connector {
   const bank = c.bank ?? null;
-  return { ...c, bank: bank === null ? null : { ...bank, lastPullSkipped: bank.lastPullSkipped ?? { noCurrency: 0, badAmount: 0, badDate: 0 } } };
+  return {
+    ...c,
+    bank: bank === null ? null : { ...bank, lastPullSkipped: bank.lastPullSkipped ?? { noCurrency: 0, badAmount: 0, badDate: 0 } },
+    // Brief 049 (lane google): a connector written before the Google part has none.
+    google: c.google ?? null,
+  };
 }

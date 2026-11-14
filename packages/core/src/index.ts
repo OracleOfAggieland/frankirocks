@@ -65,3 +65,5 @@ export * from "./moments";
 
 // Brief 046: a bank's rows, the pure parts.
 export * from "./bank/index";
+// Brief 049 (lane google): a Google connection, the pure parts.
+export * from "./google/index";

@@ -516,6 +516,40 @@ export type BankDisconnectRequest = Infer<typeof BankDisconnectRequest>;
 export const BankDisconnectResponse = obj({ bank: BankView });
 export type BankDisconnectResponse = Infer<typeof BankDisconnectResponse>;
 
+// ---------------------------------------------------------------------------------------------
+// Brief 049 (lane google): /api/google/*. `GoogleView` is what the screen may show and nothing more: the account's
+// address and the state of mail and calendar. No token, no code, no state, no Google IDs.
+
+export const GOOGLE_PARTS = ["off", "connected", "expired"] as const;
+export type GooglePart = (typeof GOOGLE_PARTS)[number];
+export const GoogleView = obj({
+  email: nullable(str(320)),
+  mail: oneOf(GOOGLE_PARTS),
+  calendar: oneOf(GOOGLE_PARTS),
+  needsReconnect: bool,
+  connectedAt: nullable(TS),
+});
+export type GoogleView = Infer<typeof GoogleView>;
+export const GoogleStartRequest = obj({});
+/** The one answer that carries the state: inside Google's authorization URL, which the popup opens. Never stored. */
+export const GoogleStartResponse = obj({ url: str(2048, { min: 1 }), expiresAt: TS });
+export type GoogleStartResponse = Infer<typeof GoogleStartResponse>;
+export const GoogleConnectRequest = obj({
+  requestId: ID,
+  code: str(512, { min: 1, pattern: /^[!-~]+$/, label: "an authorization code" }),
+  state: str(43, { min: 43, pattern: /^[A-Za-z0-9_-]{43}$/, label: "a 32-byte base64url state" }),
+});
+export type GoogleConnectRequest = Infer<typeof GoogleConnectRequest>;
+export const GOOGLE_CONNECT_OUTCOMES = ["connected", "nothingGranted"] as const;
+export const GoogleConnectResponse = obj({ google: GoogleView, outcome: oneOf(GOOGLE_CONNECT_OUTCOMES) });
+export type GoogleConnectResponse = Infer<typeof GoogleConnectResponse>;
+export const GoogleStatusResponse = obj({ google: GoogleView });
+export type GoogleStatusResponse = Infer<typeof GoogleStatusResponse>;
+export const GoogleDisconnectRequest = obj({ requestId: ID });
+export type GoogleDisconnectRequest = Infer<typeof GoogleDisconnectRequest>;
+export const GoogleDisconnectResponse = obj({ google: GoogleView });
+export type GoogleDisconnectResponse = Infer<typeof GoogleDisconnectResponse>;
+
 /** WireResult by route: the stored `request.response` must be that route's response type. */
 export const RESPONSE_BY_ROUTE: Record<RouteName, Schema<unknown>> = {
   open: OpenResponse,
@@ -533,6 +567,9 @@ export const RESPONSE_BY_ROUTE: Record<RouteName, Schema<unknown>> = {
   // Brief 046.
   bankConnect: BankConnectResponse,
   bankDisconnect: BankDisconnectResponse,
+  // Brief 049 (lane google).
+  googleConnect: GoogleConnectResponse,
+  googleDisconnect: GoogleDisconnectResponse,
 };
 export const WireResult = union(...Object.values(RESPONSE_BY_ROUTE));
 

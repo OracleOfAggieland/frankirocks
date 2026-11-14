@@ -1,0 +1,131 @@
+/**
+ * Brief 049: a scriptable Google port for tests. No network. Every call is recorded with its method and arguments
+ * (never answered from anywhere but the script); errors are queued per method.
+ */
+import { CALENDAR_SCOPE, GMAIL_SCOPE } from "../google/oauth";
+import { GoogleCallError, type EventList, type GmailMessage, type GooglePort, type GoogleRefreshed, type GoogleTokens, type MessageRef } from "../google/port";
+import { BANK_TEST_KEY } from "./fake-bank";
+
+export const GOOGLE_CLIENT_ID = "1234567890-testclient.apps.googleusercontent.com";
+export const GOOGLE_TEST_ENV = { GOOGLE_OAUTH_CLIENT_ID: GOOGLE_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET: "GOCSPX-testsecret00000000", FRANKI_BANK_TOKEN_KEY: BANK_TEST_KEY };
+export const REFRESH_TOKEN = "1//0gTESTREFRESHtoken-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
+export const ACCESS_TOKEN_G = "ya29.a0TESTaccess-token_0123456789";
+export const ACCOUNT_SUB = "109876543210987654321";
+export const ACCOUNT_EMAIL = "owner@example.com";
+export const ALL_SCOPES = ["openid", "https://www.googleapis.com/auth/userinfo.email", GMAIL_SCOPE, CALENDAR_SCOPE];
+
+const b64 = (o: object) => Buffer.from(JSON.stringify(o), "utf8").toString("base64url");
+/** An unsigned ID token shaped like Google's (the code never checks the signature; it came over TLS). */
+export function idTokenFor(claims: Record<string, unknown> = {}): string {
+  return `${b64({ alg: "RS256", kid: "test" })}.${b64({ iss: "https://accounts.google.com", aud: GOOGLE_CLIENT_ID, sub: ACCOUNT_SUB, email: ACCOUNT_EMAIL, email_verified: true, ...claims })}.c2ln`;
+}
+
+type Method = keyof GooglePort;
+
+export interface GoogleCall {
+  method: Method;
+  args: unknown[];
+}
+
+export class FakeGoogle implements GooglePort {
+  calls: GoogleCall[] = [];
+  tokens: GoogleTokens = { accessToken: ACCESS_TOKEN_G, refreshToken: REFRESH_TOKEN, scope: [...ALL_SCOPES], idToken: idTokenFor() };
+  refreshed: GoogleRefreshed = { accessToken: ACCESS_TOKEN_G, scope: null };
+  /** Messages by ID, and the IDs a list answers (in order). */
+  messages = new Map<string, GmailMessage>();
+  listed: MessageRef[] | null = null;
+  events: EventList = { timeZone: "UTC", items: [] };
+  private errors = new Map<Method, (GoogleCallError | Error)[]>();
+
+  failNext(method: Method, error: GoogleCallError | Error): this {
+    this.errors.set(method, [...(this.errors.get(method) ?? []), error]);
+    return this;
+  }
+
+  private take(method: Method, args: unknown[]): void {
+    this.calls.push({ method, args });
+    const queue = this.errors.get(method);
+    const next = queue?.shift();
+    if (next !== undefined) throw next;
+  }
+
+  count(method: Method): number {
+    return this.calls.filter((c) => c.method === method).length;
+  }
+
+  async exchangeCode(...args: Parameters<GooglePort["exchangeCode"]>) {
+    this.take("exchangeCode", args);
+    return { ...this.tokens, scope: [...this.tokens.scope] };
+  }
+  async refresh(...args: Parameters<GooglePort["refresh"]>) {
+    this.take("refresh", args);
+    return { ...this.refreshed };
+  }
+  async revoke(...args: Parameters<GooglePort["revoke"]>) {
+    this.take("revoke", args);
+  }
+  async listMessages(...args: Parameters<GooglePort["listMessages"]>) {
+    this.take("listMessages", args);
+    const all = this.listed ?? [...this.messages.values()].map((m) => ({ id: m.id, threadId: m.threadId }));
+    return all.slice(0, Math.max(1, args[2]));
+  }
+  async getMessage(...args: Parameters<GooglePort["getMessage"]>) {
+    this.take("getMessage", args);
+    const m = this.messages.get(args[1]);
+    if (m === undefined) throw new GoogleCallError("notFound", true);
+    return structuredClone(m);
+  }
+  async listEvents(...args: Parameters<GooglePort["listEvents"]>) {
+    this.take("listEvents", args);
+    return structuredClone(this.events);
+  }
+}
+
+const noGoogle = async (): Promise<never> => {
+  throw new Error("no Google in tests");
+};
+/** Brief 049: the default Google port in tests. Every method throws, so an unexpected call fails closed. */
+export const throwingGoogle: GooglePort = { exchangeCode: noGoogle, refresh: noGoogle, revoke: noGoogle, listMessages: noGoogle, getMessage: noGoogle, listEvents: noGoogle };
+
+const enc = (s: string) => Buffer.from(s, "utf8").toString("base64url");
+
+/** A Gmail `format=full` message with a plain body, an HTML body, or both. */
+export function gmailMessage(
+  id: string,
+  over: { from?: string; to?: string; subject?: string; date?: number; text?: string | null; html?: string | null; threadId?: string; labels?: string[]; inReplyTo?: string; headers?: { name: string; value: string }[] } = {},
+): GmailMessage {
+  const text = over.text === undefined ? "Hi, the lease renewal is due Friday. Dana" : over.text;
+  const html = over.html ?? null;
+  const parts = [...(text === null ? [] : [{ mimeType: "text/plain", body: { data: enc(text), size: text.length } }]), ...(html === null ? [] : [{ mimeType: "text/html", body: { data: enc(html), size: html.length } }])];
+  const headers = [
+    { name: "From", value: over.from ?? "Dana Park <dana@example.org>" },
+    { name: "To", value: over.to ?? ACCOUNT_EMAIL },
+    { name: "Subject", value: over.subject ?? "Lease renewal" },
+    { name: "Message-ID", value: `<${id}@mail.example.org>` },
+    ...(over.inReplyTo === undefined ? [] : [{ name: "In-Reply-To", value: over.inReplyTo }]),
+    ...(over.headers ?? []),
+  ];
+  return {
+    id,
+    threadId: over.threadId ?? id,
+    internalDate: over.date ?? Date.UTC(2026, 10, 10, 15, 0),
+    labelIds: over.labels ?? ["INBOX", "UNREAD"],
+    payload: { mimeType: "multipart/alternative", headers, parts },
+  };
+}
+
+/** One Calendar API event (`singleEvents=true`). */
+export function calendarEvent(id: string, over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id,
+    etag: '"3380000000000000"',
+    status: "confirmed",
+    updated: "2026-11-10T12:00:00.000Z",
+    summary: "Team sync",
+    start: { dateTime: "2026-11-16T15:00:00Z" },
+    end: { dateTime: "2026-11-16T16:00:00Z" },
+    organizer: { email: ACCOUNT_EMAIL, self: true },
+    attendees: [],
+    ...over,
+  };
+}

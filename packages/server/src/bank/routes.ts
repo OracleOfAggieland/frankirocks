@@ -225,6 +225,7 @@ async function connectRun(ctx: RouteContext, req: BankConnectRequest, key: Reque
           problem: null,
           lastPullSkipped: { noCurrency: 0, badAmount: 0, badDate: 0 },
         },
+        google: null,
       };
       tx.create(paths.connector(uid, connectorId), connector);
       const res = { bank: bankView(connectorId, connector), existing: false };
