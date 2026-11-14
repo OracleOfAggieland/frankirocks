@@ -50,6 +50,8 @@ import { admitRule } from "../admission/seam";
 import { holdCarried, inheritCandidates, inheritedSession, narrowestInherited, speaksSwapLine, swapLineRule, swapLineTurnId } from "../audience-swap";
 import { checkOpenVisit } from "./open-visit";
 import { openingProactive } from "./delivery-wire";
+// Brief 048: the forget's acknowledgment on a fresh call.
+import { ackRule, ackTurnId, dueAcks, readAckCandidates, takeDueAck } from "../forget/ack";
 
 /**
  * Server time for one open, from runRoute's first line to the answer. The browser gives the whole request 5 s
@@ -158,7 +160,8 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
     const { response, prior, stamp, session, narrow } = await deps.store.transaction(uid, async (tx) => {
       // The request entry is read with the core documents, in the same round trip: `completeRequest` reads it again
       // at the end, which the transaction answers from what it already read (the tail reserve's count, below).
-      const [core] = await Promise.all([readCoreDocs(tx, uid), tx.get(key.path)]);
+      // Brief 048 ruling 7: the pending acknowledgments are read in the same round trip.
+      const [core, , ackCandidates] = await Promise.all([readCoreDocs(tx, uid), tx.get(key.path), readAckCandidates(tx, uid)]);
       const ops = deps.clock.read().opsClock.now;
       if (core.epoch.data.barrier !== null) {
         const blocked: OpenRes = { sessionId, generation: 0, deck: null, state: "blocked", ack: null, proactive: null, audience: null };
@@ -176,7 +179,8 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       // Brief 026 (R14.2, R14.8): the Session this open replaces, read under the Owner's uid, passes on a narrowed
       // audience while its waitDeadline holds; the Head is compiled for that audience. Otherwise private, as before.
       // Brief 045 (finding 2): also the Owner's active Session and the latest closing or closed one; the narrowest wins.
-      const candidates = await inheritCandidates(tx, uid, { named: req.previousSessionId, active: core.epoch.data.activeSessionId, sessionId });
+      // Brief 048: whether each acknowledgment was already said is read beside the Sessions, in the same round trip.
+      const [candidates, due] = await Promise.all([inheritCandidates(tx, uid, { named: req.previousSessionId, active: core.epoch.data.activeSessionId, sessionId }), dueAcks(tx, uid, ackCandidates, deps.hasher)]);
       const inherited = narrowestInherited(candidates, ops);
       const compiled = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: core.epoch.data, rules }, pair, 1, inherited?.audience));
       if (!compiled.ok) throw configError(500, "head fixed sections exceed the token cap");
@@ -213,7 +217,18 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       // Brief 026 (R14.3; question 81): the swap line, only on an open that inherited a company audience with no
       // crisis. Its Permit comes from the Admission_Seam, which writes its decision in this transaction.
       let proactive: Proactive | null = null;
-      if (inherited !== null && speaksSwapLine(inherited)) {
+      // Brief 048 rulings 7 and 13: the first fresh call after a forget's blockedAt says its acknowledgment, once, in
+      // place of the swap line; it carries no content, so it plays whatever audience the call inherited.
+      const ack = due.length === 0 ? null : await takeDueAck(tx, uid, due, { opsNow: ops, audience: created.audience }, deps.hasher);
+      if (ack !== null) {
+        const turnId = ackTurnId(deps.hasher, sessionId, ack.opIds);
+        const admitted = admitRule(
+          tx,
+          { uid, requestId: req.requestId, requestEntryId: key.keyHash, turnRef: turnRef(turnId, sessionId, 1), core: { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev }, opsNow: ops, stamp: { ...stamp, turnId }, head, notes: [], turns: [], audioIds: [], toolOutput: null, rule: ackRule(ack.line, created.audience) },
+          deps,
+        );
+        if (admitted.kind === "permit" && admitted.notes.length === 1) proactive = { turnId, permit: admitted.permit, whisper: admitted.notes[0]!, cards: [] };
+      } else if (inherited !== null && speaksSwapLine(inherited)) {
         const turnId = swapLineTurnId(deps.hasher, sessionId);
         const admitted = admitRule(
           tx,
