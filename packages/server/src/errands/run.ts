@@ -255,13 +255,14 @@ async function helper(ctx: RouteContext, lease: Lease, errand: Errand, start: nu
     if (left() <= 0) return run({ kind: "failed", why: "limit" });
     await step(ctx, lease, errandId, null, true);
     modelCalls++;
-    let out: ResponsesResult;
-    try {
-      const body = plannerRequest(model, input, tools, modelCalls === ERRAND_MODEL_CALLS_MAX || mustAnswer);
-      out = (await withDeadline(deps.openai.call("responses.create", body), Math.min(ERRAND_MODEL_CALL_MS, left()), deps.timers)) as ResponsesResult;
-    } catch {
-      return run({ kind: "failed", why: "model" });
+    const body = plannerRequest(model, input, tools, modelCalls === ERRAND_MODEL_CALLS_MAX || mustAnswer);
+    // Review fix R5: a failed or timed-out model call is tried once more while wall time remains.
+    let out = await plannerCall(ctx, body, left());
+    if (out === null && left() > 0) {
+      await step(ctx, lease, errandId, null, true);
+      out = await plannerCall(ctx, body, left());
     }
+    if (out === null) return run({ kind: "failed", why: "model" });
     if (out.status !== "completed" && out.functionCalls === undefined) return run({ kind: "failed", why: "model" });
     const calls = out.functionCalls ?? [];
     if (calls.length === 0) {
@@ -291,6 +292,23 @@ async function helper(ctx: RouteContext, lease: Lease, errand: Errand, start: nu
     await step(ctx, lease, errandId, reads, false);
   }
   return run({ kind: "failed", why: "limit" });
+}
+
+/**
+ * Review fix R5: one model call, stopped at its deadline through the port (the SDK makes no retries of its own), so
+ * a call past it costs nothing more. Null on any failure.
+ */
+async function plannerCall(ctx: RouteContext, body: unknown, leftMs: number): Promise<ResponsesResult | null> {
+  const ms = Math.min(ERRAND_MODEL_CALL_MS, leftMs);
+  if (ms <= 0) return null;
+  const stop = new AbortController();
+  try {
+    return (await withDeadline(ctx.deps.openai.call("responses.create", body, { timeoutMs: ms, signal: stop.signal }), ms, ctx.deps.timers)) as ResponsesResult;
+  } catch {
+    return null;
+  } finally {
+    stop.abort();
+  }
 }
 
 /** Review fixes R3 and R6: the error outputs, worded by code and wrapped as data like every tool output. */
@@ -373,7 +391,10 @@ async function runTool(ctx: RouteContext, errandId: ID, tools: readonly ErrandTo
   } catch {
     return wrap({ error: "The arguments did not parse." });
   }
+  // Review fix R5: past the deadline the tool is told to stop, and anything it reads afterwards is not registered.
+  const stop = new AbortController();
   const read = (r: ErrandReadInput): string | null => {
+    if (stop.signal.aborted) return null;
     const same = reads.find((x) => x.evidenceId === r.evidenceId && x.rev === r.rev);
     if (same !== undefined) {
       // Shown once is shown: a later registration can only widen what the planner saw.
@@ -395,9 +416,11 @@ async function runTool(ctx: RouteContext, errandId: ID, tools: readonly ErrandTo
   const deps = ctx.deps;
   const ms = Math.max(0, deadlineAt - deps.clock.read().opsClock.now);
   try {
-    return wrap(await withDeadline(tool.run({ route: ctx, errandId, ownerWords: words, deadlineAt, read }, args), ms, deps.timers));
+    return wrap(await withDeadline(tool.run({ route: ctx, errandId, ownerWords: words, deadlineAt, signal: stop.signal, read }, args), ms, deps.timers));
   } catch {
     return wrap({ error: "The tool could not answer just now." });
+  } finally {
+    stop.abort();
   }
 }
 

@@ -36,6 +36,11 @@ export interface ErrandToolContext {
   ownerWords: readonly string[];
   /** The ops time by which the tool must have answered. */
   deadlineAt: number;
+  /**
+   * Review fix R5: aborted at the deadline. A tool passes it to its own requests; after it aborts, `read` registers
+   * nothing and answers null, since the tool's output no longer reaches the planner.
+   */
+  signal: AbortSignal;
   read(r: ErrandReadInput): string | null;
 }
 

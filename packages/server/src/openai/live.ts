@@ -6,7 +6,7 @@
  */
 import OpenAI from "openai";
 import { type Env, openaiApiKey } from "../config/env";
-import type { OpenAIEndpoint, OpenAIPort } from "./fake";
+import type { CallOptions, OpenAIEndpoint, OpenAIPort } from "./fake";
 import { type CreateCallBody, type CreateCallResult, HANGUP_CALL_DEADLINE_MS } from "./realtime-calls";
 import type { ResponsesFunctionCall, ResponsesResult } from "./responses";
 
@@ -64,14 +64,23 @@ export function normalizeResponse(r: SdkResponse): ResponsesResult {
   };
 }
 
+/**
+ * Review fix R5 of brief 049: a caller with its own deadline (the errand helper) passes it, so the SDK stops the
+ * request there, and makes no retries of its own (the caller owns its one retry). Undefined for every other caller.
+ */
+export function responsesRequestOptions(options: CallOptions | undefined): { maxRetries: 0; timeout?: number; signal?: AbortSignal } | undefined {
+  if (options === undefined) return undefined;
+  return { maxRetries: 0, ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }), ...(options.signal === undefined ? {} : { signal: options.signal }) };
+}
+
 export function liveOpenAI(env: Env = process.env): OpenAIPort {
   let client: OpenAI | null = null;
   const sdk = () => (client ??= new OpenAI({ apiKey: openaiApiKey(env) }));
   return {
-    async call(endpoint: OpenAIEndpoint, body: unknown): Promise<unknown> {
+    async call(endpoint: OpenAIEndpoint, body: unknown, options?: CallOptions): Promise<unknown> {
       switch (endpoint) {
         case "responses.create": {
-          const r = (await sdk().responses.create(body as never)) as unknown as SdkResponse;
+          const r = (await sdk().responses.create(body as never, responsesRequestOptions(options))) as unknown as SdkResponse;
           return normalizeResponse(r);
         }
         case "realtime.calls.hangup": {

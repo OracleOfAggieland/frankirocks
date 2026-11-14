@@ -1,14 +1,15 @@
 /** Brief 049 part A, the review fixes: each test reproduces one reviewer finding on fakes (see brief 049's report). */
-import { ERRAND_LEASE_MS, ERRAND_OFFER_MS, ERRAND_ON_SCREEN_LINE, ERRAND_RESULT_TTL_MS, ERRAND_SILENCE_MS, type ID, type Ledger, type Session, type Turn, errandFailedLine, errandNothingLine } from "@franki/core";
+import { ERRAND_LEASE_MS, ERRAND_OFFER_MS, ERRAND_TOOL_CALL_MS, ERRAND_ON_SCREEN_LINE, ERRAND_RESULT_TTL_MS, ERRAND_SILENCE_MS, type ID, type Ledger, type Session, type Turn, errandFailedLine, errandNothingLine } from "@franki/core";
 import { describe, expect, it } from "vitest";
 import { receiptRoute } from "../routes/receipt";
 import { stateRoute } from "../routes/state";
 import { toolRoute } from "../routes/tool";
 import { turnRoute } from "../routes/turn";
-import { normalizeResponse } from "../openai/live";
+import { normalizeResponse, responsesRequestOptions } from "../openai/live";
 import { paths } from "../store/paths";
-import { ERRAND_OWNER as UID, type ErrandSetup, type PlannerStep, errandOf, errandReceipt, plannerRequests, poll, seedMail, errandSetup as setup, testMailAgent, tool } from "../testing/errand-agent";
-import { callRoute, patchRecord, recordingSchedule, runScheduled } from "../testing/fakes";
+import { ERRAND_OWNER as UID, type ErrandSetup, type PlannerStep, errandOf, errandReceipt, plannerRequests, poll, seedMail, errandSetup as setup, searchTool, testMailAgent, tool } from "../testing/errand-agent";
+import type { ErrandTool } from "./agent";
+import { callRoute, patchRecord, recordingSchedule, runScheduled, settle } from "../testing/fakes";
 import { asrTurn, openTestSession } from "../testing/session-fixtures";
 import { claimJob } from "../worker/jobs";
 import { errandsOnState, pickUp } from "./deliver";
@@ -395,5 +396,58 @@ describe("R6: past the tool-call limit the calls get error outputs and the plann
     expect(next.input.filter((i) => i.type === "function_call_output" && /limit/i.test(i.output ?? ""))).toHaveLength(1);
     expect(next.tool_choice).toBe("none");
     expect((await errandOf(x))?.outcome).toBe("answered");
+  });
+});
+
+describe("R5: the helper's calls have deadlines that stop them", () => {
+  it("a model call past its deadline is aborted through the port and tried once more; the retry's answer stands", async () => {
+    const x = await setup([{ never: true }, { call: "search_mail" }, answered]);
+    await callRoute(x.rig, toolRoute, tool(x));
+    await runScheduled(x.rig);
+    const reqs = plannerRequests(x.rig);
+    expect(reqs).toHaveLength(3);
+    expect(reqs[0]!.options?.signal?.aborted).toBe(true);
+    expect(reqs[0]!.options?.timeoutMs).toBeGreaterThan(0);
+    expect((await errandOf(x))?.outcome).toBe("answered");
+  });
+
+  it("only once: a second failure in a row ends the run failed", async () => {
+    const x = await setup([{ never: true }, { never: true }, answered]);
+    await callRoute(x.rig, toolRoute, tool(x));
+    await runScheduled(x.rig);
+    expect(plannerRequests(x.rig)).toHaveLength(2);
+    expect((await errandOf(x))?.outcome).toBe("failed");
+  });
+
+  it("a tool past its deadline is told to stop, and what it reads afterwards is never registered", async () => {
+    const x = await setup([{ call: "search_mail" }, { outcome: "nothing" }]);
+    let signal: AbortSignal | undefined;
+    let late: string | null | undefined;
+    let lateDone: () => void = () => {};
+    const lateRead = new Promise<void>((r) => (lateDone = r));
+    const slow: ErrandTool = {
+      ...searchTool(() => x.mail),
+      async run(ctx) {
+        signal = ctx.signal;
+        await x.rig.deps.timers.sleep(ERRAND_TOOL_CALL_MS + 1_000);
+        const m = x.mail[0]!;
+        late = ctx.read({ evidenceId: m.eid, rev: m.rev, cls: m.cls, sens: m.sens, shown: true, sender: m.sender, source: m.source });
+        lateDone();
+        return { items: [] };
+      },
+    };
+    x.rig.deps.errandAgents = [{ ...testMailAgent(() => x.mail), tools: [slow] }];
+    await callRoute(x.rig, toolRoute, tool(x));
+    await runScheduled(x.rig);
+    await settle(lateRead, x.rig.clock, x.rig.timers);
+    expect(signal?.aborted).toBe(true);
+    expect(late).toBeNull();
+    expect((await errandOf(x))?.reads).toEqual([]);
+  });
+
+  it("the live port sends no SDK retries, the deadline as its timeout, and the signal", () => {
+    const signal = new AbortController().signal;
+    expect(responsesRequestOptions({ signal, timeoutMs: 5_000 })).toEqual({ maxRetries: 0, timeout: 5_000, signal });
+    expect(responsesRequestOptions(undefined)).toBeUndefined();
   });
 });
