@@ -3,11 +3,11 @@
 export const SITE = {
   name: "Franki",
   /**
-   * The deployed web app, App Hosting backend `franki-web`. The base for every absolute URL in the metadata
-   * (the canonical link, og:url, the social card). The same origin is in ALLOWED_ORIGINS in
-   * packages/server/src/auth/guard.ts.
+   * The deployed web app: the custom domain on App Hosting backend `franki-web` (www redirects here). The base
+   * for every absolute URL in the metadata (the canonical link, og:url, the social card). The same origin is in
+   * ALLOWED_ORIGINS in packages/server/src/auth/guard.ts.
    */
-  url: "https://franki-web--frankirocks.us-central1.hosted.app",
+  url: "https://frankirocks.com",
   description: "A friendly Frankenstein ghost you talk to, with one powerful memory for your whole life.",
   author: "Matt Avila",
   locale: "en_US",

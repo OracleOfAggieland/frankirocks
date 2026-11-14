@@ -13,7 +13,12 @@ export interface TokenVerifier {
   verify(idToken: string): Promise<{ uid: string }>;
 }
 
-export const ALLOWED_ORIGINS: readonly string[] = ["http://localhost:3000", "https://franki-web--frankirocks.us-central1.hosted.app"];
+/** The custom domain first, then App Hosting's own URL for the same backend, which stays reachable. */
+export const ALLOWED_ORIGINS: readonly string[] = [
+  "http://localhost:3000",
+  "https://frankirocks.com",
+  "https://franki-web--frankirocks.us-central1.hosted.app",
+];
 
 export const BODY_CAP_BYTES = 131_072;
 export const SDP_BODY_CAP_BYTES = 262_144;
