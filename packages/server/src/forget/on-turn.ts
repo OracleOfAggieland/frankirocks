@@ -113,7 +113,8 @@ export async function forgetInTurn(tx: Tx, ctx: RouteContext, x: ForgetTurnInput
     deps,
   );
   const status = statusOf(admitted.outcome);
-  const response: TurnRes = admitted.kind === "permit" ? { ...x.base, status, permit: admitted.permit, notes: [] } : { ...x.base, status, permit: null };
+  // The turn's forget receipt rides on its answer, so the false "gone" check knows the acknowledgment has one (ruling 11).
+  const response: TurnRes = admitted.kind === "permit" ? { ...x.base, status, permit: admitted.permit, notes: [], receiptId: fenced.receiptId } : { ...x.base, status, permit: null, receiptId: fenced.receiptId };
   await completeRequest(tx, x.key, response, ops);
   return { response, jobId: fenced.jobId, hangupJobIds, opId: fenced.opId, key: x.key, rule: x.rule, sessionId, requestId: x.req.requestId };
 }
@@ -135,9 +136,9 @@ export async function ackTypedForget(ctx: RouteContext, f: ForgetTurnResult): Pr
     const due = await dueAcks(tx, uid, candidates.filter((c) => c.opId === f.opId), deps.hasher);
     if (due.length === 0 || entry === null || epoch === null) return f.response;
     const ops = deps.clock.read().opsClock.now;
-    const ack = await takeDueAck(tx, uid, due, { opsNow: ops, audience: f.rule.audience }, deps.hasher);
-    if (ack === null) return f.response;
     const stamp = f.response.stamp;
+    const ack = await takeDueAck(tx, uid, due, { opsNow: ops, audience: f.rule.audience, turn: { sessionId: f.sessionId, turnId: stamp.turnId as ID } }, deps.hasher);
+    if (ack === null) return f.response;
     const admitted = admitRule(
       tx,
       { uid, requestId: f.requestId, requestEntryId: f.key.keyHash, turnRef: turnRef(stamp.turnId as ID, f.sessionId, 1), core: { epoch: epoch.data.epoch, policyRev: epoch.data.policyRev }, opsNow: ops, stamp, head: null, notes: [], turns: [], audioIds: [], toolOutput: null, rule: ackRule(ack.line, f.rule.audience) },
@@ -165,9 +166,9 @@ export async function typedAckOnState(
   if (candidates.length === 0) return null;
   const due = await dueAcks(tx, uid, candidates, deps.hasher);
   if (due.length === 0) return null;
-  const ack = await takeDueAck(tx, uid, due, { opsNow: x.opsNow, audience: x.audience, sessionId: x.sessionId }, deps.hasher);
+  const turnId = ackTurnId(deps.hasher, x.sessionId, due);
+  const ack = await takeDueAck(tx, uid, due, { opsNow: x.opsNow, audience: x.audience, sessionId: x.sessionId, turn: { sessionId: x.sessionId, turnId } }, deps.hasher);
   if (ack === null) return null;
-  const turnId = ackTurnId(deps.hasher, x.sessionId, ack.opIds);
   const admitted = admitRule(
     tx,
     { uid, requestId: turnId, requestEntryId: null, turnRef: turnRef(turnId, x.sessionId, 1), core: { epoch: x.stamp.epoch, policyRev: x.stamp.policyRev }, opsNow: x.opsNow, stamp: { ...x.stamp, turnId }, head: x.head, notes: [], turns: [], audioIds: [], toolOutput: null, rule: ackRule(ack.line, x.audience) },

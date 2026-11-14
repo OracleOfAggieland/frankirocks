@@ -12,7 +12,7 @@
  *
  * The rows carry IDs and states only, never words.
  */
-import { type AckText, type Au, type Hasher, type ID, type Job, type Ledger, type RuleInput, forgetAckText, tsFromMs } from "@franki/core";
+import { type AckText, type Au, FORGET_ACK_TEXTS, type Hasher, type ID, type Job, type Ledger, type RuleInput, forgetAckText, tsFromMs } from "@franki/core";
 import { cFields } from "../records";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
@@ -72,7 +72,7 @@ export async function takeDueAck(
   tx: Tx,
   uid: string,
   due: readonly AckCandidate[],
-  x: { opsNow: number; audience: Au; sessionId?: ID | null },
+  x: { opsNow: number; audience: Au; sessionId?: ID | null; turn: { sessionId: ID; turnId: ID } },
   hasher: Hasher,
 ): Promise<{ line: AckText; opIds: ID[] } | null> {
   const jobs = await Promise.all(due.map((c) => tx.get<Job>(paths.job(uid, forgetJobId(c.opId, hasher)))));
@@ -97,6 +97,8 @@ export async function takeDueAck(
         acceptedRefs: [
           { type: "ledger", id: forgetReceiptId(c.opId, hasher), rev: 1 },
           { type: "job", id: forgetJobId(c.opId, hasher), rev: 1 },
+          // The turn the words are said as, so the receipt route knows its "gone" has a receipt (ruling 11).
+          { type: "turn", id: x.turn.turnId, parentId: x.turn.sessionId, rev: 1 },
         ],
         heldRefs: [],
         reasonCodes: ["ok"],
@@ -128,5 +130,25 @@ export const ackRule = (line: AckText, audience: Au): RuleInput => ({
   forgetAck: line,
 });
 
-/** The synthetic turn the acknowledgment is said as: one per Session and set of ops. */
-export const ackTurnId = (hasher: Hasher, sessionId: string, opIds: readonly string[]): ID => hasher.id(["forgetAck", sessionId, ...opIds]) as ID;
+/** The turn the acknowledgment is said as: one per Session and set of due ops. */
+export const ackTurnId = (hasher: Hasher, sessionId: string, due: readonly AckCandidate[]): ID => hasher.id(["forgetAck", sessionId, ...due.map((c) => c.opId)]) as ID;
+
+/**
+ * Ruling 11: whether a transcript that says gone is a forget's acknowledgment, said as the very turn it was delivered
+ * as, in its exact words: the merged acknowledgment of the jobs whose delivery rows name that turn. Anything else that
+ * says gone has no receipt here and still asks (fails closed).
+ */
+export async function ackDeliveredAs(tx: Pick<Tx, "get" | "query">, uid: string, turn: { sessionId: string; turnId: string }, text: string | null, hasher: Hasher): Promise<boolean> {
+  if (text === null || !(FORGET_ACK_TEXTS as readonly string[]).includes(text.trim())) return false;
+  const candidates = await readAckCandidates(tx, uid);
+  const rows = await Promise.all(candidates.map((c) => tx.get<Ledger>(paths.ledger(uid, forgetAckId(c.opId, hasher)))));
+  const mine = candidates.filter((_, i) => {
+    const r = rows[i];
+    return r != null && r.data.kind === "decision" && r.data.payload.acceptedRefs.some((ref) => ref.type === "turn" && ref.id === turn.turnId && "parentId" in ref && ref.parentId === turn.sessionId);
+  });
+  if (mine.length === 0) return false;
+  const jobs = await Promise.all(mine.map((c) => tx.get<Job>(paths.job(uid, forgetJobId(c.opId, hasher)))));
+  const acks: ForgetAck[] = [];
+  for (const j of jobs) if (j !== null && j.data.payload.kind === "forget" && j.data.payload.ack !== null) acks.push(j.data.payload.ack);
+  return acks.length === mine.length && mergeAcks(acks) === text.trim();
+}

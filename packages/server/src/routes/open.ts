@@ -219,9 +219,10 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       let proactive: Proactive | null = null;
       // Brief 048 rulings 7 and 13: the first fresh call after a forget's blockedAt says its acknowledgment, once, in
       // place of the swap line; it carries no content, so it plays whatever audience the call inherited.
-      const ack = due.length === 0 ? null : await takeDueAck(tx, uid, due, { opsNow: ops, audience: created.audience }, deps.hasher);
+      const ackTurn = ackTurnId(deps.hasher, sessionId, due);
+      const ack = due.length === 0 ? null : await takeDueAck(tx, uid, due, { opsNow: ops, audience: created.audience, turn: { sessionId, turnId: ackTurn } }, deps.hasher);
       if (ack !== null) {
-        const turnId = ackTurnId(deps.hasher, sessionId, ack.opIds);
+        const turnId = ackTurn;
         const admitted = admitRule(
           tx,
           { uid, requestId: req.requestId, requestEntryId: key.keyHash, turnRef: turnRef(turnId, sessionId, 1), core: { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev }, opsNow: ops, stamp: { ...stamp, turnId }, head, notes: [], turns: [], audioIds: [], toolOutput: null, rule: ackRule(ack.line, created.audience) },

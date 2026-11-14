@@ -40,6 +40,8 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 import { retryStale } from "./state";
 import { askAfterSpoken } from "../onturn/ask";
 import { goneCheck, receiptMoments } from "./receipt-moments";
+// Brief 048: the forget's acknowledgment is a receipted "gone".
+import { ackDeliveredAs } from "../forget/ack";
 
 type ReceiptReq = Infer<typeof ReceiptRequest>;
 type ReceiptRes = Infer<typeof ReceiptResponse>;
@@ -71,7 +73,9 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
           await completeRequest(tx, key, refused, ops);
           return refused;
         }
-        const accepted: ReceiptRes = { accepted: true, controlCheck: goneCheck(req) };
+        // Brief 048 ruling 11: a "gone" with no receipt in its turn still asks; a forget's acknowledgment has one.
+        const check = goneCheck(req) === "pending" && (await ackDeliveredAs(tx, uid, req.stamp, req.text, deps.hasher)) ? "none" : goneCheck(req);
+        const accepted: ReceiptRes = { accepted: true, controlCheck: check };
         const live = s.status === "minting" || s.status === "active";
 
         if (req.kind === "transcript") {
