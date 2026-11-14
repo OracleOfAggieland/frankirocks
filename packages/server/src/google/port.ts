@@ -80,6 +80,8 @@ export interface GmailMessage {
 export interface EventList {
   timeZone: string | null;
   items: unknown[];
+  /** Review D1: Google's token for the next page, or null when this was the last. */
+  nextPageToken: string | null;
 }
 
 export interface GooglePort {
@@ -89,7 +91,8 @@ export interface GooglePort {
   revoke(token: string): Promise<void>;
   listMessages(accessToken: string, q: string, max: number): Promise<MessageRef[]>;
   getMessage(accessToken: string, id: string): Promise<GmailMessage>;
-  listEvents(accessToken: string, x: { timeMin: string; timeMax: string; max: number }): Promise<EventList>;
+  /** One page of events; `pageToken` asks for the page after the one that answered it. */
+  listEvents(accessToken: string, x: { timeMin: string; timeMax: string; max: number; pageToken?: string }): Promise<EventList>;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -110,6 +113,7 @@ const TOKEN_SHAPE = /^[\x21-\x7e]{1,4096}$/;
 const MESSAGE_ID = /^[A-Za-z0-9]{1,64}$/;
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 const ERROR_CODE = /^[a-z_]{1,64}$/;
+const PAGE_TOKEN = /^[A-Za-z0-9_=.~-]{1,2048}$/;
 
 const clampCount = (n: number, max: number) => (Number.isInteger(n) ? Math.min(Math.max(n, 1), max) : 1);
 
@@ -220,11 +224,16 @@ export function googlePort(fetchFn?: GoogleFetch): GooglePort {
     async listEvents(accessToken, x) {
       const headers = bearer(accessToken);
       if (!RFC3339.test(x.timeMin) || !RFC3339.test(x.timeMax)) refuse();
-      const params = new URLSearchParams({ timeMin: x.timeMin, timeMax: x.timeMax, singleEvents: "true", orderBy: "startTime", maxResults: String(clampCount(x.max, EVENTS_LIST_MAX)) });
+      if (x.pageToken !== undefined && !PAGE_TOKEN.test(x.pageToken)) refuse();
+      const params = new URLSearchParams({ timeMin: x.timeMin, timeMax: x.timeMax, singleEvents: "true", orderBy: "startTime", maxResults: String(clampCount(x.max, EVENTS_LIST_MAX)), ...(x.pageToken === undefined ? {} : { pageToken: x.pageToken }) });
       const data = await call("GET", `${EVENTS_URL}?${params.toString()}`, headers, undefined, "data");
       const items = data.items === undefined ? [] : Array.isArray(data.items) ? data.items : unknown();
       const zone = typeof data.timeZone === "string" && data.timeZone.length <= 64 ? data.timeZone : null;
-      return { timeZone: zone, items: items.slice(0, EVENTS_LIST_MAX) };
+      // A token the next request would refuse is an unknown outcome: the rest can't be read.
+      const next = data.nextPageToken === undefined || data.nextPageToken === null ? null : typeof data.nextPageToken === "string" && PAGE_TOKEN.test(data.nextPageToken) ? data.nextPageToken : unknown();
+      // More items than asked for: the page can't be trusted to be one page.
+      if (items.length > EVENTS_LIST_MAX) unknown();
+      return { timeZone: zone, items, nextPageToken: next };
     },
   };
   return port;

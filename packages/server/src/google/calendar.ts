@@ -3,7 +3,7 @@
  * Evidence row. The provider's typed fields are read by code; the title is data. An all-day event's dates are read
  * in the calendar's own time zone. An event the owner organizes is O; anyone else's is T.
  */
-import { type Hasher, isZone, localMinuteAt } from "@franki/core";
+import { type Hasher, isZone, linkless, localMinuteAt, visibleText } from "@franki/core";
 
 export const EVENT_TITLE_CHARS = 1_024;
 const EVENT_ID = /^[A-Za-z0-9_-]{1,1024}$/;
@@ -20,10 +20,13 @@ export interface EventContent {
   selfResponse: "accepted" | "tentative" | "declined" | "needsAction" | "none";
   transparency: "opaque" | "transparent";
   organizerSelf: boolean;
+  /** Review D4: read from Google's `creator.self`, never copied from the organizer. */
+  creatorSelf: boolean;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const clean = (s: string) => s.replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩﻿]/g, " ").replace(/\s+/g, " ").trim();
+/** Review D9: a title leaves with no invisible character and no link. */
+const clean = (s: string) => linkless(visibleText(s)).trim();
 
 /** The calendar's zone when it is a real IANA zone, else UTC. */
 export const calendarZone = (z: string | null) => (z !== null && isZone(z) ? z : "UTC");
@@ -67,6 +70,7 @@ export function eventContent(item: unknown, calendarTimeZone: string): EventCont
     selfResponse,
     transparency: item.transparency === "transparent" ? "transparent" : "opaque",
     organizerSelf: isObj(item.organizer) && item.organizer.self === true,
+    creatorSelf: isObj(item.creator) && item.creator.self === true,
   };
 }
 

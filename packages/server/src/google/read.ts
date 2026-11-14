@@ -27,7 +27,9 @@ import {
   docRef,
   eligible,
   freeGaps,
+  freeTimeAsk,
   gmailQuery,
+  mailQueryValid,
   msFromTs,
   safeName,
   tsFromMs,
@@ -44,9 +46,9 @@ import type { Reader, StoredDoc, Tx } from "../store/port";
 import { calendarLogicalId, calendarProviderKey, calendarZone, eventContent } from "./calendar";
 import { type GoogleProvider, googleConnectorId, googleKeyScope, isReadableGoogle, readGoogleDocs } from "./connector";
 import { CALENDAR_SCOPE, GMAIL_SCOPE } from "./oauth";
-import { gmailLogicalId, gmailProviderKey, mailContent, GMAIL_PARSER_VERSION_CUT } from "./mail";
+import { gmailLogicalId, gmailProviderKey, mailContent, parseAddress, GMAIL_PARSER_VERSION_CUT } from "./mail";
 import { GoogleCallError } from "./port";
-import { type GoogleRowContext, eventEvidence, mailEvidence, storeRow } from "./rows";
+import { type GoogleRowContext, RevisionCapReached, eventEvidence, latestRevision, mailEvidence, storeRow } from "./rows";
 import { type GoogleRuntime, googleRuntime } from "./routes";
 
 /** Ruling 23: a search answers at most this many messages. */
@@ -56,10 +58,15 @@ export const MAIL_SUBJECT_ANSWER_CHARS = 120;
 /** Ruling 25: a title is answered cut to this many characters; at most 50 events. */
 export const EVENT_TITLE_ANSWER_CHARS = 120;
 export const EVENTS_MAX = 50;
+/** Review D1: events are read a page of 50 at a time, at most 4 pages (200 events) per read. */
+export const EVENTS_PAGE = 50;
+export const EVENTS_READ_PAGES = 4;
+export const EVENTS_READ_MAX = EVENTS_PAGE * EVENTS_READ_PAGES;
 /** The most body text the reader is given. */
 export const READER_BODY_CHARS = 12_000;
 
-export type GoogleReadFailure = "unavailable" | "notConnected" | "expired" | "failed" | "forgotten";
+/** `invalid` (reviews D10, D11, D12): the ask itself can't be answered (a bad length, address or time); nothing was called. */
+export type GoogleReadFailure = "unavailable" | "notConnected" | "expired" | "failed" | "forgotten" | "invalid";
 export type GoogleRead<T> = { ok: true; value: T } | { ok: false; why: GoogleReadFailure };
 
 export interface GoogleReadContext {
@@ -68,15 +75,27 @@ export interface GoogleReadContext {
   epoch: number;
   /** Access tokens this run fetched, in memory only. */
   tokens: Map<GoogleProvider, string>;
+  /** Review D11: `ownerHasMailed` answers, per address, for this run only. */
+  mailed: Map<string, boolean>;
 }
 
-export const googleReadContext = (route: RouteContext, epoch: number): GoogleReadContext => ({ route, epoch, tokens: new Map() });
+export const googleReadContext = (route: RouteContext, epoch: number): GoogleReadContext => ({ route, epoch, tokens: new Map(), mailed: new Map() });
+
+/**
+ * Review D11: who a message is from. The display name is the sender's own choice (an attacker's, as often as not),
+ * so the address is answered beside it, and only the address may be compared with anything.
+ */
+export interface MailSender {
+  /** The display name (or, with none, the address) through `safeName`. */
+  name: string;
+  /** The From address, lower-case; null when the header has none that reads as one. */
+  address: string | null;
+}
 
 /** One message a search found. Never the body. */
 export interface MailHit {
   eid: string;
-  /** The sender's name (or address) through `safeName`. */
-  sender: string;
+  sender: MailSender;
   at: string;
   /** Cut to 120 characters; null when the message has none. */
   subject: string | null;
@@ -87,7 +106,7 @@ export interface MailHit {
 /** One message's text for the tool-less reader. */
 export interface ReaderText {
   eid: string;
-  sender: string;
+  sender: MailSender;
   at: string;
   subject: string | null;
   body: string;
@@ -261,16 +280,32 @@ async function guarded<T>(work: () => Promise<GoogleRead<T>>): Promise<GoogleRea
     return await work();
   } catch (error) {
     if (error instanceof ReadStop) return fail(error.why);
+    if (error instanceof RevisionCapReached) {
+      // Review D12: a row with no revision left is never answered stale.
+      return fail("failed");
+    }
     throw error;
   }
 }
 
-/** The display name of a stored sender: the name before the address, else the address, through `safeName`. */
-function senderOf(e: Evidence): string {
+/** An address that is safe to compare and to put in a Gmail query: no quote, space, bracket or operator. */
+const ADDRESS = /^[a-z0-9][a-z0-9._%+'-]{0,63}@[a-z0-9](?:[a-z0-9-]{0,62}\.)+[a-z]{2,24}$/;
+const cleanAddress = (a: string | null) => (a !== null && a.length <= 254 && ADDRESS.test(a) ? a : null);
+
+/** A stored sender: the display name through `safeName`, and the address apart (review D11). */
+function senderOf(e: Evidence): MailSender {
   const s = e.sender ?? "";
-  const m = /^(.*?)<[^<>]*>\s*$/.exec(s.slice(0, 400));
-  const name = m === null ? s : m[1]!.replace(/^[\s"']+|[\s"']+$/g, "");
-  return safeName(name === "" ? s : name);
+  const parsed = parseAddress(s);
+  const address = cleanAddress(parsed.address);
+  return { name: safeName(parsed.name ?? address ?? s), address };
+}
+
+/** The text the reader is given: the whole body, or the owner's own part and the quoted part (review D4). */
+function bodyText(e: Evidence): string {
+  const inline = (c: Evidence["body"]) => (c !== null && c.kind === "inline" ? c.text : null);
+  const whole = inline(e.body);
+  if (whole !== null) return whole;
+  return [inline(e.bodyOwn), inline(e.bodyQuoted)].filter((t): t is string => t !== null).join("\n\n");
 }
 
 const cutTo = (s: string | null, n: number) => (s === null ? null : s.length > n ? s.slice(0, n) : s);
@@ -292,9 +327,11 @@ async function readStored(reader: Reader, uid: string, eids: string[]): Promise<
  * fetched once and stored as Evidence; a blocked one is neither fetched nor stored. Answers sender, date and subject,
  * never the body.
  */
-export function searchMail(g: GoogleReadContext, q: MailQuery): Promise<GoogleRead<{ hits: MailHit[]; read: string[] }>> {
+export function searchMail(g: GoogleReadContext, q: MailQuery): Promise<GoogleRead<{ hits: MailHit[]; read: string[]; partial: boolean }>> {
   return guarded(async () => {
     const { uid, deps } = g.route;
+    // Review D12: a time that isn't whole milliseconds is refused, not dropped from the query.
+    if (!mailQueryValid(q)) return fail("invalid");
     const rt = runtime(g);
     const access = await accessFor(g, rt, "gmail");
     const { token, connectorId, scope } = access;
@@ -310,6 +347,8 @@ export function searchMail(g: GoogleReadContext, q: MailQuery): Promise<GoogleRe
     const wanted = refs.slice(0, MAIL_SEARCH_MAX).filter((r) => !keys.has(gmailProviderKey(deps.hasher, scope, r.id)));
     const fetched = await Promise.allSettled(wanted.map((r) => rt.port.getMessage(token, r.id)));
     const messages = fetched.flatMap((f) => (f.status === "fulfilled" ? [f.value] : []));
+    // Review D12: a message that didn't load is reported, never dropped silently.
+    const partial = messages.length < wanted.length;
     if (wanted.length > 0 && messages.length === 0) {
       deps.log("google.messagesFailed", {});
       return fail("failed");
@@ -337,7 +376,33 @@ export function searchMail(g: GoogleReadContext, q: MailQuery): Promise<GoogleRe
       fromSelf: d.data.authorship === "self",
       unread: unread.get(d.data.providerKey ?? "") ?? false,
     }));
-    return { ok: true, value: { hits, read: hits.map((h) => h.eid) } };
+    return { ok: true, value: { hits, read: hits.map((h) => h.eid), partial } };
+  });
+}
+
+/**
+ * Review D11, for Part C's "senders the owner has mailed" rule: whether the owner has sent mail to exactly this
+ * address. One bounded Gmail search of the owner's sent mail (`in:sent to:<address>`, one result), answered from
+ * memory for the rest of the run. Nothing is stored. An address that isn't plainly one answers `invalid`.
+ */
+export function ownerHasMailed(g: GoogleReadContext, address: string): Promise<GoogleRead<boolean>> {
+  return guarded(async () => {
+    const a = cleanAddress(typeof address === "string" ? address.trim().toLowerCase() : null);
+    if (a === null) return fail("invalid");
+    const known = g.mailed.get(a);
+    if (known !== undefined) return { ok: true, value: known };
+    const rt = runtime(g);
+    const { token } = await accessFor(g, rt, "gmail");
+    let refs: Awaited<ReturnType<typeof rt.port.listMessages>>;
+    try {
+      refs = await rt.port.listMessages(token, `in:sent to:${a}`, 1);
+    } catch {
+      g.route.deps.log("google.sentSearchFailed", {});
+      return fail("failed");
+    }
+    const mailed = refs.length > 0;
+    g.mailed.set(a, mailed);
+    return { ok: true, value: mailed };
   });
 }
 
@@ -355,15 +420,25 @@ export function readableMessage(g: GoogleReadContext, eid: string): Promise<Goog
     const docs = await readGoogleDocs(reader, uid, deps.hasher);
     if (docs.gmail?.data.state === "expired") return fail("expired");
     if (!isReadableGoogle(docs.gmail?.data)) return fail("notConnected");
-    const doc = /^[A-Za-z0-9_-]{1,128}$/.test(eid) ? await reader.get<Evidence>(paths.evidence(uid, eid)) : null;
+    const asked = /^[A-Za-z0-9_-]{1,128}$/.test(eid) ? await reader.get<Evidence>(paths.evidence(uid, eid)) : null;
     // Review S3: a row another account stored (an older generation) is not this account's to read.
-    if (doc === null || doc.data.source !== "gmail" || doc.data.kind !== "message" || doc.data.connectorId !== connectorId || doc.data.generation !== docs.gmail!.data.activeGeneration) return fail("notConnected");
+    const generation = docs.gmail!.data.activeGeneration;
+    const ours = (d: StoredDoc<Evidence> | null): d is StoredDoc<Evidence> => d !== null && d.data.source === "gmail" && d.data.kind === "message" && d.data.connectorId === connectorId && d.data.generation === generation;
+    let doc: StoredDoc<Evidence> | null = asked;
+    if (!ours(doc)) return fail("notConnected");
+    // Review D12: an older revision's eid is answered with the current revision.
+    if (!doc.data.isCurrentProvider) {
+      const latest = await latestRevision(reader, uid, doc.data.logicalId, deps.hasher);
+      const current = latest === null ? null : await reader.get<Evidence>(paths.evidence(uid, latest.eid));
+      if (!ours(current) || !current.data.isCurrentProvider) return fail("failed");
+      doc = current;
+    }
     const { keys, forget } = await blockedKeys(reader, uid);
     if (doc.data.providerKey !== null && keys.has(doc.data.providerKey)) return fail("forgotten");
     const [ok] = await eligibleRows(g, reader, [doc], forget);
     if (ok === undefined) return fail("forgotten");
     const e = ok.data;
-    const stored = e.body !== null && e.body.kind === "inline" ? e.body.text : "";
+    const stored = bodyText(e);
     return {
       ok: true,
       value: {
@@ -392,26 +467,39 @@ function busyOf(e: Evidence): BusyEvent | null {
   return { startMs: msFromTs(o.start), endMs: msFromTs(o.end), allDay: o.allDay, free: o.status === "cancelled" || o.selfResponse === "declined" || o.transparency === "transparent" };
 }
 
-async function readEvents(g: GoogleReadContext, window: EventWindow): Promise<GoogleRead<{ zone: string; docs: StoredDoc<Evidence>[] }>> {
+/**
+ * The window's events, read a page at a time up to `EVENTS_READ_PAGES` (review D1). In start order, so when pages
+ * remain past the cap, nothing unread starts before the last event read: `throughMs` is that start, and only the
+ * time before it was fully read. With no pages left, `throughMs` is the window's end.
+ */
+async function readEvents(g: GoogleReadContext, window: EventWindow): Promise<GoogleRead<{ zone: string; docs: StoredDoc<Evidence>[]; more: boolean; throughMs: number }>> {
   const { uid, deps } = g.route;
   if (!validWindow(window)) return fail("failed");
   const rt = runtime(g);
   const access = await accessFor(g, rt, "calendar");
   const { token, connectorId, scope } = access;
-  let list: Awaited<ReturnType<typeof rt.port.listEvents>>;
+  const items: unknown[] = [];
+  let timeZone: string | null = null;
+  let pageToken: string | null = null;
   try {
-    list = await rt.port.listEvents(token, { timeMin: tsFromMs(window.fromMs), timeMax: tsFromMs(window.toMs), max: EVENTS_MAX });
+    for (let page = 0; page < EVENTS_READ_PAGES; page++) {
+      const list = await rt.port.listEvents(token, { timeMin: tsFromMs(window.fromMs), timeMax: tsFromMs(window.toMs), max: EVENTS_PAGE, ...(pageToken === null ? {} : { pageToken }) });
+      if (page === 0) timeZone = list.timeZone;
+      items.push(...list.items.slice(0, EVENTS_PAGE));
+      pageToken = list.nextPageToken;
+      if (pageToken === null) break;
+    }
   } catch {
     deps.log("google.eventsFailed", {});
     return fail("failed");
   }
-  const zone = calendarZone(list.timeZone);
+  const more = pageToken !== null;
+  const zone = calendarZone(timeZone);
+  const parsed = items.map((item) => eventContent(item, zone)).filter((e): e is NonNullable<typeof e> => e !== null);
+  const throughMs = more ? Math.min(window.toMs, Math.max(window.fromMs, ...parsed.map((e) => e.startMs))) : window.toMs;
   const reader = storeReader(deps.store, uid);
   const { keys, forget } = await blockedKeys(reader, uid);
-  const events = list.items
-    .slice(0, EVENTS_MAX)
-    .map((item) => eventContent(item, zone))
-    .filter((e): e is NonNullable<typeof e> => e !== null && !keys.has(calendarProviderKey(deps.hasher, scope, e.eventId)));
+  const events = parsed.filter((e) => !keys.has(calendarProviderKey(deps.hasher, scope, e.eventId)));
   const eids = await storeOnce(g, async (tx) => {
     const epoch = await fence(tx, g);
     await stillReadable(tx, g, "calendar", access.generation);
@@ -423,23 +511,25 @@ async function readEvents(g: GoogleReadContext, window: EventWindow): Promise<Go
     }
     return out;
   });
-  return { ok: true, value: { zone, docs: await eligibleRows(g, reader, await readStored(reader, uid, eids), forget) } };
+  return { ok: true, value: { zone, docs: await eligibleRows(g, reader, await readStored(reader, uid, eids), forget), more, throughMs } };
 }
 
 /**
  * Ruling 25 `list_events`: the primary calendar over a window of at most 14 days (resolved by the caller through the
  * pure resolver), single instances in start order, at most 50. Each event is stored as Evidence as it is read.
  */
-export function listEvents(g: GoogleReadContext, window: EventWindow): Promise<GoogleRead<{ zone: string; events: EventRow[]; read: string[] }>> {
+export function listEvents(g: GoogleReadContext, window: EventWindow): Promise<GoogleRead<{ zone: string; events: EventRow[]; read: string[]; truncated: boolean }>> {
   return guarded(async () => {
     const r = await readEvents(g, window);
     if (!r.ok) return r;
-    const events = r.value.docs.flatMap((d) => {
+    // Review D1: more than 50 in the window, or pages left past the cap, says `truncated`.
+    const truncated = r.value.more || r.value.docs.length > EVENTS_MAX;
+    const events = r.value.docs.slice(0, EVENTS_MAX).flatMap((d) => {
       const o = d.data.observation;
       if (o.kind !== "calendar") return [];
       return [{ eid: d.id, title: cutTo(d.data.title, EVENT_TITLE_ANSWER_CHARS), start: o.start, end: o.end, allDay: o.allDay, organizerSelf: o.organizerSelf }];
     });
-    return { ok: true, value: { zone: r.value.zone, events, read: events.map((e) => e.eid) } };
+    return { ok: true, value: { zone: r.value.zone, events, read: events.map((e) => e.eid), truncated } };
   });
 }
 
@@ -447,12 +537,21 @@ export function listEvents(g: GoogleReadContext, window: EventWindow): Promise<G
  * Ruling 25 `find_free_time`: the gaps of at least `minutes` between the owner's busy events inside the day bounds,
  * computed by code (`freeGaps`). All-day, cancelled, declined and transparent events don't block.
  */
-export function freeTime(g: GoogleReadContext, window: EventWindow, minutes: number, bounds: DayBounds = DEFAULT_DAY_BOUNDS): Promise<GoogleRead<{ zone: string; gaps: { start: string; end: string }[]; read: string[] }>> {
+export function freeTime(
+  g: GoogleReadContext,
+  window: EventWindow,
+  minutes: number,
+  bounds: DayBounds = DEFAULT_DAY_BOUNDS,
+): Promise<GoogleRead<{ zone: string; gaps: { start: string; end: string }[]; read: string[]; complete: boolean; through: string }>> {
   return guarded(async () => {
+    // Review D10: a length that can't fit the day is `invalid`, never "no gaps".
+    if (freeTimeAsk(minutes, bounds) === "invalid") return fail("invalid");
     const r = await readEvents(g, window);
     if (!r.ok) return r;
     const busy = r.value.docs.map((d) => busyOf(d.data)).filter((b): b is BusyEvent => b !== null);
-    const gaps = freeGaps(busy, window, r.value.zone, bounds, minutes).map((x) => ({ start: tsFromMs(x.startMs), end: tsFromMs(x.endMs) }));
-    return { ok: true, value: { zone: r.value.zone, gaps, read: r.value.docs.map((d) => d.id) } };
+    // Review D1: gaps only in time that was fully read. Past the cap the window is clipped, and the answer says so.
+    const read = { fromMs: window.fromMs, toMs: r.value.throughMs };
+    const gaps = read.toMs > read.fromMs ? freeGaps(busy, read, r.value.zone, bounds, minutes).map((x) => ({ start: tsFromMs(x.startMs), end: tsFromMs(x.endMs) })) : [];
+    return { ok: true, value: { zone: r.value.zone, gaps, read: r.value.docs.map((d) => d.id), complete: !r.value.more, through: tsFromMs(read.toMs) } };
   });
 }

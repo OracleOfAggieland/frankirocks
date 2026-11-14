@@ -295,10 +295,11 @@ describe("reads (rulings 17, 20, 21, 23, 25)", () => {
     expect(r.ok).toBe(true);
     const q = google.calls.find((c) => c.method === "listMessages")!.args[1] as string;
     expect(q).toBe('from:"Dana OR from x" "lease" "in anywhere" is:unread -in:spam -in:trash -category:promotions -category:social');
-    const v = (r as { value: { hits: { eid: string; sender: string; subject: string | null; fromSelf: boolean }[]; read: string[] } }).value;
-    expect(v.hits.map((h) => [h.sender, h.subject, h.fromSelf])).toEqual([
-      ["Dana Park", "Lease renewal", false],
-      ["Owner", "Re: Lease renewal", true],
+    // Review D11: the sender is the cleaned name and the address apart.
+    const v = (r as { value: { hits: { eid: string; sender: { name: string; address: string | null }; subject: string | null; fromSelf: boolean }[]; read: string[] } }).value;
+    expect(v.hits.map((h) => [h.sender.name, h.sender.address, h.subject, h.fromSelf])).toEqual([
+      ["Dana Park", "dana@example.org", "Lease renewal", false],
+      ["Owner", ACCOUNT_EMAIL, "Re: Lease renewal", true],
     ]);
     expect(JSON.stringify(v)).not.toContain("due Friday");
     const rows = await evidence(rig);
@@ -441,7 +442,8 @@ describe("reads (rulings 17, 20, 21, 23, 25)", () => {
         calendarEvent("a", { start: { dateTime: "2026-11-16T10:00:00Z" }, end: { dateTime: "2026-11-16T11:00:00Z" } }),
         calendarEvent("b", { start: { dateTime: "2026-11-16T13:00:00Z" }, end: { dateTime: "2026-11-16T15:30:00Z" } }),
         calendarEvent("c", { start: { dateTime: "2026-11-16T16:00:00Z" }, end: { dateTime: "2026-11-16T17:00:00Z" }, transparency: "transparent" }),
-        calendarEvent("d", { start: { date: "2026-11-16" }, end: { date: "2026-11-17" } }),
+        // Review D10: an all-day event blocks unless it is transparent, as Google's all-day events are by default.
+        calendarEvent("d", { start: { date: "2026-11-16" }, end: { date: "2026-11-17" }, transparency: "transparent" }),
       ],
     };
     const r = await freeTime(g, { fromMs: Date.UTC(2026, 10, 16), toMs: Date.UTC(2026, 10, 17) }, 60);

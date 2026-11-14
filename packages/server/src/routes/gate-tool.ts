@@ -73,11 +73,24 @@ export interface ToolGateInput {
   policyRev: number;
 }
 
+/** Lowest trust first: a row is as trusted as its least trusted slice. */
+const CLASS_TRUST: readonly GateCandidate["sourceClass"][] = ["T", "M", "O", "C", "U"];
+
 /**
  * Evidence carries no class. The owner's own calendar and bank rows are O; anything else (mail, a paste, a turn whose
  * speaker this read can't prove) is read as T, which only an asked recall raises (fails closed).
+ *
+ * Review D3: a row from a connector (a connected Google account, a bank) takes the lowest-trust class among its
+ * slices, so a stranger's invite title (a T slice) is never said as the owner's own. A connector row with no slice
+ * is T. Fixture rows (no connector) keep the source rule above.
  */
-function evidenceClass(e: Evidence): GateCandidate["sourceClass"] {
+export function evidenceClass(e: Evidence): GateCandidate["sourceClass"] {
+  if (e.connectorId !== null) {
+    if (e.fieldSlices.length === 0) return "T";
+    let lowest = CLASS_TRUST.length - 1;
+    for (const s of e.fieldSlices) lowest = Math.min(lowest, Math.max(0, CLASS_TRUST.indexOf(s.class as GateCandidate["sourceClass"])));
+    return CLASS_TRUST[lowest]!;
+  }
   return e.source === "calendar" || e.source === "plaid" ? "O" : "T";
 }
 

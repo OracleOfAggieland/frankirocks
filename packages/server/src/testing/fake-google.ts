@@ -41,7 +41,8 @@ export class FakeGoogle implements GooglePort {
   /** Messages by ID, and the IDs a list answers (in order). */
   messages = new Map<string, GmailMessage>();
   listed: MessageRef[] | null = null;
-  events: EventList = { timeZone: "UTC", items: [] };
+  /** Every event in the window, in start order; `listEvents` answers them a page of `max` at a time. */
+  events: { timeZone: string | null; items: unknown[] } = { timeZone: "UTC", items: [] };
   private errors = new Map<Method, (GoogleCallError | Error)[]>();
   /** One-shot work run inside a call before it answers (a disconnect mid-exchange, a forget mid-read). */
   private hooks = new Map<Method, (() => Promise<void>)[]>();
@@ -103,7 +104,11 @@ export class FakeGoogle implements GooglePort {
   async listEvents(...args: Parameters<GooglePort["listEvents"]>) {
     this.take("listEvents", args);
     await this.hook("listEvents");
-    return structuredClone(this.events);
+    const from = args[1].pageToken === undefined ? 0 : Number(args[1].pageToken);
+    const max = Math.max(1, args[1].max);
+    const items = this.events.items.slice(from, from + max);
+    const next = from + max < this.events.items.length ? String(from + max) : null;
+    return structuredClone({ timeZone: this.events.timeZone, items, nextPageToken: next } satisfies EventList);
   }
 }
 
@@ -151,6 +156,7 @@ export function calendarEvent(id: string, over: Record<string, unknown> = {}): R
     start: { dateTime: "2026-11-16T15:00:00Z" },
     end: { dateTime: "2026-11-16T16:00:00Z" },
     organizer: { email: ACCOUNT_EMAIL, self: true },
+    creator: { email: ACCOUNT_EMAIL, self: true },
     attendees: [],
     ...over,
   };

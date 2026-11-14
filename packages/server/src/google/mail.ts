@@ -7,7 +7,7 @@
  * Mail can inform, never instruct: nothing here reads a message's words for anything but storing them as T (or O
  * for the owner's own sent mail), and nothing enqueues extraction.
  */
-import { type Hasher, mailText, plainText } from "@franki/core";
+import { type Hasher, cutAt, linkless, mailTextOf, plainText, visibleText } from "@franki/core";
 import type { GmailMessage } from "./port";
 
 /** A stored body is cut at this many characters (Content allows 131,072; the reader reads less). */
@@ -21,6 +21,8 @@ const MIME_PARTS_MAX = 64;
 /** At most this many base64url characters of one body are decoded. */
 const BODY_DATA_MAX = 600_000;
 const HEADER_CHARS = 2_000;
+/** `plainText` reads at most this much of a plain body (core's MAIL_HTML_INPUT_MAX); past it the body is cut. */
+const MAIL_HTML_INPUT_MAX_CHARS = 400_000;
 const HEADERS_MAX = 200;
 
 export const GMAIL_PARSER_VERSION = "gmail-read-v1";
@@ -30,6 +32,7 @@ export const GMAIL_PARSER_VERSION_CUT = "gmail-read-v1-cut";
 export interface MailContent {
   subject: string | null;
   body: string | null;
+  /** Review D8: the body was cut at its bound, a part was too big or held elsewhere, or HTML was dropped unclosed. */
   bodyCut: boolean;
   /** The From header as stored (`Name <address>`), cleaned and cut. */
   sender: string | null;
@@ -45,8 +48,10 @@ export interface MailContent {
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const clean = (s: string) => s.replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩﻿]/g, " ").replace(/\s+/g, " ").trim();
-const cut = (s: string, n: number) => (s.length > n ? s.slice(0, n) : s);
+/** Review D9: a header leaves with no invisible character (`visibleText`). */
+const clean = (s: string) => visibleText(s);
+/** Review D8: never between the halves of a surrogate pair. */
+const cut = (s: string, n: number) => cutAt(s, n);
 
 /** RFC 2047 encoded words in UTF-8 (B and Q); any other charset is left as it is. */
 function decodeWords(v: string): string {
@@ -71,15 +76,27 @@ function headersOf(payload: Record<string, unknown>): Map<string, string> {
   return out;
 }
 
-function decodeData(v: unknown): string | null {
-  if (!isObj(v) || typeof v.data !== "string" || v.data.length > BODY_DATA_MAX || !/^[A-Za-z0-9_\-=+/]*$/.test(v.data)) return null;
-  return Buffer.from(v.data, "base64url").toString("utf8");
+/**
+ * One part's body. Review D8: a body past the bound is decoded up to it and marked cut; a body Gmail holds elsewhere
+ * (an `attachmentId` with no `data`) or one that isn't base64url is left out and marked, never silently null.
+ */
+function decodeData(v: unknown): { text: string | null; cut: boolean } {
+  if (!isObj(v)) return { text: null, cut: false };
+  if (typeof v.data !== "string") return { text: null, cut: typeof v.attachmentId === "string" || (typeof v.size === "number" && v.size > 0) };
+  if (!/^[A-Za-z0-9_\-=+/]*$/.test(v.data.slice(0, BODY_DATA_MAX + 4))) return { text: null, cut: true };
+  const over = v.data.length > BODY_DATA_MAX;
+  // A multiple of four characters, so the cut is on a whole base64 group; a split UTF-8 sequence at the end decodes
+  // to U+FFFD, which the cut then removes.
+  const data = over ? v.data.slice(0, BODY_DATA_MAX - (BODY_DATA_MAX % 4)) : v.data;
+  const text = Buffer.from(data, "base64url").toString("utf8");
+  return { text: over ? text.replace(/\ufffd+$/, "") : text, cut: over };
 }
 
 /** The first text/plain and the first text/html body in the tree, walked breadth-first and bounded. */
-function bodiesOf(payload: Record<string, unknown>): { text: string | null; html: string | null } {
+function bodiesOf(payload: Record<string, unknown>): { text: string | null; html: string | null; cut: boolean } {
   let text: string | null = null;
   let html: string | null = null;
+  let partCut = false;
   let seen = 0;
   let level: unknown[] = [payload];
   for (let depth = 0; depth < MIME_DEPTH_MAX && level.length > 0 && (text === null || html === null); depth++) {
@@ -89,13 +106,45 @@ function bodiesOf(payload: Record<string, unknown>): { text: string | null; html
       const mime = typeof p.mimeType === "string" ? p.mimeType.toLowerCase() : "";
       // An attachment is never read.
       if (typeof p.filename === "string" && p.filename !== "") continue;
-      if (mime === "text/plain" && text === null) text = decodeData(p.body);
-      else if (mime === "text/html" && html === null) html = decodeData(p.body);
+      if (mime === "text/plain" && text === null) {
+        const d = decodeData(p.body);
+        text = d.text;
+        partCut ||= d.cut;
+      } else if (mime === "text/html" && html === null) {
+        const d = decodeData(p.body);
+        html = d.text;
+        partCut ||= d.cut;
+      }
       else if (mime.startsWith("multipart/") && Array.isArray(p.parts)) next.push(...p.parts.slice(0, MIME_PARTS_MAX));
     }
     level = next;
   }
-  return { text, html };
+  return { text, html, cut: partCut };
+}
+
+/**
+ * Review D4: where the owner's own words end in a sent message. The first line that starts quoted or forwarded
+ * text: a `>` quote, "On ... wrote:" (on one line or two), a forwarded or original-message rule, "Begin forwarded
+ * message:", or a "From:" header line (an Outlook block). When in doubt it splits, since what follows is read as T.
+ */
+export function splitQuoted(body: string): { own: string | null; quoted: string | null } {
+  const lines = body.split("\n");
+  const starts = (i: number): boolean => {
+    const l = lines[i]!.trim();
+    if (l.startsWith(">")) return true;
+    if (/^-{2,}\s*(forwarded message|original message)/i.test(l) || /^begin forwarded message:?$/i.test(l)) return true;
+    if (/^from:\s/i.test(l)) return true;
+    if (/^on\s.{0,400}wrote:$/i.test(l)) return true;
+    if (/^on\s/i.test(l) && i + 1 < lines.length && /^.{0,200}wrote:$/i.test(lines[i + 1]!.trim())) return true;
+    return false;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    if (!starts(i)) continue;
+    const own = lines.slice(0, i).join("\n").trim();
+    const quoted = lines.slice(i).join("\n").trim();
+    return { own: own === "" ? null : own, quoted: quoted === "" ? null : quoted };
+  }
+  return { own: body, quoted: null };
 }
 
 /** `Name <address>` or a bare address, from a bounded header. */
@@ -126,11 +175,14 @@ export function mailContent(m: GmailMessage): MailContent | null {
   const parsedDate = dateHeader === undefined ? Number.NaN : Date.parse(dateHeader);
   const occurredAtMs = m.internalDate !== null && Number.isSafeInteger(m.internalDate) ? m.internalDate : Number.isFinite(parsedDate) ? parsedDate : null;
   if (occurredAtMs === null || occurredAtMs < 0) return null;
-  const { text, html } = bodiesOf(payload);
-  const raw = text !== null ? plainText(text, MAIL_BODY_CHARS + 1) : html !== null ? mailText(html, MAIL_BODY_CHARS + 1) : "";
-  const bodyCut = raw.length > MAIL_BODY_CHARS;
+  const { text, html, cut: partCut } = bodiesOf(payload);
+  const fromHtml = text === null && html !== null ? mailTextOf(html, MAIL_BODY_CHARS + 1) : null;
+  const raw = text !== null ? plainText(text, MAIL_BODY_CHARS + 1) : fromHtml !== null ? fromHtml.text : "";
+  const inputCut = (text ?? "").length > MAIL_HTML_INPUT_MAX_CHARS || fromHtml?.dropped === true;
+  const bodyCut = raw.length > MAIL_BODY_CHARS || partCut || inputCut;
   const body = raw === "" ? null : cut(raw, MAIL_BODY_CHARS);
-  const subjectRaw = h.get("subject") ?? "";
+  // Review D9: a subject leaves with no link.
+  const subjectRaw = linkless(h.get("subject") ?? "").trim();
   const subject = subjectRaw === "" ? null : cut(subjectRaw, MAIL_SUBJECT_CHARS);
   const fromRaw = h.get("from") ?? "";
   const sender = fromRaw === "" ? null : cut(fromRaw, MAIL_SENDER_CHARS);

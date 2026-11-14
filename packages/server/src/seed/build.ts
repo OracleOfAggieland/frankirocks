@@ -26,6 +26,7 @@ import {
   PrivateReadInboundOutput,
   PrivateReadOwnOutput,
   type Schema,
+  type Sens,
   type Slice,
   type Span,
   buildSlice,
@@ -217,8 +218,9 @@ function typedSlice(eid: string, fieldPath: Slice["fieldPath"], value: unknown, 
   return { eid, fieldPath, start: null, end: null, contentHash: hasher.sha256(utf8(canonicalJSON(value))), class: "O", sens: "S0" };
 }
 
-function textSlice(eid: string, fieldPath: "subject" | "body" | "sender" | "title", text: string, cls: "O" | "T", hasher: Hasher): Slice {
-  return buildSlice({ eid, fieldPath, fieldText: text, start: 0, end: text.length, class: cls, sens: sensFloor(text) }, hasher);
+/** A text field's Slice. `sensMin` raises the lexicon's floor (review D2: connected-Google rows are at least S1). */
+function textSlice(eid: string, fieldPath: "subject" | "body" | "bodyOwn" | "bodyQuoted" | "sender" | "title", text: string, cls: "O" | "T", hasher: Hasher, sensMin: Sens = "S0"): Slice {
+  return buildSlice({ eid, fieldPath, fieldText: text, start: 0, end: text.length, class: cls, sens: maxSens(sensFloor(text), sensMin) }, hasher);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -507,15 +509,32 @@ export interface MailRowInput {
   senderAuth: Evidence["senderAuth"];
 }
 
-export function mailRowFields(m: MailRowInput, hasher: Hasher) {
+/**
+ * How a live read's row differs from a fixture's (fixtures leave both unset, so their rows are unchanged):
+ * - `sensMin`: review D2, every text slice at least this sensitive;
+ * - `splitQuoted`: review D4, the owner's sent body cut at the first quote or forward marker into `bodyOwn` (O) and
+ *   `bodyQuoted` (T), with no whole-body field.
+ */
+export interface RowOptions {
+  sensMin?: Sens;
+  splitQuoted?: (body: string) => { own: string | null; quoted: string | null };
+}
+
+export function mailRowFields(m: MailRowInput, hasher: Hasher, opts: RowOptions = {}) {
   const cls = m.fromSelf ? "O" : "T";
-  const slices = (
-    [
-      ["subject", m.subject],
-      ["body", m.body],
-      ["sender", m.sender],
-    ] as const
-  ).flatMap(([field, text]) => (text === null || text === "" ? [] : [textSlice(m.eid, field, text, cls, hasher)]));
+  const split = m.fromSelf && m.body !== null && opts.splitQuoted !== undefined ? opts.splitQuoted(m.body) : null;
+  const quoted = split !== null && split.quoted !== null ? split : null;
+  type TextField = "subject" | "body" | "bodyOwn" | "bodyQuoted" | "sender";
+  const bodies: [TextField, string | null, "O" | "T"][] =
+    quoted === null
+      ? [["body", m.body, cls]]
+      : [
+          ["bodyOwn", quoted.own, "O"],
+          ["bodyQuoted", quoted.quoted, "T"],
+        ];
+  const fields: [TextField, string | null, "O" | "T"][] = [["subject", m.subject, cls], ...bodies, ["sender", m.sender, cls]];
+  const slices = fields.flatMap(([field, text, c]) => (text === null || text === "" ? [] : [textSlice(m.eid, field, text, c, hasher, opts.sensMin)]));
+  const inline = (t: string | null) => (t === null ? null : { kind: "inline" as const, text: t });
   return {
     kind: "message" as const,
     occurredAt: m.at,
@@ -524,7 +543,9 @@ export function mailRowFields(m: MailRowInput, hasher: Hasher) {
     threadKey: m.threadKey,
     inReplyToProviderKey: m.inReplyToProviderKey,
     subject: m.subject,
-    body: m.body === null ? null : { kind: "inline" as const, text: m.body },
+    body: quoted === null ? inline(m.body) : null,
+    bodyOwn: quoted === null ? null : inline(quoted.own),
+    bodyQuoted: quoted === null ? null : inline(quoted.quoted),
     sender: m.sender,
     recipient: m.recipient,
     fieldSlices: slices,
@@ -614,9 +635,14 @@ export interface CalendarRowInput {
   providerRevision: string;
   isCurrentProvider: boolean;
   title: string | null;
+  /** Review D4: Google's `creator.self`. Fixtures leave it unset: it is then the organizer's. */
+  creatorSelf?: boolean;
 }
 
-export function calendarRowFields(c: CalendarRowInput, hasher: Hasher) {
+export function calendarRowFields(c: CalendarRowInput, hasher: Hasher, opts: RowOptions = {}) {
+  const creatorSelf = c.creatorSelf ?? c.organizerSelf;
+  // Review D4: the title is the owner's own words only when the owner both organizes and created the event.
+  const own = c.organizerSelf && creatorSelf;
   const observation = {
     kind: "calendar" as const,
     providerKey: c.providerKey,
@@ -631,7 +657,7 @@ export function calendarRowFields(c: CalendarRowInput, hasher: Hasher) {
     selfResponse: c.selfResponse,
     transparency: c.transparency,
     organizerSelf: c.organizerSelf,
-    creatorSelf: c.organizerSelf,
+    creatorSelf,
     organizerId: c.organizerSelf ? ("self" as const) : null,
     attendeeIds: [],
     scheduleRev: c.scheduleRev,
@@ -646,13 +672,13 @@ export function calendarRowFields(c: CalendarRowInput, hasher: Hasher) {
     title: c.title,
     observation,
     fieldSlices: [
-      ...(c.title === null || c.title === "" ? [] : [textSlice(c.eid, "title", c.title, c.organizerSelf ? "O" : "T", hasher)]),
+      ...(c.title === null || c.title === "" ? [] : [textSlice(c.eid, "title", c.title, own ? "O" : "T", hasher, opts.sensMin)]),
       typedSlice(c.eid, "calendar.time", { start: c.start, end: c.end, zone: c.zone, allDay: c.allDay }, hasher),
       typedSlice(c.eid, "calendar.status", { status: c.status, transparency: c.transparency }, hasher),
       typedSlice(c.eid, "calendar.attendance", { selfResponse: c.selfResponse }, hasher),
     ],
-    authorship: c.organizerSelf ? ("self" as const) : ("unknown" as const),
-    authorId: c.organizerSelf ? ("self" as const) : null,
+    authorship: own ? ("self" as const) : ("unknown" as const),
+    authorId: own ? ("self" as const) : null,
   };
 }
 

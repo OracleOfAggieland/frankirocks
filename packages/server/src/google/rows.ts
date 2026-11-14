@@ -11,11 +11,24 @@ import { appendEvidenceRevision, evidenceId } from "../store/evidence";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import { type EventContent, calendarKeyOf, calendarProviderKey } from "./calendar";
-import { GMAIL_PARSER_VERSION, GMAIL_PARSER_VERSION_CUT, type MailContent, gmailProviderKey, gmailThreadKey, mailAddressKey } from "./mail";
+import { GMAIL_PARSER_VERSION, GMAIL_PARSER_VERSION_CUT, type MailContent, gmailProviderKey, gmailThreadKey, mailAddressKey, splitQuoted } from "./mail";
 
 export const CALENDAR_PARSER_VERSION = "gcal-read-v1";
-/** A row past this many revisions keeps its latest one (fails closed: nothing is overwritten). */
+/**
+ * A row stores at most this many revisions. Review D12: a change past it is not stored, and the read that saw it
+ * fails (`RevisionCapReached`) rather than answer the stale latest revision.
+ */
 export const GOOGLE_MAX_REVISIONS = 64;
+
+/** Thrown inside the storing transaction when a changed row has no revision left. */
+export class RevisionCapReached extends Error {
+  constructor() {
+    super("google row revision cap reached");
+  }
+}
+
+/** Review D2: every text slice of a connected-Google row is at least S1 (the lexicon may raise it to S2). */
+const LIVE_ROW_SENS = "S1" as const;
 
 export interface GoogleRowContext {
   uid: string;
@@ -86,7 +99,10 @@ function base(ctx: GoogleRowContext, logicalId: string, revisionOf: string | nul
   };
 }
 
-/** One message's Evidence. Own sent mail is O; everything else T. The sender's authentication is not checked. */
+/**
+ * One message's Evidence. Own sent mail is O, but quoted and forwarded text in it is T (`bodyQuoted`, review D4);
+ * everything else is T. The sender's authentication is not checked.
+ */
 export function mailEvidence(eid: string, logicalId: string, revisionOf: string | null, messageId: string, m: MailContent, ctx: GoogleRowContext): Evidence {
   const { hasher, uid, keyScope } = ctx;
   const fields = mailRowFields(
@@ -108,6 +124,7 @@ export function mailEvidence(eid: string, logicalId: string, revisionOf: string 
       senderAuth: "unknown",
     },
     hasher,
+    { sensMin: LIVE_ROW_SENS, splitQuoted },
   );
   return { ...base(ctx, logicalId, revisionOf, "gmail", m.bodyCut ? GMAIL_PARSER_VERSION_CUT : GMAIL_PARSER_VERSION, null), ...fields };
 }
@@ -133,8 +150,10 @@ export function eventEvidence(eid: string, logicalId: string, revisionOf: string
       providerRevision: e.etag ?? String(version),
       isCurrentProvider: true,
       title: e.title,
+      creatorSelf: e.creatorSelf,
     },
     hasher,
+    { sensMin: LIVE_ROW_SENS },
   );
   return { ...base(ctx, logicalId, revisionOf, "calendar", CALENDAR_PARSER_VERSION, e.zone), ...fields };
 }
@@ -142,10 +161,11 @@ export function eventEvidence(eid: string, logicalId: string, revisionOf: string
 /** What makes two revisions the same: their content, never their IDs, revision counters or read times. */
 export function rowContentKey(e: Evidence): string {
   const o = e.observation.kind === "calendar" ? { ...e.observation, scheduleRev: 0 } : e.observation;
-  return canonicalJSON({ subject: e.subject, body: e.body, sender: e.sender, recipient: e.recipient, title: e.title, occurredAt: e.occurredAt, threadKey: e.threadKey, authorship: e.authorship, route: e.route, parserVersion: e.parserVersion, observation: o });
+  return canonicalJSON({ subject: e.subject, body: e.body, bodyOwn: e.bodyOwn, bodyQuoted: e.bodyQuoted, slices: e.fieldSlices.map((s) => [s.fieldPath, s.class, s.sens]), sender: e.sender, recipient: e.recipient, title: e.title, occurredAt: e.occurredAt, threadKey: e.threadKey, authorship: e.authorship, route: e.route, parserVersion: e.parserVersion, observation: o });
 }
 
-async function latestRevision(tx: Pick<Tx, "get">, uid: string, logicalId: string, hasher: Hasher): Promise<{ eid: string; version: number; data: Evidence } | null> {
+/** The newest stored revision of one logical row (also for readers outside a transaction). */
+export async function latestRevision(tx: Pick<Tx, "get">, uid: string, logicalId: string, hasher: Hasher): Promise<{ eid: string; version: number; data: Evidence } | null> {
   let found: { eid: string; version: number; data: Evidence } | null = null;
   for (let v = 1; v <= GOOGLE_MAX_REVISIONS; v++) {
     const eid = evidenceId(logicalId, v, hasher);
@@ -170,8 +190,11 @@ export async function storeRow(tx: Tx, uid: string, logicalId: string, build: Bu
     tx.create(paths.evidence(uid, eid), build(eid, null, 1));
     return eid;
   }
-  if (rowContentKey(build(latest.eid, latest.data.revisionOf, latest.version)) === rowContentKey(latest.data) || latest.version >= GOOGLE_MAX_REVISIONS) return latest.eid;
+  if (rowContentKey(build(latest.eid, latest.data.revisionOf, latest.version)) === rowContentKey(latest.data)) return latest.eid;
+  if (latest.version >= GOOGLE_MAX_REVISIONS) throw new RevisionCapReached();
   const eid = evidenceId(logicalId, latest.version + 1, hasher);
+  // Review D12: only the newest revision is current. The flag is not content, so it may change in place.
+  tx.update(paths.evidence(uid, latest.eid), { ...latest.data, isCurrentProvider: false });
   await appendEvidenceRevision(tx, uid, latest.eid, build(eid, latest.eid, latest.version + 1), hasher);
   return eid;
 }

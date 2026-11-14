@@ -2,7 +2,7 @@
  * Every row of one tenant, read and cleared in pages by document ID (Q28), each Session's turns too (brief 019 task
  * 5; contracts §1 "Reset ... clears all tenant rows (paged Q28, subcollections too)").
  */
-import type { CoreEpoch, ID } from "@franki/core";
+import type { Block, CoreEpoch, Evidence, ID } from "@franki/core";
 import { staleError } from "../routes/errors";
 import type { StoredDoc, StorePort, Tx } from "../store/port";
 import { TOP_COLLECTIONS, paths } from "../store/paths";
@@ -54,10 +54,32 @@ export async function listTenantRows(store: StorePort, uid: string): Promise<Sto
  * Each Session's turns go before the Session. Returns the number of rows deleted. With `opId`, each transaction
  * first checks that the reset `opId` still holds the barrier (brief 038 finding 8).
  */
+/**
+ * The provider keys of the rows a kept connector read (a connected Google account, a bank). Review D6: a forget's
+ * block on one of them outlives "Start over", because the connection does, and without it the next read would fetch
+ * and store the forgotten message again.
+ */
+async function connectorProviderKeys(store: StorePort, uid: string): Promise<Set<string>> {
+  const keys = new Set<string>();
+  await pages(store, uid, paths.collection(uid, "evidence"), async (page) => {
+    for (const r of page) {
+      const e = r.data as Partial<Evidence>;
+      if (e.connectorId != null && typeof e.providerKey === "string") keys.add(e.providerKey);
+    }
+  });
+  return keys;
+}
+
 export async function clearTenant(store: StorePort, uid: string, keep: ReadonlySet<string>, opId?: ID): Promise<number> {
   let deleted = 0;
+  const connectorKeys = await connectorProviderKeys(store, uid);
+  const keptBlock = (r: StoredDoc) => {
+    if (!r.path.includes("/blocks/")) return false;
+    const b = r.data as Partial<Block>;
+    return b.kind === "provider" && typeof b.providerKey === "string" && connectorKeys.has(b.providerKey);
+  };
   const drop = async (page: StoredDoc[]) => {
-    const gone = page.filter((r) => !keep.has(r.path));
+    const gone = page.filter((r) => !keep.has(r.path) && !keptBlock(r));
     if (gone.length === 0) return;
     await store.transaction(uid, async (tx) => {
       await assertBarrier(tx, uid, opId);
