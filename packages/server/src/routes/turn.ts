@@ -79,7 +79,7 @@ import { afterClosed } from "../sessions";
 import { driveHangupJob, ensureHangupJob } from "../worker/hangup";
 import { checkTapRequest, isControlTurn, isTap, postTap } from "./turn-tap";
 // Brief 048: forget on the wire.
-import { forgetInTurn } from "../forget/on-turn";
+import { ackTypedForget, forgetInTurn } from "../forget/on-turn";
 import { FORGET_ROUTE_BUDGET_MS, driveForget } from "../forget/drive";
 
 type TurnReq = Infer<typeof TurnRequest>;
@@ -555,7 +555,8 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
         // hang-ups run inside its close step. What is left is the tick's.
         if (outcome.forget !== null) {
           await driveForget(ctx, outcome.forget.jobId, FORGET_ROUTE_BUDGET_MS, FORGET_ROUTE_MAX_STEPS);
-          return outcome.response;
+          // Ruling 8: a typed forget's answer says gone only once blockedAt is set.
+          return await ackTypedForget(ctx, outcome.forget);
         }
         // Extraction and the Parse_Repair start after the response is sent (R18.4, R22.12, R15.3).
         if (outcome.repair !== null) {

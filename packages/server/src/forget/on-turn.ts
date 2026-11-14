@@ -13,7 +13,7 @@
  *
  * The caller drives the job after the commit (`forget/drive.ts`).
  */
-import { type ClockPair, type CoreEpoch, type ID, type RuleInput, type Session, type Stamp, type Turn, type TurnResponse, type Infer, tsFromMs, turnRef } from "@franki/core";
+import { type Au, type ClockPair, type CoreEpoch, type Head, type ID, type Ledger, type Proactive, type SS, type RuleInput, type Session, type Stamp, type Turn, type TurnResponse, type Infer, tsFromMs, turnRef } from "@franki/core";
 import { admitRule } from "../admission/seam";
 import { type RequestKey, completeRequest } from "../ledger/request";
 import { statusOf } from "../routes/turn";
@@ -25,6 +25,7 @@ import type { Tx } from "../store/port";
 import { type TurnClass, userTurnRecords } from "../turns";
 import { ensureHangupJob } from "../worker/hangup";
 import { fenceInTx } from "./fence";
+import { ackRule, ackTurnId, dueAcks, readAckCandidates, takeDueAck } from "./ack";
 
 type TurnRes = Infer<typeof TurnResponse>;
 
@@ -54,6 +55,12 @@ export interface ForgetTurnResult {
   response: TurnRes;
   jobId: ID;
   hangupJobIds: ID[];
+  /** What the typed answer needs to add the acknowledgment after the drive (ruling 8). */
+  opId: ID;
+  key: RequestKey;
+  rule: RuleInput;
+  sessionId: ID;
+  requestId: string;
 }
 
 export async function forgetInTurn(tx: Tx, ctx: RouteContext, x: ForgetTurnInput): Promise<ForgetTurnResult> {
@@ -108,5 +115,64 @@ export async function forgetInTurn(tx: Tx, ctx: RouteContext, x: ForgetTurnInput
   const status = statusOf(admitted.outcome);
   const response: TurnRes = admitted.kind === "permit" ? { ...x.base, status, permit: admitted.permit, notes: [] } : { ...x.base, status, permit: null };
   await completeRequest(tx, x.key, response, ops);
-  return { response, jobId: fenced.jobId, hangupJobIds };
+  return { response, jobId: fenced.jobId, hangupJobIds, opId: fenced.opId, key: x.key, rule: x.rule, sessionId, requestId: x.req.requestId };
+}
+
+type RequestEntry = Extract<Ledger, { kind: "request" }>;
+
+/**
+ * Ruling 8: a typed forget with no call open. If the receipt's `blockedAt` is set by the time the route answers, the
+ * answer carries the acknowledgment as its one note, under a Permit from the Admission_Seam, and the op's delivery
+ * row and the request entry's stored response are written in one transaction. If not, the answer is unchanged (no
+ * line), and the state route returns the acknowledgment once it is ready. A forget in a call answers `blocked`: only
+ * the fresh call acknowledges.
+ */
+export async function ackTypedForget(ctx: RouteContext, f: ForgetTurnResult): Promise<TurnRes> {
+  const { uid, deps } = ctx;
+  if (f.response.permit === null || f.response.permit.scope !== "ack" || f.response.notes.length > 0) return f.response;
+  return deps.store.transaction(uid, async (tx) => {
+    const [candidates, entry, epoch] = await Promise.all([readAckCandidates(tx, uid), tx.get<RequestEntry>(f.key.path), tx.get<CoreEpoch>(paths.core(uid, "epoch"))]);
+    const due = await dueAcks(tx, uid, candidates.filter((c) => c.opId === f.opId), deps.hasher);
+    if (due.length === 0 || entry === null || epoch === null) return f.response;
+    const ops = deps.clock.read().opsClock.now;
+    const ack = await takeDueAck(tx, uid, due, { opsNow: ops, audience: f.rule.audience }, deps.hasher);
+    if (ack === null) return f.response;
+    const stamp = f.response.stamp;
+    const admitted = admitRule(
+      tx,
+      { uid, requestId: f.requestId, requestEntryId: f.key.keyHash, turnRef: turnRef(stamp.turnId as ID, f.sessionId, 1), core: { epoch: epoch.data.epoch, policyRev: epoch.data.policyRev }, opsNow: ops, stamp, head: null, notes: [], turns: [], audioIds: [], toolOutput: null, rule: ackRule(ack.line, f.rule.audience) },
+      deps,
+    );
+    if (admitted.kind !== "permit") throw new Error("the acknowledgment's rule held");
+    const response: TurnRes = { ...f.response, status: statusOf(admitted.outcome), permit: admitted.permit, notes: admitted.notes };
+    tx.update(entry.path, { ...entry.data, updatedAt: tsFromMs(ops), payload: { ...entry.data.payload, response } });
+    return response;
+  });
+}
+
+/**
+ * The state route's half of ruling 8: for a Session with no call, a due acknowledgment of a forget asked on that
+ * Session, as the answer's `proactive`. Reads nothing more for a Session with a call, so a call's poll costs nothing.
+ */
+export async function typedAckOnState(
+  tx: Tx,
+  ctx: RouteContext,
+  x: { sessionId: ID; session: Session; stamp: SS; head: Head; audience: Au; opsNow: number },
+): Promise<Proactive | null> {
+  const { uid, deps } = ctx;
+  if (x.session.callId !== null || x.session.registeredCallIds.length > 0) return null;
+  const candidates = await readAckCandidates(tx, uid);
+  if (candidates.length === 0) return null;
+  const due = await dueAcks(tx, uid, candidates, deps.hasher);
+  if (due.length === 0) return null;
+  const ack = await takeDueAck(tx, uid, due, { opsNow: x.opsNow, audience: x.audience, sessionId: x.sessionId }, deps.hasher);
+  if (ack === null) return null;
+  const turnId = ackTurnId(deps.hasher, x.sessionId, ack.opIds);
+  const admitted = admitRule(
+    tx,
+    { uid, requestId: turnId, requestEntryId: null, turnRef: turnRef(turnId, x.sessionId, 1), core: { epoch: x.stamp.epoch, policyRev: x.stamp.policyRev }, opsNow: x.opsNow, stamp: { ...x.stamp, turnId }, head: x.head, notes: [], turns: [], audioIds: [], toolOutput: null, rule: ackRule(ack.line, x.audience) },
+    deps,
+  );
+  if (admitted.kind !== "permit" || admitted.notes.length !== 1) throw new Error("the acknowledgment's rule held");
+  return { turnId, permit: admitted.permit, whisper: admitted.notes[0]!, cards: [] };
 }
