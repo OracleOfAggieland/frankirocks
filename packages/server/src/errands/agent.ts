@@ -8,6 +8,8 @@
  */
 import type { Class, ErrandAbout, ErrandSender, ErrandSource, ID, Sens } from "@franki/core";
 import type { RouteContext } from "../routes/runtime";
+import { googleConfigured } from "../google/config";
+import { liveGoogleAgents } from "./google-registry";
 
 /**
  * What one read registers: the Evidence row it stored or found, what the agent knows of it, and what a card may show
@@ -67,7 +69,12 @@ export interface ErrandAgent {
 /** The registry production ships with (ruling 6): empty until the agents of part C land. */
 export const PRODUCTION_ERRAND_AGENTS: readonly ErrandAgent[] = [];
 
-export const errandAgentsOf = (ctx: RouteContext): readonly ErrandAgent[] => ctx.deps.errandAgents ?? PRODUCTION_ERRAND_AGENTS;
+/**
+ * Brief 049 part C: live (deps unset), the Google mail and calendar agents are registered only when Google is
+ * configured; each is still offered only while that owner's connector for it is readable (`available`).
+ */
+export const errandAgentsOf = (ctx: RouteContext): readonly ErrandAgent[] =>
+  ctx.deps.errandAgents ?? (googleConfigured(ctx.deps.env) ? liveGoogleAgents() : PRODUCTION_ERRAND_AGENTS);
 
 /**
  * Review fix R2: whether any agent is ready for this owner, so the call offers `start_errand`. False with an empty
