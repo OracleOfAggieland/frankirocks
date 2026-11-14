@@ -28,7 +28,9 @@ import { CoreBundle, CoreRules, Evidence, Job, Ledger, Memory, PermitKind, Sessi
 // Brief 046.
 import { BANK_ACCOUNTS_MAX, CONNECTOR_STATES } from "./records";
 import { MONEY_GROUPS, MONEY_MERCHANT_CHARS, MONEY_PERIODS } from "../bank/money";
-import { type Infer, type Schema, arr, bool, literal, nat, nullable, obj, oneOf, str, tagged, union } from "./v";
+// Brief 049 part A.
+import { ERRAND_ABOUT, ERRAND_START_STATES } from "../errands/limits";
+import { type Infer, type Schema, arr, bool, issue, literal, nat, nullable, obj, oneOf, refine, str, tagged, union } from "./v";
 
 const Oid = str(128, { min: 1 });
 const RK = ID;
@@ -229,7 +231,13 @@ export const MoneyArgs = obj({ period: oneOf(MONEY_PERIODS), group: nullable(one
 export type MoneyArgs = Infer<typeof MoneyArgs>;
 export const MoneyCall = obj({ name: literal("read_money"), args: MoneyArgs });
 
-export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall, suggest: SuggestCall, answer: AnswerCall, read_money: MoneyCall });
+// Brief 049 part A: an errand. The model names only what it is about; the server reads the assignment from the
+// owner's own committed turns (ruling 2). No free text from the model reaches the helper (ruling 1).
+export const ErrandArgs = refine(obj({ about: arr(oneOf(ERRAND_ABOUT), 2, 1) }), (v, path) => (new Set(v.about).size === v.about.length ? null : issue(`${path}.about`, "each value once")));
+export type ErrandArgs = Infer<typeof ErrandArgs>;
+export const ErrandCall = obj({ name: literal("start_errand"), args: ErrandArgs });
+
+export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall, suggest: SuggestCall, answer: AnswerCall, read_money: MoneyCall, start_errand: ErrandCall });
 export type ToolCall = Infer<typeof ToolCall>;
 
 export const RecallResult = obj({
@@ -263,7 +271,9 @@ export const AnswerResult = obj({
 // Brief 046 part C. Every amount is in a note, worded by code from bank rows and cited by them.
 export const MONEY_STATES = ["answered", "noBank", "importing", "narrow", "unclear", "held"] as const;
 export const MoneyResult = obj({ name: literal("read_money"), state: oneOf(MONEY_STATES), notes: arr(W, 4), cards: arr(Card, 2) });
-export const ToolResult = tagged("name", { recall: RecallResult, make_phone_call: PhoneResult, suggest: SuggestResult, answer: AnswerResult, read_money: MoneyResult });
+// Brief 049 part A: `start_errand` answers at once with one code-worded S0 note (ruling 3).
+export const ErrandResult = obj({ name: literal("start_errand"), state: oneOf(ERRAND_START_STATES), errandId: nullable(ID), notes: arr(W, 1) });
+export const ToolResult = tagged("name", { recall: RecallResult, make_phone_call: PhoneResult, suggest: SuggestResult, answer: AnswerResult, read_money: MoneyResult, start_errand: ErrandResult });
 export type ToolResult = Infer<typeof ToolResult>;
 
 // The server reads the destination and assignment from the owner's turn.
@@ -294,6 +304,23 @@ export const MONEY_TOOL = {
       group: nullableJson({ type: "string", enum: [...MONEY_GROUPS] }),
       merchant: nullableJson({ type: "string", maxLength: MONEY_MERCHANT_CHARS }),
     },
+  },
+} as const;
+
+/**
+ * Brief 049 part A, ruling 1: the errand tool. Its only argument is what to look through; the description tells the
+ * model to say one short neutral sentence first and never to guess what will be found.
+ */
+export const ERRAND_TOOL = {
+  type: "function",
+  name: "start_errand",
+  description:
+    "Hand a look-up to a helper that searches the signed-in user's own connected mail or calendar while you keep talking. Use it only when the user asks you to check, find or look something up in their mail or calendar. Give only what to look through. Before calling it, say one short neutral sentence such as \"Let me look.\" Never guess or hint at what will be found: the helper's answer comes later on its own.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    required: ["about"],
+    properties: { about: { type: "array", items: { type: "string", enum: [...ERRAND_ABOUT] }, minItems: 1, maxItems: 2 } },
   },
 } as const;
 const EID_JSON = { type: "string", maxLength: 43 };
@@ -407,7 +434,7 @@ export const StateRequest = obj({
   ackStamp: nullable(SS),
   speechStartedOpsAt: nullable(TS),
 });
-export const StateResponse = obj({
+const STATE_RESPONSE_SHAPE = {
   stamp: SS,
   state: BrowserState,
   deck: nullable(Deck),
@@ -416,7 +443,15 @@ export const StateResponse = obj({
   proactive: nullable(Proactive),
   /** Brief 045 part S: the Session's confirmed audience, as the Gate reads it. */
   audience: nullable(Au),
-});
+};
+/**
+ * Brief 049 part A, rulings 11 and 12: what the screen shows of this Session's errands. `running`: what a running
+ * Errand is looking through, for the small word under Franki. `cards`: a delivered or card-only result's detail.
+ */
+export const ErrandsView = obj({ running: arr(oneOf(ERRAND_ABOUT), 2), cards: arr(Card, 4) });
+export type ErrandsView = Infer<typeof ErrandsView>;
+/** Answers built before brief 049 carry no `errands`; the browser reads a missing one as nothing running. */
+export const StateResponse = union(obj({ ...STATE_RESPONSE_SHAPE, errands: ErrandsView }), obj(STATE_RESPONSE_SHAPE));
 
 export const CloseRequest = obj({
   requestId: ID,

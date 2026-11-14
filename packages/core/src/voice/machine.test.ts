@@ -478,7 +478,7 @@ describe("voice state machine", () => {
     });
     expect(update.session).not.toHaveProperty("model");
     expect(update.session).not.toHaveProperty("voice");
-    expect((update.session as { tools: { name: string }[] }).tools.map((t) => t.name)).toEqual(["recall", "make_phone_call", "suggest", "answer", "read_money"]);
+    expect((update.session as { tools: { name: string }[] }).tools.map((t) => t.name)).toEqual(["recall", "make_phone_call", "suggest", "answer", "read_money", "start_errand"]);
     r.timer("ack", ACK_LIMIT_MS);
     expect(r.st.phase).toBe("RECOVERY");
     expect(r.log.some((c) => c.kind === "unmuteOutput")).toBe(false);
@@ -887,7 +887,7 @@ describe("turn responses, cuts and tools by scope (task 26)", () => {
       return (replyCreate(r.st, { permit: res.permit!, purpose: "speech", notes, toolCall: null, toolOutput: null }).response as Ev).tools as unknown[];
     };
     expect(tools("ack")).toEqual([]);
-    expect(tools("reply")).toHaveLength(5);
+    expect(tools("reply")).toHaveLength(6);
     const r = listening();
     speak(r);
     const note = { noteId: testId("n"), rev: 1, kind: "ack" as const, text: "I can't forget things yet.", rootKeys: [], dependsOn: [], sens: "S0" as const, expiresAt: tsFromMs(r.now + 10_000), unprompted: false, momentId: null, tokens: [] };

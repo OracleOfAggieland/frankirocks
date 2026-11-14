@@ -54,6 +54,7 @@ import {
   type Permit,
   PHONE_TOOL,
   MONEY_TOOL,
+  ERRAND_TOOL,
   type Proactive,
   RECALL_TOOL,
   type ReceiptRequest,
@@ -616,10 +617,10 @@ export const TRANSCRIBE_LANGUAGE = "en";
 export const TRANSCRIBE_PROMPT = "A friendly conversation in English with Franki, a personal assistant. The speaker often mentions names of people, pets and places; spell names as said.";
 
 /**
- * The tools a call offers the model, in every session and every reply that may call one (brief 040, item 1; brief 046 part C adds `read_money`). All five
+ * The tools a call offers the model, in every session and every reply that may call one (brief 040, item 1; brief 046 part C adds `read_money`; brief 049 part A adds `start_errand`). All six
  * are dispatched under one rule (dispatchTool, behind the reply's Permit); `answer` has no parameters (H-186).
  */
-export const CALL_TOOLS = [RECALL_TOOL, PHONE_TOOL, SUGGEST_TOOL, ANSWER_TOOL, MONEY_TOOL] as const;
+export const CALL_TOOLS = [RECALL_TOOL, PHONE_TOOL, SUGGEST_TOOL, ANSWER_TOOL, MONEY_TOOL, ERRAND_TOOL] as const;
 
 export function sessionUpdate(instructions: string, transcribeModel: string): RealtimeClientEvent {
   // No `model` and no `voice`: those are fixed when the SDP proxy creates the call (R13.1, R13.5).
@@ -698,7 +699,8 @@ export function replyCreate(st: VoiceState, reply: PendingReply, eventId: string
   const input = replyInput(st, reply);
   // Scope `ack` (the crisis care reply) has no tools (R12.6; question 88).
   // Brief 046 part C: the reply after a money read carries no tools either, so it words what came back and reads no more.
-  const tools = reply.permit.scope === "ack" || reply.toolOutput?.name === "make_phone_call" || reply.toolOutput?.name === "read_money"
+  // Brief 049 part A, ruling 3: and after `start_errand`, so the reply words the neutral line and starts nothing more.
+  const tools = reply.permit.scope === "ack" || reply.toolOutput?.name === "make_phone_call" || reply.toolOutput?.name === "read_money" || reply.toolOutput?.name === "start_errand"
     ? { tools: [] } : { tools: [...CALL_TOOLS], tool_choice: "auto" };
   return tag({
     type: "response.create",

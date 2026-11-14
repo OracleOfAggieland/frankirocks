@@ -66,6 +66,8 @@ import {
   tagged,
   union,
 } from "./v";
+// Brief 049 part A: an Errand's closed sets and bounds.
+import { ERRAND_ABOUT, ERRAND_LABEL_CHARS, ERRAND_LINES_MAX, ERRAND_LINE_CHARS, ERRAND_LINE_REFS_MAX, ERRAND_OUTCOMES, ERRAND_READS_MAX } from "../errands/limits";
 // Brief 024: the Gate's closed codes, for its ledger rows.
 import {
   DECISION_ISSUERS,
@@ -333,7 +335,7 @@ export type Turn = Infer<typeof Turn>;
 // ---------------------------------------------------------------------------------------------
 // ledger/{entryId}
 
-const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate", "rule", "bank"] as const;
+const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate", "rule", "bank", "errand"] as const;
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
 /**
@@ -449,6 +451,17 @@ export const BankLedgerPayload = obj({
 });
 export type BankLedgerPayload = Infer<typeof BankLedgerPayload>;
 
+// Brief 049 part A (lane errands): one row per Errand started, the audit entry for that background job. IDs and
+// closed codes only: never the assignment's words or anything the Errand found.
+export const ErrandLedgerPayload = obj({
+  errandId: ID,
+  sessionId: ID,
+  turnId: ID,
+  about: arr(oneOf(ERRAND_ABOUT), 2, 1),
+  agentIds: arr(str(64, { min: 1 }), 4),
+});
+export type ErrandLedgerPayload = Infer<typeof ErrandLedgerPayload>;
+
 export const LEDGER_PAYLOADS = {
   // Earlier calls have no indexed call ID. Their receipts remain readable and replayable.
   phoneCall: union(obj({ ...phoneCallFields, phoneCallId: ID }), obj(phoneCallFields)),
@@ -491,6 +504,8 @@ export const LEDGER_PAYLOADS = {
   rule: RuleRowPayload,
   // Brief 046.
   bank: BankLedgerPayload,
+  // Brief 049 part A.
+  errand: ErrandLedgerPayload,
 } satisfies Record<LedgerKind, Schema<unknown>>;
 
 const LedgerBase = obj({
@@ -536,6 +551,8 @@ export const JOB_KINDS = [
   "rebuild",
   "hangup",
   "readPage",
+  // Brief 049 part A: an Errand's run.
+  "errand",
 ] as const;
 export const JobKind = oneOf(JOB_KINDS);
 
@@ -555,6 +572,8 @@ const WorkJob = obj({
     "rebuild",
     "hangup",
     "readPage",
+    // Brief 049 part A.
+    "errand",
   ]),
   targets: arr(Ref, 32),
   class: nullable(Class),
@@ -1078,3 +1097,57 @@ export function withConnectorDefaults(
   const bank = c.bank ?? null;
   return { ...c, bank: bank === null ? null : { ...bank, lastPullSkipped: bank.lastPullSkipped ?? { noCurrency: 0, badAmount: 0, badDate: 0 } } };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Brief 049 part A (lane errands): errands/{errandId}. One per Turn that asked (the ID is the Turn's), run by the Job
+// of the same ID. The assignment is stored as Turn IDs, never words, so a forgotten Turn takes its words with it
+// (ruling 2). `reads` is the Evidence this Errand's tools actually read; a result line rests only on these (ruling 8).
+
+export const ERRAND_STATUSES = ["running", "ready", "failed", "delivered", "cardOnly", "dropped"] as const;
+export type ErrandStatus = (typeof ERRAND_STATUSES)[number];
+
+/** What a card shows of one source (ruling 11): sender, subject and date for mail; title and time for an event. */
+export const ErrandSource = tagged("kind", {
+  mail: obj({ kind: literal("mail"), from: str(ERRAND_LABEL_CHARS), subject: str(ERRAND_LABEL_CHARS), at: TS, mailedByOwner: bool }),
+  event: obj({ kind: literal("event"), title: str(ERRAND_LABEL_CHARS), startsAt: TS, allDay: bool }),
+});
+export type ErrandSource = Infer<typeof ErrandSource>;
+
+export const ErrandRead = obj({
+  ref: str(3, { min: 2, pattern: /^r[1-9]\d?$/, label: "an errand ref" }),
+  evidenceId: ID,
+  rev: nat(),
+  source: ErrandSource,
+});
+export type ErrandRead = Infer<typeof ErrandRead>;
+
+export const ErrandLine = obj({
+  text: str(ERRAND_LINE_CHARS, { min: 1 }),
+  refs: arr(str(3, { min: 2 }), ERRAND_LINE_REFS_MAX, 1),
+  /** The lowest-trust class among its refs, and the highest sensitivity (ruling 8). */
+  cls: Class,
+  sens: Sens,
+  /** Code's attribution for a line that rests on third-party text ("From Dana Park, Tuesday:"); else null. */
+  attribution: nullable(str(ERRAND_LABEL_CHARS + 32)),
+});
+export type ErrandLine = Infer<typeof ErrandLine>;
+
+export const Errand = obj({
+  ...C_SHAPE,
+  sessionId: ID,
+  turnId: ID,
+  generation: nat(1),
+  about: arr(oneOf(ERRAND_ABOUT), 2, 1),
+  agentIds: arr(str(64, { min: 1 }), 4, 1),
+  assignmentTurnIds: arr(ID, 4, 1),
+  status: oneOf(ERRAND_STATUSES),
+  /** The epoch when it was claimed. A forget moves the epoch, and nothing of an earlier epoch is said or shown. */
+  claimedEpoch: nat(),
+  startedAt: TS,
+  readyAt: nullable(TS),
+  endedAt: nullable(TS),
+  reads: arr(ErrandRead, ERRAND_READS_MAX),
+  outcome: nullable(oneOf(ERRAND_OUTCOMES)),
+  lines: arr(ErrandLine, ERRAND_LINES_MAX),
+});
+export type Errand = Infer<typeof Errand>;
