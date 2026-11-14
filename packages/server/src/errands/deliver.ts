@@ -66,12 +66,13 @@ import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
 import type { StoredDoc } from "../store/port";
 import type { ProactiveDeck } from "../time/proactive";
+import { errandsReady } from "./agent";
 import { errandCard } from "./card";
 import { type LineVerdict, gateErrandLines } from "./gate";
 import { errandDeliveryId } from "./records";
 import { runErrand } from "./run";
 
-export const NO_ERRANDS: ErrandsView = { running: [], cards: [] };
+export const NO_ERRANDS: ErrandsView = { running: [], cards: [], ready: false };
 /** Cards one poll shows at most (the wire's bound). */
 export const ERRAND_CARDS_MAX = 4;
 
@@ -120,8 +121,9 @@ const hasContent = (e: Errand) => e.lines.length > 0 || e.reads.length > 0 || e.
 async function errandsOnce(ctx: RouteContext, x: ErrandStateInput): Promise<ErrandStateOutput> {
   const { uid, deps } = ctx;
   const ops = deps.clock.read().opsClock.now;
-  const rows = await markedErrands(ctx, x.sessionId, ops);
-  if (rows === null || rows.length === 0) return { view: NO_ERRANDS, proactive: null };
+  // Review fix R2: the agents' readiness, beside the Session's mark.
+  const [rows, ready] = await Promise.all([markedErrands(ctx, x.sessionId, ops), errandsReady(ctx)]);
+  if (rows === null || rows.length === 0) return { view: { ...NO_ERRANDS, ready }, proactive: null };
   const epoch = x.stamp.epoch;
   const live: StoredDoc<Errand>[] = [];
   for (const r of rows) {
@@ -148,7 +150,7 @@ async function errandsOnce(ctx: RouteContext, x: ErrandStateInput): Promise<Erra
   const running = new Set<ErrandAbout>();
   for (const r of live) if (r.data.status === "running") for (const a of r.data.about) running.add(a);
   // Review fix V7: in crisis an Errand says nothing and shows nothing; the running word is S0 and stays.
-  if (modifiers.crisis) return { view: { running: [...running], cards: [] }, proactive: null };
+  if (modifiers.crisis) return { view: { running: [...running], cards: [], ready }, proactive: null };
 
   const clock = ownerClock((await deps.store.get(uid, paths.core(uid, "state")))!.data as never, deps.clock).worldClock;
   const verdictsOf = (e: Errand, id: ID, au: Au, mods: typeof modifiers): LineVerdict[] =>
@@ -163,7 +165,7 @@ async function errandsOnce(ctx: RouteContext, x: ErrandStateInput): Promise<Erra
     const card = cardOf(e, r.id as ID, audience, modifiers);
     if (card !== null) cards.push(card);
   }
-  const view: ErrandsView = { running: [...running], cards };
+  const view: ErrandsView = { running: [...running], cards, ready };
 
   if (!x.mayOffer || x.deck === null || x.session.registeredCallIds.length === 0) return { view, proactive: null };
   const lastSound = Math.max(msFromTs(x.session.lastTurnAt), x.session.lastSpeechStartedOpsAt === null ? 0 : msFromTs(x.session.lastSpeechStartedOpsAt));

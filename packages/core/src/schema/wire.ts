@@ -447,8 +447,10 @@ const STATE_RESPONSE_SHAPE = {
 /**
  * Brief 049 part A, rulings 11 and 12: what the screen shows of this Session's errands. `running`: what a running
  * Errand is looking through, for the small word under Franki. `cards`: a delivered or card-only result's detail.
+ * `ready` (review fix R2): an errand agent is ready for this owner, so the call offers `start_errand`; never with
+ * an empty registry.
  */
-export const ErrandsView = obj({ running: arr(oneOf(ERRAND_ABOUT), 2), cards: arr(Card, 4) });
+export const ErrandsView = obj({ running: arr(oneOf(ERRAND_ABOUT), 2), cards: arr(Card, 4), ready: bool });
 export type ErrandsView = Infer<typeof ErrandsView>;
 /** Answers built before brief 049 carry no `errands`; the browser reads a missing one as nothing running. */
 export const StateResponse = union(obj({ ...STATE_RESPONSE_SHAPE, errands: ErrandsView }), obj(STATE_RESPONSE_SHAPE));

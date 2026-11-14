@@ -11,11 +11,11 @@ describe("errand shelf (brief 049 part A)", () => {
     const shelf = new ErrandShelf();
     let told = 0;
     shelf.subscribe(() => told++);
-    shelf.onState(stamp, { running: ["mail"], cards: [] });
-    shelf.onState(stamp, { running: ["mail"], cards: [] });
+    shelf.onState(stamp, { ready: false, running: ["mail"], cards: [] });
+    shelf.onState(stamp, { ready: false, running: ["mail"], cards: [] });
     expect(told).toBe(1);
     expect(errandWord(shelf.getSnapshot())).toBe(COPY.errands.running.mail);
-    shelf.onState(stamp, { running: [], cards: [card] });
+    shelf.onState(stamp, { ready: false, running: [], cards: [card] });
     expect(errandWord(shelf.getSnapshot())).toBeNull();
     expect(errandCardProps(shelf.getSnapshot()).map((c) => (c.kind === "read" ? c.lines : null))).toEqual([card.lines]);
   });
@@ -24,7 +24,7 @@ describe("errand shelf (brief 049 part A)", () => {
     const shelf = new ErrandShelf();
     shelf.onState(stamp, undefined);
     expect(shelf.getSnapshot().cards).toEqual([]);
-    shelf.onState(stamp, { running: ["mail", "calendar"], cards: [card] });
+    shelf.onState(stamp, { ready: false, running: ["mail", "calendar"], cards: [card] });
     expect(errandWord(shelf.getSnapshot())).toBe(COPY.errands.running.both);
     shelf.onVoice({ session: null });
     expect(shelf.getSnapshot().running).toEqual([]);
@@ -54,7 +54,7 @@ describe("errand shelf, review fix V6", () => {
 
   it("an answer that carries no errands view (the server ran out of time) keeps what is shown", () => {
     const shelf = new ErrandShelf();
-    shelf.onState(stamp, { running: ["mail"], cards: [card] });
+    shelf.onState(stamp, { ready: false, running: ["mail"], cards: [card] });
     shelf.onState(stamp, undefined);
     expect(shelf.getSnapshot().cards).toHaveLength(1);
     expect(shelf.getSnapshot().running).toEqual(["mail"]);
@@ -62,15 +62,15 @@ describe("errand shelf, review fix V6", () => {
 
   it("a card the server no longer lists (dropped or forgotten) goes at once", () => {
     const shelf = new ErrandShelf();
-    shelf.onState(stamp, { running: [], cards: [card] });
-    shelf.onState(stamp, { running: [], cards: [] });
+    shelf.onState(stamp, { ready: false, running: [], cards: [card] });
+    shelf.onState(stamp, { ready: false, running: [], cards: [] });
     expect(shelf.getSnapshot().cards).toEqual([]);
   });
 
   it("a card left on the shelf between calls goes after ERRAND_SHELF_KEEP_MS", () => {
     const t = manual();
     const shelf = new ErrandShelf({ now: t.now, setTimer: t.setTimer });
-    shelf.onState(stamp, { running: [], cards: [card] });
+    shelf.onState(stamp, { ready: false, running: [], cards: [card] });
     shelf.onVoice({ session: null });
     t.advance(ERRAND_SHELF_KEEP_MS - 1);
     expect(shelf.getSnapshot().cards).toHaveLength(1);
@@ -80,7 +80,7 @@ describe("errand shelf, review fix V6", () => {
 
   it("the forget clears the shelf (App's forget calls clear)", () => {
     const shelf = new ErrandShelf();
-    shelf.onState(stamp, { running: ["mail"], cards: [card] });
+    shelf.onState(stamp, { ready: false, running: ["mail"], cards: [card] });
     shelf.clear();
     expect(shelf.getSnapshot()).toBe(NO_ERRANDS_SHOWN);
   });

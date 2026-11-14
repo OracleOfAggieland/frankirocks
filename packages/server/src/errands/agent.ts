@@ -64,6 +64,18 @@ export const PRODUCTION_ERRAND_AGENTS: readonly ErrandAgent[] = [];
 
 export const errandAgentsOf = (ctx: RouteContext): readonly ErrandAgent[] => ctx.deps.errandAgents ?? PRODUCTION_ERRAND_AGENTS;
 
+/**
+ * Review fix R2: whether any agent is ready for this owner, so the call offers `start_errand`. False with an empty
+ * registry (no read at all) and for an agent whose `available` throws. Agents keep `available` cheap: it runs on
+ * every state poll, inside the poll's budget.
+ */
+export async function errandsReady(ctx: RouteContext): Promise<boolean> {
+  const agents = errandAgentsOf(ctx);
+  if (agents.length === 0) return false;
+  const answers = await Promise.all(agents.map((a) => a.available(ctx).catch(() => "unavailable" as const)));
+  return answers.includes("ready");
+}
+
 /** The agents for an `about` set, one per value at most, in the set's order. */
 export function agentsFor(all: readonly ErrandAgent[], about: readonly ErrandAbout[]): ErrandAgent[] {
   const out: ErrandAgent[] = [];

@@ -236,7 +236,7 @@ describe("Voice_Client", () => {
     expect(updates[0].session).not.toHaveProperty("model");
     expect(updates[0].session).not.toHaveProperty("voice");
     expect(updates[0].session).toMatchObject({ type: "realtime", tracing: null, audio: { input: { transcription: { model: "test-transcribe-model" } } } });
-    expect(updates[0].session.tools.map((t: { name: string }) => t.name)).toEqual(["recall", "make_phone_call", "suggest", "answer", "read_money", "start_errand"]);
+    expect(updates[0].session.tools.map((t: { name: string }) => t.name)).toEqual(["recall", "make_phone_call", "suggest", "answer", "read_money"]); // start_errand only once a poll says an errand agent is ready (review fix R2)
     expect(routeCalls("/api/session/sdp")).toHaveLength(1);
     expect(routeCalls("/api/session/sdp")[0]!.body).toMatchObject({ offerSdp: "v=0 offer", generation: 1 });
     expect(peer().tracks).toEqual([track]);

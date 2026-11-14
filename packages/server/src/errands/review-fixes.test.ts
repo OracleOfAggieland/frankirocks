@@ -6,7 +6,7 @@ import { stateRoute } from "../routes/state";
 import { toolRoute } from "../routes/tool";
 import { turnRoute } from "../routes/turn";
 import { paths } from "../store/paths";
-import { ERRAND_OWNER as UID, type ErrandSetup, type PlannerStep, errandOf, errandReceipt, plannerRequests, poll, seedMail, errandSetup as setup, tool } from "../testing/errand-agent";
+import { ERRAND_OWNER as UID, type ErrandSetup, type PlannerStep, errandOf, errandReceipt, plannerRequests, poll, seedMail, errandSetup as setup, testMailAgent, tool } from "../testing/errand-agent";
 import { callRoute, patchRecord, recordingSchedule, runScheduled } from "../testing/fakes";
 import { asrTurn, openTestSession } from "../testing/session-fixtures";
 import { claimJob } from "../worker/jobs";
@@ -330,5 +330,24 @@ describe("V11: a said errand line's transcript keeps the line's class and writes
     expect(heard?.data.sourceClass).toBe("T");
     const ledger = await x.rig.store.query<Ledger>(UID, { collection: paths.collection(UID, "ledger"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: 100 });
     expect(ledger.some((r) => r.data.kind === "gate" && (r.data.payload as { outcome: string }).outcome === "said" && (r.data.payload as { noteIds: string[] }).noteIds.includes(p.whisper.noteId))).toBe(true);
+  });
+});
+
+describe("R2: the poll says whether an errand agent is ready for the owner", () => {
+  it("ready with a ready agent, even with no Errand; not ready with an empty registry or an agent not connected", async () => {
+    const x = await setup(found());
+    expect((await callRoute(x.rig, stateRoute, poll(x))).body.errands?.ready).toBe(true);
+    x.rig.deps.errandAgents = [testMailAgent(() => x.mail, async () => "notConnected")];
+    expect((await callRoute(x.rig, stateRoute, poll(x))).body.errands?.ready).toBe(false);
+    x.rig.deps.errandAgents = [];
+    expect((await callRoute(x.rig, stateRoute, poll(x))).body.errands?.ready).toBe(false);
+  });
+
+  it("an agent that throws reads as not ready, and the poll still answers", async () => {
+    const x = await setup(found());
+    x.rig.deps.errandAgents = [testMailAgent(() => x.mail, async () => { throw new Error("down"); })];
+    const st = await callRoute(x.rig, stateRoute, poll(x));
+    expect(st.status).toBe(200);
+    expect(st.body.errands?.ready).toBe(false);
   });
 });
