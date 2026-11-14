@@ -395,11 +395,56 @@ Built by Claude in `lane/google` on fakes only (no OpenAI or Google call). Kiro 
 - `google-agents.test.ts`: one end-to-end script (ask, `started`, run with FakeGoogle and scripted models, `ready`, the poll offers the line), no body or poison text in any planner request, the reader request has no tools, no rule or preference rows written, and a foreign ref refused without a reader call.
 
 ### Not built
-- The other end-to-end scripts (company, forget midway, not connected, expired grant). No unmailed-sender test (FakeGoogle's `listMessages` answers every message, so `ownerHasMailed` is always true there). No calendar tool test. No poison script beyond the one message. No property test.
+- Superseded by the review fixes below: the other end-to-end scripts, the unmailed-sender test, the calendar tool tests and the properties now exist. What is still not built is under "Left unfixed".
 
 ### Contract questions
-- **G-300.** Dates resolve in the owner's world-clock zone, not the calendar's zone (the zone is known only after the read).
-- **G-301.** Mail `when` accepts only a day phrase; a period answers `unresolved`.
-- **G-302.** A run's search refs and read context live in a bounded in-process map keyed by owner, Errand and claimed epoch. A second claim on another instance starts with no refs, so `read_mail` refuses until it searches again.
-- **G-303.** The owner's own messages count as mailed.
-- **G-304.** `find_free_time` registers the events behind the gaps as read, not shown.
+- **C-300.** (was G-300) Dates resolved in the owner's world-clock zone. Superseded by E3 and E5: the ops clock, and the calendar's own zone (a guess in the owner's zone is read again once in the calendar's when Google answers another).
+- **C-301.** (was G-301) Mail `when` accepted only a day phrase. Superseded by E2: `resolvePast` takes past days and periods.
+- **C-302.** (was G-302) Per-run state in a module map. Superseded by T11: the runner's per-claim scratch. A second claim still starts with no refs, so `read_mail` refuses until it searches again.
+- **C-303.** (was G-303) The owner's own messages count as mailed. Kept; their lines are still card only when the run also showed a stranger's mail.
+- **C-304.** (was G-304) `find_free_time` registered the events behind the gaps as read, not shown. Superseded by T6: what blocks the window is registered shown, with the class of its typed time fields only.
+- **C-306.** Only the first `Authentication-Results` header counts, and only with authserv-id `mx.google.com`; a DMARC pass must name the From domain (T1).
+- **C-307.** `SENT_CHECK_MAX = 1`: one sent message is fetched per sender, and it must hold the exact address in To or Cc. A sender the owner wrote to only by Bcc is not mailed.
+- **C-308.** FakeGoogle matches words, `from:`, `is:unread` and dates only with `fullQuery` on; `in:`, `category:` and `to:` always. Older tests assumed every message matched.
+- **C-309.** The `unmailed` notice line is S1 and held in company (it says there is mail from a stranger).
+- **C-310.** Notice precedence when several tools flagged: unmailed, expired, failed, partial, then a day code could not place (`noticeOf`).
+- **C-311.** A disconnect drops one page (`Q50`) of holding Google Errands per disconnect; more than 100 at once would need a second disconnect or the forget's drain.
+- **C-312.** A connector that moved (disconnected, expired, another account) drops a finished Errand, not just hides it.
+- **C-313.** A reader failure counts as a partial read, not a failed run.
+- **C-314.** A line on the owner's own message in a run that also read a stranger is card only.
+- **C-315.** A free-time read is registered with title "" and the class of the `calendar.*` slices. `refViews` still rereads the whole row, so a cited busy event whose title came from someone else reads as T at the result check (fails closed: card only).
+- **C-316.** A free-time window entirely in the past answers no gaps.
+- **C-317.** The T9 test was committed with T8 (`c81c319`), not with its own fix.
+- **C-318.** `list_events` leaves room under `ERRAND_TOOL_OUTPUT_CHARS` (800 characters) for the wrapper; a cut list flags the run `partial`.
+- **C-319.** The Head sentence about look-ups is added by the voice machine (`callHead`) while `errandsReady`, not by the server's Head, so the Deck and every recorded trace with no agent ready are unchanged.
+- **C-320.** A half-covered ask starts with the ready part and names the rest in the start note; the Errand's `about` holds the ready part only.
+- **C-321.** The link cleaner treats any dot-joined host ending in two or more letters as a link, so a missing space ("Dr.Smith", "Node.js") becomes `[link]`.
+- **C-322.** The fixture poison scripts (`scripts/gate-poison.ts`) run on the script runner, which has no errand step; mail cases there would be silent greens. Mail poison through the errand path is covered by the "Mail cannot order" property and `google-agents.test.ts` instead.
+- **C-323.** E11's commit (`ecd15b9`) left the `expired` member of `ErrandAvailability` to the docs commit (`dbafb54`); the tree typechecks only from `dbafb54` on.
+
+### Review fixes (Nov 14)
+
+| Finding | Commit |
+|---|---|
+| T11, E12: per-claim state in the runner's scratch; parallel sent checks; reader timeout and abort | `c52008c` |
+| T1: mailed only on Gmail's DMARC pass, a sent message to that exact address, no list mail | `dec8fd3` |
+| T2, T3: unmailed sender is ref, date, unread only; reader gets the owner's own part of sent mail | `eba531e` |
+| E9, T4, T5: speak only on mailed senders' mail; card marker for runs that read strangers; address-only naming; attribution day words | `37451b3` |
+| T8, E4: code-worded notices when no line is citeable | `c81c319` |
+| T9, E6: "It's on your screen" only when the card shows a line to this audience | `3affefb` |
+| T10, E10: disconnect drops Google Errands; delivery rechecks the connector and generation | `8faf572` |
+| E2, E3, E5, E8, T6, E1, T7: backward mail dates, ops clock, one zone, local text, part of day, 14-day clip, capped lists, free-time refs, invites don't block | `2e2f97f` |
+| E11, T12 (readiness): Head sentence, started note, half-covered ask, expired grant, one read per agent | `ecd15b9` |
+| T12: generic link cleaner | `981d449` |
+| Docs (registry, README, setup, machine doc) | `dbafb54` |
+| Group 4: properties "No body to the planner; no tool to the reader" and "Mail cannot order" | `84102dd` |
+| Group 4: end-to-end scripts | `d5ba0f5` |
+
+Both new properties were checked red against a deliberate break (a body in `read_mail`'s output; attribution removed) before passing.
+
+### Left unfixed
+- **E7** (a result whose Session closed before it was said, carried to the owner's next private Session as card only, once, within the card window). Not built: it needs a new owner-level record, a shown-once mark on the Errand, forget and reset coverage, and rules. Today such a result is never said or shown, which fails closed.
+- **Poison scripts** (Group 4): see C-322.
+
+### Never exercised outside tests
+- Any real Gmail or Calendar call, any real reader call, the DMARC and sent-mail checks against real headers, a real calendar in another zone, the Head sentence in a live call, and the half-covered and expired notes heard by a person.
