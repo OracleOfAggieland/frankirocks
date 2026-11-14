@@ -53,6 +53,27 @@ The owner connects a bank through Plaid Link, Plaid's own window, so Franki neve
 
 Known gaps: there is no Plaid webhook; banks are read on connect, when the screen asks, and before a money read when the last read is over an hour old. No real Plaid call has been tested.
 
+## A connected Google account (read-only)
+
+The owner connects Gmail and Google Calendar from the Google button at the foot of `/lab`. Google's own page, in its own window, takes the sign-in, so Franki never sees a Google password. Franki asks for `openid`, `email`, `gmail.readonly` and `calendar.events.readonly` only, and calls Google with GET only, apart from the token exchange, the refresh and the revoke. Nothing is imported: a message or an event is stored as Evidence only when a read returns it. The routes are under `/api/google/` (`start`, `connect`, `status`, `disconnect`); Google sends its window back to the page `/google/callback`, which sends the connect. The refresh token is sealed with AES-256-GCM under `FRANKI_BANK_TOKEN_KEY`, and no token, code or state appears in a route answer, a ledger row or a log line.
+
+In the Google Cloud console, in a project you own:
+
+1. **APIs and services, Library:** enable the Gmail API and the Google Calendar API.
+2. **OAuth consent screen:** user type External, publishing status Testing. Add the scopes `openid`, `.../auth/userinfo.email`, `.../auth/gmail.readonly` and `.../auth/calendar.events.readonly`. Add every Google account that will connect as a test user. In Testing, Google ends each grant after seven days, and the sheet then asks for a new sign-in.
+3. **Credentials, Create credentials, OAuth client ID:** application type Web application. Under Authorized redirect URIs add `http://localhost:3000/google/callback` and `https://franki-web--frankirocks.us-central1.hosted.app/google/callback`, one for each origin in `ALLOWED_ORIGINS` (`packages/server/src/auth/guard.ts`). The browser never calls Google itself, so no JavaScript origin is needed.
+4. Copy the client ID and the client secret into the two settings below.
+
+| Variable | Kind | Value |
+| --- | --- | --- |
+| `GOOGLE_OAUTH_CLIENT_ID` | Plain value | The OAuth client ID, ending `.apps.googleusercontent.com`. Set it in `apps/web/apphosting.yaml` (empty there by default) and, for `npm run dev`, in `apps/web/.env.local` |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | Secret | The OAuth client secret (`firebase apphosting:secrets:set GOOGLE_OAUTH_CLIENT_SECRET`), and in `apps/web/.env.local` for local work |
+| `FRANKI_BANK_TOKEN_KEY` | Secret | The bank's key, above. Changing it makes every stored Google token unreadable too |
+
+`npm run dev` copies only nonempty plain values from `apps/web/apphosting.yaml` (`scripts/sync-local-env.mjs`), so the empty client ID there never hides the one in `.env.local`. With either name unset or malformed, every Google route answers `CONFIG` and the sheet says Google isn't set up.
+
+Known gaps: no real Google call has been tested; everything runs against a scripted fake. Mail and events are read only when asked, never in the background, and Google sends no push notifications here.
+
 ## Deploy
 
 Set each runtime secret listed in `apps/web/apphosting.yaml` in Secret Manager and grant the `franki-web` backend access. For example:

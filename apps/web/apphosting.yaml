@@ -94,3 +94,12 @@ env:
   - variable: FRANKI_BANK_TOKEN_KEY
     secret: FRANKI_BANK_TOKEN_KEY
     availability: [RUNTIME]
+
+  # A connected Google account, read-only (brief 049). The client ID is not a secret: put the OAuth client's ID here
+  # (it ends `.apps.googleusercontent.com`). Left empty, every /api/google/* route answers CONFIG and the sheet says
+  # Google isn't set up. The refresh token is sealed under FRANKI_BANK_TOKEN_KEY, above.
+  - variable: GOOGLE_OAUTH_CLIENT_ID
+    value: ""
+  - variable: GOOGLE_OAUTH_CLIENT_SECRET
+    secret: GOOGLE_OAUTH_CLIENT_SECRET
+    availability: [RUNTIME]

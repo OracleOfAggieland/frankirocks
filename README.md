@@ -48,7 +48,7 @@ Kiro is the lab Franki was assembled in. Every body part below is a Kiro feature
 
 Kiro wrote the specs and built Franki's foundation and voice path from them: the first spoken call, the lab UI foundation, the judge spike, and the judge in the call. Those commits end `Built-with: Kiro`.
 
-Claude Code built the 3D avatar, the first wave of memory writes, the state machine safety net, the UI build-out, phone calls and the radio with its globe. Those commits carry its own trailer. The split is in the history, commit by commit.
+Claude Code built the 3D avatar, the first wave of memory writes, the state machine safety net, the UI build-out, phone calls, the radio with its globe, and the read-only bank and Google connections. Those commits carry its own trailer. The split is in the history, commit by commit.
 
 ## Still on the slab
 
@@ -75,7 +75,7 @@ npm run lint && npm run typecheck && npm run build
 
 `http://localhost:3000/specimens` shows every state of the ghost and every surface without calling anyone (development only).
 
-Keys, phone calls and deploy are in [`docs/setup.md`](docs/setup.md).
+Keys, phone calls, the read-only bank and Google connections, and deploy are in [`docs/setup.md`](docs/setup.md). The Google connection needs an OAuth client of your own (Gmail and Calendar, read-only); the steps are there.
 
 ## Layout
 
