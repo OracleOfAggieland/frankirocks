@@ -3,15 +3,18 @@
 export const SITE = {
   name: "Franki",
   /**
-   * The deployed web app, App Hosting backend `franki-web`. The base for every absolute URL in the metadata
-   * (the canonical link, og:url, the social card). The same origin is in ALLOWED_ORIGINS in
-   * packages/server/src/auth/guard.ts.
+   * The deployed web app: the custom domain on App Hosting backend `franki-web` (www redirects here). The base
+   * for every absolute URL in the metadata (the canonical link, og:url, the social card). The same origin is in
+   * ALLOWED_ORIGINS in packages/server/src/auth/guard.ts.
    */
-  url: "https://franki-web--frankirocks.us-central1.hosted.app",
+  url: "https://frankirocks.com",
   description: "A friendly Frankenstein ghost you talk to, with one powerful memory for your whole life.",
   author: "Matt Avila",
   locale: "en_US",
 } as const;
+
+/** Kiro's own site. Every place a page says Franki was built with Kiro links here, in a new tab. */
+export const KIRO_URL = "https://kiro.dev/";
 
 /**
  * The Open Graph fields every page shares. A page that sets its own `openGraph` replaces the layout's whole

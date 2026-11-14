@@ -11,7 +11,7 @@ import { publicEnv, readFirebaseConfig } from "../client/firebase-config";
 import type { TypedState, TypedTurns } from "../client/typed-turns";
 import { type AudioLike, type PeerLike, SIGN_OUT_LIMIT_MS } from "../client/voice-client";
 import { TRANSCRIBE_VAR, transcribeModel } from "../client/voice-config";
-import { MAIN_CHIPS, type MemoryState } from "../client/memory-model";
+import type { MemoryState } from "../client/memory-model";
 import { COPY } from "../ui/copy";
 import { NO_SURFACES, goneAskCard, readoutCard } from "../ui/memory-screen";
 import { sharedAudio } from "../ui/audio/context";
@@ -36,7 +36,6 @@ import { ReplyLine } from "./ReplyLine";
 import { MainScreen } from "./screen/MainScreen";
 import { SoundToggle, soundPreference } from "./SoundToggle";
 import { TypedLine } from "./TypedLine";
-import { Chips } from "./surfaces/Chips";
 import { Jar } from "./surfaces/Jar";
 import { Lab } from "./surfaces/Lab";
 import { Receipt } from "./surfaces/Receipt";
@@ -51,8 +50,6 @@ import { proactiveCards, replyEntries, type ShownProactive } from "../ui/visit/p
 import { type ShownCallCards, callCardProps } from "../ui/call-cards";
 import { NO_ERRANDS_SHOWN, type ShownErrands, errandCardProps, errandWord } from "../ui/errands/errand-view";
 import { ErrandWord } from "./errands/ErrandWord";
-import type { CompanyTapState } from "../client/company-tap";
-import { CompanyToggle } from "./surfaces/CompanyToggle";
 // Brief 046 part B.
 import { INITIAL_BANK, type BankState } from "../ui/bank/bank-machine";
 import { BankLinkHost } from "./bank/BankLinkHost";
@@ -86,8 +83,6 @@ const noSheet = (): SheetState => CLOSED_SHEET;
 const noShown = (): ShownProactive | null => null;
 const noCallCards = (): ShownCallCards | null => null;
 const noErrands = (): ShownErrands => NO_ERRANDS_SHOWN;
-const NO_TAP: CompanyTapState = { company: false, sending: false, error: null };
-const noTap = (): CompanyTapState => NO_TAP;
 /** Brief 046 part B: the bank sheet while signed out: closed, nothing known. */
 const noBank = (): BankState => INITIAL_BANK;
 /** Brief 049 part B: the Google sheet while signed out: closed, nothing known. */
@@ -371,9 +366,6 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
   const errandsShown = useSyncExternalStore(controllers?.errands.subscribe ?? noSubscribe, getErrands, getErrands);
   const getCallCards = controllers?.callCards.getSnapshot ?? noCallCards;
   const called = useSyncExternalStore(controllers?.callCards.subscribe ?? noSubscribe, getCallCards, getCallCards);
-  // Brief 044, item 3: the company toggle shows the audience the server last confirmed.
-  const getTap = controllers?.company.getSnapshot ?? noTap;
-  const tapped = useSyncExternalStore(controllers?.company.subscribe ?? noSubscribe, getTap, getTap);
   // Brief 046 part B: the bank sheet.
   const getBank = controllers?.bank.getSnapshot ?? noBank;
   const bankState = useSyncExternalStore(controllers?.bank.subscribe ?? noSubscribe, getBank, getBank);
@@ -436,18 +428,8 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
     }
   };
 
-  // Brief 020: a chip's words go down the typed path as the owner's own; in a call, over the call's typed line.
+  // Nov 13, owner: the main screen shows no chips and no walked-in tap. The readout and company models stay.
   const memory = controllers.memory;
-  const chip = (text: string) => {
-    if (text === MAIN_CHIPS[0]) void memory.openReadout();
-    // Brief 047: the radio hears a chip's words once the line is taken (a chip is never pasted).
-    if (inCall && voice !== null) {
-      if (voice.sendTyped(text, "typed")) hear(text, false);
-    } else {
-      if (!t.sending) hear(text, false);
-      void typed.sendLine(text);
-    }
-  };
   const memoryCards = [
     ...(mem.goneAsk ? [goneAskCard((a) => memory.answerGone(a), noop)] : []),
     ...(mem.readout === null ? [] : [readoutCard(mem.readout, noop)]),
@@ -582,18 +564,6 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
       reply={inCall ? null : <ReplyLine entries={replyEntries(t.entries, shown)} />}
       cards={allCards}
       strip={mem.surfaces.strip === null ? null : <Strip {...mem.surfaces.strip} />}
-      chips={
-        <div className="flex flex-col items-center gap-3">
-          <Chips chips={MAIN_CHIPS} disabled={!takesInput || t.sending || (inCall && v.phase !== "LISTENING")} onChip={chip} />
-          {/* Brief 044, item 3: the walked-in tap. Unavailable until the server has said which account this is. */}
-          <CompanyToggle company={tapped.company} disabled={!takesInput || tapped.sending} onChange={(next) => void controllers.company.tap(next ? "company" : "alone")} />
-          {tapped.error === null ? null : (
-            <p role="status" data-tap-error="" className="text-xs text-ink-dim">
-              {tapped.error}
-            </p>
-          )}
-        </div>
-      }
       jar={<Jar motes={mem.surfaces.jar} onOpen={() => (sheetState.open ? sheetModel.close() : void sheetModel.open())} />}
       lab={<Lab counters={mem.surfaces.lab?.counters ?? []} limits={mem.surfaces.lab?.limits ?? []} receipt={receipt} />}
       visit={

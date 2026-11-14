@@ -12,7 +12,10 @@ describe("Build", () => {
   it("is the #build section, titled by its h2, with no h1", () => {
     const out = html();
     expect(out).toMatch(/<section id="build" aria-labelledby="build-title"/);
-    expect(out).toContain(LANDING.sections.build.title);
+    // The title reads as written, with the name Kiro as a link to Kiro's site in a new tab.
+    const title = /<h2 id="build-title"[^>]*>([\s\S]*?)<\/h2>/.exec(out)?.[1] ?? "";
+    expect(title.replace(/<[^>]*>/g, "")).toBe(LANDING.sections.build.title);
+    expect(title).toMatch(/<a href="https:\/\/kiro\.dev\/" target="_blank" rel="noopener noreferrer"[^>]*>Kiro<\/a>/);
     expect(out).toContain(LANDING.sections.build.body);
     expect(out).toContain(LANDING.sections.build.eyebrow);
     expect(out).not.toContain("<h1");
