@@ -17,7 +17,7 @@ import { type Hasher, canonicalJSON } from "../../ids";
 import { tsFromMs } from "../../schema/primitives";
 import type { Deck, Permit, Stamp, W } from "../../schema/wire";
 import { sampleHead } from "../../testing/samples";
-import { FORGET_NOT_YET, ackNote } from "../lines";
+import { GONE_LINE, ackNote } from "../lines";
 import { type RealtimeClientEvent, type TimerName, type TurnBody, type VoiceCommand, type VoiceEvent, type VoiceState, initialVoiceState, step } from "../machine";
 
 // ---------------------------------------------------------------------------------------------
@@ -383,7 +383,7 @@ export class CallDriver {
       case "ready":
         return { ...base, status: "ready" as const, permit: this.permitFor(body, "postCommitControl", "reply", [], hashOk) };
       case "readyAck": {
-        const note = ackNote(FORGET_NOT_YET, this.fresh("n"), tsFromMs(this.now + 10_000));
+        const note = ackNote(GONE_LINE, this.fresh("n"), tsFromMs(this.now + 10_000));
         return { ...base, status: "ready" as const, notes: [note], permit: this.permitFor(body, "postCommitControl", "ack", [note], hashOk) };
       }
       case "hold":

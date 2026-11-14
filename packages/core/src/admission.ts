@@ -10,7 +10,7 @@ import { routeFires } from "./intents/route";
 import type { Au, Head, ReasonCode, Ref } from "./schema/primitives";
 import type { PermitKind } from "./schema/records";
 import type { SafeTurn, Stamp, W } from "./schema/wire";
-import { ALONE_LINE, COMPANY_LINE, type FixedLine, RECOVERY_LINE } from "./voice/lines";
+import { ALONE_LINE, type AckText, COMPANY_LINE, RECOVERY_LINE } from "./voice/lines";
 import type { TurnWrite } from "./writes/types";
 
 export const PERMIT_TTL_MS = 10_000;
@@ -57,7 +57,7 @@ export type RuleOutcome =
       /** `ack`: the browser creates the reply with no tools (question 88). */
       scope: "reply" | "ack";
       notes: NotesAllowed;
-      line: FixedLine | null;
+      line: AckText | null;
       swap: "none" | "afterReply";
       /** This outcome stops a playing reply. */
       cut: boolean;
@@ -75,7 +75,7 @@ export type RuleOutcome =
       forget?: true;
     };
 
-const permit = (p: PermitKind, scope: "reply" | "ack", notes: NotesAllowed, cut: boolean, extra: { line?: FixedLine; swap?: "afterReply"; reasons?: ReasonCode[] } = {}): RuleOutcome => ({
+const permit = (p: PermitKind, scope: "reply" | "ack", notes: NotesAllowed, cut: boolean, extra: { line?: AckText; swap?: "afterReply"; reasons?: ReasonCode[] } = {}): RuleOutcome => ({
   kind: "permit",
   permit: p,
   scope,
