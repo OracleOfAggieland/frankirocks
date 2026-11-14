@@ -74,7 +74,7 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
           return refused;
         }
         // Brief 048 ruling 11: a "gone" with no receipt in its turn still asks; a forget's acknowledgment has one.
-        const check = goneCheck(req) === "pending" && (await ackDeliveredAs(tx, uid, req.stamp, req.text, deps.hasher)) ? "none" : goneCheck(req);
+        const check = goneCheck(req) === "pending" && (await ackDeliveredAs(tx, deps.store, uid, req.stamp, req.text, deps.hasher)) ? "none" : goneCheck(req);
         const accepted: ReceiptRes = { accepted: true, controlCheck: check };
         const live = s.status === "minting" || s.status === "active";
 

@@ -51,7 +51,7 @@ import { holdCarried, inheritCandidates, inheritedSession, narrowestInherited, s
 import { checkOpenVisit } from "./open-visit";
 import { openingProactive } from "./delivery-wire";
 // Brief 048: the forget's acknowledgment on a fresh call.
-import { ackRule, ackTurnId, dueAcks, readAckCandidates, takeDueAck } from "../forget/ack";
+import { ackRule, ackTurnId, dueAcks, outsideTx, readAckCandidates, takeDueAck } from "../forget/ack";
 
 /**
  * Server time for one open, from runRoute's first line to the answer. The browser gives the whole request 5 s
@@ -160,8 +160,8 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
     const { response, prior, stamp, session, narrow } = await deps.store.transaction(uid, async (tx) => {
       // The request entry is read with the core documents, in the same round trip: `completeRequest` reads it again
       // at the end, which the transaction answers from what it already read (the tail reserve's count, below).
-      // Brief 048 ruling 7: the pending acknowledgments are read in the same round trip.
-      const [core, , ackCandidates] = await Promise.all([readCoreDocs(tx, uid), tx.get(key.path), readAckCandidates(tx, uid)]);
+      // Brief 048 ruling 7: the pending acknowledgments are read in the same round trip, outside the transaction (`outsideTx`).
+      const [core, , ackCandidates] = await Promise.all([readCoreDocs(tx, uid), tx.get(key.path), readAckCandidates(outsideTx(deps.store, uid), uid)]);
       const ops = deps.clock.read().opsClock.now;
       if (core.epoch.data.barrier !== null) {
         const blocked: OpenRes = { sessionId, generation: 0, deck: null, state: "blocked", ack: null, proactive: null, audience: null };

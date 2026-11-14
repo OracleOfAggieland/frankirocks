@@ -25,7 +25,7 @@ import type { Tx } from "../store/port";
 import { type TurnClass, userTurnRecords } from "../turns";
 import { ensureHangupJob } from "../worker/hangup";
 import { fenceInTx } from "./fence";
-import { ackRule, ackTurnId, dueAcks, readAckCandidates, takeDueAck } from "./ack";
+import { ackRule, ackTurnId, dueAcks, outsideTx, readAckCandidates, takeDueAck } from "./ack";
 
 type TurnRes = Infer<typeof TurnResponse>;
 
@@ -132,7 +132,7 @@ export async function ackTypedForget(ctx: RouteContext, f: ForgetTurnResult): Pr
   const { uid, deps } = ctx;
   if (f.response.permit === null || f.response.permit.scope !== "ack" || f.response.notes.length > 0) return f.response;
   return deps.store.transaction(uid, async (tx) => {
-    const [candidates, entry, epoch] = await Promise.all([readAckCandidates(tx, uid), tx.get<RequestEntry>(f.key.path), tx.get<CoreEpoch>(paths.core(uid, "epoch"))]);
+    const [candidates, entry, epoch] = await Promise.all([readAckCandidates(outsideTx(deps.store, uid), uid), tx.get<RequestEntry>(f.key.path), tx.get<CoreEpoch>(paths.core(uid, "epoch"))]);
     const due = await dueAcks(tx, uid, candidates.filter((c) => c.opId === f.opId), deps.hasher);
     if (due.length === 0 || entry === null || epoch === null) return f.response;
     const ops = deps.clock.read().opsClock.now;
@@ -162,7 +162,7 @@ export async function typedAckOnState(
 ): Promise<Proactive | null> {
   const { uid, deps } = ctx;
   if (x.session.callId !== null || x.session.registeredCallIds.length > 0) return null;
-  const candidates = await readAckCandidates(tx, uid);
+  const candidates = await readAckCandidates(outsideTx(deps.store, uid), uid);
   if (candidates.length === 0) return null;
   const due = await dueAcks(tx, uid, candidates, deps.hasher);
   if (due.length === 0) return null;
