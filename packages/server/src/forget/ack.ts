@@ -15,7 +15,7 @@
 import { type AckText, type Au, FORGET_ACK_TEXTS, type Hasher, type ID, type Job, type Ledger, type RuleInput, forgetAckText, tsFromMs } from "@franki/core";
 import { cFields } from "../records";
 import { paths } from "../store/paths";
-import type { Tx } from "../store/port";
+import type { StorePort, Tx } from "../store/port";
 import { forgetJobId, forgetReceiptId } from "./fence";
 
 type ForgetAck = NonNullable<Extract<Job["payload"], { kind: "forget" }>["ack"]>;
@@ -35,7 +35,16 @@ export interface AckCandidate {
   receipt: Receipt;
 }
 
-/** The latest receipts whose `blockedAt` is set: one query (Q33), run beside the reader's first reads. */
+/**
+ * A reader for `readAckCandidates` that is outside any transaction. The receipts query must never run inside a
+ * route's transaction: a query there holds the ledger against an Extract_Job's commit, and on the emulator the two
+ * wait on each other until one aborts (tests/firestore/open-retry.test.ts, the `collide` scenario; brief 005 found
+ * the same with Memories). A receipt read a moment early is harmless: the delivery row is still read and written in
+ * the transaction, so the acknowledgment is said once.
+ */
+export const outsideTx = (store: Pick<StorePort, "query">, uid: string): Pick<Tx, "query"> => ({ query: (spec) => store.query(uid, spec) });
+
+/** The latest receipts whose `blockedAt` is set: one query (Q33), run beside the reader's first reads, outside the transaction. */
 export async function readAckCandidates(tx: Pick<Tx, "query">, uid: string): Promise<AckCandidate[]> {
   const rows = await tx.query<Ledger>({
     collection: paths.collection(uid, "ledger"),
@@ -139,9 +148,9 @@ export const ackTurnId = (hasher: Hasher, sessionId: string, due: readonly AckCa
  * as, in its exact words: the merged acknowledgment of the jobs whose delivery rows name that turn. Anything else that
  * says gone has no receipt here and still asks (fails closed).
  */
-export async function ackDeliveredAs(tx: Pick<Tx, "get" | "query">, uid: string, turn: { sessionId: string; turnId: string }, text: string | null, hasher: Hasher): Promise<boolean> {
+export async function ackDeliveredAs(tx: Pick<Tx, "get">, store: Pick<StorePort, "query">, uid: string, turn: { sessionId: string; turnId: string }, text: string | null, hasher: Hasher): Promise<boolean> {
   if (text === null || !(FORGET_ACK_TEXTS as readonly string[]).includes(text.trim())) return false;
-  const candidates = await readAckCandidates(tx, uid);
+  const candidates = await readAckCandidates(outsideTx(store, uid), uid);
   const rows = await Promise.all(candidates.map((c) => tx.get<Ledger>(paths.ledger(uid, forgetAckId(c.opId, hasher)))));
   const mine = candidates.filter((_, i) => {
     const r = rows[i];
