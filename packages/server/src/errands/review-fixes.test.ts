@@ -5,6 +5,7 @@ import { receiptRoute } from "../routes/receipt";
 import { stateRoute } from "../routes/state";
 import { toolRoute } from "../routes/tool";
 import { turnRoute } from "../routes/turn";
+import { normalizeResponse } from "../openai/live";
 import { paths } from "../store/paths";
 import { ERRAND_OWNER as UID, type ErrandSetup, type PlannerStep, errandOf, errandReceipt, plannerRequests, poll, seedMail, errandSetup as setup, testMailAgent, tool } from "../testing/errand-agent";
 import { callRoute, patchRecord, recordingSchedule, runScheduled } from "../testing/fakes";
@@ -349,5 +350,50 @@ describe("R2: the poll says whether an errand agent is ready for the owner", () 
     const st = await callRoute(x.rig, stateRoute, poll(x));
     expect(st.status).toBe(200);
     expect(st.body.errands?.ready).toBe(false);
+  });
+});
+
+/** A planner response with these function_call items (raw, as the API sends them). */
+const callsResponse = (items: Record<string, unknown>[]) => normalizeResponse({ status: "completed", output: items } as never);
+const fcall = (id: string, extra: Record<string, unknown> = {}) => ({ type: "function_call", status: "completed", call_id: id, name: "search_mail", arguments: JSON.stringify({ query: "plumber" }), ...extra });
+const answered = { outcome: "answered" as const, lines: [{ text: FOUND, refs: ["r1"] }] };
+/** Every function_call in a request's input has exactly one output, and every output a call. */
+function paired(input: { type?: string; call_id?: string }[]): boolean {
+  const calls = input.filter((i) => i.type === "function_call").map((i) => i.call_id);
+  const outs = input.filter((i) => i.type === "function_call_output").map((i) => i.call_id);
+  return calls.length === outs.length && calls.every((c) => outs.filter((o) => o === c).length === 1);
+}
+
+describe("R3: every function call sent back has its output", () => {
+  it("FakeOpenAI refuses a request with a call and no output, as the API does", async () => {
+    const x = await setup([]);
+    await expect(x.rig.openai.call("responses.create", { input: [fcall("c1")] })).rejects.toThrow(/unpaired/);
+    await expect(x.rig.openai.call("responses.create", { input: [{ type: "function_call_output", call_id: "c1", output: "{}" }] })).rejects.toThrow(/unpaired/);
+  });
+
+  it("a call the loop skips (incomplete, or past the per-response cap) is answered with an error output", async () => {
+    const items = [fcall("c1"), fcall("c2", { status: "incomplete" }), ...Array.from({ length: 17 }, (_, i) => fcall(`d${i}`))];
+    const x = await setup([{ raw: callsResponse(items) }, answered]);
+    await callRoute(x.rig, toolRoute, tool(x));
+    await runScheduled(x.rig);
+    const reqs = plannerRequests(x.rig);
+    expect(reqs).toHaveLength(2);
+    expect(paired((reqs[1]!.body as { input: never[] }).input)).toBe(true);
+    expect((await errandOf(x))?.outcome).toBe("answered");
+  });
+});
+
+describe("R6: past the tool-call limit the calls get error outputs and the planner must answer", () => {
+  it("eleven calls in one response: ten run, one is refused, and the next request allows no tools", async () => {
+    const x = await setup([{ raw: callsResponse(Array.from({ length: 11 }, (_, i) => fcall(`c${i}`))) }, answered]);
+    await callRoute(x.rig, toolRoute, tool(x));
+    await runScheduled(x.rig);
+    const reqs = plannerRequests(x.rig);
+    expect(reqs).toHaveLength(2);
+    const next = reqs[1]!.body as { input: { type?: string; output?: string }[]; tool_choice: string };
+    expect(paired(next.input as never)).toBe(true);
+    expect(next.input.filter((i) => i.type === "function_call_output" && /limit/i.test(i.output ?? ""))).toHaveLength(1);
+    expect(next.tool_choice).toBe("none");
+    expect((await errandOf(x))?.outcome).toBe("answered");
   });
 });

@@ -249,13 +249,15 @@ async function helper(ctx: RouteContext, lease: Lease, errand: Errand, start: nu
   const now = () => deps.clock.read().opsClock.now;
   const left = () => start + ERRAND_WALL_MS - now();
 
+  // Review fix R6: once a call was refused for the tool-call limit, the next model call must answer.
+  let mustAnswer = false;
   while (modelCalls < ERRAND_MODEL_CALLS_MAX) {
     if (left() <= 0) return run({ kind: "failed", why: "limit" });
     await step(ctx, lease, errandId, null, true);
     modelCalls++;
     let out: ResponsesResult;
     try {
-      const body = plannerRequest(model, input, tools, modelCalls === ERRAND_MODEL_CALLS_MAX);
+      const body = plannerRequest(model, input, tools, modelCalls === ERRAND_MODEL_CALLS_MAX || mustAnswer);
       out = (await withDeadline(deps.openai.call("responses.create", body), Math.min(ERRAND_MODEL_CALL_MS, left()), deps.timers)) as ResponsesResult;
     } catch {
       return run({ kind: "failed", why: "model" });
@@ -266,9 +268,21 @@ async function helper(ctx: RouteContext, lease: Lease, errand: Errand, start: nu
       const parsed = out.refusal === null ? parsePlannerOutput(out.outputText) : null;
       return run(parsed === null ? { kind: "failed", why: "parse" } : { kind: "done", outcome: parsed.outcome, lines: parsed.lines });
     }
-    input.push(...(out.outputItems ?? []).slice(0, ERRAND_OUTPUT_ITEMS_MAX));
-    for (const call of calls) {
-      if (toolCalls >= ERRAND_TOOL_CALLS_MAX || left() <= 0) return run({ kind: "failed", why: "limit" });
+    // Review fix R3: every function call sent back gets exactly one output; one the loop does not run gets an error.
+    const sent = pairedItems(out.outputItems ?? [], calls);
+    input.push(...sent.items);
+    for (const call of sent.calls) {
+      if (!call.run) {
+        input.push({ type: "function_call_output", call_id: call.callId, output: toolError(NOT_RUN_ERROR) });
+        continue;
+      }
+      // Review fix R6: past the limit, an error output, and the next model call answers with what it has.
+      if (toolCalls >= ERRAND_TOOL_CALLS_MAX) {
+        input.push({ type: "function_call_output", call_id: call.callId, output: toolError(LIMIT_ERROR) });
+        mustAnswer = true;
+        continue;
+      }
+      if (left() <= 0) return run({ kind: "failed", why: "limit" });
       toolCalls++;
       await step(ctx, lease, errandId, reads, true);
       const output = await runTool(ctx, errandId, tools, call, words, reads, now() + Math.min(ERRAND_TOOL_CALL_MS, left()), taint);
@@ -277,6 +291,47 @@ async function helper(ctx: RouteContext, lease: Lease, errand: Errand, start: nu
     await step(ctx, lease, errandId, reads, false);
   }
   return run({ kind: "failed", why: "limit" });
+}
+
+/** Review fixes R3 and R6: the error outputs, worded by code and wrapped as data like every tool output. */
+export const NOT_RUN_ERROR = "This call was not run.";
+export const LIMIT_ERROR = "The tool-call limit was reached. Answer now with what you have.";
+const toolError = (error: string) => JSON.stringify({ note: TOOL_OUTPUT_NOTE, data: { error } });
+
+interface SentCall {
+  callId: string;
+  name: string;
+  arguments: string;
+  /** False for a call the port did not pass on (incomplete, too long, or past its per-response cap). */
+  run: boolean;
+}
+
+/**
+ * Review fix R3: the response's output items as they go back (bounded), each `function_call` with a string call ID
+ * kept and listed, and a complete call the bound cut appended, so the caller can give each one exactly one output.
+ * A `function_call` with no call ID can't be answered, so it is not sent back.
+ */
+export function pairedItems(outputItems: readonly unknown[], calls: readonly { callId: string; name: string; arguments: string }[]): { items: unknown[]; calls: SentCall[] } {
+  const items: unknown[] = [];
+  const listed: SentCall[] = [];
+  const known = new Map(calls.map((c) => [c.callId, c]));
+  for (const raw of outputItems.slice(0, ERRAND_OUTPUT_ITEMS_MAX)) {
+    const i = raw as { type?: unknown; call_id?: unknown; name?: unknown; arguments?: unknown };
+    if (i?.type !== "function_call") {
+      items.push(raw);
+      continue;
+    }
+    if (typeof i.call_id !== "string" || listed.some((c) => c.callId === i.call_id)) continue;
+    items.push(raw);
+    const c = known.get(i.call_id);
+    listed.push(c === undefined ? { callId: i.call_id, name: String(i.name), arguments: "", run: false } : { ...c, run: true });
+  }
+  for (const c of calls) {
+    if (listed.some((x) => x.callId === c.callId)) continue;
+    items.push({ type: "function_call", call_id: c.callId, name: c.name, arguments: c.arguments });
+    listed.push({ ...c, run: true });
+  }
+  return { items, calls: listed };
 }
 
 /** The union of the agents' tools; a name two agents share is taken from the first (fails closed: no merge). */

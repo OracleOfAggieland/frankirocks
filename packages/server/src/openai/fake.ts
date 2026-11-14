@@ -29,6 +29,24 @@ export class FakeOpenAIUnscriptedError extends Error {
   }
 }
 
+/**
+ * Review fix R3 of brief 049: the Responses API refuses an input whose `function_call` items and
+ * `function_call_output` items do not pair one to one by `call_id`, and so does the fake. Null when they pair.
+ */
+export function unpairedCall(body: unknown): string | null {
+  const input = (body as { input?: unknown } | null)?.input;
+  if (!Array.isArray(input)) return null;
+  const calls = new Map<string, number>();
+  const outs = new Map<string, number>();
+  for (const i of input as { type?: unknown; call_id?: unknown }[]) {
+    if (i?.type === "function_call") calls.set(String(i.call_id), (calls.get(String(i.call_id)) ?? 0) + 1);
+    if (i?.type === "function_call_output") outs.set(String(i.call_id), (outs.get(String(i.call_id)) ?? 0) + 1);
+  }
+  for (const [id, n] of calls) if (outs.get(id) !== n) return id;
+  for (const [id, n] of outs) if (calls.get(id) !== n) return id;
+  return null;
+}
+
 export class FakeOpenAI implements OpenAIPort {
   readonly requests: RecordedRequest[] = [];
   private readonly queues = new Map<OpenAIEndpoint, ScriptedResult[]>();
@@ -68,6 +86,8 @@ export class FakeOpenAI implements OpenAIPort {
 
   call(endpoint: OpenAIEndpoint, body: unknown): Promise<unknown> {
     this.requests.push({ endpoint, body: structuredClone(body), index: this.requests.length });
+    const unpaired = endpoint === "responses.create" ? unpairedCall(body) : null;
+    if (unpaired !== null) return Promise.reject(new Error(`unpaired function call ${unpaired}: every function_call needs exactly one function_call_output`));
     const result = this.queues.get(endpoint)?.shift() ?? this.responders.get(endpoint)?.(structuredClone(body)) ?? this.fallbacks.get(endpoint);
     if (result === undefined) return Promise.reject(new FakeOpenAIUnscriptedError(endpoint));
     switch (result.kind) {
