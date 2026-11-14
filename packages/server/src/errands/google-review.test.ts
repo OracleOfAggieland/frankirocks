@@ -2,7 +2,7 @@
  * Brief 049 part C, review fixes (Nov 14): each finding's test, written to fail on the code the reviewers read. All
  * on fakes: FakeOpenAI, FakeGoogle, the fake clock.
  */
-import { ERRAND_HELD_LINE, ERRAND_ON_SCREEN_LINE, ERRAND_UNMAILED_MARKER, type Errand, errandFailedLine, errandNoticeLine, type ErrandRead, type Evidence } from "@franki/core";
+import { type Connector, ERRAND_SILENCE_MS, ERRAND_HELD_LINE, ERRAND_ON_SCREEN_LINE, ERRAND_UNMAILED_MARKER, type Errand, errandFailedLine, errandNoticeLine, type ErrandRead, type Evidence } from "@franki/core";
 import { errandCard } from "./card";
 import { errandResultCard, errandWords } from "./deliver";
 import { GoogleCallError } from "../google/port";
@@ -13,8 +13,12 @@ import { settle } from "../testing/fakes";
 import { ACCOUNT_EMAIL, gmailMessage } from "../testing/fake-google";
 import { dmarcPass, googleErrand, readerRequests, readerSays, toolHarness } from "../testing/google-errand";
 import { toolRoute } from "../routes/tool";
-import { callRoute, runScheduled } from "../testing/fakes";
-import { type PlannerStep, errandOf, scriptPlanner, tool } from "../testing/errand-agent";
+import { callRoute, patchRecord, runScheduled } from "../testing/fakes";
+import { type ErrandSetup, type PlannerStep, errandOf, poll, scriptPlanner, tool } from "../testing/errand-agent";
+import { testId } from "@franki/core/testing";
+import { stateRoute } from "../routes/state";
+import { googleDisconnectRoute } from "../google/routes";
+import { googleConnectorId } from "../google/connector";
 import { READER_CALL_MS, mailAgent } from "./google-agents";
 
 const search = mailAgent.tools.find((t) => t.name === "search_mail")!;
@@ -236,5 +240,49 @@ describe("T9, E6: 'It's on your screen' only when the card shows something to th
   });
   it("in private the same line shows, so 'on your screen' is true", () => {
     expect(errandWords(e, [v], "private").text).toBe(ERRAND_ON_SCREEN_LINE);
+  });
+});
+
+describe("T10, E10: a disconnect ends what an Errand found, and delivery rechecks the connector", () => {
+  const disconnect = (x: ErrandSetup, n: string) => callRoute(x.rig, googleDisconnectRoute, { requestId: testId(`gd-${n}`) });
+  async function ready() {
+    const g = await started();
+    g.google.messages.set("m1", gmailMessage("m1", { from: "Dana Park <dana@example.org>", subject: "Lease", text: "Due Friday.", headers: [dmarcPass("example.org")] }));
+    g.google.messages.set("s1", gmailMessage("s1", { from: `Owner <${ACCOUNT_EMAIL}>`, to: "dana@example.org", labels: ["SENT"], subject: "Re" }));
+    scriptPlanner(g.x.rig, [{ call: "search_mail", args: SEARCH }, { outcome: "answered", lines: [{ text: "The lease renewal is due Friday.", refs: ["r1"] }] }]);
+    return g;
+  }
+  it("a disconnect mid-run drops the Errand; nothing is said or shown", async () => {
+    const { x, google } = await ready();
+    google.during("listMessages", async () => {
+      expect((await disconnect(x, "mid")).status).toBe(200);
+    });
+    await runScheduled(x.rig);
+    expect((await errandOf(x))?.status).toBe("dropped");
+    x.rig.clock.advance(ERRAND_SILENCE_MS + 100);
+    const p = await callRoute(x.rig, stateRoute, poll(x));
+    expect(p.body.proactive ?? null).toBeNull();
+    expect(p.body.errands?.cards ?? []).toEqual([]);
+  });
+  it("a disconnect after the result is ready drops it before it is said", async () => {
+    const { x } = await ready();
+    await runScheduled(x.rig);
+    expect((await errandOf(x))?.status).toBe("ready");
+    expect((await disconnect(x, "after")).status).toBe(200);
+    x.rig.clock.advance(ERRAND_SILENCE_MS + 100);
+    const p = await callRoute(x.rig, stateRoute, poll(x));
+    expect(p.body.proactive ?? null).toBeNull();
+    expect(p.body.errands?.cards ?? []).toEqual([]);
+    expect((await errandOf(x))?.status).toBe("dropped");
+  });
+  it("another account on the connector (a new generation) stops delivery and the card", async () => {
+    const { x } = await ready();
+    await runScheduled(x.rig);
+    const id = googleConnectorId(x.rig.deps.hasher, ERRAND_OWNER, "gmail");
+    await patchRecord<Connector>(x.rig.store, ERRAND_OWNER, paths.connector(ERRAND_OWNER, id), { activeGeneration: 7 });
+    x.rig.clock.advance(ERRAND_SILENCE_MS + 100);
+    const p = await callRoute(x.rig, stateRoute, poll(x));
+    expect(p.body.proactive ?? null).toBeNull();
+    expect(p.body.errands?.cards ?? []).toEqual([]);
   });
 });

@@ -42,6 +42,8 @@ import { barrierError, dependencyError, inFlightError, originError, parseError, 
 import { mutation } from "../routes/mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "../routes/runtime";
 import { SealError, seal, unseal } from "../sealed";
+import { dropErrandsOf } from "../errands/forget";
+import { GOOGLE_AGENT_IDS } from "../errands/google-ids";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import { GOOGLE_ENV_VARS, type GoogleConfig, googleConfig } from "./config";
@@ -371,7 +373,10 @@ async function disconnectRun(ctx: RouteContext, req: GoogleDisconnectRequest, ke
     else tx.update(rowPath, { ...row, createdAt: prior.data.createdAt });
     return { kind: "claimed" as const, id: holder.id, sealed: holder.data.google!.token! };
   });
-  if (claim.kind === "answered") return claim.res;
+  if (claim.kind === "answered") {
+    await dropGoogleErrands(ctx);
+    return claim.res;
+  }
   if (claim.kind === "done") return completeWith(ctx, key, { google: await viewOf(ctx) });
 
   // Review S7: a token that can't be opened (the sealing key changed) can't be revoked. It is erased here anyway, and
@@ -400,13 +405,27 @@ async function disconnectRun(ctx: RouteContext, req: GoogleDisconnectRequest, ke
     }
   }
 
-  return deps.store.transaction(uid, async (tx) => {
+  const done = await deps.store.transaction(uid, async (tx) => {
     const res = await eraseAll(tx);
     await finishRow(ctx, rowPath, "complete", token === null ? "disconnectedUntold" : "disconnected", null, tx);
     await completeRequest(tx, key, res, nowOf(ctx));
     deps.log("google.disconnect", {});
     return res;
   });
+  await dropGoogleErrands(ctx);
+  return done;
+}
+
+/**
+ * Review fix T10 (ruling 18): a disconnect also drops the owner's Errands that read Google, running or waiting, as a
+ * forget does. Never fails the disconnect: delivery's connector recheck still drops anything this misses.
+ */
+async function dropGoogleErrands(ctx: RouteContext): Promise<void> {
+  try {
+    await dropErrandsOf(ctx.deps.store, ctx.uid, GOOGLE_AGENT_IDS, tsFromMs(nowOf(ctx)));
+  } catch {
+    ctx.deps.log("google.errandsNotDropped", {});
+  }
 }
 
 export function disconnectGoogle(ctx: RouteContext, req: GoogleDisconnectRequest): Promise<GoogleDisconnectResponse> {

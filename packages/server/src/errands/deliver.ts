@@ -35,6 +35,7 @@ import {
   ERRAND_RESULT_TTL_MS,
   ERRAND_SILENCE_MS,
   type Card,
+  type Connector,
   type Errand,
   type ErrandAbout,
   type ErrandMark,
@@ -144,6 +145,11 @@ async function errandsOnce(ctx: RouteContext, x: ErrandStateInput): Promise<Erra
       if (hasContent(e)) await move(ctx, r.id as ID, "strip");
       continue;
     }
+    // Review fix T10: a result whose connector was disconnected, expired or moved to another account is dropped.
+    if (e.status !== "running" && !(await connectorsReadable(ctx, e))) {
+      await move(ctx, r.id as ID, "forget");
+      continue;
+    }
     if (e.status === "running") await pickUp(ctx, r.id as ID);
     live.push(r);
   }
@@ -181,6 +187,16 @@ async function errandsOnce(ctx: RouteContext, x: ErrandStateInput): Promise<Erra
   // The card of a result just offered goes out with it, not a poll later (ruling 11).
   const card = cards.length >= ERRAND_CARDS_MAX ? null : cardOf(claimed.errand, due.id as ID, claimed.audience, claimed.modifiers);
   return { view: card === null ? view : { ...view, cards: [card, ...cards] }, proactive: claimed.proactive };
+}
+
+/** Review fix T10: every connector the Errand's reads came from is still connected, on the same account generation. */
+export async function connectorsReadable(ctx: RouteContext, e: Pick<Errand, "connectors">): Promise<boolean> {
+  if (e.connectors.length === 0) return true;
+  const docs = await Promise.all(e.connectors.map((c) => ctx.deps.store.get<Connector>(ctx.uid, paths.connector(ctx.uid, c.id))));
+  return e.connectors.every((c, i) => {
+    const d = docs[i]?.data ?? null;
+    return d !== null && d.state === "connected" && d.activeGeneration === c.generation;
+  });
 }
 
 /** Review fix T8: the unmailed senders' messages a notice card lists, by address and date. */

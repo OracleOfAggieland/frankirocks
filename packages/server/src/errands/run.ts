@@ -15,6 +15,7 @@
  *     (`checkErrandResult`), then writes the result in a transaction that rechecks the lease and the epoch.
  */
 import {
+  ERRAND_CONNECTORS_MAX,
   ERRAND_LEASE_MS,
   ERRAND_LINE_CHARS,
   ERRAND_MODEL_CALLS_MAX,
@@ -151,6 +152,18 @@ export function evidenceView(e: Evidence | null): { cls: Class | null; sens: Sen
 export async function refViews(ctx: RouteContext, reads: readonly ErrandRead[]): Promise<ErrandRefView[]> {
   const rows = await Promise.all(reads.map((r) => ctx.deps.store.get<Evidence>(ctx.uid, paths.evidence(ctx.uid, r.evidenceId))));
   return reads.map((r, i) => ({ ref: r.ref, source: r.source, ...evidenceView(rows[i]?.data ?? null) }));
+}
+
+/** Review fix T10: the distinct connectors behind a run's reads, with the account generation each row was read on. */
+export async function connectorsOf(ctx: RouteContext, reads: readonly ErrandRead[]): Promise<{ id: ID; generation: number }[]> {
+  const rows = await Promise.all(reads.map((r) => ctx.deps.store.get<Evidence>(ctx.uid, paths.evidence(ctx.uid, r.evidenceId))));
+  const out: { id: ID; generation: number }[] = [];
+  for (const d of rows) {
+    const e = d?.data ?? null;
+    if (e === null || e.connectorId === null) continue;
+    if (!out.some((c) => c.id === e.connectorId && c.generation === e.generation)) out.push({ id: e.connectorId as ID, generation: e.generation });
+  }
+  return out.slice(0, ERRAND_CONNECTORS_MAX);
 }
 
 /** Runs one claim of an Errand's Job. Never throws for a lost race, a model problem or a tool problem. */
@@ -500,6 +513,8 @@ async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readon
   }
   // Review fix T8: with no line left, code decides what was met and words it, not the planner.
   if (lines.length === 0 && !claimOnly) ({ outcome, notice } = noticeOf(outcome, flags));
+  // Review fix T10: which connectors (on which account generation) the rows it read came from.
+  const connectors = await connectorsOf(ctx, reads);
   // Review fix R1: the Gate's inputs are read once, here, and stored with the result; a poll rereads nothing.
   const gateInputs = lines.length === 0 ? null : await errandGateInputs(ctx, lease.jobId);
   // Review fix R11: the result's write retries a lost compare-and-set, rereading everything it checks.
@@ -525,6 +540,7 @@ async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readon
       reads: claimOnly ? errand.data.reads : [...reads],
       readyAt: now,
       gate: gateInputs,
+      connectors,
       // Review fix R12: what it found is kept for the wait and the card window, then stripped.
       retainUntil: tsFromMs(ops + ERRAND_RESULT_TTL_MS + ERRAND_CARD_KEEP_MS),
       updatedAt: now,

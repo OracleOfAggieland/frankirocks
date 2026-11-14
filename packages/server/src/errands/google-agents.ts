@@ -33,6 +33,7 @@ import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 import type { ErrandAgent, ErrandAvailability, ErrandTool, ErrandToolContext } from "./agent";
 import { evidenceView } from "./run";
+import { CALENDAR_AGENT_ID, MAIL_AGENT_ID } from "./google-ids";
 
 /** Ruling 23: at most this many words in a search. */
 export const SEARCH_WORDS_MAX = 5;
@@ -49,8 +50,7 @@ export const READER_PHRASE_CHARS = 80;
 /** The reader's own deadline, inside the tool's. */
 export const READER_CALL_MS = 6_000;
 
-export const MAIL_AGENT_ID = "google-mail";
-export const CALENDAR_AGENT_ID = "google-calendar";
+export { CALENDAR_AGENT_ID, MAIL_AGENT_ID };
 
 const MAIL_INSTRUCTIONS =
   "Mail agent. search_mail finds messages by sender, words, a time phrase or unread; it answers refs, senders, dates and some subjects, never bodies. read_mail reads one message found by this errand's own search and answers a short gist. Cite refs for every line.";

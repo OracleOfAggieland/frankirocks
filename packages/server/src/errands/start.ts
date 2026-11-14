@@ -151,6 +151,7 @@ export async function planErrand(ctx: RouteContext, x: { stamp: Stamp; turn: Tur
       offer: null,
       saidResponseId: null,
       gate: null,
+      connectors: [],
       retainUntil: tsFromMs(c.opsNow + ERRAND_RETAIN_MS),
     };
     const write = (w: Tx) => {

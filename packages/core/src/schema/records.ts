@@ -1174,6 +1174,9 @@ export function withConnectorDefaults(
 // of the same ID. The assignment is stored as Turn IDs, never words, so a forgotten Turn takes its words with it
 // (ruling 2). `reads` is the Evidence this Errand's tools actually read; a result line rests only on these (ruling 8).
 
+/** Review fix T10: connectors one Errand's reads may come from. */
+export const ERRAND_CONNECTORS_MAX = 4;
+
 export const ERRAND_STATUSES = ["running", "ready", "failed", "delivered", "cardOnly", "dropped"] as const;
 export type ErrandStatus = (typeof ERRAND_STATUSES)[number];
 
@@ -1265,6 +1268,11 @@ export const Errand = obj({
   saidResponseId: nullable(str(128, { min: 1 })),
   /** Review fix R1: the Gate's inputs, set at `finish`. */
   gate: nullable(ErrandGateInputs),
+  /**
+   * Review fix T10: the connectors (and their account generation) the rows it read came from, set at `finish`.
+   * Delivery and cards recheck each is still connected on that generation; one that isn't drops the Errand.
+   */
+  connectors: arr(obj({ id: ID, generation: nat() }), ERRAND_CONNECTORS_MAX),
   /**
    * Review fix R12: until when this row may hold what the Errand found (its lines, reads and Gate inputs). Past it the
    * row is stripped bare and this is null; a bare row holds nothing a forget has to drop.

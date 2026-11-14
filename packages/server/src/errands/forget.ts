@@ -57,6 +57,18 @@ export async function dropErrandsInTx(tx: Tx, uid: string, errandIds: readonly I
   return dropped;
 }
 
+/**
+ * Review fix T10: a disconnect drops every Errand of that owner run by one of `agentIds` that still holds anything
+ * (running, waiting, or carded), as a forget does. One bounded page (`ERRANDS_DROP_CHUNK` holding rows); a row it
+ * doesn't reach is still dropped by delivery's connector recheck.
+ */
+export async function dropErrandsOf(store: StorePort, uid: string, agentIds: readonly string[], now: string): Promise<number> {
+  const page: StoredDoc<Errand>[] = await store.query<Errand>(uid, holdingQuery(uid, ">=", tsFromMs(0), ERRANDS_DROP_CHUNK));
+  const ids = page.filter((r) => r.data.status !== "dropped" && r.data.agentIds.some((a) => agentIds.includes(a))).map((r) => r.id as ID);
+  if (ids.length === 0) return 0;
+  return store.transaction(uid, (tx) => dropErrandsInTx(tx, uid, ids, now));
+}
+
 /** Review fix R12: every Errand that holds anything, dropped a chunk per transaction, until none is left. */
 export async function dropAllErrands(store: StorePort, uid: string, now: string): Promise<number> {
   let total = 0;
