@@ -545,7 +545,7 @@ describe("R12: what an Errand found is kept only for its window, and a forget er
   const holding = async (x: ErrandSetup) => {
     const all: { data: Errand }[] = [];
     for (let after: string | null = null; ; ) {
-      const page = await x.rig.store.query<Errand>(UID, { collection: paths.collection(UID, "errands"), where: after === null ? [] : [{ field: "__name__", op: ">", value: after }], orderBy: { field: "__name__", dir: "asc" }, limit: 100 });
+      const page: { id: string; data: Errand }[] = await x.rig.store.query<Errand>(UID, { collection: paths.collection(UID, "errands"), where: after === null ? [] : [{ field: "__name__", op: ">", value: after }], orderBy: { field: "__name__", dir: "asc" }, limit: 100 });
       all.push(...page);
       if (page.length < 100) break;
       after = page[page.length - 1]!.id;
