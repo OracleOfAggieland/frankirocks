@@ -258,6 +258,8 @@ export function App() {
     signedIn?.sheet.clear();
     signedIn?.proactive.clear();
     signedIn?.callCards.clear();
+    // Review fix V6: the errands' cards and word go too; the next poll shows what is left.
+    signedIn?.errands.clear();
   };
 
   const signIn = async () => {

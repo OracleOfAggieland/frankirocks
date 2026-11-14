@@ -94,7 +94,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
   );
   const api = deps.api;
   const callCards = new CallCardShelf();
-  const errands = new ErrandShelf();
+  const errands = new ErrandShelf({ now: () => clock.mono() });
   const voice =
     deps.transcribeModel === null
       ? null
