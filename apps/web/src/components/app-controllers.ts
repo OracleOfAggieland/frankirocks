@@ -5,6 +5,7 @@ import type { Proactive } from "@franki/core";
 import type { ApiClient } from "../client/api";
 import type { BrowserClock } from "../client/clock";
 import { BankWatch } from "../client/bank-watch";
+import { GoogleWatch } from "../client/google-watch";
 import { CallCardShelf } from "../client/call-cards";
 import { CompanyTap } from "../client/company-tap";
 import { DebugPanelModel } from "../client/debug-panel";
@@ -60,6 +61,8 @@ export interface SignedInControllers {
   company: CompanyTap;
   /** Brief 046 part B: the bank sheet and its /api/bank/* calls. Sends nothing until the sheet is opened. */
   bank: BankWatch;
+  /** Brief 049 part B: the Google sheet and its /api/google/* calls. Sends nothing until the sheet is opened. */
+  google: GoogleWatch;
 }
 
 /**
@@ -185,8 +188,11 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
   }
   // Brief 046 part B. A start over keeps a connected bank (ruling 9), so the visit's reset leaves this alone.
   const bank = new BankWatch({ api, now: () => clock.mono(), newId: () => randomId() });
+  // Brief 049 part B. A start over keeps a connected Google account (ruling 22), as it keeps a bank.
+  const google = new GoogleWatch({ api, now: () => clock.mono(), newId: () => randomId() });
   return {
     bank,
+    google,
     typed,
     debug: deps.debug ? new DebugPanelModel({ api, clock }) : null,
     voice,

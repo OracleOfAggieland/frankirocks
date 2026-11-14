@@ -56,6 +56,9 @@ import { INITIAL_BANK, type BankState } from "../ui/bank/bank-machine";
 import { BankLinkHost } from "./bank/BankLinkHost";
 import { BankSheet } from "./bank/BankSheet";
 import { BankWayIn } from "./bank/BankWayIn";
+import { INITIAL_GOOGLE, type GoogleState } from "../ui/google/google-machine";
+import { GoogleSheet } from "./google/GoogleSheet";
+import { GoogleWayIn } from "./google/GoogleWayIn";
 // Brief 047 part D: the radio and its globe.
 import { createLiveRadio, createRadioHost, feedRadioVoice, radioHears } from "../client/radio-live";
 import type { RadioWatch } from "../client/radio-watch";
@@ -84,6 +87,8 @@ const NO_TAP: CompanyTapState = { company: false, sending: false, error: null };
 const noTap = (): CompanyTapState => NO_TAP;
 /** Brief 046 part B: the bank sheet while signed out: closed, nothing known. */
 const noBank = (): BankState => INITIAL_BANK;
+/** Brief 049 part B: the Google sheet while signed out: closed, nothing known. */
+const noGoogle = (): GoogleState => INITIAL_GOOGLE;
 /** Brief 047: the radio before its watch exists (the server render and the first client render): off. */
 const noRadio = (): RadioView => RADIO_OFF_VIEW;
 /** Brief 047: no radio watch during the server render. */
@@ -205,6 +210,14 @@ export function App() {
     const { bank } = signedIn;
     bank.start();
     return () => bank.stop();
+  }, [signedIn]);
+
+  // Brief 049 part B: the Google sheet sends nothing until it is opened, and drops everything on sign-out.
+  useEffect(() => {
+    if (signedIn === null) return;
+    const { google } = signedIn;
+    google.start();
+    return () => google.stop();
   }, [signedIn]);
 
   // The memory surfaces read once on sign-in, again after each answered typed line, and drop on sign-out (brief 020).
@@ -354,6 +367,9 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
   // Brief 046 part B: the bank sheet.
   const getBank = controllers?.bank.getSnapshot ?? noBank;
   const bankState = useSyncExternalStore(controllers?.bank.subscribe ?? noSubscribe, getBank, getBank);
+  // Brief 049 part B: the Google sheet.
+  const getGoogle = controllers?.google.getSnapshot ?? noGoogle;
+  const googleState = useSyncExternalStore(controllers?.google.subscribe ?? noSubscribe, getGoogle, getGoogle);
 
   // Brief 047: the radio, its globe panel, and the owner's sent lines it hears.
   const radioView = useSyncExternalStore(radio?.subscribe ?? noSubscribe, radio?.getSnapshot ?? noRadio, noRadio);
@@ -497,6 +513,27 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
       />
     </>
   );
+  // Brief 049 part B: the Google sheet's layer. Google's own window is opened by the watch, in the press.
+  const googleModel = controllers.google;
+  const googleLayer = (
+    <AnimatePresence>
+      {googleState.open ? (
+        <GoogleSheet
+          key="google-sheet"
+          presentation="sheet"
+          state={googleState}
+          zone={pair.worldClock.zone}
+          onClose={() => googleModel.close()}
+          onRetry={() => googleModel.retry()}
+          onConnect={() => googleModel.connect()}
+          onStopWaiting={() => googleModel.stopWaiting()}
+          onDisconnect={() => googleModel.askDisconnect()}
+          onYes={() => googleModel.confirmDisconnect()}
+          onNotNow={() => googleModel.notNow()}
+        />
+      ) : null}
+    </AnimatePresence>
+  );
   const sheetNote = sheetState.open && sheetState.items.length === 0 ? (sheetState.loading ? COPY.sheetData.loading : sheetState.failed ? COPY.sheetData.failed : COPY.memory.readout.empty) : null;
 
   return (
@@ -564,10 +601,16 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
         <>
           {sheetLayer}
           {bankLayer}
+          {googleLayer}
           {radioLayer}
         </>
       }
-      bank={<BankWayIn banks={bankState.banks} open={bankState.open} disabled={!takesInput} onOpen={() => bankModel.toggle()} />}
+      bank={
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <BankWayIn banks={bankState.banks} open={bankState.open} disabled={!takesInput} onOpen={() => bankModel.toggle()} />
+          <GoogleWayIn google={googleState.google} open={googleState.open} disabled={!takesInput} onOpen={() => googleModel.toggle()} />
+        </div>
+      }
       debug={debug === null ? null : <DebugArea debug={debug} typed={typed} voice={v} />}
       live={live}
     />
