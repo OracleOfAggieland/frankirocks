@@ -26,7 +26,7 @@ import { requireModel } from "../config/models";
 import { ownerClock, readCoreDocs } from "../core-docs";
 import { isReadableGoogle, readGoogleDocs } from "../google/connector";
 import { googleConfigured } from "../google/config";
-import { type GoogleReadContext, type MailHit, type ReaderText, freeTime, googleReadContext, listEvents, ownerHasMailed, readableMessage, searchMail } from "../google/read";
+import { type GoogleReadContext, type MailHit, type ReaderText, freeTime, googleReadContext, listEvents, readableMessage, searchMail, senderMailed } from "../google/read";
 import { storeReader } from "../head-build";
 import type { ResponsesResult } from "../openai/responses";
 import type { RouteContext } from "../routes/runtime";
@@ -247,12 +247,8 @@ const searchMailTool: ErrandTool = {
     const r = await searchMail(mem.g, q);
     if (!r.ok) return failure(r.why);
     // Review fix T11: the sent-mail checks run a few at a time, inside the tool's deadline.
-    const mailedOf = await mapLimit(r.value.hits, SENT_CHECKS_PARALLEL, async (h) => {
-      if (h.fromSelf) return true;
-      if (h.sender.address === null || ctx.signal.aborted) return false;
-      const m = await ownerHasMailed(mem.g, h.sender.address);
-      return m.ok && m.value;
-    });
+    // Review fix T1: mailed only on Gmail's DMARC pass, a sent message to that exact address, and no list mail.
+    const mailedOf = await mapLimit(r.value.hits, SENT_CHECKS_PARALLEL, async (h) => (ctx.signal.aborted ? h.fromSelf : senderMailed(mem.g, h)));
     const messages = [];
     for (const [i, h] of r.value.hits.entries()) {
       const mailed = mailedOf[i]!;
@@ -298,11 +294,7 @@ const readMailTool: ErrandTool = {
       return failure("The reader could not answer just now.");
     }
     if (out === null) return failure("The reader's answer did not parse.");
-    let mailed = false;
-    if (m.value.sender.address !== null) {
-      const known = await ownerHasMailed(mem.g, m.value.sender.address);
-      mailed = known.ok && known.value;
-    }
+    const mailed = await senderMailed(mem.g, m.value);
     // The gist is the message's text: shown, so the framework's taint follows the row's class.
     const ref = ctx.read({ evidenceId: eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: true, sender: { name: m.value.sender.name, address: m.value.sender.address ?? "", mailed }, source: mailSource(m.value, mailed) });
     if (ref === null) return failure("failed");

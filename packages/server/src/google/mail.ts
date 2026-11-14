@@ -45,6 +45,38 @@ export interface MailContent {
   bulk: boolean;
   unread: boolean;
   threadId: string;
+  /** Review T1: Gmail's own DMARC verdict for the From domain (`senderAuthOf`). */
+  senderAuth: "aligned" | "failed" | "unknown";
+}
+
+/** Review T1: the only authentication server whose verdict is read. */
+export const GMAIL_AUTHSERV_ID = "mx.google.com";
+
+/**
+ * Review T1: Gmail's DMARC verdict for the From domain. Only the first `Authentication-Results` header is read (Gmail
+ * adds its own above everything the message brought with it), and only when its authserv-id is `mx.google.com`.
+ * `aligned`: `dmarc=pass` with `header.from` equal to the From address's domain. `failed`: Gmail's header says
+ * anything else for DMARC. `unknown`: no such header, another server's, or no DMARC result in it.
+ */
+export function senderAuthOf(header: string | undefined, fromAddress: string | null): MailContent["senderAuth"] {
+  if (header === undefined) return "unknown";
+  // Comments in parentheses carry no verdict.
+  const v = header.replace(/\([^()]{0,400}\)/g, " ").toLowerCase();
+  const [id, ...results] = v.split(";").map((p) => p.trim());
+  if (id === undefined || id.split(/\s+/)[0] !== GMAIL_AUTHSERV_ID) return "unknown";
+  const dmarc = results.find((r) => /^dmarc=/.test(r));
+  if (dmarc === undefined) return "unknown";
+  const verdict = /^dmarc=([a-z]+)/.exec(dmarc)?.[1] ?? "";
+  const domain = /\bheader\.from=([a-z0-9.-]{1,253})(?=\s|$)/.exec(dmarc)?.[1] ?? null;
+  const fromDomain = fromAddress === null ? null : (fromAddress.split("@")[1] ?? null);
+  if (verdict === "pass" && domain !== null && fromDomain !== null && domain === fromDomain) return "aligned";
+  return verdict === "" ? "unknown" : "failed";
+}
+
+/** Review T1: list or bulk mail, by its headers or Gmail's category labels. */
+function bulkOf(h: Map<string, string>, labels: readonly string[]): boolean {
+  const precedence = (h.get("precedence") ?? "").trim().toLowerCase();
+  return h.has("list-id") || h.has("list-unsubscribe") || precedence === "list" || precedence === "bulk" || precedence === "junk" || labels.some((l) => BULK_LABELS.includes(l));
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -198,9 +230,10 @@ export function mailContent(m: GmailMessage): MailContent | null {
     recipient: recipientsOf(h),
     occurredAtMs,
     fromSelf: m.labelIds.includes("SENT"),
-    bulk: h.has("list-id") || h.has("list-unsubscribe") || m.labelIds.some((l) => BULK_LABELS.includes(l)),
+    bulk: bulkOf(h, m.labelIds),
     unread: m.labelIds.includes("UNREAD"),
     threadId: m.threadId,
+    senderAuth: senderAuthOf(h.get("authentication-results"), from.address),
   };
 }
 

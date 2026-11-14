@@ -55,6 +55,8 @@ export class FakeGoogle implements GooglePort {
   }
 
   /** Review T11: every call of a method can take virtual time, to test deadlines and parallel calls. */
+  /** Also match `from:`, words and times (see `matchesQuery`). */
+  fullQuery = false;
   slow: { timers: Timers; ms: (method: Method, args: unknown[]) => number } | null = null;
   /** Calls in flight now, and the most there ever were at once, per method. */
   inFlight = new Map<Method, number>();
@@ -109,7 +111,7 @@ export class FakeGoogle implements GooglePort {
   async listMessages(...args: Parameters<GooglePort["listMessages"]>) {
     this.take("listMessages", args);
     await this.hook("listMessages", args);
-    const all = this.listed ?? [...this.messages.values()].map((m) => ({ id: m.id, threadId: m.threadId }));
+    const all = this.listed ?? [...this.messages.values()].filter((m) => matchesQuery(m, args[1], this.fullQuery)).map((m) => ({ id: m.id, threadId: m.threadId }));
     return all.slice(0, Math.max(1, args[2]));
   }
   async getMessage(...args: Parameters<GooglePort["getMessage"]>) {
@@ -128,6 +130,45 @@ export class FakeGoogle implements GooglePort {
     const next = from + max < this.events.items.length ? String(from + max) : null;
     return structuredClone({ timeZone: this.events.timeZone, items, nextPageToken: next } satisfies EventList);
   }
+}
+
+const headerOf = (m: GmailMessage, name: string): string => {
+  const hs = (m.payload as { headers?: { name: string; value: string }[] }).headers ?? [];
+  return hs.filter((h) => h.name.toLowerCase() === name).map((h) => h.value).join(", ").toLowerCase();
+};
+const textOf = (m: GmailMessage): string => {
+  const parts = (m.payload as { parts?: { body?: { data?: string } }[] }).parts ?? [];
+  return parts.map((p) => (typeof p.body?.data === "string" ? Buffer.from(p.body.data, "base64url").toString("utf8") : "")).join(" ").toLowerCase();
+};
+
+/**
+ * Review (group 4): enough of Gmail's search for the tests: `in:sent`, `to:`, `from:`, quoted words (subject or
+ * body), `is:unread`, `after:`/`before:` (epoch seconds) and the always-added exclusions. A substring match, as loose
+ * as Gmail's own can be, so code that trusts the search alone is caught. Without `full`, only the folder, label
+ * and recipient filters apply (older tests script one message for any words).
+ */
+export function matchesQuery(m: GmailMessage, q: string, full = false): boolean {
+  const tokens = q.match(/-?[a-z]+:"[^"]*"|-?[a-z]+:\S+|"[^"]*"|\S+/g) ?? [];
+  const labels = m.labelIds;
+  for (const raw of tokens) {
+    const neg = raw.startsWith("-");
+    const t = neg ? raw.slice(1) : raw;
+    const [op, ...rest] = t.includes(":") && !t.startsWith('"') ? t.split(":") : ["", t];
+    const v = rest.join(":").replace(/^"|"$/g, "").toLowerCase();
+    let hit: boolean;
+    if (op === "in" && v === "sent") hit = labels.includes("SENT");
+    else if (op === "in") hit = labels.includes(v.toUpperCase());
+    else if (op === "category") hit = labels.includes(`CATEGORY_${v.toUpperCase()}`);
+    else if (op === "to") hit = `${headerOf(m, "to")}, ${headerOf(m, "cc")}`.includes(v);
+    else if (!full) continue;
+    else if (op === "is" && v === "unread") hit = labels.includes("UNREAD");
+    else if (op === "from") hit = headerOf(m, "from").includes(v);
+    else if (op === "after") hit = (m.internalDate ?? 0) >= Number(v) * 1000;
+    else if (op === "before") hit = (m.internalDate ?? 0) < Number(v) * 1000;
+    else hit = headerOf(m, "subject").includes(v) || textOf(m).includes(v);
+    if (hit === neg) return false;
+  }
+  return true;
 }
 
 const noGoogle = async (): Promise<never> => {

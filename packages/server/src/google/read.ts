@@ -79,6 +79,18 @@ export interface GoogleReadContext {
   mailed: Map<string, boolean>;
 }
 
+/**
+ * Review T1: a sender is "mailed" only when all three hold: Gmail's own DMARC verdict passed for the From domain;
+ * a sent message's To or Cc holds that exact address (`ownerHasMailed`); and the message is not list or bulk mail.
+ * The owner's own sent message counts as mailed (it is the owner's, class O). Anything else is unmailed.
+ */
+export async function senderMailed(g: GoogleReadContext, m: MailedInput): Promise<boolean> {
+  if (m.fromSelf) return true;
+  if (!m.authenticated || m.bulk || m.sender.address === null) return false;
+  const r = await ownerHasMailed(g, m.sender.address);
+  return r.ok && r.value;
+}
+
 export const googleReadContext = (route: RouteContext, epoch: number): GoogleReadContext => ({ route, epoch, tokens: new Map(), mailed: new Map() });
 
 /**
@@ -101,6 +113,10 @@ export interface MailHit {
   subject: string | null;
   fromSelf: boolean;
   unread: boolean;
+  /** Review T1: Gmail's own DMARC verdict passed for the From domain (`senderAuth: "aligned"`). */
+  authenticated: boolean;
+  /** Review T1: list or bulk mail. */
+  bulk: boolean;
 }
 
 /** One message's text for the tool-less reader. */
@@ -109,10 +125,17 @@ export interface ReaderText {
   sender: MailSender;
   at: string;
   subject: string | null;
+  /** Review T3: for the owner's own sent message, the owner's own part only; never the quoted part. */
   body: string;
   /** The stored body was cut at its bound, or the reader's cut shortened it. */
   cut: boolean;
+  fromSelf: boolean;
+  authenticated: boolean;
+  bulk: boolean;
 }
+
+/** What the "has the owner mailed this sender" verdict reads of a message (review T1). */
+export type MailedInput = Pick<MailHit, "sender" | "fromSelf" | "authenticated" | "bulk">;
 
 export interface EventRow {
   eid: string;
@@ -375,15 +398,22 @@ export function searchMail(g: GoogleReadContext, q: MailQuery): Promise<GoogleRe
       subject: cutTo(d.data.subject, MAIL_SUBJECT_ANSWER_CHARS),
       fromSelf: d.data.authorship === "self",
       unread: unread.get(d.data.providerKey ?? "") ?? false,
+      authenticated: d.data.senderAuth === "aligned",
+      bulk: d.data.route === "list",
     }));
     return { ok: true, value: { hits, read: hits.map((h) => h.eid), partial } };
   });
 }
 
+/** Review T1: sent messages fetched to check their recipients, per address. */
+export const SENT_CHECK_MAX = 1;
+
 /**
  * Review D11, for Part C's "senders the owner has mailed" rule: whether the owner has sent mail to exactly this
  * address. One bounded Gmail search of the owner's sent mail (`in:sent to:<address>`, one result), answered from
- * memory for the rest of the run. Nothing is stored. An address that isn't plainly one answers `invalid`.
+ * memory for the rest of the run. Review T1: the search alone is not trusted: the hit is fetched, and counts only
+ * when it carries Gmail's SENT label, a forget hasn't blocked it, and its To or Cc holds exactly this address.
+ * Nothing is stored. An address that isn't plainly one answers `invalid`.
  */
 export function ownerHasMailed(g: GoogleReadContext, address: string): Promise<GoogleRead<boolean>> {
   return guarded(async () => {
@@ -392,15 +422,28 @@ export function ownerHasMailed(g: GoogleReadContext, address: string): Promise<G
     const known = g.mailed.get(a);
     if (known !== undefined) return { ok: true, value: known };
     const rt = runtime(g);
-    const { token } = await accessFor(g, rt, "gmail");
+    const { deps, uid } = g.route;
+    const access = await accessFor(g, rt, "gmail");
+    const { token } = access;
     let refs: Awaited<ReturnType<typeof rt.port.listMessages>>;
     try {
-      refs = await rt.port.listMessages(token, `in:sent to:${a}`, 1);
+      refs = await rt.port.listMessages(token, `in:sent to:${a}`, SENT_CHECK_MAX);
     } catch {
-      g.route.deps.log("google.sentSearchFailed", {});
+      deps.log("google.sentSearchFailed", {});
       return fail("failed");
     }
-    const mailed = refs.length > 0;
+    const { keys } = await blockedKeys(storeReader(deps.store, uid), uid);
+    const wanted = refs.slice(0, SENT_CHECK_MAX).filter((r) => !keys.has(gmailProviderKey(deps.hasher, access.scope, r.id)));
+    const fetched = await Promise.allSettled(wanted.map((r) => rt.port.getMessage(token, r.id)));
+    if (wanted.length > 0 && fetched.every((f) => f.status === "rejected")) {
+      deps.log("google.sentSearchFailed", {});
+      return fail("failed");
+    }
+    const mailed = fetched.some((f) => {
+      if (f.status !== "fulfilled" || !f.value.labelIds.includes("SENT")) return false;
+      const c = mailContent(f.value);
+      return c !== null && c.recipient.includes(a);
+    });
     g.mailed.set(a, mailed);
     return { ok: true, value: mailed };
   });
@@ -448,6 +491,9 @@ export function readableMessage(g: GoogleReadContext, eid: string): Promise<Goog
         subject: cutTo(e.subject, MAIL_SUBJECT_ANSWER_CHARS),
         body: stored.slice(0, READER_BODY_CHARS),
         cut: e.parserVersion === GMAIL_PARSER_VERSION_CUT || stored.length > READER_BODY_CHARS,
+        fromSelf: e.authorship === "self",
+        authenticated: e.senderAuth === "aligned",
+        bulk: e.route === "list",
       },
     };
   });

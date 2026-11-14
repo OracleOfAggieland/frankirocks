@@ -2,10 +2,13 @@
  * Brief 049 part C, review fixes (Nov 14): each finding's test, written to fail on the code the reviewers read. All
  * on fakes: FakeOpenAI, FakeGoogle, the fake clock.
  */
+import type { Evidence } from "@franki/core";
 import { describe, expect, it } from "vitest";
+import { paths } from "../store/paths";
+import { ERRAND_OWNER } from "../testing/errand-agent";
 import { settle } from "../testing/fakes";
-import { gmailMessage } from "../testing/fake-google";
-import { googleErrand, readerRequests, readerSays, toolHarness } from "../testing/google-errand";
+import { ACCOUNT_EMAIL, gmailMessage } from "../testing/fake-google";
+import { dmarcPass, googleErrand, readerRequests, readerSays, toolHarness } from "../testing/google-errand";
 import { toolRoute } from "../routes/tool";
 import { callRoute } from "../testing/fakes";
 import { tool } from "../testing/errand-agent";
@@ -52,7 +55,7 @@ describe("T11: per-run state lives in the runner's scratch, never in the module"
   it("the sent-mail checks for up to 8 senders run in parallel, inside the tool's deadline", async () => {
     const { x, google } = await started();
     google.messages.clear();
-    for (let i = 1; i <= 8; i++) google.messages.set(`m${i}`, gmailMessage(`m${i}`, { from: `Sender ${i} <s${i}@example.org>`, subject: `Lease ${i}` }));
+    for (let i = 1; i <= 8; i++) google.messages.set(`m${i}`, gmailMessage(`m${i}`, { from: `Sender ${i} <s${i}@example.org>`, subject: `Lease ${i}`, headers: [dmarcPass("example.org")] }));
     google.slow = { timers: x.rig.timers, ms: (m, args) => (m === "listMessages" && String(args[1]).startsWith("in:sent") ? 2_000 : 0) };
     const h = toolHarness(x);
     const t0 = x.rig.clock.read().opsClock.now;
@@ -61,5 +64,56 @@ describe("T11: per-run state lives in the runner's scratch, never in the module"
     expect(x.rig.clock.read().opsClock.now - t0).toBeLessThan(8_000);
     expect(google.maxInFlight.get("listMessages")).toBeGreaterThan(1);
     expect(google.maxInFlight.get("listMessages")).toBeLessThanOrEqual(4);
+  });
+});
+
+describe("T1: a sender is mailed only on Gmail's DMARC pass, a sent message to that exact address, and no list mail", () => {
+  const DANA = "Dana Park <dana@example.org>";
+  const sentTo = (to: string) => gmailMessage("sent1", { from: `Owner <${ACCOUNT_EMAIL}>`, to, labels: ["SENT"], subject: "Re: lease", text: "Thanks!" });
+  async function verdict(inbound: Parameters<typeof gmailMessage>[1], sent: ReturnType<typeof gmailMessage> | null = sentTo("dana@example.org")) {
+    const { x, google } = await started();
+    google.messages.clear();
+    google.messages.set("m1", gmailMessage("m1", { subject: "Lease", text: "The lease renewal is due Friday.", ...inbound }));
+    if (sent !== null) google.messages.set("sent1", sent);
+    const h = toolHarness(x);
+    const out = (await settle(search.run(h.ctx, SEARCH), x.rig.clock, x.rig.timers)).value as { messages: Record<string, unknown>[] };
+    const read = h.reads.find((r) => r.source.kind === "mail" && r.cls === "T");
+    return { x, out, read, h };
+  }
+
+  it("a forged From with no authentication result is not mailed, even with sent mail to that address", async () => {
+    const { read } = await verdict({ from: DANA });
+    expect(read?.sender?.mailed).toBe(false);
+  });
+
+  it("only the first Authentication-Results, and only Gmail's own (mx.google.com), counts", async () => {
+    const forgedBelow = await verdict({ from: DANA, headers: [{ name: "Authentication-Results", value: "mx.google.com; dmarc=fail header.from=example.org" }, dmarcPass("example.org")] });
+    expect(forgedBelow.read?.sender?.mailed).toBe(false);
+    const otherServer = await verdict({ from: DANA, headers: [{ name: "Authentication-Results", value: "mx.evil.example; dmarc=pass header.from=example.org" }] });
+    expect(otherServer.read?.sender?.mailed).toBe(false);
+  });
+
+  it("a DMARC pass for another domain is not the From domain's", async () => {
+    const { read } = await verdict({ from: DANA, headers: [dmarcPass("evil.example")] });
+    expect(read?.sender?.mailed).toBe(false);
+  });
+
+  it("a sent message counts only when its To or Cc holds that exact address", async () => {
+    const { read } = await verdict({ from: DANA, headers: [dmarcPass("example.org")] }, sentTo("xdana@example.org"));
+    expect(read?.sender?.mailed).toBe(false);
+  });
+
+  it("list and bulk mail is never mailed", async () => {
+    const list = await verdict({ from: DANA, headers: [dmarcPass("example.org"), { name: "List-Id", value: "<news.example.org>" }] });
+    expect(list.read?.sender?.mailed).toBe(false);
+    const bulk = await verdict({ from: DANA, headers: [dmarcPass("example.org"), { name: "Precedence", value: "bulk" }] });
+    expect(bulk.read?.sender?.mailed).toBe(false);
+  });
+
+  it("all three hold: mailed, and the Evidence records senderAuth aligned", async () => {
+    const { x, read } = await verdict({ from: DANA, headers: [dmarcPass("example.org")] });
+    expect(read?.sender?.mailed).toBe(true);
+    const row = await x.rig.store.get<Evidence>(ERRAND_OWNER, paths.evidence(ERRAND_OWNER, read!.evidenceId));
+    expect(row?.data.senderAuth).toBe("aligned");
   });
 });

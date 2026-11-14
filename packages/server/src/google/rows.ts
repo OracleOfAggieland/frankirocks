@@ -101,7 +101,7 @@ function base(ctx: GoogleRowContext, logicalId: string, revisionOf: string | nul
 
 /**
  * One message's Evidence. Own sent mail is O, but quoted and forwarded text in it is T (`bodyQuoted`, review D4);
- * everything else is T. The sender's authentication is not checked.
+ * everything else is T. `senderAuth` is Gmail's own DMARC verdict for the From domain (review T1).
  */
 export function mailEvidence(eid: string, logicalId: string, revisionOf: string | null, messageId: string, m: MailContent, ctx: GoogleRowContext): Evidence {
   const { hasher, uid, keyScope } = ctx;
@@ -121,7 +121,8 @@ export function mailEvidence(eid: string, logicalId: string, revisionOf: string 
       senderAddressKey: m.senderAddress === null ? null : mailAddressKey(hasher, uid, m.senderAddress),
       recipientAddressKeys: m.recipient.map((a) => mailAddressKey(hasher, uid, a)),
       bulk: m.bulk,
-      senderAuth: "unknown",
+      // Review T1: Gmail's own DMARC verdict, recorded.
+      senderAuth: m.senderAuth,
     },
     hasher,
     { sensMin: LIVE_ROW_SENS, splitQuoted },
@@ -161,7 +162,7 @@ export function eventEvidence(eid: string, logicalId: string, revisionOf: string
 /** What makes two revisions the same: their content, never their IDs, revision counters or read times. */
 export function rowContentKey(e: Evidence): string {
   const o = e.observation.kind === "calendar" ? { ...e.observation, scheduleRev: 0 } : e.observation;
-  return canonicalJSON({ subject: e.subject, body: e.body, bodyOwn: e.bodyOwn, bodyQuoted: e.bodyQuoted, slices: e.fieldSlices.map((s) => [s.fieldPath, s.class, s.sens]), sender: e.sender, recipient: e.recipient, title: e.title, occurredAt: e.occurredAt, threadKey: e.threadKey, authorship: e.authorship, route: e.route, parserVersion: e.parserVersion, observation: o });
+  return canonicalJSON({ subject: e.subject, body: e.body, bodyOwn: e.bodyOwn, bodyQuoted: e.bodyQuoted, slices: e.fieldSlices.map((s) => [s.fieldPath, s.class, s.sens]), sender: e.sender, senderAuth: e.senderAuth, recipient: e.recipient, title: e.title, occurredAt: e.occurredAt, threadKey: e.threadKey, authorship: e.authorship, route: e.route, parserVersion: e.parserVersion, observation: o });
 }
 
 /** The newest stored revision of one logical row (also for readers outside a transaction). */
