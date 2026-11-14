@@ -217,7 +217,7 @@ export const TEMPLATES = {
   /** The check-in after an occasion (spec §15 beat 2): a moment whisper from brief 024's `checkIn` template. */
   "occasion.checkin": whisperPattern("checkIn"),
   /** "Gone." after a forget (spec §8 step 7; brief 048 ruling 7): voice/lines.ts GONE_LINE or GONE_EXCEPT_RULE_LINE first. */
-  "forget.gone": /^Gone(.|, except one safety rule.)/,
+  "forget.gone": /^Gone(\.|, except one safety rule\. It's on your screen\.)/,
   /** Care before help on a hard disclosure (spec §15 beat 4). Persona and policy wording: brief 024. */
   "care.first": null,
 } as const satisfies Record<string, RegExp | null>;
