@@ -1,0 +1,117 @@
+/*
+ * The power button: the call button's start form and the parts around it (CallScreen.tsx). Loops animate only
+ * transform and opacity (lab-ui-foundation R10.5), run only under `prefers-reduced-motion: no-preference`, and
+ * carry .franki-anim, so a forced reduced specimen stops them and a hidden tab pauses them (R10.7). Hover runs
+ * only where a pointer can hover; keyboard focus does the same everywhere.
+ */
+@keyframes franki-power-breathe {
+  0%, 100% { opacity: 0.55; transform: scale(0.94); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+@keyframes franki-power-pilot {
+  0%, 100% { opacity: 0.35; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.25); }
+}
+@keyframes franki-power-turn {
+  to { transform: rotate(360deg); }
+}
+@keyframes franki-power-turn-back {
+  to { transform: rotate(-360deg); }
+}
+@keyframes franki-power-pop {
+  from { opacity: 0; transform: scale(0.72); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes franki-power-ring-out {
+  from { opacity: 0.85; transform: scale(1); }
+  to { opacity: 0; transform: scale(1.7); }
+}
+@keyframes franki-power-flash {
+  0% { opacity: 0; }
+  14% { opacity: 0.95; }
+  100% { opacity: 0; }
+}
+
+/* At rest without motion: the aura and the pilot lamp hold a middle glow, the press parts stay unseen. */
+[data-power-aura] {
+  transition: transform var(--dur-base) var(--ease-ecto), opacity var(--dur-base) var(--ease-ecto);
+}
+[data-power-aura] > span { opacity: 0.8; }
+[data-power-pilot] {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0.6;
+}
+[data-power-dial] {
+  transition: transform var(--dur-base) var(--ease-ecto), opacity var(--dur-base) var(--ease-ecto);
+}
+[data-power-dial="off"] {
+  opacity: 0;
+  transform: scale(0.9);
+}
+[data-power-plasma] {
+  opacity: 0.4;
+  transition: opacity var(--dur-base) var(--ease-ecto);
+}
+[data-power-glow] {
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-ecto);
+}
+[data-power-chase] {
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-ecto);
+}
+/* The light is a comet: dark for most of the turn, brightening to a sharp head at twelve o'clock. */
+[data-power-chase-light] {
+  -webkit-mask-image: conic-gradient(transparent 0turn 0.58turn, black 1turn);
+  mask-image: conic-gradient(transparent 0turn 0.58turn, black 1turn);
+}
+[data-power-chase-light] > svg {
+  filter: drop-shadow(0 0 2px var(--color-ecto));
+}
+[data-power-flash],
+[data-power-shock],
+[data-power-ignite] {
+  opacity: 0;
+}
+
+/* Hover and focus: the aura swells, the core brightens and the plasma shows, the charge runs round the dial. */
+[data-call-bezel="round"]:has(> button:enabled:focus-visible) [data-power-aura] { transform: scale(1.12); }
+[data-call-bezel="round"]:has(> button:enabled:focus-visible) [data-power-glow] { opacity: 0.32; }
+[data-call-bezel="round"]:has(> button:enabled:focus-visible) [data-power-plasma] { opacity: 0.75; }
+[data-call-bezel="round"]:has(> button:enabled:focus-visible) [data-power-chase] { opacity: 1; }
+@media (hover: hover) {
+  [data-call-bezel="round"]:has(> button:enabled:hover) [data-power-aura] { transform: scale(1.12); }
+  [data-call-bezel="round"]:has(> button:enabled:hover) [data-power-glow] { opacity: 0.32; }
+  [data-call-bezel="round"]:has(> button:enabled:hover) [data-power-plasma] { opacity: 0.75; }
+  [data-call-bezel="round"]:has(> button:enabled:hover) [data-power-chase] { opacity: 1; }
+}
+/* Held down, the core flares a little more under the finger. */
+[data-call-bezel="round"]:has(> button:enabled:active) [data-power-glow] { opacity: 0.55; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The aura and the pilot lamp breathe with Franki's float. */
+  [data-power-aura] > span { animation: franki-power-breathe var(--dur-float) ease-in-out infinite; }
+  [data-power-pilot] { animation: franki-power-pilot var(--dur-float) ease-in-out infinite; }
+  /* Plasma turns once every drift period inside the glass. */
+  [data-power-plasma] > span { animation: franki-power-turn var(--dur-drift) linear infinite; }
+  /* The charge: the masked light turns while the ticks under it turn back, so only the light moves. */
+  [data-power-chase-light] { animation: franki-power-turn var(--dur-current) linear infinite paused; }
+  [data-power-chase-light] > svg { animation: franki-power-turn-back var(--dur-current) linear infinite paused; }
+  [data-call-bezel="round"]:has(> button:enabled:focus-visible) [data-power-chase-light],
+  [data-call-bezel="round"]:has(> button:enabled:focus-visible) [data-power-chase-light] > svg {
+    animation-play-state: running;
+  }
+  /* A new face springs in: the start form when a call ends, the squared form when one begins. */
+  [data-power-face] { animation: franki-power-pop var(--dur-base) cubic-bezier(0.34, 1.56, 0.64, 1) 1 both; }
+  [data-power-ignite] { animation: franki-power-ring-out calc(var(--dur-base) * 2) var(--ease-ecto) 1 both; }
+  /* The press, inside the ring spark: a flash in the glass and a shockwave off the ring. */
+  [data-power-flash] { animation: franki-power-flash calc(var(--dur-base) * 1.6) var(--ease-ecto) 1 both; }
+  [data-power-shock] { animation: franki-power-ring-out calc(var(--dur-base) * 1.8) var(--ease-ecto) 1 both; }
+}
+@media (prefers-reduced-motion: no-preference) and (hover: hover) {
+  [data-call-bezel="round"]:has(> button:enabled:hover) [data-power-chase-light],
+  [data-call-bezel="round"]:has(> button:enabled:hover) [data-power-chase-light] > svg {
+    animation-play-state: running;
+  }
+}

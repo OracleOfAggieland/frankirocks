@@ -9,6 +9,7 @@
 @import "../components/surfaces/instruments.css";
 @import "../components/surfaces/controls.css";
 @import "../components/screen/screen.css";
+@import "../components/screen/power.css";
 @import "../components/landing/landing.css";
 @import "../components/landing/stage.css";
 @import "../components/landing/lower.css";
@@ -311,10 +312,14 @@ body {
   animation: franki-kiro-fade var(--dur-ritual) linear 1 both;
 }
 
-/* The call button's ring spark (R10.4): one turn around the ring on press; never under reduced motion. */
+/*
+ * The call button's ring spark (R10.4): one turn around the ring on press; never under reduced motion. It holds
+ * full strength for most of the turn, so the comet's tail (power.css) reads, then fades as it comes home.
+ */
 @keyframes franki-ring-spark {
-  from { transform: rotate(0deg); opacity: 1; }
-  to { transform: rotate(360deg); opacity: 0; }
+  0% { transform: rotate(0deg); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: rotate(360deg); opacity: 0; }
 }
 .franki-ring-spark { opacity: 0; }
 @media (prefers-reduced-motion: no-preference) {

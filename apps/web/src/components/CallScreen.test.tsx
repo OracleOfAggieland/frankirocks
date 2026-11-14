@@ -187,3 +187,59 @@ describe("the call button's bezel and status lines (brief 015)", () => {
     expect(open).toMatch(/aria-label="Mute microphone"[^>]*class="[^"]*\bcol-start-3\b/);
   });
 });
+
+const POWER_CSS = readFileSync(join(__dirname, "screen/power.css"), "utf8");
+
+describe("the power button (Nov 13)", () => {
+  it("the lit start form sits on a dial with four rivets and a glowing pilot lamp, in an ecto aura", () => {
+    const on = screen(base);
+    expect(on).toContain('data-power-dial="on"');
+    expect(on).toContain('data-power-aura="ecto"');
+    expect(on).toContain("data-power-pilot");
+    expect(on).toContain("data-power-chase");
+    expect(on).toContain("data-power-plasma");
+    expect(on).toContain('data-power-glyph="lit"');
+    // Four rivets: each is a shadow and a brass dome.
+    expect(on.match(/r="1.9"/g)).toHaveLength(4);
+    // The dial and the aura are outside the button, so the hit area and focus ring stay as they were.
+    expect(callButtonHtml(on)).not.toMatch(/data-power-(dial|aura|chase)=/);
+  });
+
+  it("disabled, the lamp is cold, nothing charges or breathes, and the glyph is the unlit filament", () => {
+    const off = screen(base, false);
+    expect(off).toContain('data-power-dial="on"');
+    expect(off).not.toContain("data-power-aura");
+    expect(off).not.toContain("data-power-pilot");
+    expect(off).not.toContain("data-power-chase");
+    expect(off).not.toContain("data-power-plasma");
+    expect(off).toContain('data-power-glyph="dark"');
+  });
+
+  it("a live call hides the dial and keeps an ember aura; a hang-up in progress drops it", () => {
+    const live = screen(voice({ phase: "LISTENING" }));
+    expect(live).toContain('data-power-dial="off"');
+    expect(live).toContain('data-power-aura="ember"');
+    expect(live).toContain('data-power-face="hangup"');
+    expect(live).toContain("data-power-ignite");
+    expect(screen(voice({ phase: "LISTENING", hangingUp: true }))).not.toContain("data-power-aura");
+  });
+
+  it("every loop is a transform or opacity animation, runs only with motion allowed, and pauses with the page", () => {
+    const motion = /@media \(prefers-reduced-motion: no-preference\) \{([\s\S]*?)\n\}/.exec(POWER_CSS)?.[1] ?? "";
+    for (const name of ["franki-power-breathe", "franki-power-pilot", "franki-power-turn", "franki-power-pop", "franki-power-flash"]) {
+      expect(motion, name).toContain(`animation: ${name} `);
+    }
+    // No animation runs outside the motion queries.
+    const outside = POWER_CSS.replace(/@media \(prefers-reduced-motion: no-preference\)[^{]*\{[\s\S]*?\n\}/g, "");
+    expect(outside).not.toMatch(/animation:/);
+    // Keyframes change only transform and opacity.
+    for (const block of POWER_CSS.match(/@keyframes [\s\S]*?\n\}/g) ?? []) {
+      for (const [, prop] of block.matchAll(/([a-z-]+)\s*:/g)) expect(["transform", "opacity"], block).toContain(prop);
+    }
+    // Each animated element carries .franki-anim, so a forced reduced specimen stops it and a hidden tab pauses it.
+    const on = screen(base);
+    expect(on).toMatch(/data-power-pilot="" class="franki-anim"/);
+    expect(on).toMatch(/data-power-chase-light="" class="franki-anim/);
+    expect(on).toMatch(/data-power-face="start" class="franki-anim/);
+  });
+});

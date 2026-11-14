@@ -1,6 +1,8 @@
 // The App shell's wiring (lab-ui-foundation R4.6, R13.3, R14.1, R17.5, R18.5 to R18.8, R21), with a fake API
 // and fake sources. Replaces the Stand_In_Avatar's recovery check: `data-look="Recovery"` on the avatar.
 import { type VoiceState, initialVoiceState } from "@franki/core";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApiClient, ApiResult } from "../client/api";
@@ -105,6 +107,12 @@ function screenRig(initial: Partial<VoiceState>) {
 }
 
 describe("main-screen wiring", () => {
+  it("passes no chips and no walked-in tap to the main screen (owner, Nov 13)", () => {
+    const src = readFileSync(join(import.meta.dirname, "App.tsx"), "utf8");
+    expect(src).not.toMatch(/\bchips=\{/);
+    expect(src).not.toMatch(/<Chips\b|<CompanyToggle\b/);
+  });
+
   it("makes one coalesced announcement for a state and call change in the same frame", () => {
     const r = screenRig({});
     r.tick(0);
