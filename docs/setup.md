@@ -60,17 +60,18 @@ The owner connects Gmail and Google Calendar from the Google button at the foot 
 In the Google Cloud console, in a project you own:
 
 1. **APIs and services, Library:** enable the Gmail API and the Google Calendar API.
-2. **OAuth consent screen:** user type External, publishing status Testing. Add the scopes `openid`, `.../auth/userinfo.email`, `.../auth/gmail.readonly` and `.../auth/calendar.events.readonly`. Add every Google account that will connect as a test user. In Testing, Google ends each grant after seven days, and the sheet then asks for a new sign-in.
+2. **OAuth consent screen:** user type External, publishing status Testing. Add the scopes `openid`, `.../auth/userinfo.email`, `.../auth/gmail.readonly` and `.../auth/calendar.events.readonly`. Google may also answer `profile` from Franki's own Google sign-in; that is accepted, and any other extra scope refuses the grant. Add every Google account that will connect as a test user. In Testing, Google ends each grant after seven days, and the sheet then asks for a new sign-in.
 3. **Credentials, Create credentials, OAuth client ID:** application type Web application. Under Authorized redirect URIs add `http://localhost:3000/google/callback` and `https://franki-web--frankirocks.us-central1.hosted.app/google/callback`, one for each origin in `ALLOWED_ORIGINS` (`packages/server/src/auth/guard.ts`). The browser never calls Google itself, so no JavaScript origin is needed.
-4. Copy the client ID and the client secret into the two settings below.
+4. Copy the client ID and the client secret into the settings below, and set each deployment's redirect URI.
 
 | Variable | Kind | Value |
 | --- | --- | --- |
 | `GOOGLE_OAUTH_CLIENT_ID` | Plain value | The OAuth client ID, ending `.apps.googleusercontent.com`. Set it in `apps/web/apphosting.yaml` (empty there by default) and, for `npm run dev`, in `apps/web/.env.local` |
+| `GOOGLE_OAUTH_REDIRECT_URI` | Plain value | This deployment's one callback address: its origin plus `/google/callback`, exactly as registered on the OAuth client. `https://franki-web--frankirocks.us-central1.hosted.app/google/callback` in `apps/web/apphosting.yaml` (empty there by default), and `http://localhost:3000/google/callback` in `apps/web/.env.local`. Start refuses a request from any other origin, so a deployed server never hands out the localhost callback |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Secret | The OAuth client secret (`firebase apphosting:secrets:set GOOGLE_OAUTH_CLIENT_SECRET`), and in `apps/web/.env.local` for local work |
 | `FRANKI_BANK_TOKEN_KEY` | Secret | The bank's key, above. Changing it makes every stored Google token unreadable too |
 
-`npm run dev` copies only nonempty plain values from `apps/web/apphosting.yaml` (`scripts/sync-local-env.mjs`), so the empty client ID there never hides the one in `.env.local`. With either name unset or malformed, every Google route answers `CONFIG` and the sheet says Google isn't set up.
+`npm run dev` copies only nonempty plain values from `apps/web/apphosting.yaml` (`scripts/sync-local-env.mjs`), so the empty client ID and redirect URI there never hide the ones in `.env.local`. With any of these names unset or malformed, every Google route answers `CONFIG` and the sheet says Google isn't set up.
 
 Known gaps: no real Google call has been tested; everything runs against a scripted fake. Mail and events are read only when asked, never in the background, and Google sends no push notifications here.
 

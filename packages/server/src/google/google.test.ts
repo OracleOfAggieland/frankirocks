@@ -95,8 +95,9 @@ describe("start (ruling 15)", () => {
     expect(google.calls).toEqual([]);
   });
 
-  it("builds the redirect URI from the checked Origin, and refuses a request with no allowed Origin", async () => {
-    const { rig } = googleRig();
+  it("uses the configured redirect URI, and refuses a request with no allowed Origin", async () => {
+    // Review S2: the redirect URI is the deployment's configured value, which the Origin must match exactly.
+    const { rig } = googleRig({ ...TEST_ENV, ...GOOGLE_TEST_ENV, GOOGLE_OAUTH_REDIRECT_URI: "https://franki-web--frankirocks.us-central1.hosted.app/google/callback" });
     const hosted = "https://franki-web--frankirocks.us-central1.hosted.app";
     const res = await callRoute(rig, googleStartRoute, {}, { origin: hosted });
     expect(new URL(res.body.url).searchParams.get("redirect_uri")).toBe(`${hosted}/google/callback`);
@@ -115,7 +116,8 @@ describe("start (ruling 15)", () => {
 
 describe("connect (rulings 15 to 18)", () => {
   it("exchanges once with the stored redirect URI and the verifier behind the challenge, and saves both documents sealed", async () => {
-    const { rig, google } = googleRig();
+    // Review S2: the hosted deployment's own configured redirect URI.
+    const { rig, google } = googleRig({ ...TEST_ENV, ...GOOGLE_TEST_ENV, GOOGLE_OAUTH_REDIRECT_URI: "https://franki-web--frankirocks.us-central1.hosted.app/google/callback" });
     await ensureCoreDocs(OWNER, rig.deps);
     const start = await callRoute(rig, googleStartRoute, {}, { origin: "https://franki-web--frankirocks.us-central1.hosted.app" });
     const challenge = new URL(start.body.url).searchParams.get("code_challenge")!;

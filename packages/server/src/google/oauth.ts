@@ -5,10 +5,13 @@
  *   draft, label, or change an event.
  * - A state is 32 random bytes in base64url. Only its SHA-256 is stored, and the comparison is constant-time.
  * - A PKCE verifier is 32 random bytes in base64url (43 characters); its S256 challenge goes to Google.
- * - The redirect URI is the request's already-checked Origin plus `/google/callback`, fixed at start and reused at
- *   the exchange, never rebuilt from the connect request.
- * - Granted scopes are read from the token answer: mail and calendar connect independently, and a scope outside the
- *   list (other than Google's own names for `email`) refuses the whole grant.
+ * - The redirect URI is one configured value per deployment (`GOOGLE_OAUTH_REDIRECT_URI`); start refuses a request
+ *   whose Origin plus `/google/callback` is not exactly it. It is fixed at start and reused at the exchange, never
+ *   rebuilt from the connect request.
+ * - Granted scopes are read from the token answer: mail and calendar connect independently. Identity scopes (the
+ *   ones Franki's own Google sign-in may already hold, `profile` among them) are harmless extras; any other scope
+ *   outside the list refuses the whole grant. `include_granted_scopes=true` is still sent (G-296), so Google
+ *   answers the sign-in's own identity scopes too.
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
@@ -17,8 +20,10 @@ export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly";
 /** Ruling 16. Exactly these four, in this order. */
 export const GOOGLE_SCOPES = ["openid", "email", GMAIL_SCOPE, CALENDAR_SCOPE] as const;
-/** Names Google may answer for the identity scopes; they grant nothing beyond the address. */
-const IDENTITY_SCOPES = new Set(["openid", "email", "https://www.googleapis.com/auth/userinfo.email"]);
+/** Names Google may answer for the identity scopes; they grant nothing beyond the account's name and address. */
+const IDENTITY_SCOPES = ["openid", "email", "profile", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"] as const;
+/** Every scope a token answer may name and still be kept. Pinned by a test: nothing here can send or change. */
+export const ACCEPTED_SCOPES: ReadonlySet<string> = new Set<string>([GMAIL_SCOPE, CALENDAR_SCOPE, ...IDENTITY_SCOPES]);
 
 /** The page Google sends the browser back to. */
 export const CALLBACK_PATH = "/google/callback";
@@ -44,7 +49,7 @@ export function stateMatches(storedHash: string, presented: string): boolean {
   return a.length === 32 && b.length === 32 && timingSafeEqual(a, b);
 }
 
-/** The redirect URI for an origin the guard has already checked. */
+/** The redirect URI an origin would have (compared with the configured one at start). */
 export const redirectUriFor = (origin: string) => `${origin}${CALLBACK_PATH}`;
 
 export interface AuthorizationInput {
@@ -64,6 +69,8 @@ export function authorizationUrl(i: AuthorizationInput): string {
     state: i.state,
     access_type: "offline",
     prompt: "consent",
+    // Review S1 ruled this parameter out; it stays until the committed read-only property's pin of it may change
+    // (G-296). The identity scopes it brings back are accepted as harmless extras, so it no longer refuses a grant.
     include_granted_scopes: "true",
     code_challenge: i.challenge,
     code_challenge_method: "S256",
@@ -75,7 +82,7 @@ export type Granted = { mail: boolean; calendar: boolean } | "unexpected";
 
 /** What a token answer's `scope` granted. A scope outside the list refuses the grant (fails closed). */
 export function grantedOf(scope: readonly string[]): Granted {
-  for (const s of scope) if (s !== GMAIL_SCOPE && s !== CALENDAR_SCOPE && !IDENTITY_SCOPES.has(s)) return "unexpected";
+  for (const s of scope) if (!ACCEPTED_SCOPES.has(s)) return "unexpected";
   return { mail: scope.includes(GMAIL_SCOPE), calendar: scope.includes(CALENDAR_SCOPE) };
 }
 

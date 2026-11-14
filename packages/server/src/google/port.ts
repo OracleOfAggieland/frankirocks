@@ -167,7 +167,7 @@ export function googlePort(fetchFn?: GoogleFetch): GooglePort {
     return { authorization: `Bearer ${accessToken}`, accept: "application/json" };
   };
 
-  return {
+  const port: GooglePort = {
     async exchangeCode(config, x) {
       if (x.code === "" || x.code.length > 512 || x.verifier.length < 43 || x.verifier.length > 128) refuse();
       const data = await call(
@@ -177,7 +177,19 @@ export function googlePort(fetchFn?: GoogleFetch): GooglePort {
         form({ grant_type: "authorization_code", code: x.code, client_id: config.clientId, client_secret: config.clientSecret, redirect_uri: x.redirectUri, code_verifier: x.verifier }),
         "token",
       );
-      return { accessToken: s(data.access_token), refreshToken: sOrNull(data.refresh_token, 4096), scope: scopes(data.scope), idToken: sOrNull(data.id_token) };
+      const accessToken = s(data.access_token);
+      const refreshToken = sOrNull(data.refresh_token, 4096);
+      try {
+        return { accessToken, refreshToken, scope: scopes(data.scope), idToken: sOrNull(data.id_token) };
+      } catch (error) {
+        // Review S9: the exchange worked but its answer can't be read. The fresh grant must not outlive this call.
+        try {
+          await port.revoke(refreshToken ?? accessToken);
+        } catch {
+          // Best effort: the caller's outcome is unknown either way.
+        }
+        throw error;
+      }
     },
     async refresh(config, refreshToken) {
       if (!TOKEN_SHAPE.test(refreshToken)) refuse();
@@ -215,6 +227,7 @@ export function googlePort(fetchFn?: GoogleFetch): GooglePort {
       return { timeZone: zone, items: items.slice(0, EVENTS_LIST_MAX) };
     },
   };
+  return port;
 }
 
 export const liveGoogle: GooglePort = googlePort();

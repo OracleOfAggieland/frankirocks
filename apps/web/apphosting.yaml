@@ -100,6 +100,11 @@ env:
   # Google isn't set up. The refresh token is sealed under FRANKI_BANK_TOKEN_KEY, above.
   - variable: GOOGLE_OAUTH_CLIENT_ID
     value: ""
+  # The one redirect URI this deployment hands to Google (not a secret): this backend's origin plus /google/callback,
+  # here https://franki-web--frankirocks.us-central1.hosted.app/google/callback. Start refuses any request whose
+  # Origin doesn't match it exactly. Left empty, every /api/google/* route answers CONFIG.
+  - variable: GOOGLE_OAUTH_REDIRECT_URI
+    value: ""
   - variable: GOOGLE_OAUTH_CLIENT_SECRET
     secret: GOOGLE_OAUTH_CLIENT_SECRET
     availability: [RUNTIME]

@@ -7,12 +7,19 @@ import { GoogleCallError, type EventList, type GmailMessage, type GooglePort, ty
 import { BANK_TEST_KEY } from "./fake-bank";
 
 export const GOOGLE_CLIENT_ID = "1234567890-testclient.apps.googleusercontent.com";
-export const GOOGLE_TEST_ENV = { GOOGLE_OAUTH_CLIENT_ID: GOOGLE_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET: "GOCSPX-testsecret00000000", FRANKI_BANK_TOKEN_KEY: BANK_TEST_KEY };
+export const GOOGLE_TEST_ENV = {
+  GOOGLE_OAUTH_CLIENT_ID: GOOGLE_CLIENT_ID,
+  GOOGLE_OAUTH_CLIENT_SECRET: "GOCSPX-testsecret00000000",
+  FRANKI_BANK_TOKEN_KEY: BANK_TEST_KEY,
+  GOOGLE_OAUTH_REDIRECT_URI: "http://localhost:3000/google/callback",
+};
 export const REFRESH_TOKEN = "1//0gTESTREFRESHtoken-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
 export const ACCESS_TOKEN_G = "ya29.a0TESTaccess-token_0123456789";
 export const ACCOUNT_SUB = "109876543210987654321";
 export const ACCOUNT_EMAIL = "owner@example.com";
 export const ALL_SCOPES = ["openid", "https://www.googleapis.com/auth/userinfo.email", GMAIL_SCOPE, CALENDAR_SCOPE];
+/** Review S1: what Google may also answer when Franki's own Google sign-in already holds them. */
+export const SIGN_IN_SCOPES = ["profile", "https://www.googleapis.com/auth/userinfo.profile", "email"];
 
 const b64 = (o: object) => Buffer.from(JSON.stringify(o), "utf8").toString("base64url");
 /** An unsigned ID token shaped like Google's (the code never checks the signature; it came over TLS). */

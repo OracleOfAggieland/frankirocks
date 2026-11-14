@@ -8,7 +8,8 @@
  *   POST /api/google/disconnect  {requestId}                -> {google}
  *
  * Start stores one pending authorization on the owner's `gmail` document: the state's hash, the PKCE verifier sealed,
- * the redirect URI (the checked Origin plus /google/callback) and a 10-minute end. Connect consumes it in a
+ * the redirect URI (the configured `GOOGLE_OAUTH_REDIRECT_URI`, which must be the checked Origin plus
+ * /google/callback) and a 10-minute end. Connect consumes it in a
  * transaction before anything else, whatever the outcome, so a state is used at most once; a state that is another
  * owner's, used, superseded, expired or never issued answers 409 and reaches Google zero times. The exchange is made
  * once: a refusal fails the ledger row, an unknown outcome blocks it, and neither is retried. A grant that can't be
@@ -108,10 +109,11 @@ async function viewOf(ctx: RouteContext) {
 export async function googleStart(ctx: RouteContext): Promise<GoogleStartResponse> {
   const rt = googleRuntime(ctx);
   const { uid, deps } = ctx;
-  // The guard has checked it already; it is read again here because the redirect URI is built from it.
+  // Review S2: one redirect URI per deployment. The guard has checked the Origin already; it is read again here and
+  // must be exactly the configured URI's origin, so a production server never hands out another origin's callback.
   const origin = ctx.origin ?? null;
-  if (origin === null || !ALLOWED_ORIGINS.includes(origin)) throw originError();
-  const redirectUri = redirectUriFor(origin);
+  if (origin === null || !ALLOWED_ORIGINS.includes(origin) || redirectUriFor(origin) !== rt.config.redirectUri) throw originError();
+  const redirectUri = rt.config.redirectUri;
   const state = newState();
   const verifier = newVerifier();
   const now = nowOf(ctx);

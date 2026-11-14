@@ -75,7 +75,7 @@ npm run lint && npm run typecheck && npm run build
 
 `http://localhost:3000/specimens` shows every state of the ghost and every surface without calling anyone (development only).
 
-Keys, phone calls, the read-only bank and Google connections, and deploy are in [`docs/setup.md`](docs/setup.md). The Google connection needs an OAuth client of your own (Gmail and Calendar, read-only); the steps are there.
+Keys, phone calls, the read-only bank and Google connections, and deploy are in [`docs/setup.md`](docs/setup.md). The Google connection needs an OAuth client of your own (Gmail and Calendar, read-only) and one redirect URI per deployment (`GOOGLE_OAUTH_REDIRECT_URI`); the steps are there.
 
 ## Layout
 
