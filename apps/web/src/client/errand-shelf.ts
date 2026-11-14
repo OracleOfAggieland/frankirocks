@@ -22,8 +22,8 @@ export interface ErrandShelfDeps {
   setTimer: (fn: () => void, ms: number) => () => void;
 }
 
-const DEFAULT_DEPS: ErrandShelfDeps = {
-  now: () => (typeof performance === "undefined" ? Date.now() : performance.now()),
+/** The timer the app uses; the clock is always passed in (the app passes `clock.mono()`). */
+const DEFAULT_TIMER: Pick<ErrandShelfDeps, "setTimer"> = {
   setTimer: (fn, ms) => {
     const t = setTimeout(fn, ms);
     return () => clearTimeout(t);
@@ -37,8 +37,8 @@ export class ErrandShelf {
   private listeners = new Set<() => void>();
   private readonly deps: ErrandShelfDeps;
 
-  constructor(deps: Partial<ErrandShelfDeps> = {}) {
-    this.deps = { ...DEFAULT_DEPS, ...deps };
+  constructor(deps: Pick<ErrandShelfDeps, "now"> & Partial<ErrandShelfDeps>) {
+    this.deps = { ...DEFAULT_TIMER, ...deps };
   }
 
   subscribe = (listener: () => void): (() => void) => {

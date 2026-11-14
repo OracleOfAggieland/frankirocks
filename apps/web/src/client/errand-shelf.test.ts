@@ -8,7 +8,7 @@ const card = { id: "c1", kind: "source" as const, title: "From your mail", lines
 
 describe("errand shelf (brief 049 part A)", () => {
   it("shows the running word and the cards of the call's own Session, and tells listeners only on a change", () => {
-    const shelf = new ErrandShelf();
+    const shelf = new ErrandShelf({ now: () => 0 });
     let told = 0;
     shelf.subscribe(() => told++);
     shelf.onState(stamp, { ready: false, running: ["mail"], cards: [] });
@@ -21,7 +21,7 @@ describe("errand shelf (brief 049 part A)", () => {
   });
 
   it("a server without errands answers none; another Session clears; between calls only the word goes", () => {
-    const shelf = new ErrandShelf();
+    const shelf = new ErrandShelf({ now: () => 0 });
     shelf.onState(stamp, undefined);
     expect(shelf.getSnapshot().cards).toEqual([]);
     shelf.onState(stamp, { ready: false, running: ["mail", "calendar"], cards: [card] });
@@ -53,7 +53,7 @@ describe("errand shelf, review fix V6", () => {
   };
 
   it("an answer that carries no errands view (the server ran out of time) keeps what is shown", () => {
-    const shelf = new ErrandShelf();
+    const shelf = new ErrandShelf({ now: () => 0 });
     shelf.onState(stamp, { ready: false, running: ["mail"], cards: [card] });
     shelf.onState(stamp, undefined);
     expect(shelf.getSnapshot().cards).toHaveLength(1);
@@ -61,7 +61,7 @@ describe("errand shelf, review fix V6", () => {
   });
 
   it("a card the server no longer lists (dropped or forgotten) goes at once", () => {
-    const shelf = new ErrandShelf();
+    const shelf = new ErrandShelf({ now: () => 0 });
     shelf.onState(stamp, { ready: false, running: [], cards: [card] });
     shelf.onState(stamp, { ready: false, running: [], cards: [] });
     expect(shelf.getSnapshot().cards).toEqual([]);
@@ -79,7 +79,7 @@ describe("errand shelf, review fix V6", () => {
   });
 
   it("the forget clears the shelf (App's forget calls clear)", () => {
-    const shelf = new ErrandShelf();
+    const shelf = new ErrandShelf({ now: () => 0 });
     shelf.onState(stamp, { ready: false, running: ["mail"], cards: [card] });
     shelf.clear();
     expect(shelf.getSnapshot()).toBe(NO_ERRANDS_SHOWN);
