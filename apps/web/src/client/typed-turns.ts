@@ -15,6 +15,7 @@
 import {
   OpenResponse,
   type Proactive,
+  StateResponse,
   type Au,
   type SS,
   TurnResponse,
@@ -33,6 +34,15 @@ export const OPEN_TIMEOUT_MS = 5_000;
 export const MAX_TRANSCRIPT = 8192;
 /** clientSeq holds (a predecessor not yet committed) are retried this many times within the 10 s limit. */
 const MAX_HOLD_RETRIES = 8;
+/**
+ * Brief 048 ruling 8: a typed forget answered before its receipt's blockedAt was set carries no line. The client
+ * then asks the state route, once a second, at most this many times, for the acknowledgment it returns once.
+ */
+export const TYPED_ACK_POLL_MS = 1_000;
+export const TYPED_ACK_POLLS = 20;
+
+/** An answer that is a forget's with its acknowledgment still to come: an ack Permit and no note (admission row 11). */
+export const awaitsForgetAck = (res: Infer<typeof TurnResponse>): boolean => res.status === "ready" && res.permit !== null && res.permit.kind === "postCommitControl" && res.permit.scope === "ack" && res.notes.length === 0;
 
 export type ConversationEntry = { key: string; role: "user" | "franki"; text: string };
 
@@ -175,6 +185,7 @@ export class TypedTurns {
       this.set({ ...(fromBox ? { text: "", pasted: false } : {}), sending: false, error: null, entries });
       this.deps.onTurn?.({ sessionId: result.stamp.sessionId, turnId: result.stamp.turnId });
       this.deps.onReply?.({ transcript, lines: result.notes.map((n) => n.text), receiptId: result.receiptId });
+      if (awaitsForgetAck(result)) void this.watchForgetAck(ssOf(result.stamp), result.receiptId);
       return true;
     } catch {
       return this.fail("Not sent: something went wrong in the browser.");
@@ -221,6 +232,33 @@ export class TypedTurns {
     this.stamp = null;
     this.pending = null;
     this.set({ sessionId: null, lastClientSeq: 0 });
+  }
+
+  /**
+   * Brief 048 ruling 8: asks the state route for a typed forget's acknowledgment until it comes, the Session moves on,
+   * or TYPED_ACK_POLLS asks are spent. Shown as Franki's line, as a typed reply is. Nothing is shown before it comes.
+   */
+  private async watchForgetAck(stamp: SS, receiptId: string | null): Promise<void> {
+    for (let i = 0; i < TYPED_ACK_POLLS; i++) {
+      await this.sleep(TYPED_ACK_POLL_MS);
+      if (this.stamp === null || this.stamp.sessionId !== stamp.sessionId) return;
+      const r = await this.deps.api.call<unknown>("/api/session/state", {
+        body: { sessionId: stamp.sessionId, generation: stamp.generation, seen: { epoch: stamp.epoch, policyRev: stamp.policyRev, bundleRev: stamp.bundleRev, rulesRev: stamp.rulesRev }, ackStamp: null, speechStartedOpsAt: null },
+        timeoutMs: OPEN_TIMEOUT_MS,
+      });
+      // The barrier is still up: ask again. Any other failure ends the watch.
+      if (!r.ok) {
+        if (r.kind === "http" && r.error === "BARRIER") continue;
+        return;
+      }
+      const parsed = validate(StateResponse, r.body);
+      if (!parsed.ok) return;
+      const p = (parsed.value as Infer<typeof StateResponse>).proactive;
+      if (p === null || p.whisper.kind !== "ack") continue;
+      this.set({ entries: [...this.state.entries, { key: p.whisper.noteId, role: "franki", text: p.whisper.text }] });
+      this.deps.onReply?.({ transcript: "", lines: [p.whisper.text], receiptId });
+      return;
+    }
   }
 
   private fail(message: string): false {
