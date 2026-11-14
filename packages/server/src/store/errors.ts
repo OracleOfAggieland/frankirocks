@@ -19,3 +19,17 @@ export class StoreError extends Error {
 
 export const isStoreError = (e: unknown, code?: StoreErrorCode): e is StoreError =>
   e instanceof StoreError && (code === undefined || e.code === code);
+
+/**
+ * Re-runs `fn` when a concurrent writer wins the compare-and-set (bounded; the caller's own retry after that). Moved
+ * here from the state route for review fix R11 of brief 049, so the errand runner shares it; the route re-exports it.
+ */
+export async function retryStale<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (i >= attempts || !isStoreError(error, "staleRevision")) throw error;
+    }
+  }
+}

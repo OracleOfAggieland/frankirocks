@@ -11,6 +11,7 @@ import { ERRAND_OWNER as UID, type ErrandSetup, type PlannerStep, errandOf, erra
 import type { ErrandTool } from "./agent";
 import { callRoute, patchRecord, recordingSchedule, runScheduled, settle } from "../testing/fakes";
 import { asrTurn, openTestSession } from "../testing/session-fixtures";
+import { StoreError } from "../store/errors";
 import { claimJob } from "../worker/jobs";
 import { runDueJobs } from "../worker/tick";
 import { errandsOnState, pickUp } from "./deliver";
@@ -467,5 +468,59 @@ describe("R10: the tick schedules due errand runs instead of awaiting them", () 
     expect(sched.pending).toBeGreaterThanOrEqual(1);
     await settle(sched.runAll(), x.rig.clock, x.rig.timers);
     expect(plannerRequests(x.rig).length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+/** A store whose transactions throw `error` once, at the first write that `hit` picks. */
+function throwOnceAt(x: ErrandSetup, hit: (path: string, data: { status?: string }) => boolean, error: () => Error, times = 1) {
+  const real = x.rig.deps.store;
+  let left = times;
+  x.rig.deps.store = new Proxy(real, {
+    get(target, prop, recv) {
+      if (prop !== "transaction") return Reflect.get(target, prop, recv);
+      return (uid: string, fn: (tx: unknown) => Promise<unknown>) =>
+        target.transaction(uid, (tx) =>
+          fn(
+            new Proxy(tx, {
+              get(t, p, r) {
+                if (p !== "update") return Reflect.get(t, p, r);
+                return (path: string, data: { status?: string }) => {
+                  if (left > 0 && hit(path, data)) {
+                    left--;
+                    throw error();
+                  }
+                  return (t as { update: (a: string, b: unknown) => void }).update(path, data);
+                };
+              },
+            }),
+          ),
+        );
+    },
+  });
+}
+
+describe("R11: a run's own writes retry a lost compare-and-set, and fail fast on anything else", () => {
+  it("a stale revision at the result's write is retried, and the result lands", async () => {
+    const x = await setup([{ call: "search_mail" }, answered]);
+    throwOnceAt(x, (p, d) => p.includes(x.errandId) && d.status === "ready", () => new StoreError("staleRevision", "lost the race", "errand"));
+    await callRoute(x.rig, toolRoute, tool(x));
+    await runScheduled(x.rig);
+    expect((await errandOf(x))?.status).toBe("ready");
+  });
+
+  it("a stale revision at a step is retried, and the run goes on", async () => {
+    const x = await setup([{ call: "search_mail" }, answered]);
+    throwOnceAt(x, (p, d) => p.includes("/errands/") && d.status === "running", () => new StoreError("staleRevision", "lost the race", "errand"));
+    await callRoute(x.rig, toolRoute, tool(x));
+    await runScheduled(x.rig);
+    expect((await errandOf(x))?.status).toBe("ready");
+  });
+
+  it("any other failure in a step ends the run failed at once, not running until its lease lapses", async () => {
+    const x = await setup([{ call: "search_mail" }, answered]);
+    throwOnceAt(x, (p, d) => p.includes("/errands/") && d.status === "running", () => new Error("boom"));
+    await callRoute(x.rig, toolRoute, tool(x));
+    await runScheduled(x.rig);
+    expect((await errandOf(x))?.status).toBe("failed");
   });
 });

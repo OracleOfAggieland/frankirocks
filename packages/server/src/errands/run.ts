@@ -60,7 +60,7 @@ import { requireModel } from "../config/models";
 import { ownerClock, readCoreDocs } from "../core-docs";
 import type { ResponsesResult } from "../openai/responses";
 import type { RouteContext } from "../routes/runtime";
-import { isStoreError } from "../store/errors";
+import { isStoreError, retryStale } from "../store/errors";
 import { paths } from "../store/paths";
 import { type Lease, claimJob } from "../worker/jobs";
 import { type ErrandAgent, type ErrandReadInput, type ErrandTool, errandAgentsOf } from "./agent";
@@ -110,7 +110,7 @@ class RunStopped extends Error {
   }
 }
 
-type Fail = { kind: "failed"; why: "limit" | "model" | "noWords" | "noAgent" | "parse" | "stranded" };
+type Fail = { kind: "failed"; why: "limit" | "model" | "noWords" | "noAgent" | "parse" | "stranded" | "error" };
 type Done = { kind: "done"; outcome: ErrandOutcome; lines: { text: string; refs: string[] }[] } | Fail;
 
 /** The planner's request for one step. On the last allowed call no tool may be called, so it must answer. */
@@ -190,8 +190,14 @@ export async function runErrand(ctx: RouteContext, errandId: ID): Promise<void> 
       deps.log("errand.stopped", { errandId, why: error.why });
       return;
     }
-    if (isStoreError(error, "staleRevision")) return;
+    // Review fix R11: anything else (a store fault, or a lost race past the retries) ends the run `failed` at once,
+    // so it does not sit `running` until its lease lapses. If even that write fails, the lease lapse remains.
     deps.log("errand.error", { errandId, error: error instanceof Error ? error.name : "unknown" });
+    try {
+      await finish(ctx, held, { kind: "failed", why: "error" }, [], true, false);
+    } catch (again) {
+      deps.log("errand.error", { errandId, error: again instanceof Error ? again.name : "unknown", at: "finish" });
+    }
   }
 }
 
@@ -204,7 +210,8 @@ async function sessionLive(ctx: RouteContext, e: Errand): Promise<boolean> {
 /** The run's own checks, in a transaction: the lease is still this runner's, the Errand runs, the epoch holds. */
 async function step(ctx: RouteContext, lease: Lease, errandId: ID, reads: readonly ErrandRead[] | null, renew: boolean): Promise<void> {
   const { uid, deps } = ctx;
-  await deps.store.transaction(uid, async (tx) => {
+  // Review fix R11: a poll's write to the same Errand can win the compare-and-set; the step reads again and retries.
+  await retryStale(() => deps.store.transaction(uid, async (tx) => {
     const [job, errand, epoch] = await Promise.all([tx.get<Job>(paths.job(uid, errandId)), tx.get<Errand>(paths.errand(uid, errandId)), tx.get<CoreEpoch>(paths.core(uid, "epoch"))]);
     if (job === null || job.data.status !== "leased" || job.data.leaseToken !== lease.token) throw new RunStopped("lease");
     if (errand === null || errand.data.status !== "running") throw new RunStopped("gone");
@@ -212,7 +219,7 @@ async function step(ctx: RouteContext, lease: Lease, errandId: ID, reads: readon
     const now = tsFromMs(deps.clock.read().opsClock.now);
     if (renew) tx.update(job.path, { ...job.data, leaseUntil: tsFromMs(deps.clock.read().opsClock.now + ERRAND_LEASE_MS), updatedAt: now });
     if (reads !== null) tx.update(errand.path, { ...errand.data, reads: [...reads], updatedAt: now });
-  });
+  }));
 }
 
 interface HelperRun {
@@ -445,7 +452,8 @@ async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readon
   }
   // Review fix R1: the Gate's inputs are read once, here, and stored with the result; a poll rereads nothing.
   const gateInputs = lines.length === 0 ? null : await errandGateInputs(ctx, lease.jobId);
-  await deps.store.transaction(uid, async (tx) => {
+  // Review fix R11: the result's write retries a lost compare-and-set, rereading everything it checks.
+  await retryStale(() => deps.store.transaction(uid, async (tx) => {
     const [job, errand, epoch] = await Promise.all([tx.get<Job>(paths.job(uid, errandId)), tx.get<Errand>(paths.errand(uid, errandId)), tx.get<CoreEpoch>(paths.core(uid, "epoch"))]);
     if (job === null || job.data.status !== "leased" || job.data.leaseToken !== lease.token) throw new RunStopped("lease");
     const ops = deps.clock.read().opsClock.now;
@@ -471,7 +479,7 @@ async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readon
       updatedAt: now,
     } satisfies Errand);
     tx.update(job.path, settled);
-  });
+  }));
 }
 
 /** How many of the assignment's own tokens the Gate keeps as the line's aliases. */

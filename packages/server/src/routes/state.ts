@@ -10,7 +10,7 @@ import { effectiveAudience, expireLease, hasParseGap } from "../audience";
 import { ensureCoreDocs, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck } from "../deck";
 import { SESSION_IDLE_MS, stateAck } from "../sessions";
-import { isStoreError } from "../store/errors";
+import { retryStale } from "../store/errors";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import { scheduleTick } from "../worker/tick";
@@ -50,15 +50,7 @@ async function recentTurns(tx: Pick<Tx, "query">, uid: string, sessionId: string
 const hasRecentS2 = (rows: readonly { data: Turn }[]) => rows.some((r) => r.data.role === "user" && r.data.rootSlices.some((sl) => sl.sens === "S2"));
 
 /** Re-runs `fn` when a concurrent writer wins the compare-and-set (bounded; the browser retries after that). */
-export async function retryStale<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
-  for (let i = 1; ; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (i >= attempts || !isStoreError(error, "staleRevision")) throw error;
-    }
-  }
-}
+export { retryStale } from "../store/errors";
 
 export async function sessionState(ctx: RouteContext, req: StateReq): Promise<StateRes> {
   const { uid, deps } = ctx;
