@@ -2,7 +2,7 @@
 // one-time marker when it opens Google's window and removes it whenever that wait ends; the callback page takes it
 // before it posts. A link to /google/callback opened anywhere else sends nothing.
 import { describe, expect, it } from "vitest";
-import type { ApiCallOptions, ApiClient, ApiResult } from "./api";
+import type { ApiClient, ApiResult } from "./api";
 import { runGoogleCallback } from "./google-callback";
 import { GOOGLE_OFF, GOOGLE_URL } from "../app/specimens/_fixtures/google";
 import { GOOGLE_CONNECT_PATH, GOOGLE_START_PATH, GOOGLE_STATUS_PATH } from "./google-api";
@@ -34,7 +34,7 @@ function sheet(marker: ReturnType<typeof waitMarker>) {
 function callbackWith(marker: ReturnType<typeof waitMarker>) {
   const calls: string[] = [];
   const api: ApiClient = {
-    async call<T>(path: string, _o?: ApiCallOptions): Promise<ApiResult<T>> {
+    async call<T>(path: string): Promise<ApiResult<T>> {
       calls.push(path);
       return { ok: true, status: 200, body: { google: { email: null, mail: "connected", calendar: "off", needsReconnect: false, connectedAt: null }, outcome: "connected" } as T };
     },
