@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FIXTURE_MEMORY } from "../app/specimens/_fixtures/memory";
 import type { ApiCallOptions, ApiClient, ApiResult } from "./api";
 import { MAIN_CHIPS, MemoryModel } from "./memory-model";
@@ -59,6 +59,19 @@ describe("MemoryModel (brief 020)", () => {
     expect(m.getSnapshot().readout).toHaveLength(2);
     m.closeReadout();
     expect(m.getSnapshot().readout).toBeNull();
+  });
+
+  it("a tap on the chip opens the readout, and a second tap closes it without another read", async () => {
+    const { client, calls } = api(fixture);
+    const m = new MemoryModel({ api: client });
+    expect(m.toggleReadout()).toBe("opening");
+    await vi.waitFor(() => expect(m.getSnapshot().readout).not.toBeNull());
+    const reads = calls.length;
+    expect(m.toggleReadout()).toBe("closed");
+    expect(m.getSnapshot().readout).toBeNull();
+    expect(calls).toHaveLength(reads);
+    expect(m.toggleReadout()).toBe("opening");
+    await vi.waitFor(() => expect(m.getSnapshot().readout).not.toBeNull());
   });
 
   it("false gone: a claimed gone with no receipt shows the ask, and the answer goes to the control seam", () => {

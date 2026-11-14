@@ -78,6 +78,12 @@ describe("memory screen view-model (brief 020)", () => {
     expect(empty.kind === "read" && empty.lines).toEqual([COPY.memory.readout.empty]);
   });
 
+  it("readout card: carries Close only when the host gives one", () => {
+    expect(readoutCard([FIXTURE_SNAPSHOT], noop)).not.toHaveProperty("onClose");
+    const onClose = () => {};
+    expect(readoutCard([FIXTURE_SNAPSHOT], noop, onClose)).toHaveProperty("onClose", onClose);
+  });
+
   it("gone ask: Yes and No, neither chosen for the owner", () => {
     const answers: string[] = [];
     const c = goneAskCard((a) => answers.push(a), noop);

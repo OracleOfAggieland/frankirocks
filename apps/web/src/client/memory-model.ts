@@ -8,6 +8,7 @@
  *     "gone", the ask card shows. The control the contract runs then belongs to the forget lane: `goneControl` is
  *     its seam, and does nothing in this build.
  *   - The chip "What do you know about me?" also opens the readout (`openReadout`): every overview page, in order.
+ *     The card's Close, or a second tap on the chip (`toggleReadout`), closes it.
  */
 import { type MemoryResponse, type SnapshotView, SNAPSHOT_FLOOR, SNAPSHOT_PAGE, falseGone } from "@franki/core";
 import { COPY } from "../ui/copy";
@@ -83,6 +84,19 @@ export class MemoryModel {
 
   closeReadout(): void {
     this.set({ readout: null });
+  }
+
+  /**
+   * A tap on the chip. While the readout shows, the tap closes it and nothing else happens ("closed"); otherwise
+   * the read starts ("opening") and the chip's words go out as usual.
+   */
+  toggleReadout(): "opening" | "closed" {
+    if (this.state.readout !== null) {
+      this.closeReadout();
+      return "closed";
+    }
+    void this.openReadout();
+    return "opening";
   }
 
   /** One answered typed line: the false "gone" check, then a fresh read. */

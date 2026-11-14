@@ -46,6 +46,7 @@ export const COPY = {
   card: {
     yes: "Yes",
     notNow: "Not now",
+    close: "Close",
     checkedFor: "Checked for",
     sources: "Sources",
     ingredients: "Ingredients",

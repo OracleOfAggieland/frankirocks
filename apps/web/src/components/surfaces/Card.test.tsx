@@ -140,6 +140,17 @@ describe("Card", () => {
     expect(onAnswer).toHaveBeenCalledWith("b");
   });
 
+  it("a read card offers Close only when given onClose, and Close calls it", () => {
+    expect(html(READ)).not.toContain('data-section="actions"');
+    const onClose = vi.fn();
+    const closable: CardProps = { ...(READ as Extract<CardProps, { kind: "read" }>), onClose };
+    const out = html(closable);
+    expect(out).toMatch(/data-section="actions"[^>]*><button type="button" data-action="close"[^>]*>Close<\/button>/);
+    expect(out.indexOf('data-section="content"')).toBeLessThan(out.indexOf('data-action="close"'));
+    click(Card(closable), (p) => p["data-action"] === "close");
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("is glass with the seam at the top and a line glyph for its kind beside the title", () => {
     for (const p of [SOURCE, APPROVAL, FOOD, ASK, READ]) {
       const out = html(p);

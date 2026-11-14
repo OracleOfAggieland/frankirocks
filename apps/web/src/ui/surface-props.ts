@@ -31,7 +31,7 @@ export type CardProps =
       checkedFor: { person: string; rules: HardRule[] }[];
     })
   | (CardBase & { kind: "ask"; question: string; options: { id: string; label: string }[]; onAnswer: (id: string) => void })
-  | (CardBase & { kind: "read"; lines: string[] });
+  | (CardBase & { kind: "read"; lines: string[]; /** With this, the card offers Close. */ onClose?: () => void });
 
 export type CardKind = CardProps["kind"];
 

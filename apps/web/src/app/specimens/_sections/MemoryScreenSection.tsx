@@ -37,7 +37,7 @@ function MemoryScreen() {
   const [gone, setGone] = useState(false);
   const reduced = useReducedMotion();
   const input = avatarInput("listening", null, { reduced });
-  const cards = [...(gone ? [goneAskCard(() => setGone(false), noop)] : []), ...(readout ? [readoutCard([FIXTURE_MEMORY.overview.snapshot!], noop)] : [])];
+  const cards = [...(gone ? [goneAskCard(() => setGone(false), noop)] : []), ...(readout ? [readoutCard([FIXTURE_MEMORY.overview.snapshot!], noop, () => setReadout(false))] : [])];
   return (
     <div className="flex w-full flex-col items-center gap-3">
       <button type="button" data-specimen-toggle="gone" className={QUIET_BUTTON} onClick={() => setGone((g) => !g)}>
@@ -60,7 +60,7 @@ function MemoryScreen() {
           typed={<TypedLine text="" enabled sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />}
           live={<LiveRegion message={null} seq={0} />}
           strip={surfaces.strip === null ? null : <Strip {...surfaces.strip} />}
-          chips={<Chips chips={MAIN_CHIPS} disabled={false} onChip={() => setReadout(true)} />}
+          chips={<Chips chips={MAIN_CHIPS} disabled={false} onChip={() => setReadout((r) => !r)} />}
           jar={<Jar motes={surfaces.jar} onOpen={() => setReadout((r) => !r)} />}
           lab={<Lab counters={surfaces.lab?.counters ?? []} limits={surfaces.lab?.limits ?? []} receipt={surfaces.receipt === null ? null : <Receipt {...surfaces.receipt} />} />}
         />

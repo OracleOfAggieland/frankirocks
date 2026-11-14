@@ -4,6 +4,7 @@
 // tabular figures with its source tag. Renders nothing when its props have nothing true to show.
 // Glass with the stitched seam on top. An approval card is riveted at its four corners and its Yes is brass.
 // The card lifts 2 px under a hovering pointer on spring.press (cards.css).
+// A read card given `onClose` offers Close among its actions; without it the card has none.
 // With `sourceRows`, tapping a source tag that has rows opens them inside the card (tapping it again closes
 // them), and the tap still calls onOpenSource. With `openSource` the host holds which source is open instead.
 import { type ReactNode, useState } from "react";
@@ -300,6 +301,13 @@ function Actions(p: CardProps) {
           </button>
         ))}
       </>
+    );
+  }
+  if (p.kind === "read" && p.onClose !== undefined) {
+    return (
+      <button type="button" data-action="close" className={QUIET_BUTTON} onClick={p.onClose}>
+        {COPY.card.close}
+      </button>
     );
   }
   return null;

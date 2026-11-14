@@ -84,10 +84,18 @@ export function receiptProps(items: readonly InspectItem[]): ReceiptProps | null
   });
 }
 
-/** The readout card for "What do you know about me?": the snapshot's lines, recent told lines first. */
-export function readoutCard(pages: readonly SnapshotView[], onOpenSource: (id: string) => void): CardProps {
+/** The readout card for "What do you know about me?": the snapshot's lines, recent told lines first. With `onClose` it offers Close. */
+export function readoutCard(pages: readonly SnapshotView[], onOpenSource: (id: string) => void, onClose?: () => void): CardProps {
   const lines = readoutFromPages(pages).map((l) => l.text);
-  return { kind: "read", id: "readout", title: COPY.memory.readout.title, lines: lines.length > 0 ? lines : [COPY.memory.readout.empty], sources: [], onOpenSource };
+  return {
+    kind: "read",
+    id: "readout",
+    title: COPY.memory.readout.title,
+    lines: lines.length > 0 ? lines : [COPY.memory.readout.empty],
+    sources: [],
+    onOpenSource,
+    ...(onClose === undefined ? {} : { onClose }),
+  };
 }
 
 /** The ask card of the false "gone" check (spec §5 line 54). */

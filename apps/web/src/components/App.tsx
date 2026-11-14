@@ -430,9 +430,14 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
 
   // Nov 13, owner: the main screen shows no chips and no walked-in tap. The readout and company models stay.
   const memory = controllers.memory;
+  // The card leaves with focus on its Close, so focus goes back to the chip that opened it.
+  const closeReadout = () => {
+    memory.closeReadout();
+    document.querySelector<HTMLElement>("[data-chips] button")?.focus({ preventScroll: true });
+  };
   const memoryCards = [
     ...(mem.goneAsk ? [goneAskCard((a) => memory.answerGone(a), noop)] : []),
-    ...(mem.readout === null ? [] : [readoutCard(mem.readout, noop)]),
+    ...(mem.readout === null ? [] : [readoutCard(mem.readout, noop, closeReadout)]),
   ];
   const receipt = mem.surfaces.receipt === null ? null : <Receipt {...mem.surfaces.receipt} />;
   // Brief 027: the proactive line's cards join the dock; the badge reads the real clock through the clock port.
