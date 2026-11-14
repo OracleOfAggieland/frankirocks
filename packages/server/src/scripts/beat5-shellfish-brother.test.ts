@@ -4,17 +4,38 @@
  * sentence stays. The receipt separates blocked from cleaned, and lists what it touched. The seed holds no other
  * brother fact, so the cue isn't vague.
  *
- * Since brief 048 stage 3 the forget runs on /api/turn and the next Head has no brother. "Gone" and the receipt card
- * wait for the acknowledgment (stage 4). The rule comes from brief 018's hard-rule route in /api/turn.
+ * Since brief 048 the forget runs on /api/turn, the typed answer says "Gone." once the receipt's blockedAt is set, and
+ * the next Head has no brother. The receipt card gives counts and states only, never the forgotten words (ruling 10).
+ * The rule comes from brief 018's hard-rule route in /api/turn.
  */
-import type { Memory } from "@franki/core";
+import type { Job, Memory } from "@franki/core";
+import { paths } from "../store/paths";
 import { type Script, type World, allMemories, extract, item, memoryText, parse, reply, resolveForget, rulesOf, scriptSuite, slots, spanOf } from "../testing/script-runner";
 
 const BREATH = "I'm allergic to shellfish, and my brother's in trouble again.";
 const FORGET = "Forget what I said about my brother.";
 const brother = { memory: "the brother line", pick: (m: Memory) => /brother|trouble/i.test(memoryText(m)) };
 
-const FORGET_WAITS = "brief 048 stage 4: the forget's Fixed_Line acknowledgment and its delivery (the forget completes on /api/turn since stage 3)";
+const RECEIPT_STEP = "the receipt separates blocked from cleaned";
+
+/**
+ * Brief 048 ruling 10: the receipt card counts at least one blocked row, and says cleaned only once purge has ended
+ * (until then it says blocked). Counts and states only; "brother" is checked by neverSay.
+ */
+async function receiptCounts(w: World): Promise<true | string> {
+  const card = w.outputs.find((o) => o.step === RECEIPT_STEP && o.channel === "card");
+  if (card === undefined) return "no receipt card";
+  const c = JSON.parse(card.json) as { status: string; body: string };
+  const counts = JSON.parse(c.body) as { touched: { collection: string; count: number }[] };
+  const blocked = counts.touched.reduce((n, t) => n + t.count, 0);
+  if (blocked < 1) return `blocked count ${blocked}: ${card.json}`;
+  const jobs = await w.rig.store.query<Job>(w.uid, { collection: paths.collection(w.uid, "jobs"), where: [], orderBy: { field: "__name__", dir: "asc" }, limit: 100 });
+  const job = jobs.find((j) => j.data.kind === "forget")?.data.payload;
+  if (job === undefined || job.kind !== "forget") return "no forget job";
+  const purged = job.phase === "done";
+  const want = purged ? "cleaned" : "blocked";
+  return c.status === want ? true : `the card says ${c.status} with the job at ${job.phase}: ${card.json}`;
+}
 
 /** Both halves of the breath, as a careful extractor files them. */
 const breathItems = (w: World) => [
@@ -96,6 +117,9 @@ const BEAT5: Script = {
       of: "extraction files both",
       expect: [{ store: "core/rules holds an active shellfish allergy", check: shellfishActive }],
     },
+    // The beat's "Now:": the forget comes a minute after the breath, not in the same instant, so the resolve does
+    // not take it for a fragment of the line before (FRAGMENT_CONFIRM_MS). Added in brief 048 stage 4; no expectation.
+    { label: "a minute later", do: "setup", what: "the clock moves on a minute", run: async (w) => w.rig.clock.advance(60_000) },
     {
       label: "ask to forget the brother",
       do: "type",
@@ -107,15 +131,14 @@ const BEAT5: Script = {
       label: "Franki says Gone",
       do: "check",
       of: "ask to forget the brother",
-      waits: FORGET_WAITS,
       expect: [{ mustSay: { template: "forget.gone", channel: "note" } }],
     },
     {
-      label: "the receipt separates blocked from cleaned",
+      label: RECEIPT_STEP,
       do: "read",
       view: "receipt",
-      waits: FORGET_WAITS,
-      expect: [{ mustSay: { has: ["brother"], channel: "card" } }],
+      // Brief 048 ruling 10 changes this one expectation: it was `mustSay: { has: ["brother"], channel: "card" }`.
+      expect: [{ store: "the card counts at least one blocked row, and says cleaned only after purge", check: receiptCounts }, { neverSay: ["brother"], channels: ["card", "read"] }],
     },
     {
       label: "the rule from the same sentence stays",
@@ -129,6 +152,9 @@ const BEAT5: Script = {
     {
       label: "the next Head has no brother",
       do: "open",
+      // The forget left the breath's shellfish half as sanitized Evidence, and the open's drain reads it again (spec §8
+      // step 6). Declared in brief 048 stage 4, once the forget really resolved: it files nothing new.
+      answers: [extract("the sanitized breath read again: nothing new", () => [])],
       expect: [{ neverSay: [brother, "brother"], channels: ["head"] }],
     },
     {

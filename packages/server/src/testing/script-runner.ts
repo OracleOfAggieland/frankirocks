@@ -216,8 +216,8 @@ export const TEMPLATES = {
   "occasion.wish": /Good luck at \d{1,2}(:\d\d)? (AM|PM): /,
   /** The check-in after an occasion (spec §15 beat 2): a moment whisper from brief 024's `checkIn` template. */
   "occasion.checkin": whisperPattern("checkIn"),
-  /** "Gone." after a completed forget (spec §8 step 7). Reserved in brief 021. */
-  "forget.gone": null,
+  /** "Gone." after a forget (spec §8 step 7; brief 048 ruling 7): voice/lines.ts GONE_LINE or GONE_EXCEPT_RULE_LINE first. */
+  "forget.gone": /^Gone(.|, except one safety rule.)/,
   /** Care before help on a hard disclosure (spec §15 beat 4). Persona and policy wording: brief 024. */
   "care.first": null,
 } as const satisfies Record<string, RegExp | null>;
