@@ -485,33 +485,90 @@ function claimsOutput(line: MailLine, eid: string, c: AuthoredClaims) {
 
 const addressOf = (a: string) => a.trim().toLowerCase();
 
+/**
+ * Brief 049 ruling 20: the fields of one message row, shared by the seed and a Google read, so a fixture's mail and a
+ * real message enter through the same choices. Own mail's slices are O; everything else's are T. An empty field has
+ * no slice.
+ */
+export interface MailRowInput {
+  eid: string;
+  at: string;
+  providerKey: string;
+  threadKey: string | null;
+  inReplyToProviderKey: string | null;
+  subject: string | null;
+  body: string | null;
+  sender: string | null;
+  recipient: string[];
+  fromSelf: boolean;
+  senderAddressKey: string | null;
+  recipientAddressKeys: string[];
+  bulk: boolean;
+  senderAuth: Evidence["senderAuth"];
+}
+
+export function mailRowFields(m: MailRowInput, hasher: Hasher) {
+  const cls = m.fromSelf ? "O" : "T";
+  const slices = (
+    [
+      ["subject", m.subject],
+      ["body", m.body],
+      ["sender", m.sender],
+    ] as const
+  ).flatMap(([field, text]) => (text === null || text === "" ? [] : [textSlice(m.eid, field, text, cls, hasher)]));
+  return {
+    kind: "message" as const,
+    occurredAt: m.at,
+    assertedAt: m.at,
+    providerKey: m.providerKey,
+    threadKey: m.threadKey,
+    inReplyToProviderKey: m.inReplyToProviderKey,
+    subject: m.subject,
+    body: m.body === null ? null : { kind: "inline" as const, text: m.body },
+    sender: m.sender,
+    recipient: m.recipient,
+    fieldSlices: slices,
+    authorId: m.fromSelf ? ("self" as const) : null,
+    senderAddressKey: m.senderAddressKey,
+    recipientAddressKeys: m.recipientAddressKeys,
+    authorship: m.fromSelf ? ("self" as const) : ("unknown" as const),
+    delivery: m.fromSelf ? ("sent" as const) : ("unknown" as const),
+    senderAuth: m.senderAuth,
+    identityBinding: "none" as const,
+    route: m.bulk ? ("list" as const) : ("direct" as const),
+  };
+}
+
 function buildMail(line: MailLine, input: SeedInput, ids: ReturnType<typeof seedIds>, friday: string): SeedGroup {
   const { hasher, uid } = input;
   const eid = ids.eid(line.id);
   const ts = tsFromMs(relInstant(friday, line.at, input.zone));
-  const cls = line.fromSelf ? "O" : "T";
   const sender = `${line.from.name} <${line.from.address}>`;
-  const evidence = evidenceBase(input, ids, line.id, 1, {
-    kind: "message",
-    occurredAt: ts,
-    assertedAt: ts,
-    providerKey: ids.key("mail", line.id),
-    threadKey: ids.key("thread", line.thread),
-    inReplyToProviderKey: line.inReplyTo === undefined ? null : ids.key("mail", line.inReplyTo),
-    subject: line.subject,
-    body: { kind: "inline", text: line.body },
-    sender,
-    recipient: line.to,
-    fieldSlices: [textSlice(eid, "subject", line.subject, cls, hasher), textSlice(eid, "body", line.body, cls, hasher), textSlice(eid, "sender", sender, cls, hasher)],
-    authorId: line.fromSelf ? "self" : null,
-    senderAddressKey: ids.key("address", addressOf(line.from.address)),
-    recipientAddressKeys: line.to.map((a) => ids.key("address", addressOf(a))),
-    authorship: line.fromSelf ? "self" : "unknown",
-    delivery: line.fromSelf ? "sent" : "unknown",
-    senderAuth: "aligned",
-    identityBinding: "none",
-    route: line.bulk ? "list" : "direct",
-  });
+  const evidence = evidenceBase(
+    input,
+    ids,
+    line.id,
+    1,
+    mailRowFields(
+      {
+        eid,
+        at: ts,
+        providerKey: ids.key("mail", line.id),
+        threadKey: ids.key("thread", line.thread),
+        inReplyToProviderKey: line.inReplyTo === undefined ? null : ids.key("mail", line.inReplyTo),
+        subject: line.subject,
+        body: line.body,
+        sender,
+        recipient: line.to,
+        fromSelf: line.fromSelf,
+        senderAddressKey: ids.key("address", addressOf(line.from.address)),
+        recipientAddressKeys: line.to.map((a) => ids.key("address", addressOf(a))),
+        bulk: line.bulk === true,
+        senderAuth: "aligned",
+      },
+      hasher,
+    ),
+  );
   checked(EvidenceSchema, evidence, line.id, "evidence");
   const ctx = { packet: new Map([[eid, { evidence, fields: ["subject", "body"] }]]) };
 
@@ -539,51 +596,94 @@ function buildMail(line: MailLine, input: SeedInput, ids: ReturnType<typeof seed
 // ---------------------------------------------------------------------------------------------
 // Calendar and bank: code reads them, so the packet is the typed Observation.
 
+/** Brief 049 ruling 20: the fields of one calendar row, shared by the seed and a Google read. */
+export interface CalendarRowInput {
+  eid: string;
+  providerKey: string;
+  calendarKey: string;
+  start: string;
+  end: string;
+  zone: string;
+  allDay: boolean;
+  status: "confirmed" | "tentative" | "cancelled";
+  selfResponse: "accepted" | "tentative" | "declined" | "needsAction" | "none";
+  transparency: "opaque" | "transparent";
+  organizerSelf: boolean;
+  scheduleRev: number;
+  assertedAt: string;
+  providerRevision: string;
+  isCurrentProvider: boolean;
+  title: string | null;
+}
+
+export function calendarRowFields(c: CalendarRowInput, hasher: Hasher) {
+  const observation = {
+    kind: "calendar" as const,
+    providerKey: c.providerKey,
+    calendarKey: c.calendarKey,
+    seriesKey: null,
+    originalStart: null,
+    start: c.start,
+    end: c.end,
+    zone: c.zone,
+    allDay: c.allDay,
+    status: c.status,
+    selfResponse: c.selfResponse,
+    transparency: c.transparency,
+    organizerSelf: c.organizerSelf,
+    creatorSelf: c.organizerSelf,
+    organizerId: c.organizerSelf ? ("self" as const) : null,
+    attendeeIds: [],
+    scheduleRev: c.scheduleRev,
+  };
+  return {
+    kind: "calendar" as const,
+    occurredAt: c.start,
+    assertedAt: c.assertedAt,
+    providerKey: observation.providerKey,
+    providerRevision: c.providerRevision,
+    isCurrentProvider: c.isCurrentProvider,
+    title: c.title,
+    observation,
+    fieldSlices: [
+      ...(c.title === null || c.title === "" ? [] : [textSlice(c.eid, "title", c.title, c.organizerSelf ? "O" : "T", hasher)]),
+      typedSlice(c.eid, "calendar.time", { start: c.start, end: c.end, zone: c.zone, allDay: c.allDay }, hasher),
+      typedSlice(c.eid, "calendar.status", { status: c.status, transparency: c.transparency }, hasher),
+      typedSlice(c.eid, "calendar.attendance", { selfResponse: c.selfResponse }, hasher),
+    ],
+    authorship: c.organizerSelf ? ("self" as const) : ("unknown" as const),
+    authorId: c.organizerSelf ? ("self" as const) : null,
+  };
+}
+
 function buildCalendar(line: CalendarLine, input: SeedInput, ids: ReturnType<typeof seedIds>, friday: string): SeedGroup {
   const { hasher, uid } = input;
   const writes: SeedWrite[] = line.revisions.map((r, i) => {
     const version = i + 1;
     const eid = ids.eid(line.id, version);
     const startMs = relInstant(friday, r.start, input.zone);
-    const start = tsFromMs(startMs);
-    const end = tsFromMs(startMs + r.minutes * 60_000);
-    const observation = {
-      kind: "calendar" as const,
-      providerKey: ids.key("calendar-event", line.id),
-      calendarKey: ids.key("calendar", "primary"),
-      seriesKey: null,
-      originalStart: null,
-      start,
-      end,
-      zone: input.zone,
-      allDay: false,
-      status: r.status,
-      selfResponse: r.selfResponse,
-      transparency: r.transparency ?? "opaque",
-      organizerSelf: line.organizerSelf,
-      creatorSelf: line.organizerSelf,
-      organizerId: line.organizerSelf ? ("self" as const) : null,
-      attendeeIds: [],
-      scheduleRev: version,
-    };
-    const evidence = evidenceBase(input, ids, line.id, version, {
-      kind: "calendar",
-      occurredAt: start,
-      assertedAt: tsFromMs(relInstant(friday, r.at, input.zone)),
-      providerKey: observation.providerKey,
-      providerRevision: String(version),
-      isCurrentProvider: version === line.revisions.length,
-      title: line.title,
-      observation,
-      fieldSlices: [
-        textSlice(eid, "title", line.title, line.organizerSelf ? "O" : "T", hasher),
-        typedSlice(eid, "calendar.time", { start, end, zone: input.zone, allDay: false }, hasher),
-        typedSlice(eid, "calendar.status", { status: r.status, transparency: observation.transparency }, hasher),
-        typedSlice(eid, "calendar.attendance", { selfResponse: r.selfResponse }, hasher),
-      ],
-      authorship: line.organizerSelf ? "self" : "unknown",
-      authorId: line.organizerSelf ? "self" : null,
-    });
+    const fields = calendarRowFields(
+      {
+        eid,
+        providerKey: ids.key("calendar-event", line.id),
+        calendarKey: ids.key("calendar", "primary"),
+        start: tsFromMs(startMs),
+        end: tsFromMs(startMs + r.minutes * 60_000),
+        zone: input.zone,
+        allDay: false,
+        status: r.status,
+        selfResponse: r.selfResponse,
+        transparency: r.transparency ?? "opaque",
+        organizerSelf: line.organizerSelf,
+        scheduleRev: version,
+        assertedAt: tsFromMs(relInstant(friday, r.at, input.zone)),
+        providerRevision: String(version),
+        isCurrentProvider: version === line.revisions.length,
+        title: line.title,
+      },
+      hasher,
+    );
+    const evidence = evidenceBase(input, ids, line.id, version, fields);
     return { path: paths.evidence(uid, eid), record: checked(EvidenceSchema, evidence, line.id, `revision ${version}`) };
   });
   return { lineId: line.id, writes };
