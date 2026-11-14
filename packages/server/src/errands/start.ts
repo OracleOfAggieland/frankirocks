@@ -146,6 +146,7 @@ export async function planErrand(ctx: RouteContext, x: { stamp: Stamp; turn: Tur
       endedAt: null,
       reads: [],
       outcome: null,
+      notice: null,
       lines: [],
       offer: null,
       saidResponseId: null,

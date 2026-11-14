@@ -31,6 +31,7 @@ import {
   type Errand,
   type ErrandLine,
   type ErrandOutcome,
+  type ErrandNotice,
   type ErrandRefView,
   type ErrandSource,
   type ErrandGateInputs,
@@ -183,7 +184,7 @@ export async function runErrand(ctx: RouteContext, errandId: ID): Promise<void> 
       return;
     }
     const outcome = await helper(ctx, held, errand, start);
-    await finish(ctx, held, outcome.done, outcome.reads, false, outcome.opaque);
+    await finish(ctx, held, outcome.done, outcome.reads, false, outcome.opaque, outcome.flags);
     deps.log("errand.run", { errandId, outcome: outcome.done.kind === "done" ? outcome.done.outcome : `failed:${outcome.done.why}`, modelCalls: outcome.modelCalls, toolCalls: outcome.toolCalls });
   } catch (error) {
     if (error instanceof RunStopped) {
@@ -467,11 +468,26 @@ async function runTool(ctx: RouteContext, run: { errandId: ID; epoch: number; sc
  * Writes the run's end: the checked result (`ready`), or `failed`. Rechecks the lease, the Errand and the epoch in the
  * same transaction (ruling 14), so a forget's drop always wins. `claimOnly`: the claim past the limit, which never ran.
  */
-async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readonly ErrandRead[], claimOnly: boolean, opaque: boolean): Promise<void> {
+/**
+ * Review fix T8: an outcome with no line, from what the tools met. Mail only from strangers is said as such; then an
+ * expired grant, a failed read, a partial read; a time phrase code couldn't place counts only when nothing was read.
+ * Otherwise the planner's outcome stands.
+ */
+export function noticeOf(planned: ErrandOutcome, flags: ReadonlySet<ErrandToolFlag>): { outcome: ErrandOutcome; notice: ErrandNotice | null } {
+  if (flags.has("unmailed")) return { outcome: "nothing", notice: "unmailed" };
+  if (flags.has("expired")) return { outcome: "failed", notice: "expired" };
+  if (flags.has("failed")) return { outcome: "failed", notice: null };
+  if (flags.has("partial")) return { outcome: "nothing", notice: "partial" };
+  if (flags.has("unresolved") && !flags.has("read")) return { outcome: "nothing", notice: "needsDay" };
+  return { outcome: planned, notice: null };
+}
+
+async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readonly ErrandRead[], claimOnly: boolean, opaque: boolean, flags: ReadonlySet<ErrandToolFlag> = new Set()): Promise<void> {
   const { uid, deps } = ctx;
   const errandId = lease.jobId;
   let lines: ErrandLine[] = [];
   let outcome: ErrandOutcome = "failed";
+  let notice: ErrandNotice | null = null;
   if (done.kind === "done") {
     const core = await readCoreDocs({ get: (p) => deps.store.get(uid, p) }, uid);
     const pair = ownerClock(core.state.data, deps.clock);
@@ -482,6 +498,8 @@ async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readon
     lines = taintErrandLines(checked.lines, reads, views, at, opaque);
     outcome = checked.outcome === "answered" && lines.length === 0 ? "nothing" : checked.outcome;
   }
+  // Review fix T8: with no line left, code decides what was met and words it, not the planner.
+  if (lines.length === 0 && !claimOnly) ({ outcome, notice } = noticeOf(outcome, flags));
   // Review fix R1: the Gate's inputs are read once, here, and stored with the result; a poll rereads nothing.
   const gateInputs = lines.length === 0 ? null : await errandGateInputs(ctx, lease.jobId);
   // Review fix R11: the result's write retries a lost compare-and-set, rereading everything it checks.
@@ -502,6 +520,7 @@ async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readon
       ...errand.data,
       status: next,
       outcome,
+      notice,
       lines,
       reads: claimOnly ? errand.data.reads : [...reads],
       readyAt: now,

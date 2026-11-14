@@ -67,7 +67,7 @@ import {
   union,
 } from "./v";
 // Brief 049 part A: an Errand's closed sets and bounds.
-import { ERRAND_ABOUT, ERRAND_LABEL_CHARS, ERRAND_LINES_MAX, ERRAND_LINE_CHARS, ERRAND_LINE_REFS_MAX, ERRAND_OUTCOMES, ERRAND_READS_MAX } from "../errands/limits";
+import { ERRAND_ABOUT, ERRAND_LABEL_CHARS, ERRAND_LINES_MAX, ERRAND_LINE_CHARS, ERRAND_LINE_REFS_MAX, ERRAND_NOTICES, ERRAND_OUTCOMES, ERRAND_READS_MAX } from "../errands/limits";
 // Brief 024: the Gate's closed codes, for its ledger rows.
 import {
   DECISION_ISSUERS,
@@ -1256,6 +1256,8 @@ export const Errand = obj({
   endedAt: nullable(TS),
   reads: arr(ErrandRead, ERRAND_READS_MAX),
   outcome: nullable(oneOf(ERRAND_OUTCOMES)),
+  /** Review fix T8: what code says for an outcome with no line; null otherwise. */
+  notice: nullable(oneOf(ERRAND_NOTICES)),
   lines: arr(ErrandLine, ERRAND_LINES_MAX),
   /** Review fix V2: the offer out now, or null. */
   offer: nullable(ErrandOffer),

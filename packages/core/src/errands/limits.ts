@@ -18,6 +18,14 @@ export type ErrandStartState = (typeof ERRAND_START_STATES)[number];
 export const ERRAND_OUTCOMES = ["answered", "nothing", "failed"] as const;
 export type ErrandOutcome = (typeof ERRAND_OUTCOMES)[number];
 
+/**
+ * Review fix T8: an outcome with no citeable line that code words, not the planner. `needsDay`: a time phrase code
+ * couldn't place and nothing was read; `partial`: part of what was asked couldn't be read; `unmailed`: what was found
+ * is only from people the owner hasn't written to; `expired`: the grant needs connecting again.
+ */
+export const ERRAND_NOTICES = ["needsDay", "partial", "unmailed", "expired"] as const;
+export type ErrandNotice = (typeof ERRAND_NOTICES)[number];
+
 /** At most this many of the owner's committed turns make the assignment, newest last (ruling 2). */
 export const ERRAND_ASSIGNMENT_TURNS = 4;
 /** At most this many errands run at once per owner; one more answers `busy` (ruling 7). */

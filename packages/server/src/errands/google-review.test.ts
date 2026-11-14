@@ -2,8 +2,10 @@
  * Brief 049 part C, review fixes (Nov 14): each finding's test, written to fail on the code the reviewers read. All
  * on fakes: FakeOpenAI, FakeGoogle, the fake clock.
  */
-import { ERRAND_UNMAILED_MARKER, type Errand, type ErrandRead, type Evidence } from "@franki/core";
+import { ERRAND_HELD_LINE, ERRAND_ON_SCREEN_LINE, ERRAND_UNMAILED_MARKER, type Errand, errandFailedLine, errandNoticeLine, type ErrandRead, type Evidence } from "@franki/core";
 import { errandCard } from "./card";
+import { errandResultCard, errandWords } from "./deliver";
+import { GoogleCallError } from "../google/port";
 import { describe, expect, it } from "vitest";
 import { paths } from "../store/paths";
 import { ERRAND_OWNER } from "../testing/errand-agent";
@@ -11,8 +13,8 @@ import { settle } from "../testing/fakes";
 import { ACCOUNT_EMAIL, gmailMessage } from "../testing/fake-google";
 import { dmarcPass, googleErrand, readerRequests, readerSays, toolHarness } from "../testing/google-errand";
 import { toolRoute } from "../routes/tool";
-import { callRoute } from "../testing/fakes";
-import { tool } from "../testing/errand-agent";
+import { callRoute, runScheduled } from "../testing/fakes";
+import { type PlannerStep, errandOf, scriptPlanner, tool } from "../testing/errand-agent";
 import { READER_CALL_MS, mailAgent } from "./google-agents";
 
 const search = mailAgent.tools.find((t) => t.name === "search_mail")!;
@@ -166,5 +168,73 @@ describe("T4, T5: the card of a run that read strangers", () => {
     const src = card2.lines.find((l) => l.includes("alerts@evil.example") && !l.startsWith("From"));
     expect(src).toBeDefined();
     expect(src).not.toContain("(no subject)");
+  });
+});
+
+describe("T8, E4: code words an outcome with no citeable line", () => {
+  async function runWith(steps: PlannerStep[], prep: (g: Awaited<ReturnType<typeof started>>) => void) {
+    const g = await started();
+    prep(g);
+    scriptPlanner(g.x.rig, steps, readerSays("The sender says nothing useful."));
+    await runScheduled(g.x.rig);
+    const e = (await errandOf(g.x))!;
+    return { ...g, e, words: errandWords(e, [], "private").text };
+  }
+  const searchThenNothing: PlannerStep[] = [{ call: "search_mail", args: SEARCH }, { outcome: "nothing" }];
+
+  it("a failed read with nothing found says the failed line", async () => {
+    const { e, words } = await runWith(searchThenNothing, ({ google }) => google.failNext("listMessages", new Error("boom")));
+    expect(e.outcome).toBe("failed");
+    expect(words).toBe(errandFailedLine(["mail"]));
+  });
+
+  it("an expired grant says it needs connecting again", async () => {
+    const { e, words } = await runWith(searchThenNothing, ({ google }) => google.failNext("refresh", new GoogleCallError("invalidGrant", true)));
+    expect(e.notice).toBe("expired");
+    expect(words).toBe(errandNoticeLine("expired", ["mail"]));
+  });
+
+  it("a time phrase code can't place, with no read, says Franki needs a day", async () => {
+    const { e, words } = await runWith([{ call: "search_mail", args: { ...SEARCH, when: "sometime soonish" } }, { outcome: "nothing" }], () => {});
+    expect(e.notice).toBe("needsDay");
+    expect(words).toBe(errandNoticeLine("needsDay", ["mail"]));
+  });
+
+  it("a partial read never yields nothing", async () => {
+    const { e, words } = await runWith(searchThenNothing, ({ google }) => {
+      const mailed = { from: "Dana Park <dana@example.org>", headers: [dmarcPass("example.org")] };
+      google.messages.set("m1", gmailMessage("m1", { ...mailed, subject: "Lease" }));
+      google.messages.set("m2", gmailMessage("m2", { ...mailed, subject: "Lease 2" }));
+      google.messages.set("s1", gmailMessage("s1", { from: `Owner <${ACCOUNT_EMAIL}>`, to: "dana@example.org", labels: ["SENT"], subject: "Re: lease" }));
+      google.failNext("getMessage", new GoogleCallError("unknown", false));
+    });
+    expect(e.notice).toBe("partial");
+    expect(words).toBe(errandNoticeLine("partial", ["mail"]));
+  });
+
+  it("hits only from unmailed senders: a code line, and the card lists address and date", async () => {
+    const { x, e, words } = await runWith(searchThenNothing, () => {});
+    expect(e.notice).toBe("unmailed");
+    expect(words).toBe(errandNoticeLine("unmailed", ["mail"]));
+    const card = errandResultCard(e, [], "private", { id: "c" as never, zone: "America/Chicago" })!;
+    expect(card.lines.join(" ")).toContain("dana@example.org");
+    expect(card.lines.join(" ")).not.toContain("Dana Park");
+    expect(card.lines.join(" ")).not.toContain("Lease");
+    // In company it is held, and nothing of it shows.
+    expect(errandWords(e, [], "company").text).toBe(ERRAND_HELD_LINE);
+    expect(JSON.stringify(errandResultCard(e, [], "company", { id: "c" as never, zone: "America/Chicago" }))).not.toContain("dana@");
+    void x;
+  });
+});
+
+describe("T9, E6: 'It's on your screen' only when the card shows something to this audience", () => {
+  const line = { text: "The lease is due Friday.", refs: ["r1"], cls: "T" as const, sens: "S1" as const, attribution: "From Dana Park, yesterday:", speak: true };
+  const v = { index: 0, line, candidateId: "c" as never, result: {} as never, shown: "card" as const };
+  const e = { outcome: "answered", about: ["mail"], notice: null, lines: [line] } as unknown as Errand;
+  it("in company an S1 line won't show, so the held line is said", () => {
+    expect(errandWords(e, [v], "company").text).toBe(ERRAND_HELD_LINE);
+  });
+  it("in private the same line shows, so 'on your screen' is true", () => {
+    expect(errandWords(e, [v], "private").text).toBe(ERRAND_ON_SCREEN_LINE);
   });
 });

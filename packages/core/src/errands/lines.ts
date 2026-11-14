@@ -3,7 +3,7 @@
  * no owner words, no name and nothing an errand found. The found lines themselves are the helper's, checked by code
  * (`checkErrandResult`) and attributed by code (`errandAttribution`).
  */
-import type { ErrandAbout, ErrandStartState } from "./limits";
+import type { ErrandAbout, ErrandNotice, ErrandStartState } from "./limits";
 
 /** "your mail", "your calendar", "your mail and calendar". */
 export function aboutPhrase(about: readonly ErrandAbout[]): string {
@@ -52,6 +52,28 @@ export function errandNothingLine(about: readonly ErrandAbout[]): string {
 export function errandFailedLine(about: readonly ErrandAbout[]): string {
   return `I couldn't get to ${aboutPhrase(about)} just now.`;
 }
+/**
+ * Review fix T8: code's line for an outcome with no citeable line. Each is S0 except `unmailed`, which says the
+ * owner has mail from a stranger and is said only in private (`errandNoticeSens`).
+ */
+export function errandNoticeLine(notice: ErrandNotice, about: readonly ErrandAbout[]): string {
+  const what = aboutPhrase(about);
+  switch (notice) {
+    case "needsDay":
+      return "I need a day for that. Which day should I look at?";
+    case "partial":
+      return `I couldn't read all of ${what} just now, and what I could read didn't answer that.`;
+    case "unmailed":
+      return "There's mail on that from someone you haven't written to. It's on your screen.";
+    case "expired":
+      return `Your Google account needs connecting again before I can look through ${what}.`;
+    default:
+      notice satisfies never;
+      return "";
+  }
+}
+export const errandNoticeSens = (notice: ErrandNotice): "S0" | "S1" => (notice === "unmailed" ? "S1" : "S0");
+
 /** Ruling 10: nothing could be said here, and something is on the card. */
 export const ERRAND_ON_SCREEN_LINE = "I found something. It's on your screen.";
 /** Ruling 10: some lines were said, and the rest is on the card. */

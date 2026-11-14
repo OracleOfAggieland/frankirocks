@@ -26,7 +26,7 @@ import { requireModel } from "../config/models";
 import { ownerClock, readCoreDocs } from "../core-docs";
 import { isReadableGoogle, readGoogleDocs } from "../google/connector";
 import { googleConfigured } from "../google/config";
-import { type GoogleReadContext, type MailHit, type ReaderText, freeTime, googleReadContext, listEvents, readableMessage, searchMail, senderMailed } from "../google/read";
+import { type GoogleReadContext, type GoogleReadFailure, type MailHit, type ReaderText, freeTime, googleReadContext, listEvents, readableMessage, searchMail, senderMailed } from "../google/read";
 import { storeReader } from "../head-build";
 import type { ResponsesResult } from "../openai/responses";
 import type { RouteContext } from "../routes/runtime";
@@ -191,6 +191,21 @@ export function windowOf(when: string, nowMs: number, zone: string, periods: boo
 const UNRESOLVED = { unresolved: true, say: "I need a day for that." };
 const failure = (why: string) => ({ error: why });
 
+/**
+ * Review fix T8: a read that failed, flagged to the runner so code words the outcome. An expired grant and any
+ * other failure are told apart; a bad argument (`invalid`) or a forget (`forgotten`) is not the provider failing.
+ * `partOnly`: the read was one part of a larger one (a message the search found), so the run read only part.
+ */
+function readFailed(ctx: ErrandToolContext, why: GoogleReadFailure, partOnly = false) {
+  if (why === "expired") ctx.flag("expired");
+  else if (why !== "invalid" && why !== "forgotten") ctx.flag(partOnly ? "partial" : "failed");
+  return failure(why);
+}
+function unresolved(ctx: ErrandToolContext) {
+  ctx.flag("unresolved");
+  return UNRESOLVED;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Mail
 
@@ -244,13 +259,15 @@ const searchMailTool: ErrandTool = {
     if (a.when !== null) {
       const now = await worldNow(ctx.route);
       const w = windowOf(a.when, now.nowMs, now.zone, false);
-      if (w === null) return UNRESOLVED;
+      if (w === null) return unresolved(ctx);
       afterMs = w.fromMs;
       beforeMs = w.toMs;
     }
     const q: MailQuery = { from: a.from, words: a.words, afterMs, beforeMs, unread: a.unread };
     const r = await searchMail(mem.g, q);
-    if (!r.ok) return failure(r.why);
+    if (!r.ok) return readFailed(ctx, r.why);
+    ctx.flag("read");
+    if (r.value.partial) ctx.flag("partial");
     // Review fix T11: the sent-mail checks run a few at a time, inside the tool's deadline.
     // Review fix T1: mailed only on Gmail's DMARC pass, a sent message to that exact address, and no list mail.
     const mailedOf = await mapLimit(r.value.hits, SENT_CHECKS_PARALLEL, async (h) => (ctx.signal.aborted ? h.fromSelf : senderMailed(mem.g, h)));
@@ -265,6 +282,8 @@ const searchMailTool: ErrandTool = {
       // Review fix T2: an unmailed sender's message is a ref, a date and unread, and nothing else.
       messages.push(mailed ? { ref, from: h.sender.address, name: h.sender.name, at: h.at, subject: h.subject, unread: h.unread } : { ref, at: h.at, unread: h.unread });
     }
+    // Review fix T8: everything this search found is from people the owner hasn't written to.
+    if (r.value.hits.length > 0 && mailedOf.every((m) => !m)) ctx.flag("unmailed");
     return { messages, partial: r.value.partial };
   },
 };
@@ -281,9 +300,9 @@ const readMailTool: ErrandTool = {
     const eid = mem.searched.get(x.ref);
     if (eid === undefined) return failure("That ref is not from this errand's search.");
     const m = await readableMessage(mem.g, eid);
-    if (!m.ok) return failure(m.why);
+    if (!m.ok) return readFailed(ctx, m.why, true);
     const row = await rowOf(ctx.route, eid);
-    if (row === null) return failure("failed");
+    if (row === null) return readFailed(ctx, "failed", true);
     let model: string;
     try {
       model = requireModel("bg", ctx.route.deps.env);
@@ -294,12 +313,19 @@ const readMailTool: ErrandTool = {
     let out: ReaderOutput | null;
     try {
       // Review fix T11: the reader's own timeout and the run's abort signal go to the request itself.
-      if (ms <= 0) return failure("The reader could not answer just now.");
+      if (ms <= 0) {
+        ctx.flag("partial");
+        return failure("The reader could not answer just now.");
+      }
       out = parseReader(await withDeadline(ctx.route.deps.openai.call("responses.create", readerRequest(model, ctx.ownerWords, m.value), { timeoutMs: ms, signal: ctx.signal }), ms, ctx.route.deps.timers));
     } catch {
+      ctx.flag("partial");
       return failure("The reader could not answer just now.");
     }
-    if (out === null) return failure("The reader's answer did not parse.");
+    if (out === null) {
+      ctx.flag("partial");
+      return failure("The reader's answer did not parse.");
+    }
     const mailed = await senderMailed(mem.g, m.value);
     // The gist is the message's text: shown, so the framework's taint follows the row's class.
     const ref = ctx.read({ evidenceId: eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: true, sender: senderOf(m.value.sender, mailed), source: mailSource(m.value, mailed) });
@@ -329,9 +355,11 @@ const listEventsTool: ErrandTool = {
     const mem = stateOf(ctx);
     const now = await worldNow(ctx.route);
     const w = windowOf(a.when, now.nowMs, now.zone, true);
-    if (w === null) return UNRESOLVED;
+    if (w === null) return unresolved(ctx);
     const r = await listEvents(mem.g, w);
-    if (!r.ok) return failure(r.why);
+    if (!r.ok) return readFailed(ctx, r.why);
+    ctx.flag("read");
+    if (r.value.truncated) ctx.flag("partial");
     const events = [];
     for (const e of r.value.events) {
       const row = await rowOf(ctx.route, e.eid);
@@ -355,9 +383,11 @@ const freeTimeTool: ErrandTool = {
     const mem = stateOf(ctx);
     const now = await worldNow(ctx.route);
     const w = windowOf(a.when, now.nowMs, now.zone, true);
-    if (w === null) return UNRESOLVED;
+    if (w === null) return unresolved(ctx);
     const r = await freeTime(mem.g, w, minutes);
-    if (!r.ok) return failure(r.why);
+    if (!r.ok) return readFailed(ctx, r.why);
+    ctx.flag("read");
+    if (!r.value.complete) ctx.flag("partial");
     // The gaps carry no event text; the events behind them are registered as read, not shown.
     for (const eid of r.value.read) {
       const row = await rowOf(ctx.route, eid);

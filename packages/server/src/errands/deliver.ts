@@ -49,6 +49,8 @@ import {
   aboutPhrase,
   errandFailedLine,
   errandNothingLine,
+  errandNoticeLine,
+  errandNoticeSens,
   errandWaiting,
   msFromTs,
   nextErrandStatus,
@@ -67,7 +69,7 @@ import { paths } from "../store/paths";
 import type { StoredDoc } from "../store/port";
 import type { ProactiveDeck } from "../time/proactive";
 import { errandsReady } from "./agent";
-import { errandCard } from "./card";
+import { errandCard, sourceLine } from "./card";
 import { type LineVerdict, gateErrandLines } from "./gate";
 import { errandDeliveryId } from "./records";
 import { runErrand } from "./run";
@@ -181,15 +183,36 @@ async function errandsOnce(ctx: RouteContext, x: ErrandStateInput): Promise<Erra
   return { view: card === null ? view : { ...view, cards: [card, ...cards] }, proactive: claimed.proactive };
 }
 
-/** Review fix R8: a `failed` or `nothing` result's card is its one S0 line; others are their gated lines. */
+/** Review fix T8: the unmailed senders' messages a notice card lists, by address and date. */
+const UNMAILED_CARD_MAX = 6;
+
+/**
+ * Review fix R8: a `failed` or `nothing` result's card is its one S0 line; others are their gated lines. Review fix
+ * T8: a notice is its code line; the `unmailed` notice lists each stranger's address and date, in private only.
+ */
 export function errandResultCard(e: Errand, verdicts: readonly LineVerdict[], audience: Au, x: { id: ID; zone: string }): Card | null {
+  if (e.notice !== null && e.lines.length === 0) {
+    const title = `From ${aboutPhrase(e.about)}`;
+    if (e.notice === "unmailed") {
+      if (audience !== "private") return { id: x.id, kind: "source", title, lines: [ERRAND_HELD_LINE], sources: [], sens: "S0" };
+      const strangers = e.reads.filter((r) => r.source.kind === "mail" && r.sender !== null && !r.sender.mailed).slice(0, UNMAILED_CARD_MAX);
+      const lines = [errandNoticeLine("unmailed", e.about), ...strangers.map((r) => sourceLine(r.source, x.zone, r.sender))];
+      return { id: x.id, kind: "source", title, lines, sources: strangers.map((r) => ({ type: "evidence" as const, id: r.evidenceId, rev: r.rev })), sens: errandNoticeSens("unmailed") };
+    }
+    return { id: x.id, kind: "source", title, lines: [errandNoticeLine(e.notice, e.about)], sources: [], sens: "S0" };
+  }
   if (e.outcome === "failed" || e.outcome === null) return { id: x.id, kind: "source", title: `From ${aboutPhrase(e.about)}`, lines: [errandFailedLine(e.about)], sources: [], sens: "S0" };
   if (e.outcome === "nothing" || e.lines.length === 0) return { id: x.id, kind: "source", title: `From ${aboutPhrase(e.about)}`, lines: [errandNothingLine(e.about)], sources: [], sens: "S0" };
   return errandCard(e, verdicts, { ...x, audience });
 }
 
 /** The words a delivery says, and their sensitivity (ruling 9, 10 and 13). Pure. */
-export function errandWords(e: Pick<Errand, "outcome" | "about">, verdicts: readonly LineVerdict[]): { text: string; sens: Sens; said: LineVerdict[] } {
+export function errandWords(e: Pick<Errand, "outcome" | "about" | "notice" | "lines">, verdicts: readonly LineVerdict[], audience: Au): { text: string; sens: Sens; said: LineVerdict[] } {
+  // Review fix T8: code words an outcome with no line; mail from a stranger is said only in private.
+  if (e.notice !== null && e.lines.length === 0) {
+    if (e.notice === "unmailed" && audience !== "private") return { text: ERRAND_HELD_LINE, sens: "S0", said: [] };
+    return { text: errandNoticeLine(e.notice, e.about), sens: errandNoticeSens(e.notice), said: [] };
+  }
   if (e.outcome === "failed" || e.outcome === null) return { text: errandFailedLine(e.about), sens: "S0", said: [] };
   if (e.outcome === "nothing" || verdicts.length === 0) return { text: errandNothingLine(e.about), sens: "S0", said: [] };
   const said = verdicts.filter((v) => v.shown === "say" && v.line.sens !== "S2" && v.line.speak);
@@ -236,7 +259,7 @@ async function claimDelivery(ctx: RouteContext, x: ErrandStateInput, errandId: I
       const { audience, modifiers } = gateAudience(s, ops);
       if (modifiers.crisis) return null;
       const verdicts = verdictsOf(doc.data, audience, modifiers);
-      const words = errandWords(doc.data, verdicts);
+      const words = errandWords(doc.data, verdicts, audience);
       const attempt = (doc.data.offer?.attempt ?? 0) + 1;
       const turnId = deps.hasher.id(["errandTurn", x.sessionId, errandId, String(attempt)]) as ID;
       const stamp = { ...x.stamp, turnId };
