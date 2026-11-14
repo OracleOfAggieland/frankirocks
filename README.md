@@ -58,8 +58,21 @@ The parts not yet stitched on, in build order:
 - **Forget.** "Forget what I said about my brother" and its No Resurrection property.
 - **Time.** Check-ins and reminders that Franki raises on its own.
 - **The pattern across your life.** Noticing takeout spending against late meetings, and closing the loop with the number that changed.
-- **The seeded month** that the lab runs on. Franki runs on fixtures, not on live mail or bank connections.
+- **The seeded month** that the lab runs on. The demo runs on fixtures. A real bank (Plaid) and a real Google account (Gmail and Calendar, read-only) can also be connected; see [Asking about your mail and calendar](#asking-about-your-mail-and-calendar).
 - Nine `voice-control` tasks and eight call-path fixes, each already written down as a failing test in [`docs/briefs/014-report.md`](docs/briefs/014-report.md).
+
+## Asking about your mail and calendar
+
+Connect Google from the Google button at the foot of `/lab` (setup in [`docs/setup.md`](docs/setup.md)). Then, in a call, ask in your own words: "Did Dana write about the lease?", "What's on tomorrow?", "Am I free Thursday afternoon for 45 minutes?". Franki says one short line ("Let me look."), a helper on the server looks through your mail or calendar while you keep talking, and the answer comes at the next pause, once, with a card on screen. A look-up needs a call open; a typed line with no call open can't start one.
+
+What it doesn't do:
+
+- **Read-only.** It never sends, replies, deletes, accepts an invite or changes an event.
+- **Mail can inform, never order.** A message can't call a number, change a rule, write a memory or grant a permission. Its text never reaches the planner; a separate reader with no tools reads one message at a time.
+- **Strangers stay on the card.** Mail from someone you have never written to (checked by Gmail's own DMARC result and your sent mail) is never read out; the card names the sender by address only.
+- **Bounded.** At most two look-ups at once, a 14-day calendar window, and a capped number of messages and events per look-up; a cut list says so.
+- **Not in the background.** Mail and events are read only when you ask. A look-up whose call has ended is shown on the card only.
+- **Never tried against a real Google account.** Everything is tested against a scripted fake.
 
 ## Run it
 

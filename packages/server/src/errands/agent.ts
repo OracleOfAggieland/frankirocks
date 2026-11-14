@@ -76,7 +76,8 @@ export interface ErrandTool {
   run(ctx: ErrandToolContext, args: unknown): Promise<unknown>;
 }
 
-export type ErrandAvailability = "ready" | "notConnected" | "unavailable";
+/** Review fix E11: `expired`: connected once, and the grant needs connecting again. */
+export type ErrandAvailability = "ready" | "notConnected" | "expired" | "unavailable";
 
 export interface ErrandAgent {
   id: string;
@@ -87,7 +88,7 @@ export interface ErrandAgent {
   available(ctx: RouteContext): Promise<ErrandAvailability>;
 }
 
-/** The registry production ships with (ruling 6): empty until the agents of part C land. */
+/** The registry with Google not configured (ruling 6): empty. With Google configured, `errandAgentsOf` adds part C's. */
 export const PRODUCTION_ERRAND_AGENTS: readonly ErrandAgent[] = [];
 
 /**

@@ -73,6 +73,16 @@ In the Google Cloud console, in a project you own:
 
 `npm run dev` copies only nonempty plain values from `apps/web/apphosting.yaml` (`scripts/sync-local-env.mjs`), so the empty client ID and redirect URI there never hide the ones in `.env.local`. With any of these names unset or malformed, every Google route answers `CONFIG` and the sheet says Google isn't set up.
 
+Asking: once connected, ask in a call ("Did Dana write about the lease?", "What's on tomorrow?", "Am I free Thursday afternoon for 45 minutes?"). The call hands the ask to a helper (`start_errand`), and the answer comes at the next pause with a card. A half-covered ask (mail and calendar, with only mail connected) looks through the connected part and says the other isn't connected; an expired grant is said as needing connecting again.
+
+What it doesn't do:
+
+- No writes of any kind: no send, reply, delete, label, RSVP or event change.
+- A message can't order Franki: no tool outside the four reads, no memory, rule, preference or identity write, no change to the Head.
+- Mail from a sender you have never written to is never read out (card only, by address); a sender counts as written to only with Gmail's DMARC pass for the From domain and a sent message to that exact address, and never for list or bulk mail.
+- At most `ERRAND_RUNNING_MAX` look-ups at once; calendar windows are clipped at 14 days; a cut list says `truncated`.
+- A disconnect drops what a look-up found, including a result not yet said.
+
 Known gaps: no real Google call has been tested; everything runs against a scripted fake. Mail and events are read only when asked, never in the background, and Google sends no push notifications here.
 
 ## Deploy
