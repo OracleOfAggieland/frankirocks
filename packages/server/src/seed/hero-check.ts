@@ -6,7 +6,7 @@
  * names the rows it came from.
  */
 import type { Evidence } from "@franki/core";
-import { msFromTs } from "@franki/core";
+import { isConnectedGoogleRow, msFromTs } from "@franki/core";
 import { localDate, localMinute } from "./clock";
 
 /** A purchase at or after this local minute is an evening purchase. */
@@ -31,7 +31,9 @@ export interface HeroSources {
   lateCents: number;
 }
 
-export function heroSources(rows: readonly { id: string; data: Evidence }[], window: { from: string; to: string }, zone: string): HeroSources {
+export function heroSources(all: readonly { id: string; data: Evidence }[], window: { from: string; to: string }, zone: string): HeroSources {
+  // Brief 049 ruling 22: a connected Google account's rows never feed the hero.
+  const rows = all.filter((r) => !isConnectedGoogleRow(r.data));
   const inWindow = (d: string) => d >= window.from && d <= window.to;
   const bank = rows.filter((r) => r.data.status === "retained" && r.data.isCurrentProvider && r.data.observation.kind === "bank");
   const covered = new Set<string>();

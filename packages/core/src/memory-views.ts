@@ -15,6 +15,7 @@
  */
 import { type DocRef, type EC, type Snapshot, docRef, eligible } from "./eligible";
 import { recallLineText } from "./recall";
+import { isConnectedGoogleRow } from "./google/index";
 import { lessOnTakeoutLine } from "./patterns/words";
 import type { Au, Cov, ID, Ref, Sens } from "./schema/primitives";
 import type { Evidence, Ledger, Memory } from "./schema/records";
@@ -338,7 +339,8 @@ export const LAB_FLOOR_RECALL = "floorRecall";
 export function labView(input: LabInput): LabView {
   const { ec, snapshot: s } = input;
   const emails = new Set<string>();
-  for (const e of input.evidence) if (e.evidence.kind === "message" && e.evidence.status === "retained" && e.evidence.uid === ec.uid) emails.add(e.id);
+  // Brief 049 ruling 22: the Lab counts the sample visit's mail, never a connected Google account's.
+  for (const e of input.evidence) if (e.evidence.kind === "message" && e.evidence.status === "retained" && e.evidence.uid === ec.uid && !isConnectedGoogleRow(e.evidence)) emails.add(e.id);
   const guessIds = new Set<string>();
   const privateGuesses = new Set<string>();
   for (const r of input.memories) {

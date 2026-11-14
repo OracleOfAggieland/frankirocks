@@ -43,3 +43,8 @@ export * from "./time/reminder";
 // Brief 046: the bank connection (read-only). The five routes, and the pull and gate for the money read (part C).
 export { bankConnectRoute, bankDisconnectRoute, bankLinkTokenRoute, bankStatusRoute, bankSyncRoute, readableBankIds } from "./bank/routes";
 export { STALE_AFTER_MS as BANK_STALE_AFTER_MS, pullIfStale } from "./bank/pull";
+
+// Brief 049 (lane google): the Google connection (read-only). The four routes, and the reads the errand tools call.
+export { googleConnectRoute, googleDisconnectRoute, googleStartRoute, googleStatusRoute } from "./google/routes";
+export { googleConfigured } from "./google/config";
+export { freeTime, googleReadContext, listEvents, readableMessage, searchMail } from "./google/read";
