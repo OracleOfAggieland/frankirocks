@@ -1,7 +1,8 @@
 /**
  * Brief 049 rulings 20 and 25: one Calendar API event (primary calendar, `singleEvents=true`) as the content of one
  * Evidence row. The provider's typed fields are read by code; the title is data. An all-day event's dates are read
- * in the calendar's own time zone. An event the owner organizes is O; anyone else's is T.
+ * in the calendar's own time zone. An event's title is O only when the owner both organizes and created it
+ * (review D4); otherwise T.
  */
 import { type Hasher, isZone, linkless, localMinuteAt, visibleText } from "@franki/core";
 

@@ -153,6 +153,7 @@ These steps are also in `docs/setup.md`.
 4. Put the client ID in `GOOGLE_OAUTH_CLIENT_ID`: the plain value in `apps/web/apphosting.yaml`, and `apps/web/.env.local`.
 5. Set the client secret with `firebase apphosting:secrets:set GOOGLE_OAUTH_CLIENT_SECRET`, and grant the backend access. Also put it in `.env.local`.
 6. `FRANKI_BANK_TOKEN_KEY` is already set.
+7. (Review S2) Set `GOOGLE_OAUTH_REDIRECT_URI`, a plain value: `https://franki-web--frankirocks.us-central1.hosted.app/google/callback` in `apps/web/apphosting.yaml`, and `http://localhost:3000/google/callback` in `apps/web/.env.local`. Unset, every Google route answers CONFIG.
 
 ### Never exercised outside tests
 
@@ -167,3 +168,74 @@ Everything. No call to Google was made. Never run in a browser:
 - calendar zones from a real calendar.
 
 All of it ran against `FakeGoogle`, the scripted fetch, and static renders.
+
+### Review fixes (Nov 14)
+
+Two adversarial reviews attacked Part B. Each item below got a test that failed first, except where marked. Claude built all of it; Kiro wrote none.
+
+| Finding | What changed | Commit |
+| --- | --- | --- |
+| S1 | `profile`, `userinfo.profile` (and `openid`, `email`, `userinfo.email`) are harmless extras; any other extra scope still refuses and revokes. `SIGN_IN_SCOPES` in the fake. **`include_granted_scopes=true` is still sent** (G-296). | `9bf5fcd` |
+| S2 | `GOOGLE_OAUTH_REDIRECT_URI`, one plain value per deployment; start refuses an Origin whose `/google/callback` isn't it; unset or malformed is CONFIG. `apphosting.yaml`, `docs/setup.md`, README. | `9bf5fcd` |
+| S9 | An exchange answer the port can't read (oversize or malformed `id_token`) revokes the fresh grant before it fails. | `9bf5fcd` |
+| S10 | Pins of the accepted-scope set (adding `gmail.send` fails a test) and of the start URL's exact parameters (`oauth-review.test.ts`); a new property, `connect-state-every-call.property.test.ts`, counts every port call and also checks no row and no pending change. It went red on the old code: seed 1255974258, counterexample `["expired",0,0,"a-A--00Aa_a0000a-0Aa_0A_00AAaa0--__aa-Aa0_-"]`. | `9bf5fcd`, `62fcba9` |
+| S5 | A connect whose state doesn't match writes nothing at all (no request row, no ledger row, the pending left as it was), unless that requestId already has a row (the replay). The callback page posts only after taking a one-time marker the sheet placed in localStorage when it opened the popup, and removed when the wait ended. | `62fcba9`, `5f1a437` |
+| S6 | Disconnect clears the pending authorization. The connect's save refuses (`badState`) and revokes when the gmail document's rev moved since the claim. | `62fcba9` |
+| S7 | A token the key can't open is erased anyway; the row's outcome is the new `disconnectedUntold`; the answer is disconnected. | `62fcba9` |
+| S8 | Recorded connect answers hold `email: null`; the route answers the live view. | `62fcba9` |
+| S3, D5 | `accountKey` now stays on both documents after disconnect and expiry. A connect by a different account moves `activeGeneration` on. Rows carry the generation, and their provider, thread and logical keys are hashed under `googleKeyScope(connectorId, generation)` (generation 0 keeps the old keys). Every read checks the generation; the same account reconnecting reads its old rows. | `62fcba9` |
+| S4 | The storing transaction re-reads the document (`stillReadable`): a disconnect or another account that committed mid-read stores nothing and answers `notConnected`. | `62fcba9` |
+| D7 | The storing transaction is tried once more on `staleRevision`, then answers `failed`. Its test passed when written, since the fix landed with S4. | `62fcba9`, `5ffaef4` |
+| D6 (b) | An incomplete block snapshot (past 128) fails the read before any fetch. Test written after the fix, as D7. | `62fcba9`, `5ffaef4` |
+| D6 (a) | "Start over" keeps provider blocks whose key names a row a kept connector read (Google or bank). | `5ffaef4` |
+| D9 | Tag names are matched case-insensitively on the original string; Unicode `Cf` and U+2028/2029 become spaces in body, subject, title and headers; every URL-like token is `[link]` (`linkless`). | `d7baece`, `5ffaef4` |
+| D8 | `cutAt` never splits a surrogate pair. A part past the decode bound is decoded to it and marked cut; a part with `attachmentId` and no `data` is marked; HTML dropped at an unclosed construct is marked. | `d7baece`, `5ffaef4` |
+| D10 | An opaque all-day event blocks its day. A length that is not a whole positive number of minutes within the day bounds answers `invalid`, calling nothing. | `d7baece`, `5ffaef4` |
+| D12 | `gmailQuery` throws and `searchMail` answers `invalid` on a non-integer time. Appending a revision sets the prior one's `isCurrentProvider` to false. `readableMessage` given an old eid answers the current revision. A change past 64 revisions fails the read. Failed `getMessage`s set `partial`. | `d7baece`, `5ffaef4` |
+| D1 | `listEvents` reads pages of 50, at most 4 (`EVENTS_READ_MAX = 200`), and says `truncated`. `freeTime` answers gaps only up to `through` (the last read event's start when pages remain) and says `complete`. | `5ffaef4` |
+| D2 | Every text slice of a connected-Google row is at least S1 (`RowOptions.sensMin`). Fixture rows are unchanged. | `5ffaef4` |
+| D3 | `evidenceClass` (now exported from `routes/gate-tool.ts`) gives a connector row the lowest class among its slices, T with none. Fixture rows keep the source rule, and every existing test stayed green. | `5ffaef4` |
+| D4 | Sent mail with a quote or forward marker stores `bodyOwn` (O) and `bodyQuoted` (T), with no `body`. An event title is O only when `organizer.self` and `creator.self` (now read from Google). | `5ffaef4` |
+| D11 | Senders are `{ name, address }`. `ownerHasMailed` asks `in:sent to:<address>` for one result, once per address per read context. | `5ffaef4` |
+
+Existing tests changed to match a ruling, never loosened: `google.test.ts`'s two hosted-origin tests now set the hosted `GOOGLE_OAUTH_REDIRECT_URI` (S2); its search test reads the structured sender (D11); its free-time test and core's `freeGaps` test mark their all-day event transparent, since an opaque one now blocks (D10).
+
+**For Part C, the signatures that changed:**
+
+```ts
+type GoogleReadFailure = "unavailable" | "notConnected" | "expired" | "failed" | "forgotten" | "invalid";
+interface GoogleReadContext { route; epoch; tokens: Map; mailed: Map<string, boolean> }   // still made by googleReadContext(route, epoch)
+interface MailSender { name: string; address: string | null }   // MailHit.sender and ReaderText.sender
+searchMail(g, q): Promise<GoogleRead<{ hits: MailHit[]; read: string[]; partial: boolean }>>        // invalid for a non-integer time
+listEvents(g, w): Promise<GoogleRead<{ zone; events: EventRow[]; read: string[]; truncated: boolean }>>
+freeTime(g, w, minutes, bounds?): Promise<GoogleRead<{ zone; gaps; read: string[]; complete: boolean; through: string }>>   // invalid for a bad length
+ownerHasMailed(g, address: string): Promise<GoogleRead<boolean>>   // new; invalid for anything that isn't plainly an address
+googleConfigured(env)   // now also needs GOOGLE_OAUTH_REDIRECT_URI
+```
+
+`readableMessage` keeps its signature. Its `body` joins `bodyOwn` and `bodyQuoted` for split sent mail, so Part C's reader sees both, and must still treat the whole message as T (`evidenceClass` says T for a split row).
+
+**New contract questions:**
+- **G-296.** Ruling S1 says to drop `include_granted_scopes`, but the committed `port-read-only.property.test.ts` pins `include_granted_scopes=true`, and committed property files may not be edited. The parameter stays, with the identity scopes accepted, which removes the refusal. Dropping it needs the director's leave to change that one line of the property.
+- **G-297.** Account separation uses the connector's `activeGeneration` and a key scope, not a new field. `GoogleConnection.accountKey` now means "the last account connected on this document" and survives disconnect and expiry (a hash, never shown).
+- **G-298.** S6 detects an overtaken claim by the gmail document's `rev`. Any write to that document between claim and save (a disconnect, a new start, an expiry) refuses the connect, which is the safe side.
+- **G-299.** The S5 marker is one same-origin localStorage key, not sessionStorage or `window.opener`: Google's COOP can sever the opener, and sessionStorage's copy into a popup differs across browsers. With no usable storage the callback still posts, and the server's state check (which now consumes nothing on a mismatch) is the only guard. A link opened while the owner's own popup is out can still take the marker; its state won't match, so it changes nothing.
+- **G-300.** `freeTime` past the 200-event cap clips at the last read event's start instead of failing, and answers `complete: false` and `through`.
+- **G-301.** Format characters become spaces rather than vanishing, so the existing direction-mark test holds and no two words run together.
+- **G-302.** `linkless` replaces a scheme URL, a `www.` host and a bare host with a path. A bare `name.tld` with no path is kept, since it can't be told from a file name. An email address is kept.
+- **G-303.** At the revision cap the read fails (the "fail" choice). A hot message that changes 64 times can no longer be searched until a ruling raises the cap or allows rolling.
+- **G-304.** Flipping the prior revision's `isCurrentProvider` bumps that row's `rev`. A lineage ref to the old revision at its old rev would then not match; Part C should cite current revisions only.
+- **G-305.** Kept blocks (D6 a) survive "Start over" with the forget receipts they came from deleted.
+
+**Corrections to the claims above:** `mailText` did not drop every link (an attribute's tail could leak past a `>` inside quotes); it now replaces URL-like tokens with `[link]` (G-302). "A blocked provider ID is not fetched" held only within the first 128 blocks; past them the read now fails closed.
+
+**Checks after the fixes:** `npm run typecheck` green; `npm run lint` 0 errors, the one old warning (`avatar/three/brass.ts`); `npm run build` green. Shard 1/3: 221 files, 1,908 passed, 17 expected fail. Shard 2/3: 221 files, 1,760 passed, 2 expected fail. Shard 3/3: 220 files, 1,633 passed, 2 expected fail.
+
+**Left unfixed:**
+- **S1's parameter removal**, for G-296.
+- **D6, no forget path can block a Google row yet.** The reviewer found that nothing in the forget flow creates a provider block for a connected-Google message or event. The block checks above are tested with hand-made blocks only, so "forget" of a Google row does not reach the read layer today.
+
+**New risks from these fixes:**
+- The localStorage marker can stop a real connect in a browser that clears storage between the press and the callback.
+- Rows stored before these fixes have generation 0, keys under the connector ID and S0 slices. A re-read stores a new revision, since the content key now includes slice classes and sensitivities.
+- `freeTime` now reads up to 4 pages, so up to 4 Calendar calls per ask.
