@@ -13,6 +13,12 @@ export const GOOGLE_PROVIDERS = ["gmail", "calendar"] as const;
 export type GoogleProvider = (typeof GOOGLE_PROVIDERS)[number];
 
 export const googleConnectorId = (hasher: Hasher, uid: string, provider: GoogleProvider) => hasher.id(["google-connector", uid, provider]);
+/**
+ * Review S3: the ID one account's rows on one document are keyed under. Generation 0 (the first account) keeps the
+ * document's own ID, so its keys are what they always were; a later account's generation has keys of its own, so
+ * its rows, provider keys and blocks never meet the first account's.
+ */
+export const googleKeyScope = (hasher: Hasher, connectorId: string, generation: number) => (generation === 0 ? connectorId : hasher.id(["google-account-scope", connectorId, String(generation)]));
 /** H(Google's `sub`) for one owner: recognises a second account without storing the raw ID. */
 export const googleAccountKey = (hasher: Hasher, uid: string, sub: string) => hasher.id(["google-account", uid, sub]);
 

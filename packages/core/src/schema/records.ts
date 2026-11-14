@@ -464,6 +464,8 @@ export const GOOGLE_LEDGER_OUTCOMES = [
   "otherAccount",
   "disconnected",
   "notRevoked",
+  /** Review S7: the stored token couldn't be opened (the sealing key changed), so it was erased without telling Google. */
+  "disconnectedUntold",
   "failed",
 ] as const;
 export const GoogleLedgerPayload = obj({
@@ -1092,7 +1094,11 @@ export const GooglePending = obj({
 export type GooglePending = Infer<typeof GooglePending>;
 
 export const GoogleConnection = obj({
-  /** H(Google's `sub`), so a second account is recognised without storing the raw ID. Null until connected. */
+  /**
+   * H(Google's `sub`) of the last account connected on this document, so a second account is recognised without
+   * storing the raw ID. Null until a first connect; kept after disconnect and expiry, so a different account later
+   * moves `activeGeneration` on and never reads the first one's rows (review S3).
+   */
   accountKey: nullable(ID),
   /** The account's address from the ID token, shown on the sheet. Null until connected and after disconnect. */
   email: nullable(str(320)),

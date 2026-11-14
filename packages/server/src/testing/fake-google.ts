@@ -43,6 +43,19 @@ export class FakeGoogle implements GooglePort {
   listed: MessageRef[] | null = null;
   events: EventList = { timeZone: "UTC", items: [] };
   private errors = new Map<Method, (GoogleCallError | Error)[]>();
+  /** One-shot work run inside a call before it answers (a disconnect mid-exchange, a forget mid-read). */
+  private hooks = new Map<Method, (() => Promise<void>)[]>();
+
+  /** Runs `work` inside the next call of `method`, after it is recorded and before it answers. */
+  during(method: Method, work: () => Promise<void>): this {
+    this.hooks.set(method, [...(this.hooks.get(method) ?? []), work]);
+    return this;
+  }
+
+  private async hook(method: Method): Promise<void> {
+    const next = this.hooks.get(method)?.shift();
+    if (next !== undefined) await next();
+  }
 
   failNext(method: Method, error: GoogleCallError | Error): this {
     this.errors.set(method, [...(this.errors.get(method) ?? []), error]);
@@ -62,28 +75,34 @@ export class FakeGoogle implements GooglePort {
 
   async exchangeCode(...args: Parameters<GooglePort["exchangeCode"]>) {
     this.take("exchangeCode", args);
+    await this.hook("exchangeCode");
     return { ...this.tokens, scope: [...this.tokens.scope] };
   }
   async refresh(...args: Parameters<GooglePort["refresh"]>) {
     this.take("refresh", args);
+    await this.hook("refresh");
     return { ...this.refreshed };
   }
   async revoke(...args: Parameters<GooglePort["revoke"]>) {
     this.take("revoke", args);
+    await this.hook("revoke");
   }
   async listMessages(...args: Parameters<GooglePort["listMessages"]>) {
     this.take("listMessages", args);
+    await this.hook("listMessages");
     const all = this.listed ?? [...this.messages.values()].map((m) => ({ id: m.id, threadId: m.threadId }));
     return all.slice(0, Math.max(1, args[2]));
   }
   async getMessage(...args: Parameters<GooglePort["getMessage"]>) {
     this.take("getMessage", args);
+    await this.hook("getMessage");
     const m = this.messages.get(args[1]);
     if (m === undefined) throw new GoogleCallError("notFound", true);
     return structuredClone(m);
   }
   async listEvents(...args: Parameters<GooglePort["listEvents"]>) {
     this.take("listEvents", args);
+    await this.hook("listEvents");
     return structuredClone(this.events);
   }
 }

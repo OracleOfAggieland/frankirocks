@@ -39,9 +39,10 @@ import { foregroundEC, storeReader } from "../head-build";
 import type { RouteContext } from "../routes/runtime";
 import { SealError, unseal } from "../sealed";
 import { paths } from "../store/paths";
-import type { Reader, StoredDoc } from "../store/port";
+import { StoreError } from "../store/errors";
+import type { Reader, StoredDoc, Tx } from "../store/port";
 import { calendarLogicalId, calendarProviderKey, calendarZone, eventContent } from "./calendar";
-import { type GoogleProvider, googleConnectorId, isReadableGoogle, readGoogleDocs } from "./connector";
+import { type GoogleProvider, googleConnectorId, googleKeyScope, isReadableGoogle, readGoogleDocs } from "./connector";
 import { CALENDAR_SCOPE, GMAIL_SCOPE } from "./oauth";
 import { gmailLogicalId, gmailProviderKey, mailContent, GMAIL_PARSER_VERSION_CUT } from "./mail";
 import { GoogleCallError } from "./port";
@@ -149,8 +150,41 @@ async function markExpired(g: GoogleReadContext): Promise<void> {
   }
 }
 
+/** What one read is bound to: the document, the account generation it began under, and that generation's key scope. */
+interface Access {
+  token: string;
+  connectorId: string;
+  generation: number;
+  scope: string;
+}
+
+/**
+ * Review S3 and S4: inside the storing transaction, the document must still be readable and still on the account
+ * generation the read began under. A disconnect or a different account that committed mid-read wins: nothing is
+ * stored, and the read answers as disconnected.
+ */
+async function stillReadable(tx: Pick<Tx, "get">, g: GoogleReadContext, provider: GoogleProvider, generation: number): Promise<void> {
+  const doc = (await readGoogleDocs(tx, g.route.uid, g.route.deps.hasher))[provider];
+  if (doc === null || !isReadableGoogle(doc.data) || doc.data.activeGeneration !== generation) throw new ReadStop("notConnected");
+}
+
+/** Review D7: one transaction, tried again once when a concurrent read stored the same row first. */
+async function storeOnce<T>(g: GoogleReadContext, work: (tx: Tx) => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await g.route.deps.store.transaction(g.route.uid, work);
+    } catch (error) {
+      if (!(error instanceof StoreError && error.code === "staleRevision")) throw error;
+      if (attempt >= 1) {
+        g.route.deps.log("google.storeContended", {});
+        throw new ReadStop("failed");
+      }
+    }
+  }
+}
+
 /** An access token for one provider, refreshed once per run and kept in memory only. */
-async function accessFor(g: GoogleReadContext, rt: GoogleRuntime, provider: GoogleProvider): Promise<{ token: string; connectorId: string }> {
+async function accessFor(g: GoogleReadContext, rt: GoogleRuntime, provider: GoogleProvider): Promise<Access> {
   const { uid, deps } = g.route;
   const connectorId = googleConnectorId(deps.hasher, uid, provider);
   const reader = storeReader(deps.store, uid);
@@ -160,8 +194,10 @@ async function accessFor(g: GoogleReadContext, rt: GoogleRuntime, provider: Goog
   if (doc === null || doc.data.google === null || !doc.data.google.granted) throw new ReadStop("notConnected");
   if (doc.data.state === "expired") throw new ReadStop("expired");
   if (!isReadableGoogle(doc.data)) throw new ReadStop("notConnected");
+  const generation = doc.data.activeGeneration;
+  const bound = { connectorId, generation, scope: googleKeyScope(deps.hasher, connectorId, generation) };
   const cached = g.tokens.get(provider);
-  if (cached !== undefined) return { token: cached, connectorId };
+  if (cached !== undefined) return { token: cached, ...bound };
   let refreshToken: string;
   try {
     refreshToken = unseal("franki-google-token", rt.config.tokenKeys, uid, connectorId, doc.data.google.token!);
@@ -176,7 +212,7 @@ async function accessFor(g: GoogleReadContext, rt: GoogleRuntime, provider: Goog
     const r = await rt.port.refresh(rt.config, refreshToken);
     if (r.scope !== null && !r.scope.includes(provider === "gmail" ? GMAIL_SCOPE : CALENDAR_SCOPE)) throw new ReadStop("notConnected");
     g.tokens.set(provider, r.accessToken);
-    return { token: r.accessToken, connectorId };
+    return { token: r.accessToken, ...bound };
   } catch (error) {
     if (error instanceof GoogleCallError && error.problem === "invalidGrant") {
       await markExpired(g);
@@ -188,9 +224,13 @@ async function accessFor(g: GoogleReadContext, rt: GoogleRuntime, provider: Goog
   }
 }
 
-/** The provider keys a forget has blocked, active or in review. */
+/**
+ * The provider keys a forget has blocked, active or in review. Review D6: past the snapshot's 128 blocks the list is
+ * incomplete, so a blocked message could be fetched and stored again; the read fails closed instead.
+ */
 async function blockedKeys(reader: Reader, uid: string): Promise<{ keys: Set<string>; forget: Awaited<ReturnType<typeof forgetRowsFor>> }> {
   const forget = await forgetRowsFor(reader, uid);
+  if (!forget.complete) throw new ReadStop("failed");
   return { keys: new Set(forget.blocks.filter((b) => b.kind === "provider" && b.providerKey !== null).map((b) => b.providerKey!)), forget };
 }
 
@@ -256,7 +296,8 @@ export function searchMail(g: GoogleReadContext, q: MailQuery): Promise<GoogleRe
   return guarded(async () => {
     const { uid, deps } = g.route;
     const rt = runtime(g);
-    const { token, connectorId } = await accessFor(g, rt, "gmail");
+    const access = await accessFor(g, rt, "gmail");
+    const { token, connectorId, scope } = access;
     let refs: Awaited<ReturnType<typeof rt.port.listMessages>>;
     try {
       refs = await rt.port.listMessages(token, gmailQuery(q), MAIL_SEARCH_MAX);
@@ -266,26 +307,27 @@ export function searchMail(g: GoogleReadContext, q: MailQuery): Promise<GoogleRe
     }
     const reader = storeReader(deps.store, uid);
     const { keys, forget } = await blockedKeys(reader, uid);
-    const wanted = refs.slice(0, MAIL_SEARCH_MAX).filter((r) => !keys.has(gmailProviderKey(deps.hasher, connectorId, r.id)));
+    const wanted = refs.slice(0, MAIL_SEARCH_MAX).filter((r) => !keys.has(gmailProviderKey(deps.hasher, scope, r.id)));
     const fetched = await Promise.allSettled(wanted.map((r) => rt.port.getMessage(token, r.id)));
     const messages = fetched.flatMap((f) => (f.status === "fulfilled" ? [f.value] : []));
     if (wanted.length > 0 && messages.length === 0) {
       deps.log("google.messagesFailed", {});
       return fail("failed");
     }
-    const eids = await deps.store.transaction(uid, async (tx) => {
+    const eids = await storeOnce(g, async (tx) => {
       const epoch = await fence(tx, g);
-      const ctx: GoogleRowContext = { uid, connectorId, epoch: epoch.epoch, policyRev: epoch.policyRev, opsNow: nowOf(g), hasher: deps.hasher };
+      await stillReadable(tx, g, "gmail", access.generation);
+      const ctx: GoogleRowContext = { uid, connectorId, generation: access.generation, keyScope: scope, epoch: epoch.epoch, policyRev: epoch.policyRev, opsNow: nowOf(g), hasher: deps.hasher };
       const out: string[] = [];
       for (const m of messages) {
         const content = mailContent(m);
         if (content === null) continue;
-        const logicalId = gmailLogicalId(deps.hasher, uid, connectorId, m.id);
+        const logicalId = gmailLogicalId(deps.hasher, uid, scope, m.id);
         out.push(await storeRow(tx, uid, logicalId, (eid, revisionOf) => mailEvidence(eid, logicalId, revisionOf, m.id, content, ctx), deps.hasher));
       }
       return out;
     });
-    const unread = new Map(messages.map((m) => [gmailProviderKey(deps.hasher, connectorId, m.id), m.labelIds.includes("UNREAD")]));
+    const unread = new Map(messages.map((m) => [gmailProviderKey(deps.hasher, scope, m.id), m.labelIds.includes("UNREAD")]));
     const rows = await eligibleRows(g, reader, await readStored(reader, uid, eids), forget);
     const hits = rows.map((d) => ({
       eid: d.id,
@@ -314,7 +356,8 @@ export function readableMessage(g: GoogleReadContext, eid: string): Promise<Goog
     if (docs.gmail?.data.state === "expired") return fail("expired");
     if (!isReadableGoogle(docs.gmail?.data)) return fail("notConnected");
     const doc = /^[A-Za-z0-9_-]{1,128}$/.test(eid) ? await reader.get<Evidence>(paths.evidence(uid, eid)) : null;
-    if (doc === null || doc.data.source !== "gmail" || doc.data.kind !== "message" || doc.data.connectorId !== connectorId) return fail("notConnected");
+    // Review S3: a row another account stored (an older generation) is not this account's to read.
+    if (doc === null || doc.data.source !== "gmail" || doc.data.kind !== "message" || doc.data.connectorId !== connectorId || doc.data.generation !== docs.gmail!.data.activeGeneration) return fail("notConnected");
     const { keys, forget } = await blockedKeys(reader, uid);
     if (doc.data.providerKey !== null && keys.has(doc.data.providerKey)) return fail("forgotten");
     const [ok] = await eligibleRows(g, reader, [doc], forget);
@@ -353,7 +396,8 @@ async function readEvents(g: GoogleReadContext, window: EventWindow): Promise<Go
   const { uid, deps } = g.route;
   if (!validWindow(window)) return fail("failed");
   const rt = runtime(g);
-  const { token, connectorId } = await accessFor(g, rt, "calendar");
+  const access = await accessFor(g, rt, "calendar");
+  const { token, connectorId, scope } = access;
   let list: Awaited<ReturnType<typeof rt.port.listEvents>>;
   try {
     list = await rt.port.listEvents(token, { timeMin: tsFromMs(window.fromMs), timeMax: tsFromMs(window.toMs), max: EVENTS_MAX });
@@ -367,13 +411,14 @@ async function readEvents(g: GoogleReadContext, window: EventWindow): Promise<Go
   const events = list.items
     .slice(0, EVENTS_MAX)
     .map((item) => eventContent(item, zone))
-    .filter((e): e is NonNullable<typeof e> => e !== null && !keys.has(calendarProviderKey(deps.hasher, connectorId, e.eventId)));
-  const eids = await deps.store.transaction(uid, async (tx) => {
+    .filter((e): e is NonNullable<typeof e> => e !== null && !keys.has(calendarProviderKey(deps.hasher, scope, e.eventId)));
+  const eids = await storeOnce(g, async (tx) => {
     const epoch = await fence(tx, g);
-    const ctx: GoogleRowContext = { uid, connectorId, epoch: epoch.epoch, policyRev: epoch.policyRev, opsNow: nowOf(g), hasher: deps.hasher };
+    await stillReadable(tx, g, "calendar", access.generation);
+    const ctx: GoogleRowContext = { uid, connectorId, generation: access.generation, keyScope: scope, epoch: epoch.epoch, policyRev: epoch.policyRev, opsNow: nowOf(g), hasher: deps.hasher };
     const out: string[] = [];
     for (const e of events) {
-      const logicalId = calendarLogicalId(deps.hasher, uid, connectorId, e.eventId);
+      const logicalId = calendarLogicalId(deps.hasher, uid, scope, e.eventId);
       out.push(await storeRow(tx, uid, logicalId, (eid, revisionOf, version) => eventEvidence(eid, logicalId, revisionOf, version, e, ctx), deps.hasher));
     }
     return out;

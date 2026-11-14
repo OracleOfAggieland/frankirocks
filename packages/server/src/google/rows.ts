@@ -20,6 +20,10 @@ export const GOOGLE_MAX_REVISIONS = 64;
 export interface GoogleRowContext {
   uid: string;
   connectorId: string;
+  /** Review S3: the document's account generation, stamped on every row and checked by every read. */
+  generation: number;
+  /** What provider and thread keys are hashed under (`googleKeyScope`). */
+  keyScope: string;
   epoch: number;
   policyRev: number;
   opsNow: number;
@@ -37,7 +41,7 @@ function base(ctx: GoogleRowContext, logicalId: string, revisionOf: string | nul
     providerKey: null,
     providerRevision: null,
     connectorId: ctx.connectorId,
-    generation: 0,
+    generation: ctx.generation,
     threadKey: null,
     inReplyToProviderKey: null,
     closureProofs: [],
@@ -84,13 +88,13 @@ function base(ctx: GoogleRowContext, logicalId: string, revisionOf: string | nul
 
 /** One message's Evidence. Own sent mail is O; everything else T. The sender's authentication is not checked. */
 export function mailEvidence(eid: string, logicalId: string, revisionOf: string | null, messageId: string, m: MailContent, ctx: GoogleRowContext): Evidence {
-  const { hasher, uid, connectorId } = ctx;
+  const { hasher, uid, keyScope } = ctx;
   const fields = mailRowFields(
     {
       eid,
       at: tsFromMs(m.occurredAtMs),
-      providerKey: gmailProviderKey(hasher, connectorId, messageId),
-      threadKey: gmailThreadKey(hasher, connectorId, m.threadId),
+      providerKey: gmailProviderKey(hasher, keyScope, messageId),
+      threadKey: gmailThreadKey(hasher, keyScope, m.threadId),
       // In-Reply-To names a Message-ID header, not a Gmail ID; it is not mapped (no second read to find it).
       inReplyToProviderKey: null,
       subject: m.subject,
@@ -110,12 +114,12 @@ export function mailEvidence(eid: string, logicalId: string, revisionOf: string 
 
 /** One event's Evidence at revision `version`. */
 export function eventEvidence(eid: string, logicalId: string, revisionOf: string | null, version: number, e: EventContent, ctx: GoogleRowContext): Evidence {
-  const { hasher, connectorId } = ctx;
+  const { hasher, keyScope } = ctx;
   const fields = calendarRowFields(
     {
       eid,
-      providerKey: calendarProviderKey(hasher, connectorId, e.eventId),
-      calendarKey: calendarKeyOf(hasher, connectorId),
+      providerKey: calendarProviderKey(hasher, keyScope, e.eventId),
+      calendarKey: calendarKeyOf(hasher, keyScope),
       start: tsFromMs(e.startMs),
       end: tsFromMs(e.endMs),
       zone: e.zone,

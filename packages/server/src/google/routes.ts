@@ -28,6 +28,7 @@ import {
   type GoogleDisconnectResponse,
   GoogleStartRequest,
   type GoogleStartResponse,
+  type GooglePending,
   type GoogleStatusResponse,
   type Ledger,
   msFromTs,
@@ -142,24 +143,36 @@ export async function googleStart(ctx: RouteContext): Promise<GoogleStartRespons
 
 /** Thrown inside the save when another Google account is already connected (one account per owner). */
 class OtherAccount extends Error {}
+/** Thrown inside the save when the gmail document changed since the claim (a disconnect or a later start won). */
+class Superseded extends Error {}
+
+/** Review S8: a recorded answer never keeps the account's address; the route answers the live view instead. */
+const recordable = <R extends { google: GoogleConnectResponse["google"] }>(res: R): R => ({ ...res, google: { ...res.google, email: null } });
+const connectRowPath = (ctx: RouteContext, requestId: string) => paths.ledger(ctx.uid, ctx.deps.hasher.id(["google-connect", ctx.uid, requestId]));
 
 async function completeWith<R extends object>(ctx: RouteContext, key: RequestKey, res: R): Promise<R> {
   await ctx.deps.store.transaction(ctx.uid, (tx) => completeRequest(tx, key, res, nowOf(ctx)));
   return res;
 }
 
-/** The next stored form of one document after a connect. */
+/**
+ * The next stored form of one document after a connect. Both documents take the new account's key, granted or not.
+ * Review S3: when the document last held another account, its `activeGeneration` moves on, so the rows the first
+ * account stored (stamped with the old generation, under keys of their own) are never read again.
+ */
 function connectedDoc(ctx: RouteContext, provider: GoogleProvider, prior: Connector | null, core: { epoch: number; policyRev: number }, x: { granted: boolean; accountKey: string; email: string | null; refreshToken: string; keys: GoogleConfig["tokenKeys"] }): Connector {
   const now = nowOf(ctx);
   const base = prior ?? newGoogleConnector(ctx.uid, provider, now, core);
   const id = googleConnectorId(ctx.deps.hasher, ctx.uid, provider);
+  const priorAccount = prior?.google?.accountKey ?? null;
   return {
     ...base,
+    activeGeneration: priorAccount !== null && priorAccount !== x.accountKey ? base.activeGeneration + 1 : base.activeGeneration,
     state: x.granted ? "connected" : "disconnected",
     lastError: null,
     updatedAt: tsFromMs(now),
     google: {
-      accountKey: x.granted ? x.accountKey : null,
+      accountKey: x.accountKey,
       email: x.granted ? x.email : null,
       granted: x.granted,
       token: x.granted ? seal("franki-google-token", x.keys, ctx.uid, id, x.refreshToken) : null,
@@ -171,10 +184,11 @@ function connectedDoc(ctx: RouteContext, provider: GoogleProvider, prior: Connec
 
 async function connectRun(ctx: RouteContext, req: GoogleConnectRequest, key: RequestKey, rt: GoogleRuntime): Promise<GoogleConnectResponse> {
   const { uid, deps } = ctx;
-  const rowPath = paths.ledger(uid, deps.hasher.id(["google-connect", uid, req.requestId]));
+  const rowPath = connectRowPath(ctx, req.requestId);
   const gmailId = googleConnectorId(deps.hasher, uid, "gmail");
 
-  // 1. Consume the pending authorization, whatever comes next. Nothing reaches Google before this commits.
+  // 1. Consume the pending authorization when the state matches it. Nothing reaches Google before this commits.
+  // Review S5: a state that doesn't match consumes nothing and writes no row.
   const claim = await deps.store.transaction(uid, async (tx) => {
     const prior = await tx.get<GoogleEntry>(rowPath);
     if (prior !== null) {
@@ -185,19 +199,14 @@ async function connectRun(ctx: RouteContext, req: GoogleConnectRequest, key: Req
     const core = await coreOf(tx, uid);
     const docs = await readGoogleDocs(tx, uid, deps.hasher);
     const pending = docs.gmail?.data.google?.pending ?? null;
-    if (docs.gmail !== null && pending !== null) {
-      tx.update(docs.gmail.path, { ...docs.gmail.data, updatedAt: tsFromMs(nowOf(ctx)), google: { ...docs.gmail.data.google!, pending: null } });
-    }
-    const usable = pending !== null && nowOf(ctx) < msFromTs(pending.expiresAt) && stateMatches(pending.stateHash, req.state);
-    if (!usable) {
-      tx.create(rowPath, newEntry(ctx, "connect", req.requestId, core, "failed", "badState"));
-      return { kind: "refused" as const };
-    }
+    if (docs.gmail === null || pending === null || !pendingMatches(ctx, pending, req.state)) return { kind: "refused" as const };
+    tx.update(docs.gmail.path, { ...docs.gmail.data, updatedAt: tsFromMs(nowOf(ctx)), google: { ...docs.gmail.data.google!, pending: null } });
     tx.create(rowPath, newEntry(ctx, "connect", req.requestId, core, "pending", null));
-    return { kind: "claimed" as const, pending: pending! };
+    // Review S6: the gmail document's rev once this commits. The save refuses if anything wrote it since.
+    return { kind: "claimed" as const, pending, rev: docs.gmail.data.rev + 1 };
   });
   if (claim.kind === "done") {
-    return completeWith(ctx, key, { google: await viewOf(ctx), outcome: claim.outcome === "nothingGranted" ? "nothingGranted" : "connected" });
+    return completeWith(ctx, key, recordable({ google: await viewOf(ctx), outcome: claim.outcome === "nothingGranted" ? "nothingGranted" : "connected" }));
   }
   if (claim.kind === "refused") {
     deps.log("google.connect", { outcome: "badState" });
@@ -241,7 +250,7 @@ async function connectRun(ctx: RouteContext, req: GoogleConnectRequest, key: Req
     return deps.store.transaction(uid, async (tx) => {
       const res = { google: googleView(await readGoogleDocs(tx, uid, deps.hasher)), outcome: "nothingGranted" as const };
       await finishRow(ctx, rowPath, "complete", "nothingGranted", granted, tx);
-      await completeRequest(tx, key, res, nowOf(ctx));
+      await completeRequest(tx, key, recordable(res), nowOf(ctx));
       return res;
     });
   }
@@ -256,6 +265,7 @@ async function connectRun(ctx: RouteContext, req: GoogleConnectRequest, key: Req
       const row = await tx.get<GoogleEntry>(rowPath);
       if (row === null || row.data.state !== "pending") throw staleError("googleConnect");
       const docs = await readGoogleDocs(tx, uid, deps.hasher);
+      if (docs.gmail === null || docs.gmail.data.rev !== claim.rev) throw new Superseded();
       for (const d of [docs.gmail, docs.calendar]) {
         if (d !== null && isReadableGoogle(d.data) && d.data.google!.accountKey !== accountKey) throw new OtherAccount();
       }
@@ -270,7 +280,7 @@ async function connectRun(ctx: RouteContext, req: GoogleConnectRequest, key: Req
       const calendar = write("calendar", docs.calendar, granted.calendar);
       const res = { google: googleView({ gmail: { path: "", id: "", data: gmail }, calendar: { path: "", id: "", data: calendar } }), outcome: "connected" as const };
       await finishRow(ctx, rowPath, "complete", "connected", granted, tx);
-      await completeRequest(tx, key, res, nowOf(ctx));
+      await completeRequest(tx, key, recordable(res), nowOf(ctx));
       return res;
     });
     deps.log("google.connect", { outcome: "connected", mail: granted.mail, calendar: granted.calendar });
@@ -278,17 +288,35 @@ async function connectRun(ctx: RouteContext, req: GoogleConnectRequest, key: Req
   } catch (error) {
     // Nothing was saved: the new grant must not outlive this request.
     await revokeQuietly(ctx, rt, refreshToken);
-    const outcome: Outcome = error instanceof OtherAccount ? "otherAccount" : "failed";
+    const outcome: Outcome = error instanceof OtherAccount ? "otherAccount" : error instanceof Superseded ? "badState" : "failed";
     await finishRow(ctx, rowPath, "failed", outcome, null);
     deps.log("google.connect", { outcome });
-    if (error instanceof OtherAccount) throw staleError("googleConnect");
+    if (error instanceof OtherAccount || error instanceof Superseded) throw staleError("googleConnect");
     throw error;
   }
 }
 
-export function connectGoogle(ctx: RouteContext, req: GoogleConnectRequest): Promise<GoogleConnectResponse> {
+/** The pending authorization is unexpired and the presented state is its own (constant-time). */
+function pendingMatches(ctx: RouteContext, pending: GooglePending, state: string): boolean {
+  return nowOf(ctx) < msFromTs(pending.expiresAt) && stateMatches(pending.stateHash, state);
+}
+
+export async function connectGoogle(ctx: RouteContext, req: GoogleConnectRequest): Promise<GoogleConnectResponse> {
   const rt = googleRuntime(ctx);
-  return mutation(ctx, "googleConnect", req.requestId, req, (key) => connectRun(ctx, req, key, rt));
+  // Review S5: a state that doesn't match the owner's pending authorization writes nothing at all (no request row,
+  // no ledger row, nothing consumed), unless this requestId already has a row, which the replay below answers.
+  const [docs, prior] = await Promise.all([
+    readGoogleDocs({ get: (p) => ctx.deps.store.get(ctx.uid, p) }, ctx.uid, ctx.deps.hasher),
+    ctx.deps.store.get(ctx.uid, connectRowPath(ctx, req.requestId)),
+  ]);
+  const pending = docs.gmail?.data.google?.pending ?? null;
+  if (prior === null && (pending === null || !pendingMatches(ctx, pending, req.state))) {
+    ctx.deps.log("google.connect", { outcome: "badState" });
+    throw staleError("googleConnect");
+  }
+  const res = await mutation(ctx, "googleConnect", req.requestId, req, (key) => connectRun(ctx, req, key, rt));
+  // Review S8: the address comes from the live view, never from a recorded answer.
+  return { ...res, google: await viewOf(ctx) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -302,9 +330,13 @@ export async function googleStatus(ctx: RouteContext): Promise<GoogleStatusRespo
 // ---------------------------------------------------------------------------------------------
 // POST /api/google/disconnect
 
-/** Both documents with their tokens erased and their state `disconnected`. The stored rows stay, unreadable. */
+/**
+ * Both documents with their tokens erased and their state `disconnected`. The stored rows stay, unreadable. The
+ * pending authorization goes too (review S6), so an open popup can't connect after a disconnect. The account's key
+ * stays (review S3), so a different account connecting later is kept apart from these rows.
+ */
 function erased(c: Connector, now: number): Connector {
-  return { ...c, state: "disconnected", lastError: null, updatedAt: tsFromMs(now), google: { ...EMPTY_GOOGLE, pending: c.google?.pending ?? null } };
+  return { ...c, state: "disconnected", lastError: null, updatedAt: tsFromMs(now), google: { ...EMPTY_GOOGLE, accountKey: c.google?.accountKey ?? null } };
 }
 
 async function disconnectRun(ctx: RouteContext, req: GoogleDisconnectRequest, key: RequestKey, rt: GoogleRuntime): Promise<GoogleDisconnectResponse> {
@@ -342,23 +374,35 @@ async function disconnectRun(ctx: RouteContext, req: GoogleDisconnectRequest, ke
   if (claim.kind === "answered") return claim.res;
   if (claim.kind === "done") return completeWith(ctx, key, { google: await viewOf(ctx) });
 
-  // Revoke once at Google: it removes the whole grant, so one call covers both documents.
+  // Review S7: a token that can't be opened (the sealing key changed) can't be revoked. It is erased here anyway, and
+  // the row says Google was not told; the owner can still remove the grant in their Google account.
+  let token: string | null;
   try {
-    await rt.port.revoke(unseal("franki-google-token", rt.config.tokenKeys, uid, claim.id, claim.sealed));
+    token = unseal("franki-google-token", rt.config.tokenKeys, uid, claim.id, claim.sealed);
   } catch (error) {
-    const revoked = error instanceof GoogleCallError && error.problem === "invalidToken";
-    if (!revoked) {
-      const definite = error instanceof GoogleCallError && error.definite;
-      await finishRow(ctx, rowPath, definite ? "failed" : "blocked", "notRevoked", null);
-      if (error instanceof SealError) throw new ConfigError(GOOGLE_ENV_VARS.tokenKey);
-      if (error instanceof GoogleCallError) throw dependencyError(1000, "google");
-      throw error;
+    if (!(error instanceof SealError)) throw error;
+    token = null;
+    deps.log("google.disconnectUntold", {});
+  }
+
+  // Revoke once at Google: it removes the whole grant, so one call covers both documents.
+  if (token !== null) {
+    try {
+      await rt.port.revoke(token);
+    } catch (error) {
+      const revoked = error instanceof GoogleCallError && error.problem === "invalidToken";
+      if (!revoked) {
+        const definite = error instanceof GoogleCallError && error.definite;
+        await finishRow(ctx, rowPath, definite ? "failed" : "blocked", "notRevoked", null);
+        if (error instanceof GoogleCallError) throw dependencyError(1000, "google");
+        throw error;
+      }
     }
   }
 
   return deps.store.transaction(uid, async (tx) => {
     const res = await eraseAll(tx);
-    await finishRow(ctx, rowPath, "complete", "disconnected", null, tx);
+    await finishRow(ctx, rowPath, "complete", token === null ? "disconnectedUntold" : "disconnected", null, tx);
     await completeRequest(tx, key, res, nowOf(ctx));
     deps.log("google.disconnect", {});
     return res;
