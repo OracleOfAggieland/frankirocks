@@ -89,6 +89,15 @@ export const HEADER =
 export const RAIL_SEAM =
   "pointer-events-none absolute inset-x-0 bottom-0 [mask-image:linear-gradient(to_right,transparent,black_22%,black_78%,transparent)]";
 
+/**
+ * The corners row: the jar, the ways in (bank, Google) with the visit bar under them, and the Lab. Stacked on
+ * phones; a row from 640 px. From 1024 px it is a centred band of three columns whose sides are equal, so the
+ * middle sits on the page's centre axis whatever the jar and the Lab measure, and all three are centred
+ * vertically. Narrower than that, a 288 px Lab can't mirror around a centred middle, so the row just spreads.
+ */
+export const CORNERS =
+  "flex flex-col items-center gap-3 sm:flex-row sm:items-end sm:justify-between lg:mx-auto lg:grid lg:w-full lg:max-w-4xl lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center lg:gap-x-8 [grid-area:corners]";
+
 /** One layout-animated wrapper: glides on spring.settle when the grid gains or loses the dock column. */
 function Glide({ name, reduced, className, children }: { name: "stage" | "controls" | "reply"; reduced: boolean; className: string; children: ReactNode }) {
   return (
@@ -165,13 +174,20 @@ export function MainScreen({ signedIn, auth, soundToggle, stage, controls, typed
           </Glide>
         </div>
         {/* Jar and Lab slots: from GET /api/memory (brief 020); empty until there is something true to show. */}
-        <div data-area="corners" className="flex flex-col items-center gap-3 sm:flex-row sm:items-end sm:justify-between [grid-area:corners]">
-          <div data-slot="jar">{jar}</div>
-          {/* Bank slot: the way in to the bank sheet (brief 046 part B). */}
-          <div data-slot="bank">{bank}</div>
-          {/* Visit slot: the time bolt and Start over, beside the Lab (brief 027). */}
-          <div data-slot="visit">{visit}</div>
-          <div data-slot="lab">{lab}</div>
+        <div data-area="corners" className={CORNERS}>
+          <div className="lg:justify-self-start" data-slot="jar">
+            {jar}
+          </div>
+          {/* The middle stays on the page's centre axis from 1024 px, under Franki and his controls. */}
+          <div data-corners-middle="" className="flex flex-col items-center gap-3">
+            {/* Bank slot: the way in to the bank sheet (brief 046 part B). */}
+            <div data-slot="bank">{bank}</div>
+            {/* Visit slot: the time bolt and Start over, beside the Lab (brief 027). */}
+            <div data-slot="visit">{visit}</div>
+          </div>
+          <div className="lg:justify-self-end" data-slot="lab">
+            {lab}
+          </div>
         </div>
       </div>
       {debug ? <div className="w-full max-w-6xl px-4 pb-4">{debug}</div> : null}

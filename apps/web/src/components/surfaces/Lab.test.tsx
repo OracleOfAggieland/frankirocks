@@ -17,11 +17,12 @@ describe("Lab", () => {
     expect(formatCount(NaN)).toBe("—");
   });
 
-  it("has a fold for honest limits", () => {
+  it("shows no limits and no fold, whatever limits it is given (owner, Nov 14)", () => {
     const html = renderToStaticMarkup(<Lab counters={[{ id: "a", label: "A", value: 1 }]} limits={["I can't read texts yet."]} />);
-    expect(html).toContain("<details");
-    expect(html).toContain("<summary");
-    expect(html).toContain("I can&#x27;t read texts yet.");
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("<summary");
+    expect(html).not.toContain("read texts");
+    expect(html).not.toContain("What I can");
   });
 
   it("renders nothing with no counters", () => {
@@ -54,13 +55,6 @@ describe("Lab", () => {
     const cellsIn = (bank: string) => bank.match(/class="odo-(window|still)"/g)?.length;
     expect(cellsIn(banks[0])).toBe(5);
     expect(cellsIn(banks[1])).toBe(5);
-  });
-
-  it("folds its limits behind a chevron, in 14 ink-dim, with a 44 px summary", () => {
-    const html = renderToStaticMarkup(<Lab counters={[{ id: "a", label: "A", value: 1 }]} limits={["Bank data is a day behind."]} />);
-    expect(html).toMatch(/<details data-limits="" class="[^"]*text-sm text-ink-dim/);
-    expect(html).toMatch(/<summary class="[^"]*min-h-11[^"]*"><svg[^>]*class="lab-chevron/);
-    expect(html).toContain('<li class="lab-limit">Bank data is a day behind.</li>');
   });
 
   it("opens a slot along its top edge only when a receipt prints from it", () => {

@@ -1,10 +1,10 @@
 "use client";
 // The Lab (lab-ui-foundation R16.1, R16.5, R16.12; brief 015 package E): an instrument panel of real counters.
 // Glass with a rivet in each corner; a top bezel carrying the "The Lab" plate and a lamp that is lit while any
-// counter has a value; one row per counter, its label beside an odometer in a dark well; and a fold for
-// honest limits. With a `receipt`, a slot opens along the top edge and the slip prints up out of it. Below
-// 640 px the slip sits in flow above the panel, so the column grows instead of covering what is above it; from
-// 640 px it rises out of the slot over the room above the panel.
+// counter has a value; and one row per counter, its label beside an odometer in a dark well. It shows no limits:
+// the "What I can't do yet" fold is gone (owner, Nov 14). With a `receipt`, a slot opens along the top edge and
+// the slip prints up out of it. Below 640 px the slip sits in flow above the panel, so the column grows instead
+// of covering what is above it; from 640 px it rises out of the slot over the room above the panel.
 import type { ReactNode } from "react";
 import { Lamp } from "../lab/Lamp";
 import { Plate } from "../lab/Plate";
@@ -12,18 +12,9 @@ import { Rivet } from "../lab/Rivet";
 import { COPY } from "../../ui/copy";
 import { normalizeCount, placesFor } from "../../ui/instruments/odometer";
 import type { LabProps } from "../../ui/surface-props";
-import { FOCUS, TARGET } from "./classes";
 import { Odometer } from "./Odometer";
 
 const LAMP_WORDS = { on: COPY.lab.on, off: COPY.lab.off } as const;
-
-function Chevron() {
-  return (
-    <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false" className="lab-chevron pointer-events-none size-3.5 shrink-0">
-      <path d="M5 2.75 L9.5 7 L5 11.25" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 type LabExtras = {
   /**
@@ -33,7 +24,7 @@ type LabExtras = {
   receipt?: ReactNode;
 };
 
-export function Lab({ counters, limits, receipt }: LabProps & LabExtras) {
+export function Lab({ counters, receipt }: LabProps & LabExtras) {
   // With no counts, a receipt still prints on its own.
   if (counters.length === 0) return receipt ? <>{receipt}</> : null;
   const counting = counters.some((c) => normalizeCount(c.value) !== null);
@@ -72,23 +63,6 @@ export function Lab({ counters, limits, receipt }: LabProps & LabExtras) {
           </div>
         ))}
       </dl>
-      {limits.length > 0 ? (
-        <details data-limits="" className="border-t border-ink/10 text-sm text-ink-dim">
-          <summary
-            className={`${FOCUS} ${TARGET} flex cursor-pointer list-none items-center gap-2 rounded-control transition-colors duration-(--dur-quick) hover:text-ink [&::-webkit-details-marker]:hidden`}
-          >
-            <Chevron />
-            {COPY.lab.limits}
-          </summary>
-          <ul className="flex flex-col gap-1.5 pb-3 pl-5.5">
-            {limits.map((l) => (
-              <li key={l} className="lab-limit">
-                {l}
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
     </section>
   );
   if (!receipt) return panel;

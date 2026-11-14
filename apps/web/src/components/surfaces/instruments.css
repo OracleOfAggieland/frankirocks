@@ -123,38 +123,6 @@
 
 /* ── The Lab ─────────────────────────────────────────────────────────────────────────────────────────────── */
 
-/* The fold's chevron turns a quarter on open. */
-.lab-chevron {
-  transform-origin: 50% 50%;
-}
-details[open] > summary .lab-chevron {
-  transform: rotate(90deg);
-}
-@media (prefers-reduced-motion: no-preference) {
-  .lab-chevron {
-    transition: transform var(--dur-base) var(--ease-ecto);
-  }
-}
-[data-reduced="true"] .lab-chevron {
-  transition: none;
-}
-
-/* Each honest limit starts with a short drawn dash. */
-.lab-limit {
-  position: relative;
-  padding-left: 14px;
-}
-.lab-limit::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0.7em;
-  width: 7px;
-  height: 1px;
-  background: color-mix(in srgb, var(--color-ink-dim) 60%, transparent);
-  pointer-events: none;
-}
-
 /* The slot the receipt prints out of: a dark slit across the panel's top edge, its lower lip catching light. */
 .lab-slot {
   height: 5px;
