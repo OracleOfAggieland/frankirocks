@@ -95,16 +95,20 @@ env:
     secret: FRANKI_BANK_TOKEN_KEY
     availability: [RUNTIME]
 
-  # A connected Google account, read-only (brief 049). The client ID is not a secret: put the OAuth client's ID here
-  # (it ends `.apps.googleusercontent.com`). Left empty, every /api/google/* route answers CONFIG and the sheet says
-  # Google isn't set up. The refresh token is sealed under FRANKI_BANK_TOKEN_KEY, above.
-  - variable: GOOGLE_OAUTH_CLIENT_ID
-    value: ""
+  # A connected Google account, read-only (brief 049). The three entries below stay commented out until the OAuth
+  # client exists, because a rollout fails on a `secret:` that isn't in Secret Manager. With any of the three unset,
+  # every /api/google/* route answers CONFIG and the sheet says Google isn't set up. To turn it on (docs/setup.md):
+  # create the client, run `firebase apphosting:secrets:set GOOGLE_OAUTH_CLIENT_SECRET`, then uncomment all three
+  # and fill in the two values. The refresh token is sealed under FRANKI_BANK_TOKEN_KEY, above.
+  #
+  # The client ID is not a secret (it ends `.apps.googleusercontent.com`).
+  # - variable: GOOGLE_OAUTH_CLIENT_ID
+  #   value: ""
   # The one redirect URI this deployment hands to Google (not a secret): this backend's origin plus /google/callback,
   # here https://franki-web--frankirocks.us-central1.hosted.app/google/callback. Start refuses any request whose
-  # Origin doesn't match it exactly. Left empty, every /api/google/* route answers CONFIG.
-  - variable: GOOGLE_OAUTH_REDIRECT_URI
-    value: ""
-  - variable: GOOGLE_OAUTH_CLIENT_SECRET
-    secret: GOOGLE_OAUTH_CLIENT_SECRET
-    availability: [RUNTIME]
+  # Origin doesn't match it exactly.
+  # - variable: GOOGLE_OAUTH_REDIRECT_URI
+  #   value: ""
+  # - variable: GOOGLE_OAUTH_CLIENT_SECRET
+  #   secret: GOOGLE_OAUTH_CLIENT_SECRET
+  #   availability: [RUNTIME]

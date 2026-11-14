@@ -66,12 +66,12 @@ In the Google Cloud console, in a project you own:
 
 | Variable | Kind | Value |
 | --- | --- | --- |
-| `GOOGLE_OAUTH_CLIENT_ID` | Plain value | The OAuth client ID, ending `.apps.googleusercontent.com`. Set it in `apps/web/apphosting.yaml` (empty there by default) and, for `npm run dev`, in `apps/web/.env.local` |
-| `GOOGLE_OAUTH_REDIRECT_URI` | Plain value | This deployment's one callback address: its origin plus `/google/callback`, exactly as registered on the OAuth client. `https://franki-web--frankirocks.us-central1.hosted.app/google/callback` in `apps/web/apphosting.yaml` (empty there by default), and `http://localhost:3000/google/callback` in `apps/web/.env.local`. Start refuses a request from any other origin, so a deployed server never hands out the localhost callback |
+| `GOOGLE_OAUTH_CLIENT_ID` | Plain value | The OAuth client ID, ending `.apps.googleusercontent.com`. Set it in `apps/web/apphosting.yaml` (commented out there until the OAuth client exists) and, for `npm run dev`, in `apps/web/.env.local` |
+| `GOOGLE_OAUTH_REDIRECT_URI` | Plain value | This deployment's one callback address: its origin plus `/google/callback`, exactly as registered on the OAuth client. `https://franki-web--frankirocks.us-central1.hosted.app/google/callback` in `apps/web/apphosting.yaml` (commented out there until the OAuth client exists), and `http://localhost:3000/google/callback` in `apps/web/.env.local`. Start refuses a request from any other origin, so a deployed server never hands out the localhost callback |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Secret | The OAuth client secret (`firebase apphosting:secrets:set GOOGLE_OAUTH_CLIENT_SECRET`), and in `apps/web/.env.local` for local work |
 | `FRANKI_BANK_TOKEN_KEY` | Secret | The bank's key, above. Changing it makes every stored Google token unreadable too |
 
-`npm run dev` copies only nonempty plain values from `apps/web/apphosting.yaml` (`scripts/sync-local-env.mjs`), so the empty client ID and redirect URI there never hide the ones in `.env.local`. With any of these names unset or malformed, every Google route answers `CONFIG` and the sheet says Google isn't set up.
+In `apps/web/apphosting.yaml` the three Google entries are commented out until the OAuth client exists, because a rollout fails on a secret that isn't in Secret Manager. Create the secret first, then uncomment all three and fill in the two plain values. `npm run dev` copies only nonempty plain values from that file (`scripts/sync-local-env.mjs`), so nothing there hides the ones in `.env.local`. With any of these names unset or malformed, every Google route answers `CONFIG` and the sheet says Google isn't set up.
 
 Asking: once connected, ask in a call ("Did Dana write about the lease?", "What's on tomorrow?", "Am I free Thursday afternoon for 45 minutes?"). The call hands the ask to a helper (`start_errand`), and the answer comes at the next pause with a card. A half-covered ask (mail and calendar, with only mail connected) looks through the connected part and says the other isn't connected; an expired grant is said as needing connecting again.
 
