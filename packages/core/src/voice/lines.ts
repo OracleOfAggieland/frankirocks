@@ -54,5 +54,16 @@ export function ackNote(line: AckText, noteId: ID, expiresAt: TS): W {
   return { noteId, rev: 1, kind: "ack", text: line, rootKeys: [], dependsOn: [], sens: "S0", expiresAt, unprompted: false, momentId: null, tokens: [] };
 }
 
+/**
+ * Brief 049 review fix V3: the line as it may sit inside the quotes below. No double quote (straight or typographic)
+ * or backtick can close the quote, and no control, format (bidi, zero-width) or separator character reaches the
+ * voice model; a newline is a space. A line already in that set (every Fixed_Line) is unchanged.
+ */
+export function quoteSafe(text: string): string {
+  return text
+    .replace(/[\t\n\v\f\r\u0085\u2028\u2029]/gu, " ")
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}"`“”„‟«»＂｀]/gu, "");
+}
+
 /** The instructions that make the model say exactly one line. */
-export const sayExactly = (text: string): string => `Say exactly this and nothing else: "${text}"`;
+export const sayExactly = (text: string): string => `Say exactly this and nothing else: "${quoteSafe(text)}"`;

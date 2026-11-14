@@ -16,6 +16,7 @@
 import {
   type ErrandAbout,
   type ErrandArgs,
+  ERRAND_RETAIN_MS,
   ERRAND_RUNNING_MAX,
   type Errand,
   type ErrandStartState,
@@ -111,6 +112,10 @@ export async function startErrand(ctx: RouteContext, x: { stamp: Stamp; turn: Tu
         reads: [],
         outcome: null,
         lines: [],
+        offer: null,
+        saidResponseId: null,
+        gate: null,
+        retainUntil: tsFromMs(ops + ERRAND_RETAIN_MS),
       };
       tx.create(paths.errand(uid, errandId), errand);
       tx.create(paths.job(uid, errandId), errandJob({ uid, errandId, sessionId: errand.sessionId, turnId: errand.turnId, opsNow: ops, epoch, policyRev }));

@@ -6,13 +6,25 @@
  * Production ships with the registry empty (`PRODUCTION_ERRAND_AGENTS`): with no agent for what was asked,
  * `start_errand` answers `unavailable`. Tests pass their own through `RouteDeps.errandAgents`.
  */
-import type { ErrandAbout, ErrandSource, ID } from "@franki/core";
+import type { Class, ErrandAbout, ErrandSender, ErrandSource, ID, Sens } from "@franki/core";
 import type { RouteContext } from "../routes/runtime";
 
-/** What one read registers: the Evidence row it stored or found, and what a card may show of it. */
+/**
+ * What one read registers: the Evidence row it stored or found, what the agent knows of it, and what a card may show
+ * of it. Review fix V1: the run's taint is decided from these, by code, over every read whose text went to the
+ * planner, cited or not; so an agent registers every row whose text (a sender, a subject, a gist, a title) it puts
+ * in a tool output, with `shown: true`, before it returns that output.
+ */
 export interface ErrandReadInput {
   evidenceId: ID;
   rev: number;
+  /** The row's class as stored: `O` for the owner's own mail and events, `T` for anything from someone else. */
+  cls: Class;
+  sens: Sens;
+  /** True when any of the row's text goes to the planner in this tool's output. */
+  shown: boolean;
+  /** For mail: who sent it, and whether the owner has mailed that address. Null for an event. */
+  sender: ErrandSender | null;
   source: ErrandSource;
 }
 

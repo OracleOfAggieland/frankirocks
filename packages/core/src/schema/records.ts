@@ -1113,10 +1113,22 @@ export const ErrandSource = tagged("kind", {
 });
 export type ErrandSource = Infer<typeof ErrandSource>;
 
+/** Review fix V1: the sender of a mail read, as the agent knows it. `mailed`: the owner has mailed this address. */
+export const ErrandSender = obj({ name: str(ERRAND_LABEL_CHARS), address: str(320), mailed: bool });
+export type ErrandSender = Infer<typeof ErrandSender>;
+
 export const ErrandRead = obj({
   ref: str(3, { min: 2, pattern: /^r[1-9]\d?$/, label: "an errand ref" }),
   evidenceId: ID,
   rev: nat(),
+  /**
+   * Review fix V1: what the agent read, as it stored it: its class and sensitivity, whether any of its text went to
+   * the planner (`shown`), and for mail its sender. A run is tainted by every shown read, cited or not.
+   */
+  cls: Class,
+  sens: Sens,
+  shown: bool,
+  sender: nullable(ErrandSender),
   source: ErrandSource,
 });
 export type ErrandRead = Infer<typeof ErrandRead>;
@@ -1124,13 +1136,37 @@ export type ErrandRead = Infer<typeof ErrandRead>;
 export const ErrandLine = obj({
   text: str(ERRAND_LINE_CHARS, { min: 1 }),
   refs: arr(str(3, { min: 2 }), ERRAND_LINE_REFS_MAX, 1),
-  /** The lowest-trust class among its refs, and the highest sensitivity (ruling 8). */
+  /**
+   * After the run's taint (review fix V1): the lowest-trust class among its refs and the run's shown reads, and the
+   * highest sensitivity over every shown read of the run.
+   */
   cls: Class,
   sens: Sens,
   /** Code's attribution for a line that rests on third-party text ("From Dana Park, Tuesday:"); else null. */
   attribution: nullable(str(ERRAND_LABEL_CHARS + 32)),
+  /** Review fix V1: whether the run's taint lets this line be spoken at all. False: card only. */
+  speak: bool,
 });
 export type ErrandLine = Infer<typeof ErrandLine>;
+
+/**
+ * Review fix V2: the one offer of a waiting result that is out now. A result is `delivered` only on the `admitted`
+ * receipt for this offer; offered again (attempt + 1) only once `expiresAt` has passed with no receipt.
+ */
+export const ErrandOffer = obj({
+  attempt: nat(1),
+  noteId: ID,
+  turnId: ID,
+  expiresAt: TS,
+  /** What the offered line was, for the assistant Turn its transcript writes (review fix V11). */
+  cls: Class,
+  sens: Sens,
+});
+export type ErrandOffer = Infer<typeof ErrandOffer>;
+
+/** Review fix R1: the Gate's inputs, stored at `finish` so a poll rereads nothing to gate. Erased with the lines. */
+export const ErrandGateInputs = obj({ certain: bool, aliases: arr(str(64, { min: 1 }), 64) });
+export type ErrandGateInputs = Infer<typeof ErrandGateInputs>;
 
 export const Errand = obj({
   ...C_SHAPE,
@@ -1149,5 +1185,16 @@ export const Errand = obj({
   reads: arr(ErrandRead, ERRAND_READS_MAX),
   outcome: nullable(oneOf(ERRAND_OUTCOMES)),
   lines: arr(ErrandLine, ERRAND_LINES_MAX),
+  /** Review fix V2: the offer out now, or null. */
+  offer: nullable(ErrandOffer),
+  /** Review fix V11: the response that admitted the line, for its transcript receipt. */
+  saidResponseId: nullable(str(128, { min: 1 })),
+  /** Review fix R1: the Gate's inputs, set at `finish`. */
+  gate: nullable(ErrandGateInputs),
+  /**
+   * Review fix R12: until when this row may hold what the Errand found (its lines, reads and Gate inputs). Past it the
+   * row is stripped bare and this is null; a bare row holds nothing a forget has to drop.
+   */
+  retainUntil: nullable(TS),
 });
 export type Errand = Infer<typeof Errand>;

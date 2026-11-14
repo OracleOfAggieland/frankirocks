@@ -31,8 +31,18 @@ import {
   type Errand,
   type ErrandLine,
   type ErrandOutcome,
-  type ErrandRead,
   type ErrandRefView,
+  type ErrandSource,
+  type ErrandGateInputs,
+  type Turn,
+  ERRAND_CARD_KEEP_MS,
+  ERRAND_RESULT_TTL_MS,
+  tokenize,
+  ERRAND_LABEL_CHARS,
+  ErrandRead,
+  cleanErrandText,
+  taintErrandLines,
+  validate,
   type Evidence,
   type ID,
   type Job,
@@ -154,7 +164,7 @@ export async function runErrand(ctx: RouteContext, errandId: ID): Promise<void> 
   const held = lease;
   try {
     if (held.generation > ERRAND_RUNS_MAX) {
-      await finish(ctx, held, { kind: "failed", why: "limit" }, [], true);
+      await finish(ctx, held, { kind: "failed", why: "limit" }, [], true, false);
       return;
     }
     const errand = (await deps.store.get<Errand>(uid, paths.errand(uid, errandId)))?.data ?? null;
@@ -163,7 +173,7 @@ export async function runErrand(ctx: RouteContext, errandId: ID): Promise<void> 
       return;
     }
     const outcome = await helper(ctx, held, errand, start);
-    await finish(ctx, held, outcome.done, outcome.reads, false);
+    await finish(ctx, held, outcome.done, outcome.reads, false, outcome.opaque);
     deps.log("errand.run", { errandId, outcome: outcome.done.kind === "done" ? outcome.done.outcome : `failed:${outcome.done.why}`, modelCalls: outcome.modelCalls, toolCalls: outcome.toolCalls });
   } catch (error) {
     if (error instanceof RunStopped) {
@@ -192,6 +202,7 @@ async function step(ctx: RouteContext, lease: Lease, errandId: ID, reads: readon
 interface HelperRun {
   done: Done;
   reads: ErrandRead[];
+  opaque: boolean;
   modelCalls: number;
   toolCalls: number;
 }
@@ -200,9 +211,10 @@ async function helper(ctx: RouteContext, lease: Lease, errand: Errand, start: nu
   const { uid, deps } = ctx;
   const errandId = lease.jobId;
   const reads: ErrandRead[] = [];
+  const taint: RunTaint = { opaque: false };
   let modelCalls = 0;
   let toolCalls = 0;
-  const run = (done: Done): HelperRun => ({ done, reads, modelCalls, toolCalls });
+  const run = (done: Done): HelperRun => ({ done, reads, opaque: taint.opaque, modelCalls, toolCalls });
   // A second claim starts again from nothing (ruling 4).
   await step(ctx, lease, errandId, [], true);
   const agents = errandAgentsOf(ctx).filter((a) => errand.agentIds.includes(a.id) && errand.about.includes(a.about));
@@ -243,7 +255,7 @@ async function helper(ctx: RouteContext, lease: Lease, errand: Errand, start: nu
       if (toolCalls >= ERRAND_TOOL_CALLS_MAX || left() <= 0) return run({ kind: "failed", why: "limit" });
       toolCalls++;
       await step(ctx, lease, errandId, reads, true);
-      const output = await runTool(ctx, errandId, tools, call, words, reads, now() + Math.min(ERRAND_TOOL_CALL_MS, left()));
+      const output = await runTool(ctx, errandId, tools, call, words, reads, now() + Math.min(ERRAND_TOOL_CALL_MS, left()), taint);
       input.push({ type: "function_call_output", call_id: call.callId, output });
     }
     await step(ctx, lease, errandId, reads, false);
@@ -258,8 +270,26 @@ function toolsOf(agents: readonly ErrandAgent[]): ErrandTool[] {
   return out;
 }
 
+const label = (s: string) => cleanErrandText(s).slice(0, ERRAND_LABEL_CHARS).trim();
+
+/** A read as it is stored: labels cleaned and cut (review fix V3), checked against `ErrandRead`; null when it fails. */
+export function registeredRead(ref: string, r: ErrandReadInput): ErrandRead | null {
+  let source: ErrandSource;
+  if (r.source?.kind === "mail") source = { kind: "mail", from: label(String(r.source.from)), subject: label(String(r.source.subject)), at: r.source.at, mailedByOwner: r.source.mailedByOwner === true };
+  else if (r.source?.kind === "event") source = { kind: "event", title: label(String(r.source.title)), startsAt: r.source.startsAt, allDay: r.source.allDay === true };
+  else return null;
+  const sender = r.sender === null || r.sender === undefined ? null : { name: label(r.sender.name), address: String(r.sender.address).trim().slice(0, 320), mailed: r.sender.mailed === true };
+  const v = validate(ErrandRead, { ref, evidenceId: r.evidenceId, rev: r.rev, cls: r.cls, sens: r.sens, shown: r.shown === true, sender, source });
+  return v.ok ? v.value : null;
+}
+
+/** Fails closed: set when a tool read something it could not register, so the planner may have seen unknown text. */
+interface RunTaint {
+  opaque: boolean;
+}
+
 /** One tool call: its JSON output for the planner, wrapped as data. Never throws. */
-async function runTool(ctx: RouteContext, errandId: ID, tools: readonly ErrandTool[], call: { name: string; arguments: string }, words: readonly string[], reads: ErrandRead[], deadlineAt: number): Promise<string> {
+async function runTool(ctx: RouteContext, errandId: ID, tools: readonly ErrandTool[], call: { name: string; arguments: string }, words: readonly string[], reads: ErrandRead[], deadlineAt: number, taint: RunTaint): Promise<string> {
   const wrap = (data: unknown) => {
     const text = JSON.stringify({ note: TOOL_OUTPUT_NOTE, data });
     return text.length <= ERRAND_TOOL_OUTPUT_CHARS ? text : JSON.stringify({ note: TOOL_OUTPUT_NOTE, data: { error: "The tool's answer was too large." } });
@@ -274,10 +304,21 @@ async function runTool(ctx: RouteContext, errandId: ID, tools: readonly ErrandTo
   }
   const read = (r: ErrandReadInput): string | null => {
     const same = reads.find((x) => x.evidenceId === r.evidenceId && x.rev === r.rev);
-    if (same !== undefined) return same.ref;
-    if (reads.length >= ERRAND_READS_MAX) return null;
+    if (same !== undefined) {
+      // Shown once is shown: a later registration can only widen what the planner saw.
+      if (r.shown && !same.shown) same.shown = true;
+      return same.ref;
+    }
     const ref = `r${reads.length + 1}`;
-    reads.push({ ref, evidenceId: r.evidenceId, rev: r.rev, source: r.source });
+    // Review fixes V3 and R11: labels are cleaned and cut, and the read is checked against its stored shape here, so
+    // a bad read never reaches `step` or `finish`. A read that can't be registered taints the run (fails closed: the
+    // tool may still have shown its text).
+    const cleaned = registeredRead(ref, r);
+    if (cleaned === null || reads.length >= ERRAND_READS_MAX) {
+      taint.opaque = true;
+      return null;
+    }
+    reads.push(cleaned);
     return ref;
   };
   const deps = ctx.deps;
@@ -293,7 +334,7 @@ async function runTool(ctx: RouteContext, errandId: ID, tools: readonly ErrandTo
  * Writes the run's end: the checked result (`ready`), or `failed`. Rechecks the lease, the Errand and the epoch in the
  * same transaction (ruling 14), so a forget's drop always wins. `claimOnly`: the claim past the limit, which never ran.
  */
-async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readonly ErrandRead[], claimOnly: boolean): Promise<void> {
+async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readonly ErrandRead[], claimOnly: boolean, opaque: boolean): Promise<void> {
   const { uid, deps } = ctx;
   const errandId = lease.jobId;
   let lines: ErrandLine[] = [];
@@ -301,10 +342,15 @@ async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readon
   if (done.kind === "done") {
     const core = await readCoreDocs({ get: (p) => deps.store.get(uid, p) }, uid);
     const pair = ownerClock(core.state.data, deps.clock);
-    const checked = checkErrandResult({ outcome: done.outcome, lines: done.lines }, await refViews(ctx, reads), { nowMs: pair.worldClock.now, zone: pair.worldClock.zone });
-    lines = checked.lines;
-    outcome = checked.outcome;
+    const at = { nowMs: pair.worldClock.now, zone: pair.worldClock.zone };
+    const views = await refViews(ctx, reads);
+    const checked = checkErrandResult({ outcome: done.outcome, lines: done.lines }, views, at);
+    // Review fixes V1 and V3: the run is tainted by every read the planner was shown, and the text cleaned.
+    lines = taintErrandLines(checked.lines, reads, views, at, opaque);
+    outcome = checked.outcome === "answered" && lines.length === 0 ? "nothing" : checked.outcome;
   }
+  // Review fix R1: the Gate's inputs are read once, here, and stored with the result; a poll rereads nothing.
+  const gateInputs = lines.length === 0 ? null : await errandGateInputs(ctx, lease.jobId);
   await deps.store.transaction(uid, async (tx) => {
     const [job, errand, epoch] = await Promise.all([tx.get<Job>(paths.job(uid, errandId)), tx.get<Errand>(paths.errand(uid, errandId)), tx.get<CoreEpoch>(paths.core(uid, "epoch"))]);
     if (job === null || job.data.status !== "leased" || job.data.leaseToken !== lease.token) throw new RunStopped("lease");
@@ -325,10 +371,31 @@ async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readon
       lines,
       reads: claimOnly ? errand.data.reads : [...reads],
       readyAt: now,
+      gate: gateInputs,
+      // Review fix R12: what it found is kept for the wait and the card window, then stripped.
+      retainUntil: tsFromMs(ops + ERRAND_RESULT_TTL_MS + ERRAND_CARD_KEEP_MS),
       updatedAt: now,
     } satisfies Errand);
     tx.update(job.path, settled);
   });
+}
+
+/** How many of the assignment's own tokens the Gate keeps as the line's aliases. */
+const GATE_ALIASES_MAX = 64;
+
+/**
+ * The Gate's inputs for an Errand's lines: whether the asking Turn's speaker is certain (typed, or judged `O`;
+ * contract question E-270) and the assignment words' tokens. Null when the Errand is gone.
+ */
+export async function errandGateInputs(ctx: RouteContext, errandId: ID): Promise<ErrandGateInputs | null> {
+  const { uid, deps } = ctx;
+  const e = (await deps.store.get<Errand>(uid, paths.errand(uid, errandId)))?.data ?? null;
+  if (e === null) return null;
+  const [words, turn] = await Promise.all([assignmentWords(deps.store, uid, e.sessionId, e.assignmentTurnIds), deps.store.get<Turn>(uid, paths.turn(uid, e.sessionId, e.turnId))]);
+  const t = turn?.data ?? null;
+  const certain = t !== null && t.sourceClass === "U" && (t.itemIds.length === 0 || t.judge === "O");
+  const aliases = [...new Set(words.flatMap((w) => tokenize(w)))].filter((a) => a.length > 0 && a.length <= 64).slice(0, GATE_ALIASES_MAX);
+  return { certain, aliases };
 }
 
 async function settleJob(ctx: RouteContext, lease: Lease, status: "complete" | "failed"): Promise<void> {

@@ -58,3 +58,10 @@ export const ERRAND_TOOL_OUTPUT_CHARS = 8_000;
 export const ERRAND_OUTPUT_ITEMS_MAX = 24;
 /** Labels on a card: a sender or a title, and a subject. */
 export const ERRAND_LABEL_CHARS = 120;
+
+/**
+ * Review fix R12: how long an Errand row may hold what it found, from its start: the longest run (two claims), the
+ * time a result waits to be said, and the card window. At `finish` it is set again from `readyAt`
+ * (`ERRAND_RESULT_TTL_MS + ERRAND_CARD_KEEP_MS`). Past it the row is stripped bare.
+ */
+export const ERRAND_RETAIN_MS = ERRAND_RUNS_MAX * (ERRAND_WALL_MS + ERRAND_LEASE_MS) + ERRAND_RESULT_TTL_MS + ERRAND_CARD_KEEP_MS;

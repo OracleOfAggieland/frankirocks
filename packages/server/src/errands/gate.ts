@@ -6,8 +6,8 @@
  *   - on the `recall` trigger, with the owner's assignment words as the owner's turn: the Errand exists only because
  *     those words asked, so a candidate's aliases are those words' own tokens, and "asked" still needs a certain
  *     speaker (a typed turn, or judge `O`), as for a recall (contract question E-260);
- *   - a third-party line carries its senders: `mailedByOwner` only when every mail source behind it was mailed by
- *     the owner (fails closed).
+ *   - a third-party line carries its senders: `mailedByOwner` only when the run's taint let it be spoken, which it
+ *     does only when every shown third-party read was mail from a sender the owner mailed (review fix V1).
  *
  * Then, only lowering (the Gate's modifiers only subtract, and so does this):
  *   - a result is said in full only in private: any other audience lowers a `say` to `card`;
@@ -41,11 +41,14 @@ export interface ErrandGateInput {
   candidateId: (index: number) => ID;
 }
 
-/** The senders behind a third-party line, as the Gate's `sender`. */
-function senderOf(errand: Errand, line: ErrandLine): GateCandidate["sender"] {
+/**
+ * The senders behind a third-party line, as the Gate's `sender`. Review fix V1: decided by the run's taint
+ * (`taintErrandLines`), which named every sender the line cites and checked every shown third-party read of the run;
+ * a line it left card only never counts as mailed.
+ */
+function senderOf(line: ErrandLine): GateCandidate["sender"] {
   if (line.cls !== "T" && line.cls !== "M") return null;
-  const mail = line.refs.map((r) => errand.reads.find((x) => x.ref === r)?.source).filter((s) => s !== undefined && s.kind === "mail");
-  return { mailedByOwner: mail.length > 0 && mail.every((s) => s!.kind === "mail" && s!.mailedByOwner) };
+  return { mailedByOwner: line.speak && line.attribution !== null };
 }
 
 export function errandCandidate(x: ErrandGateInput, line: ErrandLine, index: number): GateCandidate {
@@ -67,7 +70,7 @@ export function errandCandidate(x: ErrandGateInput, line: ErrandLine, index: num
     food: false,
     mustSay: null,
     dueAt: null,
-    sender: senderOf(x.errand, line),
+    sender: senderOf(line),
     attestedPremises: 0,
     offerUsed: false,
     ownRooted: false,
@@ -104,7 +107,9 @@ export function gateErrandLines(x: ErrandGateInput): LineVerdict[] {
     const c = errandCandidate(x, line, index);
     let r = gate(c, errandGateContext(x, said));
     if (r.verdict === "say") {
-      if (r.render !== "free" && r.render !== "attributed") r = lowered(r, "ceiling");
+      // Review fix V1: a line the run's taint left card only is never spoken.
+      if (!line.speak) r = lowered(r, "ceiling");
+      else if (r.render !== "free" && r.render !== "attributed") r = lowered(r, "ceiling");
       else if (line.sens === "S2") r = lowered(r, "sensitivity");
       else if (x.audience !== "private") r = lowered(r, "audience");
       else if (c.sender !== null && !c.sender.mailedByOwner) r = lowered(r, "ceiling");

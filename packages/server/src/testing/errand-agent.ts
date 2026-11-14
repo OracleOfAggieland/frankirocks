@@ -5,7 +5,7 @@
  * whose result format is `ErrandResultV1`; everything else on `responses.create` falls through to whatever the test
  * scripted.
  */
-import { type Class, type Errand, type ErrandSource, type Evidence, type ID, type Sens, type Session, type Stamp, type Turn, buildSlice } from "@franki/core";
+import { type Class, type Errand, type ErrandSender, type ErrandSource, type Evidence, type ID, type Sens, type Session, type Stamp, type Turn, buildSlice } from "@franki/core";
 import { sampleEvidence, testId } from "@franki/core/testing";
 import type { ErrandAgent, ErrandTool } from "../errands/agent";
 import { ok } from "../openai/fake";
@@ -22,11 +22,18 @@ export interface SeededMail {
   eid: ID;
   rev: number;
   text: string;
-  source: Extract<ErrandSource, { kind: "mail" }>;
+  cls: Class;
+  sens: Sens;
+  /** Review fix V1: what the agent knows of who sent it; null for an event. */
+  sender: ErrandSender | null;
+  source: ErrandSource;
 }
 
-/** Stores one mail row as retained Evidence of class `cls` (T for a third party's words by default). */
-export async function seedMail(rig: TestRig, label: string, x: { text: string; from?: string; subject?: string; cls?: Class; sens?: Sens; mailedByOwner?: boolean; at?: string }, uid = ERRAND_OWNER): Promise<SeededMail> {
+/**
+ * Stores one mail row (or, with `event`, an invitation) as retained Evidence of class `cls` (T for a third party's
+ * words by default).
+ */
+export async function seedMail(rig: TestRig, label: string, x: { text: string; from?: string; address?: string; subject?: string; cls?: Class; sens?: Sens; mailedByOwner?: boolean; at?: string; event?: boolean }, uid = ERRAND_OWNER): Promise<SeededMail> {
   const eid = testId(`mail-${label}`) as ID;
   const subject = x.subject ?? `Subject ${label}`;
   const e: Evidence = sampleEvidence({
@@ -38,7 +45,12 @@ export async function seedMail(rig: TestRig, label: string, x: { text: string; f
   });
   await rig.store.transaction(uid, async (tx) => tx.create(paths.evidence(uid, eid), e));
   const stored = await rig.store.get<Evidence>(uid, paths.evidence(uid, eid));
-  return { eid, rev: stored!.data.rev, text: x.text, source: { kind: "mail", from: x.from ?? "Dana Writer", subject, at: x.at ?? "2026-11-02T15:00:00.000Z", mailedByOwner: x.mailedByOwner ?? true } };
+  const from = x.from ?? "Dana Writer";
+  const at = x.at ?? "2026-11-02T15:00:00.000Z";
+  const mailed = x.mailedByOwner ?? true;
+  const source: ErrandSource = x.event === true ? { kind: "event", title: subject, startsAt: at, allDay: false } : { kind: "mail", from, subject, at, mailedByOwner: mailed };
+  const sender = x.event === true ? null : { name: from, address: x.address ?? `${label}@example.test`, mailed };
+  return { eid, rev: stored!.data.rev, text: x.text, cls: x.cls ?? "T", sens: x.sens ?? "S0", sender, source };
 }
 
 /** The test agent's one tool: returns every seeded row, each registered as read. */
@@ -50,8 +62,8 @@ export function searchTool(mail: () => readonly SeededMail[]): ErrandTool {
     async run(ctx) {
       const items = [];
       for (const m of mail()) {
-        const ref = ctx.read({ evidenceId: m.eid, rev: m.rev, source: m.source });
-        if (ref !== null) items.push({ ref, subject: m.source.subject, text: m.text });
+        const ref = ctx.read({ evidenceId: m.eid, rev: m.rev, cls: m.cls, sens: m.sens, shown: true, sender: m.sender, source: m.source });
+        if (ref !== null) items.push({ ref, subject: m.source.kind === "mail" ? m.source.subject : m.source.title, text: m.text });
       }
       return { items };
     },

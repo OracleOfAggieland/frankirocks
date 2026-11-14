@@ -67,16 +67,20 @@ export function errandAttribution(source: ErrandSource, nowMs: number, zone: str
   return `From ${safeName(source.from)}, ${when}:`;
 }
 
+/** A line as the check leaves it: the run's taint (`taintErrandLines`) then decides whether it may be spoken. */
+export type CheckedLine = Omit<ErrandLine, "speak">;
+
 /**
  * The lines that may be said or shown, checked against the refs this Errand read. An `answered` outcome with no line
- * left is `nothing`; a `nothing` or `failed` outcome keeps no line.
+ * left is `nothing`; a `nothing` or `failed` outcome keeps no line. The run's taint, the text cleaning and the final
+ * attribution come after, in `taintErrandLines` (review fixes V1, V3).
  */
-export function checkErrandResult(out: PlannerOutput, refs: readonly ErrandRefView[], at: { nowMs: number; zone: string }): { outcome: ErrandOutcome; lines: ErrandLine[] } {
+export function checkErrandResult(out: PlannerOutput, refs: readonly ErrandRefView[], at: { nowMs: number; zone: string }): { outcome: ErrandOutcome; lines: CheckedLine[] } {
   if (out.outcome === "failed") return { outcome: "failed", lines: [] };
   // Only an answer keeps lines: "nothing" with lines is a contradiction, and it fails closed to no line.
   if (out.outcome === "nothing") return { outcome: "nothing", lines: [] };
   const byRef = new Map(refs.filter((r) => r.cls !== null).map((r) => [r.ref, r]));
-  const lines: ErrandLine[] = [];
+  const lines: CheckedLine[] = [];
   for (const l of out.lines.slice(0, ERRAND_LINES_MAX)) {
     const text = l.text.trim().slice(0, ERRAND_LINE_CHARS).trim();
     const kept = [...new Set(l.refs)].filter((r) => byRef.has(r)).slice(0, ERRAND_LINE_REFS_MAX);

@@ -3,7 +3,7 @@
  * source behind those lines: sender, subject and date for mail; title and time for an event. No links, and no text
  * from a message other than its subject and the helper's line.
  */
-import { type Card, type Errand, type ErrandSource, type ID, type Ref, type Sens, aboutPhrase, safeName } from "@franki/core";
+import { type Card, ERRAND_LABEL_CHARS, type Errand, type ErrandSource, type ID, type Ref, type Sens, aboutPhrase, cleanErrandText, safeName } from "@franki/core";
 import type { LineVerdict } from "./gate";
 
 const SENS: readonly Sens[] = ["S0", "S1", "S2"];
@@ -17,10 +17,14 @@ function when(at: string, zone: string, withTime: boolean): string {
   return new Intl.DateTimeFormat("en-US", opts).format(new Date(ms));
 }
 
-/** One source as a card line. */
+/** One source as a card line. Review fix V3: the subject and title are cleaned here too, however they were stored. */
 export function sourceLine(s: ErrandSource, zone: string): string {
-  if (s.kind === "mail") return `${safeName(s.from)} · ${s.subject.length === 0 ? "(no subject)" : s.subject} · ${when(s.at, zone, false)}`;
-  return `${s.title.length === 0 ? "(no title)" : s.title} · ${s.allDay ? `${when(s.startsAt, zone, false)}, all day` : when(s.startsAt, zone, true)}`;
+  if (s.kind === "mail") {
+    const subject = cleanErrandText(s.subject).slice(0, ERRAND_LABEL_CHARS);
+    return `${safeName(s.from)} · ${subject.length === 0 ? "(no subject)" : subject} · ${when(s.at, zone, false)}`;
+  }
+  const title = cleanErrandText(s.title).slice(0, ERRAND_LABEL_CHARS);
+  return `${title.length === 0 ? "(no title)" : title} · ${s.allDay ? `${when(s.startsAt, zone, false)}, all day` : when(s.startsAt, zone, true)}`;
 }
 
 /** The card, or null when no line may show. */
