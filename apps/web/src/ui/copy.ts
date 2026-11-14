@@ -318,4 +318,8 @@ export const COPY = {
       tapToPlay: "Tap to play",
     },
   },
+  // Brief 049 part A, rulings 11 and 12: the word on the stage while an errand runs.
+  errands: {
+    running: { mail: "Checking your mail", calendar: "Checking your calendar", both: "Checking your mail and calendar" },
+  },
 } as const;

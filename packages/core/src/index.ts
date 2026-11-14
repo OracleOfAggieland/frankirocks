@@ -67,3 +67,6 @@ export * from "./moments";
 export * from "./bank/index";
 // Brief 049 (lane google): a Google connection, the pure parts.
 export * from "./google/index";
+
+// Brief 049 part A: errands, the pure parts.
+export * from "./errands/index";

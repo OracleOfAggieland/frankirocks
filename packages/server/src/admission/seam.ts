@@ -164,3 +164,60 @@ export function recordLateHit(
   };
   tx.create(paths.ledger(input.uid, lateHitDecisionId(deps.hasher, input.sessionId, input.turnId)), entry);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Brief 049 part A, ruling 9: an Errand's result, said once at a pause. The words were worded and gated by code
+// (`errands/deliver.ts`); this writes the `proactive` decision row that claims the delivery, keyed by the Errand, and
+// issues the Permit over the same payload the browser checks: the stamp, the Deck's Head and safe turns, the one
+// unprompted line, no audio and no tool output. A second claim finds the row and gets no Permit, so the line is
+// said at most once whatever order polls, retries and runners arrive in.
+
+export interface ErrandLineInput {
+  uid: string;
+  /** The decision row's ID: one per Errand (`errandDeliveryId`). */
+  decisionId: string;
+  errandId: ID;
+  stamp: Stamp;
+  head: PayloadInput["head"];
+  turns: PayloadInput["turns"];
+  whisper: W;
+  audience: Au;
+  opsNow: number;
+  core: { epoch: number; policyRev: number };
+}
+
+/** The Permit for an Errand's line, or null when its decision row already exists (it was claimed). */
+export async function admitErrandLine(tx: Tx, input: ErrandLineInput, deps: { hasher: Hasher }): Promise<Permit | null> {
+  const path = paths.ledger(input.uid, input.decisionId);
+  if ((await tx.get(path)) !== null) return null;
+  const now = tsFromMs(input.opsNow);
+  const entry: Extract<Ledger, { kind: "decision" }> = {
+    ...cFields(input.uid, now, input.core.epoch, input.core.policyRev),
+    kind: "decision",
+    state: "complete",
+    at: now,
+    retainUntil: null,
+    payload: {
+      purpose: "proactive",
+      acceptedRefs: [
+        { type: "job", id: input.errandId, rev: 1 },
+        { type: "turn", id: input.stamp.turnId as ID, parentId: input.stamp.sessionId as ID, rev: 1 },
+      ],
+      heldRefs: [],
+      reasonCodes: ["ok"],
+      audience: input.audience,
+    },
+  };
+  tx.create(path, entry);
+  const approvedPayloadHash = payloadHash({ stamp: input.stamp, head: input.head, notes: [input.whisper], turns: input.turns, audioIds: [], toolOutput: null }, deps.hasher);
+  return {
+    permitId: deps.hasher.id(idParts.permit(input.stamp, "proactive", approvedPayloadHash)) as ID,
+    stamp: input.stamp,
+    kind: "proactive",
+    scope: "reply",
+    approvedPayloadHash,
+    noteIds: [input.whisper.noteId],
+    momentIds: [input.errandId],
+    expiresAt: tsFromMs(input.opsNow + PERMIT_TTL_MS),
+  };
+}

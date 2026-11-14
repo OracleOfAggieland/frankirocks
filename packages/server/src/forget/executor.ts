@@ -80,6 +80,8 @@ import { claimJob, forgetJob } from "../worker/jobs";
 import { type CallClosePort, NO_CALL_CLOSE } from "./close-port";
 import { forgetJobId, forgetReceiptId } from "./fence";
 import type { ForgetResolvePort } from "./resolve-port";
+// Brief 049 part A.
+import { dropAllErrands, dropErrandsInTx, errandsToDrop } from "../errands/forget";
 
 export const FORGET_LEASE_MS = 30_000;
 export const FORGET_RETRY_MS = 5_000;
@@ -297,7 +299,12 @@ async function runClose(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, 
     16,
   );
   const calls = await askClose(deps.closer ?? NO_CALL_CLOSE, deps.store, uid, live.map((r) => ({ sessionId: r.id, state: "pending" as const })));
+  // Brief 049 ruling 14: every Errand ends here, under the barrier, before the fresh call opens. Review fix R12: all
+  // of them, a chunk per transaction; whatever a last read still finds goes in the step's own transaction.
+  await dropAllErrands(deps.store, uid, now);
+  const errandIds = await errandsToDrop(deps.store, uid);
   return commitStep(deps.store, uid, jobId, lease, async (tx, job, epoch) => {
+    await dropErrandsInTx(tx, uid, errandIds, now);
     barrierAt(tx, epoch, "resolve", now);
     return withPhase(job, nextForgetPhase("close"), now, { closeCalls: calls.slice(0, 16) });
   });

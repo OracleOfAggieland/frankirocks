@@ -1,0 +1,45 @@
+/**
+ * Brief 049 part A, ruling 11: an Errand's card. Each line the Gate lets show, with code's attribution, then each
+ * source behind those lines: sender, subject and date for mail; title and time for an event. No links, and no text
+ * from a message other than its subject and the helper's line.
+ */
+import { type Au, type Card, ERRAND_LABEL_CHARS, type Errand, type ErrandSource, type ID, type Ref, type Sens, aboutPhrase, cleanErrandText, safeName } from "@franki/core";
+import type { LineVerdict } from "./gate";
+
+const SENS: readonly Sens[] = ["S0", "S1", "S2"];
+/** A card holds at most 8 lines: the result's lines first, then their sources. */
+const CARD_LINES_MAX = 8;
+
+function when(at: string, zone: string, withTime: boolean): string {
+  const ms = Date.parse(at);
+  if (!Number.isFinite(ms)) return "";
+  const opts: Intl.DateTimeFormatOptions = withTime ? { timeZone: zone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" } : { timeZone: zone, weekday: "short", month: "short", day: "numeric" };
+  return new Intl.DateTimeFormat("en-US", opts).format(new Date(ms));
+}
+
+/** One source as a card line. Review fix V3: the subject and title are cleaned here too, however they were stored. */
+export function sourceLine(s: ErrandSource, zone: string): string {
+  if (s.kind === "mail") {
+    const subject = cleanErrandText(s.subject).slice(0, ERRAND_LABEL_CHARS);
+    return `${safeName(s.from)} · ${subject.length === 0 ? "(no subject)" : subject} · ${when(s.at, zone, false)}`;
+  }
+  const title = cleanErrandText(s.title).slice(0, ERRAND_LABEL_CHARS);
+  return `${title.length === 0 ? "(no title)" : title} · ${s.allDay ? `${when(s.startsAt, zone, false)}, all day` : when(s.startsAt, zone, true)}`;
+}
+
+/** The card, or null when no line may show. */
+export function errandCard(errand: Errand, verdicts: readonly LineVerdict[], x: { id: ID; zone: string; audience?: Au }): Card | null {
+  // S2 never goes on the wire (KC09), on a card or anywhere else. Review fix V5: outside private (and when the
+  // audience isn't given, which fails closed) only S0 lines that rest on no third party's text show.
+  const company = x.audience !== "private";
+  const shown = verdicts.filter((v) => v.shown !== "none" && v.line.sens !== "S2" && (!company || (v.line.sens === "S0" && v.line.cls !== "T" && v.line.cls !== "M")));
+  if (shown.length === 0) return null;
+  const lines = shown.map((v) => (v.line.attribution === null ? v.line.text : `${v.line.attribution} ${v.line.text}`));
+  const refs = [...new Set(shown.flatMap((v) => v.line.refs))];
+  const reads = refs.map((r) => errand.reads.find((x) => x.ref === r)).filter((r) => r !== undefined);
+  for (const r of reads) if (lines.length < CARD_LINES_MAX) lines.push(sourceLine(r!.source, x.zone));
+  const sens = shown.reduce<Sens>((a, v) => (SENS.indexOf(v.line.sens) > SENS.indexOf(a) ? v.line.sens : a), "S0");
+  const sources: Ref[] = reads.slice(0, 32).map((r) => ({ type: "evidence", id: r!.evidenceId, rev: r!.rev }));
+  const title = `From ${aboutPhrase(errand.about)}`;
+  return { id: x.id, kind: "source", title, lines: lines.map((l) => l.slice(0, 512)), sources, sens };
+}

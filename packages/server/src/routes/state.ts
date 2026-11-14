@@ -10,7 +10,7 @@ import { effectiveAudience, expireLease, hasParseGap } from "../audience";
 import { ensureCoreDocs, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck } from "../deck";
 import { SESSION_IDLE_MS, stateAck } from "../sessions";
-import { isStoreError } from "../store/errors";
+import { retryStale } from "../store/errors";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import { scheduleTick } from "../worker/tick";
@@ -23,6 +23,8 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 import { narrowedHere } from "../audience-swap";
 // Brief 048: the typed forget's acknowledgment, once it is ready.
 import { typedAckOnState } from "../forget/on-turn";
+// Brief 049 part A: the owner's Errands, their running word, cards and one late line.
+import { errandsOnState } from "../errands/deliver";
 
 type StateReq = Infer<typeof StateRequest>;
 type StateRes = Infer<typeof StateResponse>;
@@ -48,20 +50,13 @@ async function recentTurns(tx: Pick<Tx, "query">, uid: string, sessionId: string
 const hasRecentS2 = (rows: readonly { data: Turn }[]) => rows.some((r) => r.data.role === "user" && r.data.rootSlices.some((sl) => sl.sens === "S2"));
 
 /** Re-runs `fn` when a concurrent writer wins the compare-and-set (bounded; the browser retries after that). */
-export async function retryStale<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
-  for (let i = 1; ; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (i >= attempts || !isStoreError(error, "staleRevision")) throw error;
-    }
-  }
-}
+export { retryStale } from "../store/errors";
 
 export async function sessionState(ctx: RouteContext, req: StateReq): Promise<StateRes> {
   const { uid, deps } = ctx;
   await ensureCoreDocs(uid, deps);
   scheduleTick(ctx);
+  let seen: Session | null = null;
   const res = await retryStale(() =>
     deps.store.transaction(uid, async (tx) => {
       const doc = await tx.get<Session>(paths.session(uid, req.sessionId));
@@ -97,6 +92,7 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
           updatedAt: tsFromMs(ops),
         });
       }
+      seen = { ...next, lastSpeechStartedOpsAt: req.speechStartedOpsAt ?? s.lastSpeechStartedOpsAt };
       const deck = narrowedHere(next) ? null : issueDeck(stamp, head, ops, safe);
       // Brief 048 ruling 8: a typed forget whose answer went out before blockedAt was set gets its acknowledgment
       // here, once, on its own Session with no call (a call's fresh open says it instead).
@@ -108,7 +104,14 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
   // Coordinator ruling on brief 042: the poll's budget holds; the whisper gets what is left of it, or waits.
   const spent = ctx.deps.clock.read().opsClock.now - (ctx.startedOpsAt ?? ctx.deps.clock.read().opsClock.now);
   // Brief 045, finding 3: no Deck, no line (its Permit binds the Deck's Head and safe turns).
-  return res.ack === null || res.deck === null || res.proactive !== null ? res : { ...res, proactive: await idleProactive(ctx, res.stamp, STATE_BUDGET_MS - spent, res.deck) };
+  const mayOffer = res.ack !== null && res.deck !== null && res.proactive === null && spent < STATE_BUDGET_MS;
+  // Brief 049 ruling 9: a waiting Errand result goes before an idle whisper; at most one line per poll.
+  // Review fix R1: inside what is left of the poll's budget; out of it, no `errands` (the screen keeps what it has).
+  const errands = seen === null ? null : await errandsOnState(ctx, { sessionId: req.sessionId as ID, session: seen, stamp: res.stamp, deck: res.deck, mayOffer, budgetMs: STATE_BUDGET_MS - spent });
+  const withErrands: StateRes = errands === null ? res : { ...res, ...(errands.view === null ? {} : { errands: errands.view }), proactive: res.proactive ?? errands.proactive };
+  if (errands?.proactive != null) return withErrands;
+  const spentNow = ctx.deps.clock.read().opsClock.now - (ctx.startedOpsAt ?? ctx.deps.clock.read().opsClock.now);
+  return !mayOffer ? withErrands : { ...withErrands, proactive: await idleProactive(ctx, res.stamp, STATE_BUDGET_MS - spentNow, res.deck!) };
 }
 
 export const stateRoute: RouteSpec<StateReq> = {

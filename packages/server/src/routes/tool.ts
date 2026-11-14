@@ -57,6 +57,9 @@ import { admitRule } from "../admission/seam";
 import { effectiveAudience, hasParseGap } from "../audience";
 import type { ResponsesResult } from "../openai/responses";
 import { placePhoneCall } from "../phone/outbound";
+// Brief 049 part A.
+import { type ErrandPlan, planErrand } from "../errands/start";
+import { runErrand } from "../errands/run";
 // Brief 046 part C.
 import { limitMoneyToS0, readMoney } from "../bank/money-read";
 import { answerTool, suggestForAudience, suggestTool } from "./tool-food";
@@ -172,15 +175,22 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
     // Brief 037, finding 1: the food tools answer here and write nothing; their check and write run in the admission.
     const answered =
       req.tool.name === "suggest" ? await suggestTool(ctx, req.stamp, req.tool.args) : req.tool.name === "answer" ? await answerTool(ctx, req.stamp, req.tool.args, check.turn) : null;
+    // Brief 049 review fix V9: the errand is planned here and claimed inside the admission's transaction below.
+    let errandPlan: ErrandPlan | null = null;
     const result: Result = req.tool.name === "make_phone_call"
       ? { name: "make_phone_call", requestId: req.requestId, message: await placePhoneCall(ctx, req.stamp) }
       : req.tool.name === "suggest" ? answered!.result
       : req.tool.name === "answer" ? answered!.result
       // Brief 046 part C: the money read, on the owner's own committed turn only (bank/money-read.ts).
       : req.tool.name === "read_money" ? (await readMoney(ctx, { turn: check.turn, args: req.tool.args, generation: req.stamp.generation, deadlineAt: start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS, noteId: (n) => deps.hasher.id(["money-note", req.stamp.sessionId, req.stamp.turnId, req.callId, n]) as ID })).result
+      // Brief 049 part A: the errand answers at once; its run is scheduled after the claim (errands/start.ts).
+      : req.tool.name === "start_errand" ? (errandPlan = await planErrand(ctx, { stamp: req.stamp, turn: check.turn, args: req.tool.args, noteId: deps.hasher.id(["errand-note", req.stamp.sessionId, req.stamp.turnId, req.callId]) as ID })).result
       : await readRecall(ctx, req, req.tool.args, check.turn, start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS);
 
-    return deps.store.transaction(uid, async (tx) => {
+    // Brief 049 review fix V9: the Errand to run, set only when its writes went into a transaction that committed.
+    let errandToRun: ID | null = null;
+    const response = await deps.store.transaction(uid, async (tx) => {
+      errandToRun = null;
       const doc = await tx.get<Session>(paths.session(uid, req.stamp.sessionId));
       if (doc === null) throw scopeError();
       const s = doc.data;
@@ -195,6 +205,10 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       const heroWrite = answered?.write == null ? null : await answered.write(tx, core.rules.data);
       if (answered?.write != null && heroWrite === null) throw new Unrecorded<ToolRes>({ ...empty, status: "stale" });
       // Brief 042 item 2: a no to the hero offer is recorded, so the offer closes and is not offered again.
+      // Brief 049 review fix V9: the errand's claim reads here, before the first write; it writes only after a Permit.
+      const plan = errandPlan as ErrandPlan | null;
+      const errandClaim = plan?.kind === "claim" ? await plan.claim(tx, { session: s, epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev, opsNow: ops }) : null;
+      const claimed: Result = errandClaim?.result ?? result;
       if (result.name === "answer" && result.state === "declined" && answered?.declinedPendingId !== undefined) await recordHeroDeclined(tx, uid, answered.declinedPendingId, ops, deps.hasher);
       const head = core.bundle.data.head;
       const turn = check.turn;
@@ -223,7 +237,7 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
         wave: "A",
       };
       const planned = serverRule(rule);
-      const limited = result.name === "recall" && planned.kind === "permit" && planned.notes !== "all" ? { ...result, notes: result.notes.filter((n) => n.sens === "S0"), snapshot: result.snapshot === null ? null : limitSnapshot(result.snapshot, "S0") } : result;
+      const limited = claimed.name === "recall" && planned.kind === "permit" && planned.notes !== "all" ? { ...claimed, notes: claimed.notes.filter((n) => n.sens === "S0"), snapshot: claimed.snapshot === null ? null : limitSnapshot(claimed.snapshot, "S0") } : claimed;
       // Brief 045 finding 10: in company (or narrowed here), suggest asks nothing drawn from a Memory and shows only S0.
       const shaped = limited.name === "suggest" ? suggestForAudience(limited, narrowed ? "narrowed" : rule.audience) : limited;
       // Brief 030 part A: the Gate in front of the result, its rows written here.
@@ -250,6 +264,10 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
         deps,
       );
       if (admitted.kind === "permit") heroWrite?.();
+      if (admitted.kind === "permit" && errandClaim?.write != null) {
+        errandClaim.write(tx);
+        errandToRun = errandClaim.errandId;
+      }
       const response: ToolRes =
         admitted.kind === "permit"
           ? { stamp: req.stamp, callId: req.callId, status: "ready", result: output, deck, permit: admitted.permit }
@@ -257,6 +275,10 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       await completeRequest(tx, key, response, ops);
       return response;
     });
+    // Brief 049 ruling 4: the run is scheduled after the commit that created it.
+    const run = errandToRun as ID | null;
+    if (run !== null) ctx.schedule(() => runErrand(ctx, run));
+    return response;
   });
 }
 

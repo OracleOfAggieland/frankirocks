@@ -478,6 +478,7 @@ describe("voice state machine", () => {
     });
     expect(update.session).not.toHaveProperty("model");
     expect(update.session).not.toHaveProperty("voice");
+    // Review fix R2: `start_errand` only once a poll says an agent is ready for this owner.
     expect((update.session as { tools: { name: string }[] }).tools.map((t) => t.name)).toEqual(["recall", "make_phone_call", "suggest", "answer", "read_money"]);
     r.timer("ack", ACK_LIMIT_MS);
     expect(r.st.phase).toBe("RECOVERY");
@@ -887,7 +888,7 @@ describe("turn responses, cuts and tools by scope (task 26)", () => {
       return (replyCreate(r.st, { permit: res.permit!, purpose: "speech", notes, toolCall: null, toolOutput: null }).response as Ev).tools as unknown[];
     };
     expect(tools("ack")).toEqual([]);
-    expect(tools("reply")).toHaveLength(5);
+    expect(tools("reply")).toHaveLength(5); // start_errand only while an errand agent is ready (review fix R2)
     const r = listening();
     speak(r);
     const note = { noteId: testId("n"), rev: 1, kind: "ack" as const, text: "I can't forget things yet.", rootKeys: [], dependsOn: [], sens: "S0" as const, expiresAt: tsFromMs(r.now + 10_000), unprompted: false, momentId: null, tokens: [] };
@@ -1379,5 +1380,43 @@ describe("wave A review fixes, items 13 to 15", () => {
     err(t.judge!.event_id as string);
     err(null, "invalid_value");
     expect(r.st.realtimeErrors).toEqual({ n: 3, judge: 1, spec: 1, speech: 0, other: 1, lastCode: "invalid_value" });
+  });
+});
+
+describe("review fix R2: start_errand is offered only while an agent is ready for the owner", () => {
+  const toolNames = (e: any) => (((e.session ?? e.response) as { tools?: { name: string }[] }).tools ?? []).map((t) => t.name);
+  const poll = (r: Rig, ready: boolean | null) => {
+    const deck = r.st.deck!;
+    const errands = ready === null ? {} : { errands: { running: [], cards: [], ready } };
+    return r.ev({ type: "stateOk", response: { stamp: ss(deck), state: "LISTENING", deck, ack: ackAt(deck, r.now), barrierReceiptId: null, proactive: null, audience: null, ...errands } as never }, 100);
+  };
+
+  it("not offered by default; a poll that says ready re-sends the tools with it; a poll that says not ready takes it away", () => {
+    const r = listening();
+    // Nothing said: no update, and the tool stays off.
+    expect(sends(poll(r, null)).filter((e) => e.type === "session.update")).toEqual([]);
+    const on = sends(poll(r, true)).filter((e) => e.type === "session.update");
+    expect(on).toHaveLength(1);
+    expect(toolNames(on[0]!)).toContain("start_errand");
+    expect(on[0]!.session).not.toHaveProperty("audio");
+    // Same answer again: nothing re-sent.
+    expect(sends(poll(r, true)).filter((e) => e.type === "session.update")).toEqual([]);
+    // The speculative reply carries it while ready.
+    const spec = (() => {
+      speak(r);
+      return sends(r.log).filter((e) => e.type === "response.create").at(-1)!;
+    })();
+    expect(toolNames(spec)).toContain("start_errand");
+    const off = sends(poll(r, false)).filter((e) => e.type === "session.update");
+    expect(off).toHaveLength(1);
+    expect(toolNames(off[0]!)).not.toContain("start_errand");
+  });
+
+  it("a speculative reply before any ready poll does not carry it", () => {
+    const r = listening();
+    speak(r);
+    const spec = sends(r.log).filter((e) => e.type === "response.create").at(-1)!;
+    expect(toolNames(spec)).not.toContain("start_errand");
+    expect(toolNames(spec)).toContain("recall");
   });
 });

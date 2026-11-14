@@ -66,6 +66,8 @@ import {
   tagged,
   union,
 } from "./v";
+// Brief 049 part A: an Errand's closed sets and bounds.
+import { ERRAND_ABOUT, ERRAND_LABEL_CHARS, ERRAND_LINES_MAX, ERRAND_LINE_CHARS, ERRAND_LINE_REFS_MAX, ERRAND_OUTCOMES, ERRAND_READS_MAX } from "../errands/limits";
 // Brief 024: the Gate's closed codes, for its ledger rows.
 import {
   DECISION_ISSUERS,
@@ -333,7 +335,7 @@ export type Turn = Infer<typeof Turn>;
 // ---------------------------------------------------------------------------------------------
 // ledger/{entryId}
 
-const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate", "rule", "bank", "google"] as const;
+const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate", "rule", "bank", "google", "errand"] as const;
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
 /**
@@ -476,6 +478,16 @@ export const GoogleLedgerPayload = obj({
   calendar: bool,
 });
 export type GoogleLedgerPayload = Infer<typeof GoogleLedgerPayload>;
+// Brief 049 part A (lane errands): one row per Errand started, the audit entry for that background job. IDs and
+// closed codes only: never the assignment's words or anything the Errand found.
+export const ErrandLedgerPayload = obj({
+  errandId: ID,
+  sessionId: ID,
+  turnId: ID,
+  about: arr(oneOf(ERRAND_ABOUT), 2, 1),
+  agentIds: arr(str(64, { min: 1 }), 4),
+});
+export type ErrandLedgerPayload = Infer<typeof ErrandLedgerPayload>;
 
 export const LEDGER_PAYLOADS = {
   // Earlier calls have no indexed call ID. Their receipts remain readable and replayable.
@@ -521,6 +533,8 @@ export const LEDGER_PAYLOADS = {
   bank: BankLedgerPayload,
   // Brief 049 (lane google).
   google: GoogleLedgerPayload,
+  // Brief 049 part A.
+  errand: ErrandLedgerPayload,
 } satisfies Record<LedgerKind, Schema<unknown>>;
 
 const LedgerBase = obj({
@@ -566,6 +580,8 @@ export const JOB_KINDS = [
   "rebuild",
   "hangup",
   "readPage",
+  // Brief 049 part A: an Errand's run.
+  "errand",
 ] as const;
 export const JobKind = oneOf(JOB_KINDS);
 
@@ -585,6 +601,8 @@ const WorkJob = obj({
     "rebuild",
     "hangup",
     "readPage",
+    // Brief 049 part A.
+    "errand",
   ]),
   targets: arr(Ref, 32),
   class: nullable(Class),
@@ -1150,3 +1168,120 @@ export function withConnectorDefaults(
     google: c.google ?? null,
   };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Brief 049 part A (lane errands): errands/{errandId}. One per Turn that asked (the ID is the Turn's), run by the Job
+// of the same ID. The assignment is stored as Turn IDs, never words, so a forgotten Turn takes its words with it
+// (ruling 2). `reads` is the Evidence this Errand's tools actually read; a result line rests only on these (ruling 8).
+
+export const ERRAND_STATUSES = ["running", "ready", "failed", "delivered", "cardOnly", "dropped"] as const;
+export type ErrandStatus = (typeof ERRAND_STATUSES)[number];
+
+/** What a card shows of one source (ruling 11): sender, subject and date for mail; title and time for an event. */
+export const ErrandSource = tagged("kind", {
+  mail: obj({ kind: literal("mail"), from: str(ERRAND_LABEL_CHARS), subject: str(ERRAND_LABEL_CHARS), at: TS, mailedByOwner: bool }),
+  event: obj({ kind: literal("event"), title: str(ERRAND_LABEL_CHARS), startsAt: TS, allDay: bool }),
+});
+export type ErrandSource = Infer<typeof ErrandSource>;
+
+/** Review fix V1: the sender of a mail read, as the agent knows it. `mailed`: the owner has mailed this address. */
+export const ErrandSender = obj({ name: str(ERRAND_LABEL_CHARS), address: str(320), mailed: bool });
+export type ErrandSender = Infer<typeof ErrandSender>;
+
+export const ErrandRead = obj({
+  ref: str(3, { min: 2, pattern: /^r[1-9]\d?$/, label: "an errand ref" }),
+  evidenceId: ID,
+  rev: nat(),
+  /**
+   * Review fix V1: what the agent read, as it stored it: its class and sensitivity, whether any of its text went to
+   * the planner (`shown`), and for mail its sender. A run is tainted by every shown read, cited or not.
+   */
+  cls: Class,
+  sens: Sens,
+  shown: bool,
+  sender: nullable(ErrandSender),
+  source: ErrandSource,
+});
+export type ErrandRead = Infer<typeof ErrandRead>;
+
+export const ErrandLine = obj({
+  text: str(ERRAND_LINE_CHARS, { min: 1 }),
+  refs: arr(str(3, { min: 2 }), ERRAND_LINE_REFS_MAX, 1),
+  /**
+   * After the run's taint (review fix V1): the lowest-trust class among its refs and the run's shown reads, and the
+   * highest sensitivity over every shown read of the run.
+   */
+  cls: Class,
+  sens: Sens,
+  /** Code's attribution for a line that rests on third-party text ("From Dana Park, Tuesday:"); else null. */
+  attribution: nullable(str(ERRAND_LABEL_CHARS + 32)),
+  /** Review fix V1: whether the run's taint lets this line be spoken at all. False: card only. */
+  speak: bool,
+});
+export type ErrandLine = Infer<typeof ErrandLine>;
+
+/**
+ * Review fix V2: the one offer of a waiting result that is out now. A result is `delivered` only on the `admitted`
+ * receipt for this offer; offered again (attempt + 1) only once `expiresAt` has passed with no receipt.
+ */
+export const ErrandOffer = obj({
+  attempt: nat(1),
+  noteId: ID,
+  turnId: ID,
+  expiresAt: TS,
+  /** What the offered line was, for the assistant Turn its transcript writes and its said row (review fix V11). */
+  cls: Class,
+  sens: Sens,
+  text: str(1024, { min: 1 }),
+});
+export type ErrandOffer = Infer<typeof ErrandOffer>;
+
+/** Review fix R1: the Gate's inputs, stored at `finish` so a poll rereads nothing to gate. Erased with the lines. */
+export const ErrandGateInputs = obj({ certain: bool, aliases: arr(str(64, { min: 1 }), 64) });
+export type ErrandGateInputs = Infer<typeof ErrandGateInputs>;
+
+export const Errand = obj({
+  ...C_SHAPE,
+  sessionId: ID,
+  turnId: ID,
+  generation: nat(1),
+  about: arr(oneOf(ERRAND_ABOUT), 2, 1),
+  agentIds: arr(str(64, { min: 1 }), 4, 1),
+  assignmentTurnIds: arr(ID, 4, 1),
+  status: oneOf(ERRAND_STATUSES),
+  /** The epoch when it was claimed. A forget moves the epoch, and nothing of an earlier epoch is said or shown. */
+  claimedEpoch: nat(),
+  startedAt: TS,
+  readyAt: nullable(TS),
+  endedAt: nullable(TS),
+  reads: arr(ErrandRead, ERRAND_READS_MAX),
+  outcome: nullable(oneOf(ERRAND_OUTCOMES)),
+  lines: arr(ErrandLine, ERRAND_LINES_MAX),
+  /** Review fix V2: the offer out now, or null. */
+  offer: nullable(ErrandOffer),
+  /** Review fix V11: the response that admitted the line, for its transcript receipt. */
+  saidResponseId: nullable(str(128, { min: 1 })),
+  /** Review fix R1: the Gate's inputs, set at `finish`. */
+  gate: nullable(ErrandGateInputs),
+  /**
+   * Review fix R12: until when this row may hold what the Errand found (its lines, reads and Gate inputs). Past it the
+   * row is stripped bare and this is null; a bare row holds nothing a forget has to drop.
+   */
+  retainUntil: nullable(TS),
+});
+export type Errand = Infer<typeof Errand>;
+
+/** Review fix R1: the most recent Errands one Session's mark names. */
+export const ERRAND_MARK_IDS_MAX = 12;
+/**
+ * Review fix R1: errandMarks/{sessionId}. Written when an Errand of that Session starts, so the once-a-second state
+ * poll reads one document it can name, and nothing at all for a Session that never started one. IDs and times only.
+ */
+export const ErrandMark = obj({
+  ...C_SHAPE,
+  sessionId: ID,
+  errandIds: arr(ID, ERRAND_MARK_IDS_MAX, 1),
+  /** Past this, no Errand of the Session has anything to run, say or show. */
+  openUntil: TS,
+});
+export type ErrandMark = Infer<typeof ErrandMark>;

@@ -5,6 +5,8 @@
 import {
   Block,
   Connector,
+  Errand,
+  ErrandMark,
   Effect,
   Overlay,
   CORE_DOCS,
@@ -62,6 +64,11 @@ export function schemaFor(p: ParsedPath): Schema<unknown> {
     // Bank connections (brief 046).
     case "connectors":
       return Connector;
+    // Errands (brief 049 part A).
+    case "errands":
+      return Errand;
+    case "errandMarks":
+      return ErrandMark;
   }
 }
 

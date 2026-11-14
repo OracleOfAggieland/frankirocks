@@ -54,6 +54,7 @@ import {
   type Permit,
   PHONE_TOOL,
   MONEY_TOOL,
+  ERRAND_TOOL,
   type Proactive,
   RECALL_TOOL,
   type ReceiptRequest,
@@ -361,6 +362,11 @@ export interface VoiceState {
   ack: StateAck | null;
   /** The `instructions` last sent in a `session.update`. */
   instructions: string | null;
+  /**
+   * Review fix R2: the last state poll said an errand agent is ready for this owner, so `start_errand` is in the
+   * tool lists. False until a poll says so, and again on every new Session.
+   */
+  errandsReady: boolean;
   nextClientSeq: number;
   lastCommitSeq: number;
   turn: VoiceTurn | null;
@@ -473,6 +479,7 @@ export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState
     deck: null,
     ack: null,
     instructions: null,
+    errandsReady: false,
     nextClientSeq: 1,
     lastCommitSeq: 0,
     turn: null,
@@ -616,12 +623,22 @@ export const TRANSCRIBE_LANGUAGE = "en";
 export const TRANSCRIBE_PROMPT = "A friendly conversation in English with Franki, a personal assistant. The speaker often mentions names of people, pets and places; spell names as said.";
 
 /**
- * The tools a call offers the model, in every session and every reply that may call one (brief 040, item 1; brief 046 part C adds `read_money`). All five
+ * The tools a call offers the model, in every session and every reply that may call one (brief 040, item 1; brief 046 part C adds `read_money`; brief 049 part A adds `start_errand`). All six
  * are dispatched under one rule (dispatchTool, behind the reply's Permit); `answer` has no parameters (H-186).
  */
-export const CALL_TOOLS = [RECALL_TOOL, PHONE_TOOL, SUGGEST_TOOL, ANSWER_TOOL, MONEY_TOOL] as const;
+export const CALL_TOOLS = [RECALL_TOOL, PHONE_TOOL, SUGGEST_TOOL, ANSWER_TOOL, MONEY_TOOL, ERRAND_TOOL] as const;
 
-export function sessionUpdate(instructions: string, transcribeModel: string): RealtimeClientEvent {
+/** Review fix R2: the tools this call offers now; `start_errand` only while an errand agent is ready for the owner. */
+export function callTools(st: Pick<VoiceState, "errandsReady">): (typeof CALL_TOOLS)[number][] {
+  return CALL_TOOLS.filter((t) => t !== ERRAND_TOOL || st.errandsReady);
+}
+
+/** Review fix R2: a `session.update` that changes only the tools, when a poll moves the errands' readiness. */
+export function toolsUpdate(st: Pick<VoiceState, "errandsReady">): RealtimeClientEvent {
+  return { type: "session.update", session: { type: "realtime", tools: callTools(st) } };
+}
+
+export function sessionUpdate(instructions: string, transcribeModel: string, tools: readonly (typeof CALL_TOOLS)[number][] = callTools({ errandsReady: false })): RealtimeClientEvent {
   // No `model` and no `voice`: those are fixed when the SDP proxy creates the call (R13.1, R13.5).
   return {
     type: "session.update",
@@ -629,7 +646,7 @@ export function sessionUpdate(instructions: string, transcribeModel: string): Re
       type: "realtime",
       tracing: null,
       instructions,
-      tools: [...CALL_TOOLS],
+      tools: [...tools],
       audio: {
         input: {
           noise_reduction: { type: "near_field" },
@@ -698,8 +715,9 @@ export function replyCreate(st: VoiceState, reply: PendingReply, eventId: string
   const input = replyInput(st, reply);
   // Scope `ack` (the crisis care reply) has no tools (R12.6; question 88).
   // Brief 046 part C: the reply after a money read carries no tools either, so it words what came back and reads no more.
-  const tools = reply.permit.scope === "ack" || reply.toolOutput?.name === "make_phone_call" || reply.toolOutput?.name === "read_money"
-    ? { tools: [] } : { tools: [...CALL_TOOLS], tool_choice: "auto" };
+  // Brief 049 part A, ruling 3: and after `start_errand`, so the reply words the neutral line and starts nothing more.
+  const tools = reply.permit.scope === "ack" || reply.toolOutput?.name === "make_phone_call" || reply.toolOutput?.name === "read_money" || reply.toolOutput?.name === "start_errand"
+    ? { tools: [] } : { tools: callTools(st), tool_choice: "auto" };
   return tag({
     type: "response.create",
     response: { conversation: "none", instructions: deck.head.text + notes, input, ...tools, metadata },
@@ -712,7 +730,7 @@ export function specCreate(st: VoiceState, eventId: string): RealtimeClientEvent
   return withEventId(
     {
       type: "response.create",
-      response: { conversation: "none", instructions: st.deck!.head.text, input: replyInput(st, { toolCall: null, toolOutput: null }), tools: [...CALL_TOOLS], tool_choice: "auto", metadata },
+      response: { conversation: "none", instructions: st.deck!.head.text, input: replyInput(st, { toolCall: null, toolOutput: null }), tools: callTools(st), tool_choice: "auto", metadata },
     },
     eventId,
   );
@@ -978,7 +996,7 @@ export function step(state: VoiceState, event: VoiceEvent, now: number): StepRes
     case "channelOpen":
       if ((state.phase === "CONNECTING" || (state.phase === "SWAPPING" && state.instructions === null)) && state.session !== null && state.deck !== null) {
         const instructions = state.deck.head.text;
-        s.send(sessionUpdate(instructions, state.config.transcribeModel));
+        s.send(sessionUpdate(instructions, state.config.transcribeModel, callTools(state)));
         // The swap's fresh call configures inside SWAPPING, so it keeps looking live (R14.4).
         s.set({ phase: state.phase === "SWAPPING" ? "SWAPPING" : "CONFIGURING", instructions });
         s.disarm("connect");
@@ -1118,6 +1136,7 @@ function onOpen(s: Step, res: Infer<typeof OpenResponse>): void {
     deck: res.deck,
     ack: res.ack,
     instructions: null,
+    errandsReady: false,
     nextClientSeq: 1,
     lastCommitSeq: 0,
     turn: null,
@@ -1270,6 +1289,7 @@ function closedFields(st: VoiceState): Partial<VoiceState> {
     deck: null,
     ack: null,
     instructions: null,
+    errandsReady: false,
     turn: null,
     speech: [],
     pending: null,
@@ -1375,6 +1395,7 @@ function startSwap(s: Step, from: string): void {
     deck: null,
     ack: null,
     instructions: null,
+    errandsReady: false,
     turn: null,
     speech: [],
     pending: null,
@@ -1503,7 +1524,7 @@ function adoptDeck(s: Step, next: Deck | null): void {
   s.set({ deck: next });
   const live = s.st.phase !== "CONNECTING" && s.st.phase !== "CLOSED" && s.st.instructions !== null;
   if (live && next.head.text !== s.st.instructions) {
-    s.send(sessionUpdate(next.head.text, s.st.config.transcribeModel));
+    s.send(sessionUpdate(next.head.text, s.st.config.transcribeModel, callTools(s.st)));
     s.set({ instructions: next.head.text });
   }
 }
@@ -1541,6 +1562,11 @@ function onState(s: Step, res: Infer<typeof StateResponse>, sentAt?: number): vo
   const asked = sentAt ?? st.stateSentAt;
   const staleRequest = asked !== null && st.lastTurnResponseAt !== null && asked <= st.lastTurnResponseAt;
   if (!staleRequest || st.deck === null || res.deck === null || isHigher(res.deck, st.deck)) adoptDeck(s, res.deck);
+  // Review fix R2: the errands' readiness moves the tool lists; a configured call is told at once.
+  if ("errands" in res && res.errands !== undefined && res.errands.ready !== s.st.errandsReady) {
+    s.set({ errandsReady: res.errands.ready });
+    if (s.st.phase !== "CONNECTING" && s.st.phase !== "CLOSED" && s.st.instructions !== null) s.send(toolsUpdate(s.st));
+  }
   // R4.2: `ack:null` refuses fastO. R4.4: an ack requested before the last /api/turn answer can't grant it.
   let ackDropped = false;
   if (res.ack === null) s.set({ ack: null, ackDroppedStale: false });

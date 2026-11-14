@@ -69,6 +69,8 @@ import { phoneId } from "../phone/outbound";
 import { finishTypedMoney, isMoneyAsk, moneyPendingId } from "../bank/money-typed";
 import type { MoneyArgs } from "@franki/core";
 import { phoneCallLineSafe, phoneNote } from "../phone/aware";
+// Brief 049 ruling 12.
+import { errandAwareNote, errandRunningLineSafe } from "../errands/aware";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 // Brief 026: company, quiet and alone (voice-control tasks 48, 49).
 import { audienceEffect, narrowedHere, precompileAudienceHead } from "../audience-swap";
@@ -185,6 +187,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
   slowP.catch(() => {});
   // The Owner's latest phone call, read beside the parse so the reply can say where it stands (phone/aware.ts).
   const phoneLineP = req.supersedesRequestId === null && req.transcriptState === "final" && cls.cls === "U" ? phoneCallLineSafe(ctx) : Promise.resolve(null);
+  const errandLineP = req.supersedesRequestId === null && req.transcriptState === "final" && cls.cls === "U" ? errandRunningLineSafe(ctx, req.sessionId) : Promise.resolve(null);
   await ensureCoreDocs(uid, deps);
   // Brief 046 part C: the model's money question, kept for the step after the commit (a replay has none).
   let moneyArgs: MoneyArgs | null = null;
@@ -214,6 +217,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
       route === null && pre !== null && pre.rules.proposals.length > 0 ? await readSnapshot(deps.store, uid, (reader) => readOnTurnContext(reader, uid, pre.epoch, req.generation)) : null;
     const reply = route === null ? await replyP : null;
     const phoneLine = await phoneLineP;
+    const errandLine = await errandLineP;
     // Brief 026: a parse that may narrow or widen the audience compiles that Head before the transaction (design "Alone").
     const audienceHead = await precompileAudienceHead(ctx, slow, req.generation);
     const routeSource = req.source === "asr" ? ("asr" as const) : ("typed" as const);
@@ -366,6 +370,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           // With a call open the reply is spoken from the Head and these notes, so the phone line travels as an S0
           // note. With no call the typed reply already read it, and a note here would be shown as text.
           if (phoneLine !== null && (req.source === "asr" || s0.callId !== null)) candidateNotes.push(phoneNote(ctx, req.sessionId, req.turnId, phoneLine, ops));
+          if (errandLine !== null && (req.source === "asr" || s0.callId !== null)) candidateNotes.push(errandAwareNote(ctx, req.sessionId, req.turnId, errandLine, ops));
           const coreVals = { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev };
           const { turn: turn0, evidence } = userTurnRecords({ uid, sessionId: req.sessionId, req, text, cls, clock: pair, core: coreVals, hasher: deps.hasher });
 
