@@ -95,20 +95,18 @@ env:
     secret: FRANKI_BANK_TOKEN_KEY
     availability: [RUNTIME]
 
-  # A connected Google account, read-only (brief 049). The three entries below stay commented out until the OAuth
-  # client exists, because a rollout fails on a `secret:` that isn't in Secret Manager. With any of the three unset,
-  # every /api/google/* route answers CONFIG and the sheet says Google isn't set up. To turn it on (docs/setup.md):
-  # create the client, run `firebase apphosting:secrets:set GOOGLE_OAUTH_CLIENT_SECRET`, then uncomment all three
-  # and fill in the two values. The refresh token is sealed under FRANKI_BANK_TOKEN_KEY, above.
+  # A connected Google account, read-only (brief 049; setup in docs/setup.md). The OAuth client is
+  # "Franki Gmail and Calendar" in the frankirocks project. With any of the three unset, every /api/google/* route
+  # answers CONFIG and the sheet says Google isn't set up. The refresh token is sealed under FRANKI_BANK_TOKEN_KEY, above.
   #
   # The client ID is not a secret (it ends `.apps.googleusercontent.com`).
-  # - variable: GOOGLE_OAUTH_CLIENT_ID
-  #   value: ""
-  # The one redirect URI this deployment hands to Google (not a secret): this backend's origin plus /google/callback,
-  # here https://franki-web--frankirocks.us-central1.hosted.app/google/callback. Start refuses any request whose
-  # Origin doesn't match it exactly.
-  # - variable: GOOGLE_OAUTH_REDIRECT_URI
-  #   value: ""
-  # - variable: GOOGLE_OAUTH_CLIENT_SECRET
-  #   secret: GOOGLE_OAUTH_CLIENT_SECRET
-  #   availability: [RUNTIME]
+  - variable: GOOGLE_OAUTH_CLIENT_ID
+    value: 1072058223425-gmi4nd49sopnhbfgbllfpmd3cvg914pv.apps.googleusercontent.com
+  # The one redirect URI this deployment hands to Google (not a secret): the custom domain plus /google/callback.
+  # Start refuses any request whose Origin doesn't match it exactly, so Google connects from https://frankirocks.com
+  # only (www redirects there); on the hosted.app address the sheet can't start a connection.
+  - variable: GOOGLE_OAUTH_REDIRECT_URI
+    value: https://frankirocks.com/google/callback
+  - variable: GOOGLE_OAUTH_CLIENT_SECRET
+    secret: GOOGLE_OAUTH_CLIENT_SECRET
+    availability: [RUNTIME]

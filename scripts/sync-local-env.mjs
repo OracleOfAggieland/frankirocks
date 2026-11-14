@@ -11,10 +11,12 @@ const WEB_DIR = fileURLToPath(new URL("../apps/web/", import.meta.url));
 export const APPHOSTING_PATH = resolve(WEB_DIR, "apphosting.yaml");
 export const OUTPUT_PATH = resolve(WEB_DIR, ".env.development.local");
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+// A deployment's own address. It would shadow the localhost value in .env.local (.env.development.local wins).
+const DEPLOYMENT_ONLY = new Set(["GOOGLE_OAUTH_REDIRECT_URI"]);
 
 /**
  * Pure: returns [{ name, value }] for each `env:` entry with a `variable`, a nonempty scalar `value` and no `secret`.
- * Entries with `secret:` are skipped; other keys (such as `availability`) are ignored.
+ * Entries with `secret:` and deployment-only names are skipped; other keys (such as `availability`) are ignored.
  */
 export function parsePlainEnv(yamlText) {
   const doc = parse(yamlText);
@@ -26,6 +28,7 @@ export function parsePlainEnv(yamlText) {
     const { variable, value, secret } = entry;
     // Empty deployment placeholders must not shadow values from .env.local in next dev.
     if (secret !== undefined || value === "") continue;
+    if (DEPLOYMENT_ONLY.has(variable)) continue;
     if (typeof variable !== "string" || !NAME.test(variable)) continue;
     if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") continue;
     plain.push({ name: variable, value: String(value) });

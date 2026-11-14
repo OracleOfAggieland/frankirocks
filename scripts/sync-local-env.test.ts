@@ -54,6 +54,14 @@ describe("parsePlainEnv", () => {
     expect(parsePlainEnv('env:\n  - variable: TWILIO_PHONE_NUMBER\n    value: ""')).toEqual([]);
   });
 
+  it("leaves the deployed Google callback out, so local dev keeps its own from .env.local", () => {
+    const yaml = "env:\n  - variable: GOOGLE_OAUTH_REDIRECT_URI\n    value: https://frankirocks.com/google/callback\n  - variable: GOOGLE_OAUTH_CLIENT_ID\n    value: id.apps.googleusercontent.com";
+    expect(parsePlainEnv(yaml)).toEqual([{ name: "GOOGLE_OAUTH_CLIENT_ID", value: "id.apps.googleusercontent.com" }]);
+    const real = parsePlainEnv(readFileSync(APPHOSTING_PATH, "utf8")).map((e) => e.name);
+    expect(real).not.toContain("GOOGLE_OAUTH_REDIRECT_URI");
+    expect(real).toContain("GOOGLE_OAUTH_CLIENT_ID");
+  });
+
   it("prints no values", () => {
     fc.assert(
       fc.property(fc.array(fc.stringMatching(/^v-[A-Za-z0-9]{6,20}$/), { maxLength: 10 }), (values) => {
