@@ -510,11 +510,17 @@ function validWindow(w: EventWindow): boolean {
   return Number.isSafeInteger(w.fromMs) && Number.isSafeInteger(w.toMs) && w.toMs > w.fromMs && w.toMs - w.fromMs <= FREE_TIME_DAYS_MAX * 86_400_000;
 }
 
-/** Busy-or-free of one stored event row. */
-function busyOf(e: Evidence): BusyEvent | null {
+/**
+ * Busy-or-free of one stored event row. Review T7: only an event the owner organized, or has accepted or tentatively
+ * accepted, blocks; an unanswered or declined invite doesn't (`invite`), and neither does a cancelled or transparent
+ * event.
+ */
+function busyOf(e: Evidence): (BusyEvent & { invite: boolean }) | null {
   if (e.observation.kind !== "calendar") return null;
   const o = e.observation;
-  return { startMs: msFromTs(o.start), endMs: msFromTs(o.end), allDay: o.allDay, free: o.status === "cancelled" || o.selfResponse === "declined" || o.transparency === "transparent" };
+  const answered = o.selfResponse === "accepted" || o.selfResponse === "tentative";
+  const invite = !o.organizerSelf && !answered;
+  return { startMs: msFromTs(o.start), endMs: msFromTs(o.end), allDay: o.allDay, free: o.status === "cancelled" || o.transparency === "transparent" || invite || o.selfResponse === "declined", invite: invite && o.status !== "cancelled" && o.transparency !== "transparent" };
 }
 
 /**
@@ -592,16 +598,20 @@ export function freeTime(
   window: EventWindow,
   minutes: number,
   bounds: DayBounds = DEFAULT_DAY_BOUNDS,
-): Promise<GoogleRead<{ zone: string; gaps: { start: string; end: string }[]; read: string[]; complete: boolean; through: string }>> {
+): Promise<GoogleRead<{ zone: string; gaps: { start: string; end: string }[]; read: string[]; complete: boolean; through: string; blocking: string[]; ignoredInvites: number }>> {
   return guarded(async () => {
     // Review D10: a length that can't fit the day is `invalid`, never "no gaps".
     if (freeTimeAsk(minutes, bounds) === "invalid") return fail("invalid");
     const r = await readEvents(g, window);
     if (!r.ok) return r;
-    const busy = r.value.docs.map((d) => busyOf(d.data)).filter((b): b is BusyEvent => b !== null);
+    const rows = r.value.docs.map((d) => ({ id: d.id, b: busyOf(d.data) })).filter((x): x is { id: string; b: BusyEvent & { invite: boolean } } => x.b !== null);
     // Review D1: gaps only in time that was fully read. Past the cap the window is clipped, and the answer says so.
     const read = { fromMs: window.fromMs, toMs: r.value.throughMs };
-    const gaps = read.toMs > read.fromMs ? freeGaps(busy, read, r.value.zone, bounds, minutes).map((x) => ({ start: tsFromMs(x.startMs), end: tsFromMs(x.endMs) })) : [];
-    return { ok: true, value: { zone: r.value.zone, gaps, read: r.value.docs.map((d) => d.id), complete: !r.value.more, through: tsFromMs(read.toMs) } };
+    const gaps = read.toMs > read.fromMs ? freeGaps(rows.map((x) => x.b), read, r.value.zone, bounds, minutes).map((x) => ({ start: tsFromMs(x.startMs), end: tsFromMs(x.endMs) })) : [];
+    // Review T6: the events that block, inside what was read, for the planner to cite; T7: how many invites didn't.
+    const inside = (b: BusyEvent) => b.endMs > read.fromMs && b.startMs < read.toMs;
+    const blocking = rows.filter((x) => !x.b.free && inside(x.b)).map((x) => x.id);
+    const ignoredInvites = rows.filter((x) => x.b.invite && inside(x.b)).length;
+    return { ok: true, value: { zone: r.value.zone, gaps, read: r.value.docs.map((d) => d.id), complete: !r.value.more, through: tsFromMs(read.toMs), blocking, ignoredInvites } };
   });
 }

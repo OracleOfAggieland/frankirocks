@@ -503,8 +503,10 @@ async function finish(ctx: RouteContext, lease: Lease, done: Done, reads: readon
   let notice: ErrandNotice | null = null;
   if (done.kind === "done") {
     const core = await readCoreDocs({ get: (p) => deps.store.get(uid, p) }, uid);
+    // Review fix E3: a real account's rows are worded against the ops clock ("today" is the real today), never the
+    // sample visit's world clock.
     const pair = ownerClock(core.state.data, deps.clock);
-    const at = { nowMs: pair.worldClock.now, zone: pair.worldClock.zone };
+    const at = { nowMs: pair.opsClock.now, zone: core.state.data.currentZone };
     const views = await refViews(ctx, reads);
     const checked = checkErrandResult({ outcome: done.outcome, lines: done.lines }, views, at);
     // Review fixes V1 and V3: the run is tainted by every read the planner was shown, and the text cleaned.

@@ -9,24 +9,32 @@
  * `read_mail` answers only the reader's output (ruling 24): the planner never sees a body, and the reader has no tool.
  */
 import {
+  CALENDAR_DAYS_MAX,
+  type CalendarWindow,
   type Class,
+  DEFAULT_DAY_BOUNDS,
+  ERRAND_TOOL_OUTPUT_CHARS,
   type ErrandSource,
   type Evidence,
   type MailQuery,
+  PARTS_OF_DAY,
+  PART_BOUNDS,
+  type PartOfDay,
   type Sens,
   addCivilDays,
+  calendarWindow,
   civilDateAt,
   cleanErrandText,
+  errandLocalTime,
   localMinuteAt,
-  resolvePeriod,
-  resolveSpoken,
+  resolvePast,
 } from "@franki/core";
 import { withDeadline } from "../clock/timers";
 import { requireModel } from "../config/models";
 import { ownerClock, readCoreDocs } from "../core-docs";
 import { isReadableGoogle, readGoogleDocs } from "../google/connector";
 import { googleConfigured } from "../google/config";
-import { type GoogleReadContext, type GoogleReadFailure, type MailHit, type ReaderText, freeTime, googleReadContext, listEvents, readableMessage, searchMail, senderMailed } from "../google/read";
+import { type GoogleRead, type GoogleReadContext, type GoogleReadFailure, type MailHit, type ReaderText, freeTime, googleReadContext, listEvents, readableMessage, searchMail, senderMailed } from "../google/read";
 import { storeReader } from "../head-build";
 import type { ResponsesResult } from "../openai/responses";
 import type { RouteContext } from "../routes/runtime";
@@ -40,10 +48,7 @@ export const SEARCH_WORDS_MAX = 5;
 export const SEARCH_WORD_CHARS = 40;
 export const SEARCH_FROM_CHARS = 120;
 export const WHEN_CHARS = 80;
-/** Ruling 25: a calendar window is at most 14 days. */
-export const CALENDAR_DAYS_MAX = 14;
 export const FREE_MINUTES_MAX = 600;
-export const DAY_MS = 86_400_000;
 /** The reader's closed output (ruling 23). */
 export const READER_GIST_CHARS = 240;
 export const READER_PHRASE_CHARS = 80;
@@ -131,6 +136,8 @@ interface RunState {
   g: GoogleReadContext;
   /** ref -> eid, for refs `search_mail` returned in this claim. */
   searched: Map<string, string>;
+  /** Review fix E5: the calendar's own zone, once Google has answered it in this claim. */
+  calendarZone?: string;
 }
 const SCRATCH_KEY = "google";
 
@@ -165,27 +172,16 @@ async function rowOf(ctx: RouteContext, eid: string): Promise<{ cls: Class; sens
 }
 
 // ---------------------------------------------------------------------------------------------
-// Dates: every `when` goes through the pure resolver.
+// Dates: every `when` goes through a pure resolver.
 
-async function worldNow(ctx: RouteContext): Promise<{ nowMs: number; zone: string }> {
+/**
+ * Review fix E3: a real Google account is read against the ops clock, never the sample visit's world clock (as
+ * `bank/money-read.ts` does), in the owner's zone. The calendar tools then move to the calendar's own zone (E5).
+ */
+async function googleNow(ctx: RouteContext): Promise<{ nowMs: number; zone: string }> {
   const core = await readCoreDocs({ get: (p) => ctx.deps.store.get(ctx.uid, p) }, ctx.uid);
   const pair = ownerClock(core.state.data, ctx.deps.clock);
-  return { nowMs: pair.worldClock.now, zone: pair.worldClock.zone };
-}
-
-/** A day phrase as [start, next day's start); a period phrase as [now, its end]. Null: unresolved. */
-export function windowOf(when: string, nowMs: number, zone: string, periods: boolean): { fromMs: number; toMs: number } | null {
-  const day = resolveSpoken(when, nowMs, zone);
-  if (day !== null) {
-    const date = civilDateAt(day.startMs, zone);
-    const from = localMinuteAt(date, 0, zone);
-    const to = localMinuteAt(addCivilDays(date, 1), 0, zone);
-    return from === null || to === null || to <= from ? null : { fromMs: from, toMs: to };
-  }
-  if (!periods) return null;
-  const p = resolvePeriod(when, nowMs, zone);
-  if (p === null || p.endMs <= nowMs) return null;
-  return { fromMs: nowMs, toMs: Math.min(p.endMs + 1, nowMs + CALENDAR_DAYS_MAX * DAY_MS) };
+  return { nowMs: pair.opsClock.now, zone: core.state.data.currentZone };
 }
 
 const UNRESOLVED = { unresolved: true, say: "I need a day for that." };
@@ -246,7 +242,7 @@ const searchMailTool: ErrandTool = {
     properties: {
       from: { type: ["string", "null"], maxLength: SEARCH_FROM_CHARS },
       words: { type: "array", maxItems: SEARCH_WORDS_MAX, items: { type: "string", maxLength: SEARCH_WORD_CHARS } },
-      when: { type: ["string", "null"], maxLength: WHEN_CHARS, description: "A day phrase such as 'yesterday' or 'last Tuesday'." },
+      when: { type: ["string", "null"], maxLength: WHEN_CHARS, description: "A past day or period such as 'yesterday', 'last Tuesday', 'this week' or 'in October'." },
       unread: { type: "boolean" },
     },
   },
@@ -256,9 +252,10 @@ const searchMailTool: ErrandTool = {
     const mem = stateOf(ctx);
     let afterMs: number | null = null;
     let beforeMs: number | null = null;
+    const now = await googleNow(ctx.route);
     if (a.when !== null) {
-      const now = await worldNow(ctx.route);
-      const w = windowOf(a.when, now.nowMs, now.zone, false);
+      // Review fix E2: mail is looked up backward: "Tuesday" is the last Tuesday, "this week" Monday to now.
+      const w = resolvePast(a.when, now.nowMs, now.zone);
       if (w === null) return unresolved(ctx);
       afterMs = w.fromMs;
       beforeMs = w.toMs;
@@ -280,7 +277,9 @@ const searchMailTool: ErrandTool = {
       if (ref === null) continue;
       mem.searched.set(ref, h.eid);
       // Review fix T2: an unmailed sender's message is a ref, a date and unread, and nothing else.
-      messages.push(mailed ? { ref, from: h.sender.address, name: h.sender.name, at: h.at, subject: h.subject, unread: h.unread } : { ref, at: h.at, unread: h.unread });
+      // Review fix E5: the date is local text, rendered by code.
+      const at = errandLocalTime(Date.parse(h.at), now.zone);
+      messages.push(mailed ? { ref, from: h.sender.address, name: h.sender.name, at, subject: h.subject, unread: h.unread } : { ref, at, unread: h.unread });
     }
     // Review fix T8: everything this search found is from people the owner hasn't written to.
     if (r.value.hits.length > 0 && mailedOf.every((m) => !m)) ctx.flag("unmailed");
@@ -336,70 +335,159 @@ const readMailTool: ErrandTool = {
 
 // ---------------------------------------------------------------------------------------------
 // Calendar
+//
+// Review fixes E3, E5, E8, T6, E1 and T7: windows come from the pure `calendarWindow` against the ops clock, in one
+// zone, the calendar's own (learned from Google's first answer and kept for the claim; a first guess in the owner's
+// zone is read again once in the calendar's when they differ). Every time the planner sees is local text rendered
+// by code. A list is cut to what the read cap and the output bound allow, and says `truncated` truthfully.
 
-function whenArg(raw: unknown, extra: string[] = []): { when: string; rest: Record<string, unknown> } | null {
+const PART_SCHEMA = { type: ["string", "null"], enum: [...PARTS_OF_DAY, null], description: "Optional: morning, afternoon or evening." };
+
+function calendarArgs(raw: unknown, withMinutes: boolean): { when: string; part: PartOfDay | null; minutes: number } | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
   const x = raw as Record<string, unknown>;
-  if (Object.keys(x).some((k) => k !== "when" && !extra.includes(k))) return null;
+  const allowed = withMinutes ? ["when", "part", "minutes"] : ["when", "part"];
+  if (Object.keys(x).some((k) => !allowed.includes(k))) return null;
   const when = str(x.when, WHEN_CHARS);
-  return when === null ? null : { when, rest: x };
+  if (when === null) return null;
+  const part = x.part === undefined || x.part === null ? null : (PARTS_OF_DAY as readonly unknown[]).includes(x.part) ? (x.part as PartOfDay) : undefined;
+  if (part === undefined) return null;
+  const minutes = withMinutes ? x.minutes : 60;
+  if (typeof minutes !== "number" || !Number.isInteger(minutes) || minutes < 1 || minutes > FREE_MINUTES_MAX) return null;
+  return { when, part, minutes };
 }
+
+/** What the planner is told about the window it got, all in local text. */
+const windowText = (w: CalendarWindow, zone: string) => ({ from: errandLocalTime(w.fromMs, zone), to: errandLocalTime(w.toMs, zone), clipped: w.clipped, ...(w.part === null ? {} : { part: w.part }) });
+
+/** An event's time as local text. An all-day event is its day(s). */
+function eventTimes(start: string, end: string, allDay: boolean, zone: string): { from: string; to: string } {
+  const s = Date.parse(start);
+  const e = Date.parse(end);
+  return allDay ? { from: errandLocalTime(s, zone, false), to: errandLocalTime(e - 1, zone, false) } : { from: errandLocalTime(s, zone), to: errandLocalTime(e, zone) };
+}
+
+/** True when an event overlaps the part of day on any day it touches (an all-day event always does). */
+function inPart(start: string, end: string, allDay: boolean, part: PartOfDay | null, zone: string): boolean {
+  if (part === null || allDay) return true;
+  const s = Date.parse(start);
+  const e = Date.parse(end);
+  const b = PART_BOUNDS[part];
+  for (let day = civilDateAt(s, zone), n = 0; n <= CALENDAR_DAYS_MAX && day <= civilDateAt(e - 1, zone); day = addCivilDays(day, 1), n++) {
+    const from = localMinuteAt(day, b.startMinute, zone);
+    const to = b.endMinute >= 1440 ? localMinuteAt(addCivilDays(day, 1), 0, zone) : localMinuteAt(day, b.endMinute, zone);
+    if (from !== null && to !== null && s < to && e > from) return true;
+  }
+  return false;
+}
+
+/**
+ * Reads with the window resolved in the calendar's own zone: a guess (the zone learned earlier in this claim, else
+ * the owner's), then once more in the calendar's zone when Google's answer says another.
+ */
+async function inCalendarZone<T extends { zone: string }>(ctx: ErrandToolContext, when: string, x: Parameters<typeof calendarWindow>[3], read: (w: CalendarWindow) => Promise<GoogleRead<T>>): Promise<{ w: CalendarWindow; r: GoogleRead<T> } | null> {
+  const mem = stateOf(ctx);
+  const now = await googleNow(ctx.route);
+  const guess = mem.calendarZone ?? now.zone;
+  const w = calendarWindow(when, now.nowMs, guess, x);
+  if (w === null) return null;
+  const r = await read(w);
+  if (!r.ok || r.value.zone === guess) return { w, r };
+  mem.calendarZone = r.value.zone;
+  const again = calendarWindow(when, now.nowMs, r.value.zone, x);
+  if (again === null) return null;
+  return { w: again, r: await read(again) };
+}
+
+/** The serialized answer stays well inside the tool output bound (`ERRAND_TOOL_OUTPUT_CHARS`). */
+const OUTPUT_BUDGET = ERRAND_TOOL_OUTPUT_CHARS - 800;
 
 const listEventsTool: ErrandTool = {
   name: "list_events",
-  description: "List the owner's calendar events for a time phrase such as 'tomorrow', 'Friday' or 'this week' (at most 14 days).",
-  parameters: { type: "object", additionalProperties: false, required: ["when"], properties: { when: { type: "string", maxLength: WHEN_CHARS } } },
+  description: "List the owner's calendar events for a time phrase such as 'tomorrow', 'Friday', 'this week' or 'in December' (at most 14 days), optionally one part of the day. Times are local text.",
+  parameters: { type: "object", additionalProperties: false, required: ["when", "part"], properties: { when: { type: "string", maxLength: WHEN_CHARS }, part: PART_SCHEMA } },
   async run(ctx, raw) {
-    const a = whenArg(raw);
+    const a = calendarArgs(raw, false);
     if (a === null) return failure("invalid");
     const mem = stateOf(ctx);
-    const now = await worldNow(ctx.route);
-    const w = windowOf(a.when, now.nowMs, now.zone, true);
-    if (w === null) return unresolved(ctx);
-    const r = await listEvents(mem.g, w);
+    const got = await inCalendarZone(ctx, a.when, { part: a.part }, (w) => listEvents(mem.g, w));
+    if (got === null) return unresolved(ctx);
+    const { w, r } = got;
     if (!r.ok) return readFailed(ctx, r.why);
     ctx.flag("read");
-    if (r.value.truncated) ctx.flag("partial");
+    const zone = r.value.zone;
     const events = [];
+    let truncated = r.value.truncated;
+    let size = JSON.stringify(windowText(w, zone)).length + 200;
     for (const e of r.value.events) {
+      if (!inPart(e.start, e.end, e.allDay, w.part, zone)) continue;
+      // Review fix E8: only what the read cap and the output bound allow; the rest is said to be cut.
+      const entry = { ref: "r32", title: e.title, ...eventTimes(e.start, e.end, e.allDay, zone), allDay: e.allDay, organizerSelf: e.organizerSelf };
+      const cost = JSON.stringify(entry).length + 1;
+      if (ctx.readsLeft() <= 0 || size + cost > OUTPUT_BUDGET) {
+        truncated = true;
+        break;
+      }
       const row = await rowOf(ctx.route, e.eid);
       if (row === null) continue;
       const ref = ctx.read({ evidenceId: e.eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: true, sender: null, source: { kind: "event", title: e.title ?? "", startsAt: e.start, allDay: e.allDay } });
-      if (ref === null) continue;
-      events.push({ ref, title: e.title, start: e.start, end: e.end, allDay: e.allDay, organizerSelf: e.organizerSelf });
+      if (ref === null) {
+        truncated = true;
+        break;
+      }
+      size += cost;
+      events.push({ ...entry, ref });
     }
-    return { zone: r.value.zone, events, truncated: r.value.truncated };
+    if (truncated) ctx.flag("partial");
+    return { zone, window: windowText(w, zone), clipped: w.clipped, events, truncated };
   },
 };
 
 const freeTimeTool: ErrandTool = {
   name: "find_free_time",
-  description: "Find free gaps of at least `minutes` in the owner's calendar for a time phrase. Code computes the gaps.",
-  parameters: { type: "object", additionalProperties: false, required: ["when", "minutes"], properties: { when: { type: "string", maxLength: WHEN_CHARS }, minutes: { type: "integer", minimum: 1, maximum: FREE_MINUTES_MAX } } },
+  description: "Find free gaps of at least `minutes` in the owner's calendar for a time phrase, optionally one part of the day. Code computes the gaps, as local text; `busy` lists refs for what blocks the time, to cite.",
+  parameters: { type: "object", additionalProperties: false, required: ["when", "minutes", "part"], properties: { when: { type: "string", maxLength: WHEN_CHARS }, minutes: { type: "integer", minimum: 1, maximum: FREE_MINUTES_MAX }, part: PART_SCHEMA } },
   async run(ctx, raw) {
-    const a = whenArg(raw, ["minutes"]);
-    const minutes = a?.rest.minutes;
-    if (a === null || typeof minutes !== "number" || !Number.isInteger(minutes) || minutes < 1 || minutes > FREE_MINUTES_MAX) return failure("invalid");
+    const a = calendarArgs(raw, true);
+    if (a === null) return failure("invalid");
     const mem = stateOf(ctx);
-    const now = await worldNow(ctx.route);
-    const w = windowOf(a.when, now.nowMs, now.zone, true);
-    if (w === null) return unresolved(ctx);
-    const r = await freeTime(mem.g, w, minutes);
+    const bounds = (w: CalendarWindow) => (w.timed ? { startMinute: 0, endMinute: 1440 } : w.part !== null ? PART_BOUNDS[w.part] : DEFAULT_DAY_BOUNDS);
+    const got = await inCalendarZone(ctx, a.when, { part: a.part, minutes: a.minutes, fromNow: true }, (w) => freeTime(mem.g, w, a.minutes, bounds(w)));
+    if (got === null) return unresolved(ctx);
+    const { w, r } = got;
     if (!r.ok) return readFailed(ctx, r.why);
     ctx.flag("read");
-    if (!r.value.complete) ctx.flag("partial");
-    // The gaps carry no event text; the events behind them are registered as read, not shown.
-    for (const eid of r.value.read) {
-      const row = await rowOf(ctx.route, eid);
-      if (row === null) continue;
+    const zone = r.value.zone;
+    // Review fix T6: what blocks the window is citeable; only its typed time fields are shown, never its title.
+    const busy = [];
+    for (const eid of r.value.blocking) {
+      if (ctx.readsLeft() <= 0) break;
       const doc = await ctx.route.deps.store.get<Evidence>(ctx.route.uid, paths.evidence(ctx.route.uid, eid));
       const o = doc?.data.observation;
-      const src: ErrandSource = o?.kind === "calendar" ? { kind: "event", title: doc?.data.title ?? "", startsAt: o.start, allDay: o.allDay } : { kind: "event", title: "", startsAt: r.value.through, allDay: false };
-      ctx.read({ evidenceId: eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: false, sender: null, source: src });
+      if (doc === null || o?.kind !== "calendar") continue;
+      const time = timeView(doc.data);
+      if (time === null) continue;
+      const ref = ctx.read({ evidenceId: eid, rev: doc.data.rev, cls: time.cls, sens: time.sens, shown: true, sender: null, source: { kind: "event", title: "", startsAt: o.start, allDay: o.allDay } });
+      if (ref !== null) busy.push({ ref, ...eventTimes(o.start, o.end, o.allDay, zone) });
     }
-    return { zone: r.value.zone, gaps: r.value.gaps, complete: r.value.complete, through: r.value.through };
+    if (!r.value.complete) ctx.flag("partial");
+    const gaps = r.value.gaps.map((g) => ({ from: errandLocalTime(Date.parse(g.start), zone), to: errandLocalTime(Date.parse(g.end), zone) }));
+    return { zone, window: windowText(w, zone), clipped: w.clipped, minutes: a.minutes, gaps, busy, ignoredInvites: r.value.ignoredInvites, complete: r.value.complete };
   },
 };
+
+/**
+ * Review fix T6: a free-time answer shows only an event's typed fields (its time, status and the owner's answer),
+ * never its title, so the read is registered with those slices' class and sensitivity.
+ */
+function timeView(e: Evidence): { cls: Class; sens: Sens } | null {
+  if (e.status !== "retained") return null;
+  const typed = e.fieldSlices.filter((s) => s.fieldPath.startsWith("calendar."));
+  if (typed.length === 0) return null;
+  const v = evidenceView({ ...e, fieldSlices: typed });
+  return v.cls === null ? null : { cls: v.cls, sens: v.sens };
+}
+
 
 // ---------------------------------------------------------------------------------------------
 // Readiness and the registry

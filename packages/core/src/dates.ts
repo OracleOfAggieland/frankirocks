@@ -425,3 +425,67 @@ export function resolvePeriod(spoken: string, spokenAtMs: number, zone: string):
   if (endMs === null) return null;
   return { endMs, civilEnd: `${last.y}-${pad(last.m)}-${pad(last.d)}`, kind, month, year: last.y, zone };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Brief 049 part C, review fix E2: looking back, for mail.
+
+/** A span of time in UTC ms, `toMs` exclusive. */
+export interface PastSpan {
+  fromMs: number;
+  toMs: number;
+}
+
+const PAST_COUNT = new RegExp(`^([0-9]{1,3}|${Object.keys(COUNTS).join("|")}) days? ago$`);
+const PAST_WEEKDAY = new RegExp(`^(last |on |this past |past )?(${WEEKDAY})$`);
+const PAST_MONTH = new RegExp(`^(?:in |last |this )?(${Object.keys(MONTHS).join("|")})$`);
+/** How far back "N days ago" may say. */
+export const PAST_DAYS_MAX = 366;
+
+/**
+ * Looking back from `nowMs` in `zone`, for mail (review fix E2): "today", "yesterday", "last <weekday>" (the one
+ * before the most recent), a bare weekday or "on <weekday>" (the most recent one, today included), "this week"
+ * (Monday to now), "last week" (the Monday to Sunday before), "N days ago" (that day), and a month name, "in
+ * <month>" or "last <month>" (its most recent occurrence, the current month up to now). Anything else is null:
+ * the tool answers that it needs a day. Never ends after now. Pure; reads no clock.
+ */
+export function resolvePast(spoken: string, nowMs: number, zone: string): PastSpan | null {
+  const words = spoken.normalize("NFKC").toLowerCase().replace(/[.!?,]+$/g, "").replace(/\s+/g, " ").trim();
+  if (words === "") return null;
+  const now = partsAt(nowMs, zone);
+  const today: Civil = { y: now.y, m: now.m, d: now.d };
+  const span = (first: Civil, last: Civil): PastSpan | null => {
+    const from = dayStartUtc(first, zone);
+    const end = dayEndUtc(last, zone);
+    if (from === null || end === null) return null;
+    const toMs = Math.min(end + 1, nowMs + 1);
+    return toMs > from ? { fromMs: from, toMs } : null;
+  };
+  if (words === "today") return span(today, today);
+  if (words === "yesterday") return span(addDays(today, -1), addDays(today, -1));
+  if (words === "this week") return span(addDays(today, -((weekdayOf(today) + 6) % 7)), today);
+  if (words === "last week") {
+    const monday = addDays(today, -((weekdayOf(today) + 6) % 7) - 7);
+    return span(monday, addDays(monday, 6));
+  }
+  const n = PAST_COUNT.exec(words);
+  if (n !== null) {
+    const count = /^\d+$/.test(n[1]!) ? Number(n[1]) : COUNTS[n[1]!]!;
+    if (count < 1 || count > PAST_DAYS_MAX) return null;
+    return span(addDays(today, -count), addDays(today, -count));
+  }
+  const w = PAST_WEEKDAY.exec(words);
+  if (w !== null) {
+    const back = (weekdayOf(today) - WEEKDAYS.indexOf(w[2]!) + 7) % 7;
+    // "Last Tuesday" is the most recent Tuesday before today; a bare "Tuesday" may be today.
+    const day = addDays(today, w[1] === "last " && back === 0 ? -7 : -back);
+    return span(day, day);
+  }
+  const m = PAST_MONTH.exec(words);
+  if (m !== null) {
+    const month = MONTHS[m[1]!]!;
+    const y = month <= today.m ? today.y : today.y - 1;
+    const last = addDays({ y: month === 12 ? y + 1 : y, m: month === 12 ? 1 : month + 1, d: 1 }, -1);
+    return span({ y, m: month, d: 1 }, last);
+  }
+  return null;
+}
