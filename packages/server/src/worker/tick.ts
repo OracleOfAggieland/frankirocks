@@ -138,8 +138,9 @@ export async function runDueJobs(ctx: RouteContext): Promise<void> {
   }
   // Brief 048 ruling 6: due forget jobs, after the hang-ups their close step reads.
   await racing(ctx, "forget", () => runDueForgets(ctx));
-  // Brief 049 ruling 4: due errand runs (a lapsed lease is requeued by Q18 first).
-  for (const jobId of await dueJobs(deps.store, uid, deps.clock.read().opsClock.now, "errand")) await racing(ctx, "errand", () => runErrand(ctx, jobId));
+  // Brief 049 ruling 4: due errand runs (a lapsed lease is requeued by Q18 first). Review fix R10: each is scheduled,
+  // never awaited here, so a run of up to a minute never holds the extract drain or the moments behind it.
+  for (const jobId of await dueJobs(deps.store, uid, deps.clock.read().opsClock.now, "errand")) ctx.schedule(() => racing(ctx, "errand", () => runErrand(ctx, jobId)));
   await drainExtractJobs(uid, deps);
 }
 

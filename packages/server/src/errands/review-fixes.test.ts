@@ -12,6 +12,7 @@ import type { ErrandTool } from "./agent";
 import { callRoute, patchRecord, recordingSchedule, runScheduled, settle } from "../testing/fakes";
 import { asrTurn, openTestSession } from "../testing/session-fixtures";
 import { claimJob } from "../worker/jobs";
+import { runDueJobs } from "../worker/tick";
 import { errandsOnState, pickUp } from "./deliver";
 
 const ctxOf = (x: ErrandSetup) => ({ uid: UID, deps: x.rig.deps, schedule: x.rig.sched.schedule });
@@ -449,5 +450,22 @@ describe("R5: the helper's calls have deadlines that stop them", () => {
     const signal = new AbortController().signal;
     expect(responsesRequestOptions({ signal, timeoutMs: 5_000 })).toEqual({ maxRetries: 0, timeout: 5_000, signal });
     expect(responsesRequestOptions(undefined)).toBeUndefined();
+  });
+});
+
+describe("R10: the tick schedules due errand runs instead of awaiting them", () => {
+  it("a due errand run whose planner never answers does not hold the tick's job pass", async () => {
+    const x = await setup([{ never: true }, { never: true }]);
+    // The start's scheduled run is lost, so the Job stays queued and due.
+    x.rig.sched = recordingSchedule();
+    await callRoute(x.rig, toolRoute, tool(x));
+    const sched = recordingSchedule();
+    const ctx = { uid: UID, deps: x.rig.deps, schedule: sched.schedule };
+    const { elapsedMs } = await settle(runDueJobs(ctx), x.rig.clock, x.rig.timers);
+    expect(elapsedMs).toBe(0);
+    expect(plannerRequests(x.rig)).toHaveLength(0);
+    expect(sched.pending).toBeGreaterThanOrEqual(1);
+    await settle(sched.runAll(), x.rig.clock, x.rig.timers);
+    expect(plannerRequests(x.rig).length).toBeGreaterThanOrEqual(1);
   });
 });
