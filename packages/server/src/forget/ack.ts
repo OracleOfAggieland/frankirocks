@@ -93,7 +93,8 @@ export async function takeDueAck(
       at: now,
       retainUntil: null,
       payload: {
-        purpose: "answer",
+        // A delivery record, like the reminders' (time/reminder.ts): only the Admission_Seam writes answer decisions.
+        purpose: "proactive",
         acceptedRefs: [
           { type: "ledger", id: forgetReceiptId(c.opId, hasher), rev: 1 },
           { type: "job", id: forgetJobId(c.opId, hasher), rev: 1 },
