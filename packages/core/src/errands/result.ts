@@ -69,10 +69,12 @@ export function errandAttribution(source: ErrandSource, nowMs: number, zone: str
 
 /**
  * The lines that may be said or shown, checked against the refs this Errand read. An `answered` outcome with no line
- * left is `nothing`; a `failed` outcome keeps no line.
+ * left is `nothing`; a `nothing` or `failed` outcome keeps no line.
  */
 export function checkErrandResult(out: PlannerOutput, refs: readonly ErrandRefView[], at: { nowMs: number; zone: string }): { outcome: ErrandOutcome; lines: ErrandLine[] } {
   if (out.outcome === "failed") return { outcome: "failed", lines: [] };
+  // Only an answer keeps lines: "nothing" with lines is a contradiction, and it fails closed to no line.
+  if (out.outcome === "nothing") return { outcome: "nothing", lines: [] };
   const byRef = new Map(refs.filter((r) => r.cls !== null).map((r) => [r.ref, r]));
   const lines: ErrandLine[] = [];
   for (const l of out.lines.slice(0, ERRAND_LINES_MAX)) {

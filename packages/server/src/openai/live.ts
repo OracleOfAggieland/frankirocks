@@ -8,12 +8,12 @@ import OpenAI from "openai";
 import { type Env, openaiApiKey } from "../config/env";
 import type { OpenAIEndpoint, OpenAIPort } from "./fake";
 import { type CreateCallBody, type CreateCallResult, HANGUP_CALL_DEADLINE_MS } from "./realtime-calls";
-import type { ResponsesResult } from "./responses";
+import type { ResponsesFunctionCall, ResponsesResult } from "./responses";
 
 interface SdkResponse {
   status?: string | null;
   output_text?: string | null;
-  output?: { type: string; name?: string; arguments?: string; status?: string; content?: { type: string; text?: string; refusal?: string }[] }[];
+  output?: { type: string; name?: string; arguments?: string; call_id?: string; status?: string; content?: { type: string; text?: string; refusal?: string }[] }[];
   usage?: { input_tokens?: number; output_tokens?: number } | null;
 }
 
@@ -21,6 +21,26 @@ interface SdkResponse {
 function moneyCall(r: SdkResponse): { moneyCallArguments?: string } {
   const item = r.output?.find((i) => i.type === "function_call" && i.name === "read_money" && (i.status === undefined || i.status === "completed"));
   return item !== undefined && typeof item.arguments === "string" && item.arguments.length <= 2048 ? { moneyCallArguments: item.arguments } : {};
+}
+
+/** Brief 049 part A: the errand helper's tool calls in one response must fit this many, and each its arguments. */
+export const FUNCTION_CALLS_MAX = 16;
+const FUNCTION_ARGS_CHARS = 4096;
+const OUTPUT_ITEMS_MAX = 24;
+
+/**
+ * Brief 049 part A, ruling 5: the complete function calls with a call ID, and the output items to send back with
+ * their outputs. Nothing when there is none, so every other caller's result is as before.
+ */
+function functionCalls(r: SdkResponse): { functionCalls?: ResponsesFunctionCall[]; outputItems?: unknown[] } {
+  const calls: ResponsesFunctionCall[] = [];
+  for (const i of r.output ?? []) {
+    if (i.type !== "function_call" || (i.status !== undefined && i.status !== "completed")) continue;
+    if (typeof i.call_id !== "string" || typeof i.name !== "string" || typeof i.arguments !== "string" || i.arguments.length > FUNCTION_ARGS_CHARS) continue;
+    calls.push({ callId: i.call_id, name: i.name, arguments: i.arguments });
+  }
+  if (calls.length === 0) return {};
+  return { functionCalls: calls.slice(0, FUNCTION_CALLS_MAX), outputItems: (r.output ?? []).slice(0, OUTPUT_ITEMS_MAX) };
 }
 
 export function normalizeResponse(r: SdkResponse): ResponsesResult {
@@ -36,6 +56,7 @@ export function normalizeResponse(r: SdkResponse): ResponsesResult {
       (item.status === undefined || item.status === "completed") && /^\s*\{\s*\}\s*$/.test(item.arguments ?? "")
     ) ? { phoneCallRequested: true } : {}),
     ...moneyCall(r),
+    ...functionCalls(r),
     status,
     outputText: refusal === null ? text : null,
     refusal,

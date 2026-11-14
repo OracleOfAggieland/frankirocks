@@ -15,6 +15,7 @@ import type { CallStatus } from "../phone/status";
 import type { Dial } from "../phone/twilio";
 import type { BankPort } from "../bank/plaid";
 import type { ForgetResolvePort } from "../forget/resolve-port";
+import type { ErrandAgent } from "../errands/agent";
 import type { StorePort } from "../store/port";
 import { type RouteError, dependencyLogFields, parseError, toRouteError } from "./errors";
 
@@ -35,6 +36,8 @@ export interface RouteDeps {
   bank?: BankPort;
   /** Brief 048: the forget job's ForgetResolveV1 port. Over `openai` when unset (`forget/resolve-live.ts`). */
   forgetResolve?: ForgetResolvePort;
+  /** Brief 049 part A: the errand agents. The production registry (empty in part A) when unset. */
+  errandAgents?: readonly ErrandAgent[];
   store: StorePort;
   clock: ClockPort;
   hasher: Hasher;

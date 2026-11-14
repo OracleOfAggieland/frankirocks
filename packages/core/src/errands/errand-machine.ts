@@ -11,6 +11,11 @@
  */
 import type { ErrandStatus } from "../schema/records";
 
+/** The stored statuses, written out for the machine index; `ErrandStatus` (the schema's) must equal it. */
+export type ErrandState = "running" | "ready" | "failed" | "delivered" | "cardOnly" | "dropped";
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+export const ERRAND_STATES_MATCH: Same<ErrandState, ErrandStatus> = true;
+
 export type ErrandEvent = "result" | "runFailed" | "delivered" | "expired" | "forget";
 
 export const ERRAND_MOVES = {

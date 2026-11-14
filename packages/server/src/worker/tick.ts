@@ -1,7 +1,8 @@
 /**
  * `tick` (contracts §9 tickUser; design "Tick"; R14.4). At most once per ops minute per Owner:
  *   Q13  close expired live Sessions (at most 100 per run) through the hangup path, hangups scheduled;
- *   Q17  run due `queued` and `retry` jobs (hangup, then forget (brief 048 ruling 6), here; extract through the drain);
+ *   Q17  run due `queued` and `retry` jobs (hangup, then forget (brief 048 ruling 6), then errand (brief 049), here;
+ *        extract through the drain);
  *   Q18  requeue jobs whose lease expired.
  * `startTick` returns the bounded Q13 part as a promise (session open awaits it) and schedules the rest; the state
  * and receipt routes schedule all of it and never await it.
@@ -23,6 +24,8 @@ import { dueJobs } from "./jobs";
 import { memoryTick } from "../time/tick";
 // Brief 048: forget is a job kind the tick runs.
 import { runDueForgets } from "../forget/drive";
+// Brief 049 part A.
+import { runErrand } from "../errands/run";
 
 const MINUTE_MS = 60_000;
 export const EXPIRY_BATCH = 100;
@@ -135,6 +138,8 @@ export async function runDueJobs(ctx: RouteContext): Promise<void> {
   }
   // Brief 048 ruling 6: due forget jobs, after the hang-ups their close step reads.
   await racing(ctx, "forget", () => runDueForgets(ctx));
+  // Brief 049 ruling 4: due errand runs (a lapsed lease is requeued by Q18 first).
+  for (const jobId of await dueJobs(deps.store, uid, deps.clock.read().opsClock.now, "errand")) await racing(ctx, "errand", () => runErrand(ctx, jobId));
   await drainExtractJobs(uid, deps);
 }
 

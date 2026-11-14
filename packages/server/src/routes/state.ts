@@ -23,6 +23,8 @@ import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 import { narrowedHere } from "../audience-swap";
 // Brief 048: the typed forget's acknowledgment, once it is ready.
 import { typedAckOnState } from "../forget/on-turn";
+// Brief 049 part A: the owner's Errands, their running word, cards and one late line.
+import { errandsOnState } from "../errands/deliver";
 
 type StateReq = Infer<typeof StateRequest>;
 type StateRes = Infer<typeof StateResponse>;
@@ -62,6 +64,7 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
   const { uid, deps } = ctx;
   await ensureCoreDocs(uid, deps);
   scheduleTick(ctx);
+  let seen: Session | null = null;
   const res = await retryStale(() =>
     deps.store.transaction(uid, async (tx) => {
       const doc = await tx.get<Session>(paths.session(uid, req.sessionId));
@@ -97,6 +100,7 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
           updatedAt: tsFromMs(ops),
         });
       }
+      seen = { ...next, lastSpeechStartedOpsAt: req.speechStartedOpsAt ?? s.lastSpeechStartedOpsAt };
       const deck = narrowedHere(next) ? null : issueDeck(stamp, head, ops, safe);
       // Brief 048 ruling 8: a typed forget whose answer went out before blockedAt was set gets its acknowledgment
       // here, once, on its own Session with no call (a call's fresh open says it instead).
@@ -108,7 +112,13 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
   // Coordinator ruling on brief 042: the poll's budget holds; the whisper gets what is left of it, or waits.
   const spent = ctx.deps.clock.read().opsClock.now - (ctx.startedOpsAt ?? ctx.deps.clock.read().opsClock.now);
   // Brief 045, finding 3: no Deck, no line (its Permit binds the Deck's Head and safe turns).
-  return res.ack === null || res.deck === null || res.proactive !== null ? res : { ...res, proactive: await idleProactive(ctx, res.stamp, STATE_BUDGET_MS - spent, res.deck) };
+  const mayOffer = res.ack !== null && res.deck !== null && res.proactive === null && spent < STATE_BUDGET_MS;
+  // Brief 049 ruling 9: a waiting Errand result goes before an idle whisper; at most one line per poll.
+  const errands = seen === null ? null : await errandsOnState(ctx, { sessionId: req.sessionId as ID, session: seen, stamp: res.stamp, deck: res.deck, mayOffer });
+  const withErrands: StateRes = errands === null ? res : { ...res, errands: errands.view, proactive: res.proactive ?? errands.proactive };
+  if (errands?.proactive != null) return withErrands;
+  const spentNow = ctx.deps.clock.read().opsClock.now - (ctx.startedOpsAt ?? ctx.deps.clock.read().opsClock.now);
+  return !mayOffer ? withErrands : { ...withErrands, proactive: await idleProactive(ctx, res.stamp, STATE_BUDGET_MS - spentNow, res.deck!) };
 }
 
 export const stateRoute: RouteSpec<StateReq> = {

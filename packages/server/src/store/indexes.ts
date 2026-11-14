@@ -1,7 +1,8 @@
 /**
  * Query shapes this slice may run (R7.8, R7.9; KS08; contracts §9). The five composite indexes are the ones
  * `firestore.indexes.json` declares (a test keeps the two in step). Q14 (turns by seq) and Q28 (by document ID)
- * need no composite index, nor does Q45 (sessions by lastTurnAt, newest first; brief 045). The Memory_Store rejects any other shape, as Firestore would without its index.
+ * need no composite index, nor does Q45 (sessions by lastTurnAt, newest first; brief 045), nor Q49 (errands by
+ * startedAt, newest first; brief 049). The Memory_Store rejects any other shape, as Firestore would without its index.
  */
 import type { Collection } from "./paths";
 import type { QuerySpec } from "./port";
@@ -70,6 +71,8 @@ export function matchQueryShape(collection: Collection, spec: QuerySpec): string
   if (collection === "turns" && orderField === "seq") return equalities.length === 0 && dir === "asc" ? "Q14" : null;
   // Brief 045 (finding 2): an open reads the Owner's latest Sessions by last turn, newest first, single-field index.
   if (collection === "sessions" && orderField === "lastTurnAt") return equalities.length === 0 && ranges.length === 0 && dir === "desc" ? "Q45" : null;
+  // Brief 049 part A: the Owner's latest Errands, newest first, single-field index.
+  if (collection === "errands" && orderField === "startedAt") return equalities.length === 0 && ranges.length === 0 && dir === "desc" ? "Q49" : null;
 
   for (const index of COMPOSITE_INDEXES) {
     if (index.collection !== collection) continue;

@@ -57,6 +57,8 @@ import { admitRule } from "../admission/seam";
 import { effectiveAudience, hasParseGap } from "../audience";
 import type { ResponsesResult } from "../openai/responses";
 import { placePhoneCall } from "../phone/outbound";
+// Brief 049 part A.
+import { startErrand } from "../errands/start";
 // Brief 046 part C.
 import { limitMoneyToS0, readMoney } from "../bank/money-read";
 import { answerTool, suggestForAudience, suggestTool } from "./tool-food";
@@ -178,6 +180,8 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       : req.tool.name === "answer" ? answered!.result
       // Brief 046 part C: the money read, on the owner's own committed turn only (bank/money-read.ts).
       : req.tool.name === "read_money" ? (await readMoney(ctx, { turn: check.turn, args: req.tool.args, generation: req.stamp.generation, deadlineAt: start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS, noteId: (n) => deps.hasher.id(["money-note", req.stamp.sessionId, req.stamp.turnId, req.callId, n]) as ID })).result
+      // Brief 049 part A: the errand answers at once; its run is scheduled after the claim (errands/start.ts).
+      : req.tool.name === "start_errand" ? await startErrand(ctx, { stamp: req.stamp, turn: check.turn, args: req.tool.args, noteId: deps.hasher.id(["errand-note", req.stamp.sessionId, req.stamp.turnId, req.callId]) as ID })
       : await readRecall(ctx, req, req.tool.args, check.turn, start + TOOL_RESULT_LIMIT_MS - TOOL_COMMIT_RESERVE_MS);
 
     return deps.store.transaction(uid, async (tx) => {
