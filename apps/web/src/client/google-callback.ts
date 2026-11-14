@@ -8,7 +8,7 @@ import { GoogleConnectRequest, validate } from "@franki/core";
 import type { GoogleCallbackOutcome } from "../ui/google/google-machine";
 import type { ApiClient } from "./api";
 import { connectGoogle } from "./google-api";
-import { GOOGLE_CALLBACK_CHANNEL, GOOGLE_CALLBACK_MESSAGE } from "./google-watch";
+import { GOOGLE_CALLBACK_CHANNEL, GOOGLE_CALLBACK_MESSAGE, browserWaitStore, waitMarker } from "./google-watch";
 
 /** How long the page waits for Firebase to say who is signed in before it gives up. */
 export const GOOGLE_CALLBACK_AUTH_WAIT_MS = 10_000;
@@ -35,6 +35,11 @@ export interface CallbackDeps {
   newId: () => string;
   /** Says the outcome to the sheet. */
   tell: (outcome: GoogleCallbackOutcome) => void;
+  /**
+   * Review S5: takes the sheet's one-time wait marker; false when no wait of this browser's sheet is out, and then
+   * nothing is sent. The browser's localStorage by default.
+   */
+  claimWait?: () => boolean;
 }
 
 /** Runs the callback once. Never throws; every path ends in exactly one `tell`. */
@@ -54,6 +59,8 @@ export async function runGoogleCallback(deps: CallbackDeps): Promise<GoogleCallb
 async function connectFrom(query: CallbackQuery, deps: CallbackDeps): Promise<GoogleCallbackOutcome> {
   if (query.kind === "denied") return "denied";
   if (query.kind === "bad") return "refused";
+  // A link to this page opened outside the sheet's own wait sends nothing.
+  if (!(deps.claimWait ?? (() => waitMarker(browserWaitStore()).claim()))()) return "refused";
   const body = { requestId: deps.newId(), code: query.code, state: query.state };
   // A code or state the contract would refuse is never sent (and never shown).
   if (!validate(GoogleConnectRequest, body).ok) return "refused";

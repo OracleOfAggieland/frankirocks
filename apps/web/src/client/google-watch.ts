@@ -28,6 +28,68 @@ export interface GooglePopup {
   close(): void;
 }
 
+/** The storage key of the sheet's one-time wait marker (review S5). */
+export const GOOGLE_WAIT_KEY = "franki-google-wait";
+
+/** The few storage calls the marker needs (the browser's localStorage, or a map in tests). */
+export interface GoogleWaitStore {
+  get(key: string): string | null;
+  set(key: string, value: string): void;
+  remove(key: string): void;
+}
+
+export interface GoogleWaitMarker {
+  /** The sheet, as it opens Google's window. */
+  place(): void;
+  /** The sheet, whenever that wait ends. */
+  remove(): void;
+  /** The callback page, before it posts: true once per placed marker. */
+  claim(): boolean;
+}
+
+/**
+ * Review S5: a one-time marker binding the callback page to a wait the sheet began. Same-origin localStorage, so it
+ * holds across Google's cross-origin hops and its COOP, where the opener link and sessionStorage may not. A
+ * browser with no usable storage places nothing and claims true: the server's state check is then the only guard
+ * (a state that doesn't match consumes nothing and writes nothing).
+ */
+export function waitMarker(store: GoogleWaitStore | null): GoogleWaitMarker {
+  const safe = <T>(fn: () => T, fallback: T): T => {
+    try {
+      return fn();
+    } catch {
+      return fallback;
+    }
+  };
+  return {
+    place() {
+      if (store !== null) safe(() => store.set(GOOGLE_WAIT_KEY, "1"), undefined);
+    },
+    remove() {
+      if (store !== null) safe(() => store.remove(GOOGLE_WAIT_KEY), undefined);
+    },
+    claim() {
+      if (store === null) return true;
+      return safe(() => {
+        const held = store.get(GOOGLE_WAIT_KEY) !== null;
+        store.remove(GOOGLE_WAIT_KEY);
+        return held;
+      }, true);
+    },
+  };
+}
+
+/** The browser's localStorage as a wait store, or null where there is none or it refuses. */
+export function browserWaitStore(): GoogleWaitStore | null {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    const ls = localStorage;
+    return { get: (k) => ls.getItem(k), set: (k, v) => ls.setItem(k, v), remove: (k) => ls.removeItem(k) };
+  } catch {
+    return null;
+  }
+}
+
 export interface GoogleWatchTimers {
   setTimeout(fn: () => void, ms: number): unknown;
   clearTimeout(handle: unknown): void;
@@ -43,6 +105,8 @@ export interface GoogleWatchDeps {
   openPopup?: () => GooglePopup | null;
   /** Listens for the callback page's word; answers the stop function. */
   listen?: (heard: (outcome: GoogleCallbackOutcome) => void) => () => void;
+  /** The one-time wait marker (review S5); the browser's localStorage by default. */
+  marker?: GoogleWaitMarker;
   timers?: GoogleWatchTimers;
 }
 
@@ -108,9 +172,11 @@ export class GoogleWatch {
   private epoch = 0;
   private popup: GooglePopup | null = null;
   private unlisten: (() => void) | null = null;
+  private readonly marker: GoogleWaitMarker;
 
   constructor(private readonly deps: GoogleWatchDeps) {
     this.timers = deps.timers ?? liveTimers;
+    this.marker = deps.marker ?? waitMarker(browserWaitStore());
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -162,6 +228,7 @@ export class GoogleWatch {
     if (this.stopped) return;
     this.closePopup();
     this.popup = (this.deps.openPopup ?? browserPopup)();
+    if (this.popup !== null) this.marker.place();
     this.send({ kind: "connectPressed", popup: this.popup !== null, at: this.deps.now() });
   }
 
@@ -182,6 +249,7 @@ export class GoogleWatch {
   }
 
   private closePopup(): void {
+    if (this.popup !== null) this.marker.remove();
     this.popup?.close();
     this.popup = null;
   }
