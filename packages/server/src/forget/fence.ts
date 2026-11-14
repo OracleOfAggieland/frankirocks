@@ -63,6 +63,9 @@ export async function fenceInTx(tx: Tx, uid: string, input: FenceInput, opsNow: 
     const epochDoc = await tx.get<CoreEpoch>(paths.core(uid, "epoch"));
     if (epochDoc === null) throw new Error("fenceForget: core/epoch is missing");
     const prior = await tx.get<Job>(paths.job(uid, jobId));
+    // Brief 048 stage 5: a forget never queues behind a reset. The reset clears the barrier and its queue when it
+    // unblocks, so a forget queued there would never run. Refused, and the owner asks again.
+    if (prior === null && (await heldByReset(tx, uid, epochDoc.data, opId, hasher))) return { kind: "refused", code: "BARRIER" };
     // A queued op keeps its Session in `requestRef`, so the job promotion writes for it can read its request (brief 047).
     const requestRef = { type: "session" as const, id: input.sessionId, rev: 0 };
     const plan = planFence(epochDoc.data, { opId, requestRef, requestTurnIds: input.requestTurnIds }, now, prior === null ? null : { epoch: prior.data.epoch, policyRev: prior.data.policyRev });
@@ -115,4 +118,16 @@ export async function fenceInTx(tx: Tx, uid: string, input: FenceInput, opsNow: 
     tx.create(paths.ledger(uid, receiptId), receipt);
     return { kind: "fenced", ...ids };
   }
+}
+
+/**
+ * True when the barrier is up and held by something other than a forget: a reset (seed/reset.ts), whose op has no
+ * forget job. A forget's barrier always has its job, since the fence writes both in one transaction. One read, and
+ * only while a barrier is up. Fails closed: a barrier whose holder cannot be told is a reset's.
+ */
+export async function heldByReset(tx: Pick<Tx, "get">, uid: string, epoch: CoreEpoch, opId: ID, hasher: Hasher): Promise<boolean> {
+  const barrier = epoch.barrier;
+  if (barrier === null || barrier.opId === opId || barrier.queuedOps.some((q) => q.opId === opId)) return false;
+  const holder = await tx.get<Job>(paths.job(uid, forgetJobId(barrier.opId as ID, hasher)));
+  return holder === null || holder.data.kind !== "forget";
 }
