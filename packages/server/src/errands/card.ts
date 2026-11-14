@@ -3,7 +3,7 @@
  * source behind those lines: sender, subject and date for mail; title and time for an event. No links, and no text
  * from a message other than its subject and the helper's line.
  */
-import { type Au, type Card, ERRAND_LABEL_CHARS, type Errand, type ErrandSource, type ID, type Ref, type Sens, aboutPhrase, cleanErrandText, safeName } from "@franki/core";
+import { type Au, type Card, ERRAND_LABEL_CHARS, ERRAND_UNMAILED_MARKER, type Errand, type ErrandRead, type ErrandSource, type ID, type Ref, type Sens, aboutPhrase, cleanErrandText, errandAddressLabel, safeName } from "@franki/core";
 import type { LineVerdict } from "./gate";
 
 const SENS: readonly Sens[] = ["S0", "S1", "S2"];
@@ -17,8 +17,12 @@ function when(at: string, zone: string, withTime: boolean): string {
   return new Intl.DateTimeFormat("en-US", opts).format(new Date(ms));
 }
 
-/** One source as a card line. Review fix V3: the subject and title are cleaned here too, however they were stored. */
-export function sourceLine(s: ErrandSource, zone: string): string {
+/**
+ * One source as a card line. Review fix V3: the subject and title are cleaned here too, however they were stored.
+ * Review fix T5: a sender the owner hasn't mailed shows as their address and the date only.
+ */
+export function sourceLine(s: ErrandSource, zone: string, sender: ErrandRead["sender"] = null): string {
+  if (s.kind === "mail" && sender !== null && !sender.mailed) return `${errandAddressLabel(sender.address)} · ${when(s.at, zone, false)}`;
   if (s.kind === "mail") {
     const subject = cleanErrandText(s.subject).slice(0, ERRAND_LABEL_CHARS);
     return `${safeName(s.from)} · ${subject.length === 0 ? "(no subject)" : subject} · ${when(s.at, zone, false)}`;
@@ -26,6 +30,10 @@ export function sourceLine(s: ErrandSource, zone: string): string {
   const title = cleanErrandText(s.title).slice(0, ERRAND_LABEL_CHARS);
   return `${title.length === 0 ? "(no title)" : title} · ${s.allDay ? `${when(s.startsAt, zone, false)}, all day` : when(s.startsAt, zone, true)}`;
 }
+
+/** Review fix T4: the planner was shown a third party's message or invite that isn't from a sender the owner mailed. */
+export const readStrangers = (reads: readonly ErrandRead[]): boolean =>
+  reads.some((r) => r.shown && (r.cls === "T" || r.cls === "M") && !(r.source.kind === "mail" && r.sender !== null && r.sender.mailed));
 
 /** The card, or null when no line may show. */
 export function errandCard(errand: Errand, verdicts: readonly LineVerdict[], x: { id: ID; zone: string; audience?: Au }): Card | null {
@@ -37,7 +45,9 @@ export function errandCard(errand: Errand, verdicts: readonly LineVerdict[], x: 
   const lines = shown.map((v) => (v.line.attribution === null ? v.line.text : `${v.line.attribution} ${v.line.text}`));
   const refs = [...new Set(shown.flatMap((v) => v.line.refs))];
   const reads = refs.map((r) => errand.reads.find((x) => x.ref === r)).filter((r) => r !== undefined);
-  for (const r of reads) if (lines.length < CARD_LINES_MAX) lines.push(sourceLine(r!.source, x.zone));
+  // Review fix T4: a run shown someone the owner hasn't written to says so, once.
+  if (readStrangers(errand.reads)) lines.push(ERRAND_UNMAILED_MARKER);
+  for (const r of reads) if (lines.length < CARD_LINES_MAX) lines.push(sourceLine(r!.source, x.zone, r!.sender));
   const sens = shown.reduce<Sens>((a, v) => (SENS.indexOf(v.line.sens) > SENS.indexOf(a) ? v.line.sens : a), "S0");
   const sources: Ref[] = reads.slice(0, 32).map((r) => ({ type: "evidence", id: r!.evidenceId, rev: r!.rev }));
   const title = `From ${aboutPhrase(errand.about)}`;

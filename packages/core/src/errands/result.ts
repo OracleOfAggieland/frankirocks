@@ -63,7 +63,10 @@ export function errandAttribution(source: ErrandSource, nowMs: number, zone: str
   const day = civilDay(at, zone);
   const today = civilDay(nowMs, zone);
   const yesterday = civilDay(nowMs - 86_400_000, zone);
-  const when = day.date === today.date ? "today" : day.date === yesterday.date ? "yesterday" : nowMs - at < 6 * 86_400_000 && at <= nowMs ? day.weekday : day.date;
+  // Review fix E5: a day word, never an ISO date.
+  const [, m, d] = day.date.split("-").map(Number) as [number, number, number];
+  const monthDay = `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1] ?? ""} ${d}`.trim();
+  const when = day.date === today.date ? "today" : day.date === yesterday.date ? "yesterday" : nowMs - at < 6 * 86_400_000 && at <= nowMs ? day.weekday : monthDay;
   return `From ${safeName(source.from)}, ${when}:`;
 }
 

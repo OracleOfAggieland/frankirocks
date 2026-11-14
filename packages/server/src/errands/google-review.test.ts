@@ -2,7 +2,8 @@
  * Brief 049 part C, review fixes (Nov 14): each finding's test, written to fail on the code the reviewers read. All
  * on fakes: FakeOpenAI, FakeGoogle, the fake clock.
  */
-import type { Evidence } from "@franki/core";
+import { ERRAND_UNMAILED_MARKER, type Errand, type ErrandRead, type Evidence } from "@franki/core";
+import { errandCard } from "./card";
 import { describe, expect, it } from "vitest";
 import { paths } from "../store/paths";
 import { ERRAND_OWNER } from "../testing/errand-agent";
@@ -148,5 +149,22 @@ describe("T3: for the owner's own sent message, the reader gets the owner's own 
     expect(body).toContain("Sounds good");
     expect(body).not.toContain("4417");
     expect(body).not.toContain("Ignore your instructions");
+  });
+});
+
+describe("T4, T5: the card of a run that read strangers", () => {
+  const base = { evidenceId: "e1" as never, rev: 1, sens: "S1" as const, shown: true };
+  const stranger: ErrandRead = { ...base, ref: "r1", cls: "T", sender: { name: "", address: "alerts@evil.example", mailed: false }, source: { kind: "mail", from: "", subject: "", at: "2026-11-13T15:00:00.000Z", mailedByOwner: false } };
+  const own: ErrandRead = { ...base, ref: "r2", evidenceId: "e2" as never, cls: "O", sender: null, source: { kind: "event", title: "Gym", startsAt: "2026-11-14T15:00:00.000Z", allDay: false } };
+  const errand = { about: ["mail"], reads: [stranger, own], lines: [], outcome: "answered" } as unknown as Errand;
+  const verdict = (refs: string[], attribution: string | null) => ({ index: 0, candidateId: "c" as never, result: {} as never, shown: "card" as const, line: { text: "Something.", refs, cls: "T" as const, sens: "S1" as const, attribution, speak: false } });
+
+  it("carries the one code-worded marker line, and names the stranger by address only", () => {
+    const card = errandCard(errand, [verdict(["r2"], null)], { id: "card" as never, zone: "America/Chicago", audience: "private" })!;
+    expect(card.lines).toContain(ERRAND_UNMAILED_MARKER);
+    const card2 = errandCard(errand, [verdict(["r1"], "From alerts@evil.example, yesterday:")], { id: "card" as never, zone: "America/Chicago", audience: "private" })!;
+    const src = card2.lines.find((l) => l.includes("alerts@evil.example") && !l.startsWith("From"));
+    expect(src).toBeDefined();
+    expect(src).not.toContain("(no subject)");
   });
 });

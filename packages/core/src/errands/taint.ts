@@ -8,9 +8,11 @@
  *   - a line's text is cleaned (`cleanErrandText`, review fix V3); a line empty after cleaning is dropped; a ref the
  *     planner was never shown is dropped from its line, and a line left with none is dropped;
  *   - if any shown read is class T or M and is not mail from a sender the owner has mailed, every line is card only;
- *   - otherwise, if the run has shown T or M reads (all mail from mailed senders), a line may be spoken only if it
- *     cites at least one of them, attributed by code to every such sender it cites, at most
- *     `ERRAND_ATTRIBUTED_SENDERS_MAX` (more: card only); a line that cites none is card only;
+ *   - otherwise, if the run has shown T or M reads (all mail from mailed senders), a line may be spoken only if
+ *     EVERY ref it cites is such a read (review fix E9: a line that mixes one with an own event or own message, or
+ *     cites none, is card only), attributed by code to every sender it cites, at most
+ *     `ERRAND_ATTRIBUTED_SENDERS_MAX` (more: card only);
+ *   - a sender the owner hasn't mailed is named by address only, never by display name (review fix T5);
  *   - only a run with no shown T or M read speaks its lines, as `O`.
  * With `opaque` (a read that could not be registered), every line is card only.
  * Never: reads a clock, a store or a model.
@@ -41,20 +43,40 @@ interface Effective {
 /** A read from someone else that the owner has mailed: the only third-party text that may be spoken. */
 const mailedThird = (r: Effective): boolean => third(r.cls) && r.read.source.kind === "mail" && r.read.sender !== null && r.read.sender.mailed;
 
-function when(atIso: string, nowMs: number, zone: string): string | null {
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * A day word for an instant (review fix E5): today, yesterday, a weekday within the last week, else month and day
+ * ("Oct 2"); never an ISO date.
+ */
+export function errandDayWord(atIso: string, nowMs: number, zone: string): string | null {
   const at = Date.parse(atIso);
   if (!Number.isFinite(at)) return null;
   const day = civilDay(at, zone);
   const today = civilDay(nowMs, zone);
   const yesterday = civilDay(nowMs - 86_400_000, zone);
-  return day.date === today.date ? "today" : day.date === yesterday.date ? "yesterday" : nowMs - at < 6 * 86_400_000 && at <= nowMs ? day.weekday : day.date;
+  if (day.date === today.date) return "today";
+  if (day.date === yesterday.date) return "yesterday";
+  if (nowMs - at < 6 * 86_400_000 && at <= nowMs) return day.weekday;
+  const [, m, d] = day.date.split("-").map(Number) as [number, number, number];
+  return `${MONTHS[m - 1] ?? ""} ${d}`.trim();
 }
+const when = errandDayWord;
 
-const nameOf = (r: ErrandRead): string => safeName(r.sender?.name ?? (r.source.kind === "mail" ? r.source.from : ""));
+/** Review fix T5: an address shown as itself only when it is plainly one; else a neutral stand-in. */
+const ADDRESS_LABEL = /^[a-z0-9][a-z0-9._%+'-]{0,63}@[a-z0-9](?:[a-z0-9-]{0,62}\.)+[a-z]{2,24}$/;
+export const UNKNOWN_ADDRESS_LABEL = "an unknown address";
+export const errandAddressLabel = (address: string): string => {
+  const a = address.trim().toLowerCase();
+  return a.length <= 254 && ADDRESS_LABEL.test(a) ? a : UNKNOWN_ADDRESS_LABEL;
+};
+
+const unmailedSender = (r: ErrandRead): boolean => r.sender !== null && !r.sender.mailed;
+const nameOf = (r: ErrandRead): string => (unmailedSender(r) ? errandAddressLabel(r.sender!.address) : safeName(r.sender?.name ?? (r.source.kind === "mail" ? r.source.from : "")));
 // Review fix V8: one address under two names is two senders, so each is named (or the line is card only).
 const keyOf = (r: ErrandRead): string => `${r.sender !== null ? r.sender.address.trim().toLowerCase() : ""}|${nameOf(r)}`;
 /** Review fix V8: a sender whose name does not pass `safeName` cannot be named, so its line is card only. */
-const nameable = (r: ErrandRead): boolean => nameOf(r) !== SAFE_NAME_FALLBACK;
+const nameable = (r: ErrandRead): boolean => !unmailedSender(r) && nameOf(r) !== SAFE_NAME_FALLBACK;
 
 /**
  * Code's attribution for the third-party reads a line cites: "From Dana Park, Tuesday:", "From Dana Park and Pat Lee,
@@ -106,7 +128,8 @@ export function taintErrandLines(lines: readonly CheckedLine[], reads: readonly 
       // Card only, unless every shown third-party read is mail from a mailed sender and this line cites one to
       // name, with at most two senders.
       const senders = new Set(citedThird.map((e) => keyOf(e.read)));
-      const speak = !untrusted && citedThird.length > 0 && citedThird.every(mailedThird) && citedThird.every((e) => nameable(e.read)) && senders.size <= ERRAND_ATTRIBUTED_SENDERS_MAX;
+      // Review fix E9: every ref the line cites must be a mailed sender's mail; a mix is card only.
+      const speak = !untrusted && citedThird.length > 0 && cited.every(mailedThird) && citedThird.every((e) => nameable(e.read)) && senders.size <= ERRAND_ATTRIBUTED_SENDERS_MAX;
       out.push({ text, refs, cls: lowerTrust(cited.reduce<Class>((a, e) => lowerTrust(a, e.cls), l.cls), runCls), sens, attribution, speak });
       continue;
     }
