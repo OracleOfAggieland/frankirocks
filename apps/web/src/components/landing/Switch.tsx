@@ -46,14 +46,14 @@ const JAW = { top: 80, bottom: 108, baseTop: 104, baseBottom: 116, baseHalf: 20 
 const HINGE = { top: 194, bottom: 216, baseTop: 210, baseBottom: 224, baseHalf: 22 };
 /** The spark: an arc across the jaw's contacts, and the flash behind it. */
 const SPARK_WAYPOINTS: readonly Point[] = [
-  { x: 64, y: 88 },
-  { x: 84, y: 79 },
-  { x: 104, y: 88 },
+  { x: 100, y: 88 },
+  { x: 120, y: 79 },
+  { x: 140, y: 88 },
 ];
 const SPARK_SEED = 71;
 const SPARK_DEPTH = 3;
 /** The glass base plate, as a share of the drawing box. */
-const PLATE_BOX = { left: "20%", top: "25%", width: "30%", height: "71.667%" } as const;
+const PLATE_BOX = { left: "35%", top: "25%", width: "30%", height: "71.667%" } as const;
 
 /** The blade group's transform at an angle, about the hinge pin. */
 const bladeTransform = (angle: number) => `rotate(${angle.toFixed(3)} ${PIVOT.x} ${PIVOT.y})`;

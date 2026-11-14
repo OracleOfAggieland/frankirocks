@@ -13,8 +13,8 @@
 import { DUR } from "../motion";
 import { BLADE_SPRING, NUDGE_DEG, OPEN_DEG, type Point, dragAngle, grabOffset, isDrag, releaseTarget, stepBlade } from "./switch-blade";
 
-/** Where the blade pivots on the hinge pin, in the drawing's viewBox. */
-export const PIVOT: Point = { x: 84, y: 206 };
+/** Where the blade pivots on the hinge pin, in the drawing's viewBox: centred across it, over the label. */
+export const PIVOT: Point = { x: 120, y: 206 };
 /** How long the spark across the contacts lasts, in frame time. */
 export const SPARK_MS = DUR.base * 2;
 

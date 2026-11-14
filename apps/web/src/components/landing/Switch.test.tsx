@@ -54,7 +54,7 @@ describe("Switch", () => {
     const out = html();
     const box = out.split(`class="relative block ${SWITCH_BOX}">`)[1].split("</svg>")[0];
     // The base plate is placed in percentages of the box; the drawing fills it.
-    expect(box).toMatch(/data-base-plate=""[^>]*style="left:20%;top:25%;width:30%;height:71.667%"/);
+    expect(box).toMatch(/data-base-plate=""[^>]*style="left:35%;top:25%;width:30%;height:71.667%"/);
     expect(box).toMatch(/<svg[^>]*viewBox="0 0 240 240"[^>]*class="absolute inset-0 size-full/);
     // No pixel placement or size inside the box; the rivets keep their own 6 px dome, pinned to the plate's corners.
     expect(box).not.toMatch(/\[\d+(\.\d+)?px\]/);
