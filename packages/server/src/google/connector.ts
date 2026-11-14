@@ -27,6 +27,11 @@ export interface GoogleDocs {
   calendar: StoredDoc<Connector> | null;
 }
 
+/** One provider's document (review fix T12: readiness reads only its own, so a poll costs one read per agent). */
+export async function readGoogleDoc(reader: Pick<Reader, "get">, uid: string, hasher: Hasher, provider: GoogleProvider): Promise<StoredDoc<Connector> | null> {
+  return one(reader, uid, hasher, provider);
+}
+
 async function one(reader: Pick<Reader, "get">, uid: string, hasher: Hasher, provider: GoogleProvider): Promise<StoredDoc<Connector> | null> {
   const doc = await reader.get(paths.connector(uid, googleConnectorId(hasher, uid, provider)));
   if (doc === null) return null;

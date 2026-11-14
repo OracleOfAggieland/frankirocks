@@ -3,7 +3,7 @@
  * no owner words, no name and nothing an errand found. The found lines themselves are the helper's, checked by code
  * (`checkErrandResult`) and attributed by code (`errandAttribution`).
  */
-import type { ErrandAbout, ErrandNotice, ErrandStartState } from "./limits";
+import type { ErrandAbout, ErrandMissing, ErrandNotice, ErrandStartState } from "./limits";
 
 /** "your mail", "your calendar", "your mail and calendar". */
 export function aboutPhrase(about: readonly ErrandAbout[]): string {
@@ -15,13 +15,21 @@ export function aboutPhrase(about: readonly ErrandAbout[]): string {
  * The note `start_errand` answers with (ruling 3). The model reads it and words one short neutral sentence; it never
  * implies success or failure (OpenAI's guidance for the filler before a tool's result).
  */
-export function errandStartNote(state: ErrandStartState, about: readonly ErrandAbout[]): string {
+export function errandStartNote(state: ErrandStartState, about: readonly ErrandAbout[], missing: readonly ErrandMissing[] = []): string {
   const what = aboutPhrase(about);
   switch (state) {
-    case "started":
-      return `A helper is now looking through ${what} for what the owner asked. Say one short, neutral sentence, such as "Let me look.", and nothing about what it might find. The answer comes later on its own; never guess it, and don't start another look-up for the same thing.`;
-    case "notConnected":
+    case "started": {
+      // Review fix E11: a half-covered ask names the part that can't be looked up, and why.
+      const gaps = missing.map((m) => `${capital(aboutPhrase([m.about]))} ${missingWhy(m.why)}, so that part can't be looked up.`);
+      const tail = gaps.length === 0 ? "" : ` ${gaps.join(" ")} Say that too, in the same short sentence.`;
+      return `A look-up through ${what} is now running for what the owner asked. Say one short, neutral sentence, such as "Let me look.", and nothing about what it might find. The answer comes later on its own; never guess it, and don't start another look-up for the same thing.${tail}`;
+    }
+    case "notConnected": {
+      // Review fix E11: an expired grant is said as needing connecting again, never as never connected.
+      const expired = missing.filter((m) => m.why === "expired").map((m) => m.about);
+      if (expired.length > 0 && missing.every((m) => m.why === "expired")) return `${capital(aboutPhrase(expired))} needs connecting again before anything can be looked up there. Say so in one short sentence, and never guess what it holds.`;
       return `${capital(what)} is not connected, so nothing can be looked up there. Say so in one short sentence, and never guess what it holds.`;
+    }
     case "busy":
       return "Two look-ups are already running. Say in one short sentence that you'll look once one of them is done, and never guess what they will find.";
     case "unavailable":
@@ -33,6 +41,15 @@ export function errandStartNote(state: ErrandStartState, about: readonly ErrandA
       return "";
   }
 }
+
+const missingWhy = (why: ErrandMissing["why"]): string => (why === "expired" ? "needs connecting again" : why === "notConnected" ? "isn't connected" : "can't be reached right now");
+
+/**
+ * Review fix E11: the sentence the call's Head carries while an errand agent is ready for the owner, so the model knows
+ * a look-up exists and that its answer comes later. Code-worded, S0, no owner words.
+ */
+export const ERRAND_HEAD_LINE =
+  "You can hand a look-up through the owner's connected mail or calendar to a helper with start_errand. Its answer comes later on its own: never guess it, and never say you can't check mail or calendar while it can.";
 
 /**
  * Ruling 12: the note a later turn's reply carries while an errand of this Session runs, so the model neither starts

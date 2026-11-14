@@ -32,7 +32,7 @@ import {
 import { withDeadline } from "../clock/timers";
 import { requireModel } from "../config/models";
 import { ownerClock, readCoreDocs } from "../core-docs";
-import { isReadableGoogle, readGoogleDocs } from "../google/connector";
+import { isReadableGoogle, readGoogleDoc } from "../google/connector";
 import { googleConfigured } from "../google/config";
 import { type GoogleRead, type GoogleReadContext, type GoogleReadFailure, type MailHit, type ReaderText, freeTime, googleReadContext, listEvents, readableMessage, searchMail, senderMailed } from "../google/read";
 import { storeReader } from "../head-build";
@@ -492,10 +492,15 @@ function timeView(e: Evidence): { cls: Class; sens: Sens } | null {
 // ---------------------------------------------------------------------------------------------
 // Readiness and the registry
 
+/**
+ * Review fix T12: one read, of this provider's own document. Review fix E11: a granted document whose grant expired
+ * answers `expired`, so the call is told it needs connecting again.
+ */
 async function readiness(ctx: RouteContext, provider: "gmail" | "calendar"): Promise<ErrandAvailability> {
   if (!googleConfigured(ctx.deps.env)) return "unavailable";
-  const docs = await readGoogleDocs(storeReader(ctx.deps.store, ctx.uid), ctx.uid, ctx.deps.hasher);
-  return isReadableGoogle(docs[provider]?.data) ? "ready" : "notConnected";
+  const doc = (await readGoogleDoc(storeReader(ctx.deps.store, ctx.uid), ctx.uid, ctx.deps.hasher, provider))?.data ?? null;
+  if (isReadableGoogle(doc)) return "ready";
+  return doc !== null && doc.google !== null && doc.google.granted && doc.state === "expired" ? "expired" : "notConnected";
 }
 
 export const mailAgent: ErrandAgent = { id: MAIL_AGENT_ID, about: "mail", instructions: MAIL_INSTRUCTIONS, tools: [searchMailTool, readMailTool], available: (ctx) => readiness(ctx, "gmail") };

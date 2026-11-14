@@ -13,6 +13,11 @@ export type ErrandAbout = (typeof ERRAND_ABOUT)[number];
 /** How `start_errand` answers at once (ruling 3). `stale`: the turn it was asked on is no longer current. */
 export const ERRAND_START_STATES = ["started", "notConnected", "busy", "unavailable", "stale"] as const;
 export type ErrandStartState = (typeof ERRAND_START_STATES)[number];
+/** Review fix E11: an asked-for part that can't be looked up, and why, for the start's note. */
+export interface ErrandMissing {
+  about: ErrandAbout;
+  why: "notConnected" | "expired" | "unavailable";
+}
 
 /** The planner's last output (ruling 8). */
 export const ERRAND_OUTCOMES = ["answered", "nothing", "failed"] as const;

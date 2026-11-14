@@ -3,8 +3,9 @@
  * is an ID, what it is about, a fixed instruction text, a set of tools and a check of whether it can run for this
  * owner now. The `about` set of a `start_errand` call picks the agents, and the helper gets the union of their tools.
  *
- * Production ships with the registry empty (`PRODUCTION_ERRAND_AGENTS`): with no agent for what was asked,
- * `start_errand` answers `unavailable`. Tests pass their own through `RouteDeps.errandAgents`.
+ * Live, the registry holds the Google mail and calendar agents of part C when Google is configured (`errandAgentsOf`),
+ * and is empty otherwise (`PRODUCTION_ERRAND_AGENTS`): with no agent for what was asked, `start_errand` answers
+ * `unavailable`. Tests pass their own through `RouteDeps.errandAgents`.
  */
 import type { Class, ErrandAbout, ErrandSender, ErrandSource, ID, Sens } from "@franki/core";
 import type { RouteContext } from "../routes/runtime";

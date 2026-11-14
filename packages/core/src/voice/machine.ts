@@ -38,6 +38,7 @@ import { APP_JUDGE_SETTINGS, type JudgeVerdict, judgeCreate, parseJudgeDone } fr
 import { type FastORefusal, LATE_TURN_MS, type LatencyRow, type LatencyTimes, emptyTimes, finishRow, pushRow } from "./latency";
 import { fastOProblem, issueFastO } from "./fast-o";
 import { sayExactly } from "./lines";
+import { ERRAND_HEAD_LINE } from "../errands/lines";
 // Brief 040: what a call sends for each tool; re-exported here so the core barrel needs no new line.
 export { CALL_ANSWER_ARGS, CALL_TOOL_NAMES, type CallToolName, callToolArgs, isCallToolName } from "./tool-args";
 import { type CallToolName, callToolArgs, isCallToolName } from "./tool-args";
@@ -633,6 +634,14 @@ export function callTools(st: Pick<VoiceState, "errandsReady">): (typeof CALL_TO
   return CALL_TOOLS.filter((t) => t !== ERRAND_TOOL || st.errandsReady);
 }
 
+/**
+ * Review fix E11: the Head as a reply reads it. While an errand agent is ready, one code-worded sentence says a look-up
+ * exists and its answer comes later; with none ready the Head is exactly the Deck's.
+ */
+export function callHead(head: string, st: Pick<VoiceState, "errandsReady">): string {
+  return st.errandsReady ? `${head}\n\n${ERRAND_HEAD_LINE}` : head;
+}
+
 /** Review fix R2: a `session.update` that changes only the tools, when a poll moves the errands' readiness. */
 export function toolsUpdate(st: Pick<VoiceState, "errandsReady">): RealtimeClientEvent {
   return { type: "session.update", session: { type: "realtime", tools: callTools(st) } };
@@ -720,7 +729,7 @@ export function replyCreate(st: VoiceState, reply: PendingReply, eventId: string
     ? { tools: [] } : { tools: callTools(st), tool_choice: "auto" };
   return tag({
     type: "response.create",
-    response: { conversation: "none", instructions: deck.head.text + notes, input, ...tools, metadata },
+    response: { conversation: "none", instructions: callHead(deck.head.text, st) + notes, input, ...tools, metadata },
   });
 }
 
@@ -730,7 +739,7 @@ export function specCreate(st: VoiceState, eventId: string): RealtimeClientEvent
   return withEventId(
     {
       type: "response.create",
-      response: { conversation: "none", instructions: st.deck!.head.text, input: replyInput(st, { toolCall: null, toolOutput: null }), tools: callTools(st), tool_choice: "auto", metadata },
+      response: { conversation: "none", instructions: callHead(st.deck!.head.text, st), input: replyInput(st, { toolCall: null, toolOutput: null }), tools: callTools(st), tool_choice: "auto", metadata },
     },
     eventId,
   );

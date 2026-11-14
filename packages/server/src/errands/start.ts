@@ -25,6 +25,7 @@ import {
   ERRAND_RUN_SPAN_MS,
   type Errand,
   type ErrandMark,
+  type ErrandMissing,
   type ErrandStartState,
   type ID,
   type Infer,
@@ -52,13 +53,22 @@ type ErrandResult = Extract<Infer<typeof ToolResult>, { name: "start_errand" }>;
 /** How long the start's note lives on the wire. */
 export const ERRAND_NOTE_TTL_MS = 60_000;
 
-async function readyAgents(ctx: RouteContext, about: readonly ErrandAbout[]): Promise<{ agents: ErrandAgent[]; state: ErrandStartState | null }> {
+/**
+ * The ready agents for `about`, and (review fix E11) each asked-for part that can't be looked up, with why, so the
+ * note names it: not connected, needing connecting again, or not available.
+ */
+async function readyAgents(ctx: RouteContext, about: readonly ErrandAbout[]): Promise<{ agents: ErrandAgent[]; state: ErrandStartState | null; missing: ErrandMissing[] }> {
   const agents = agentsFor(errandAgentsOf(ctx), about);
-  if (agents.length === 0) return { agents: [], state: "unavailable" };
   const checks = await Promise.all(agents.map((a) => a.available(ctx).catch(() => "unavailable" as const)));
   const ready = agents.filter((_, i) => checks[i] === "ready");
-  if (ready.length > 0) return { agents: ready, state: null };
-  return { agents: [], state: checks.includes("notConnected") ? "notConnected" : "unavailable" };
+  const missing: ErrandMissing[] = about.flatMap((a): ErrandMissing[] => {
+    const i = agents.findIndex((g) => g.about === a);
+    const why = i < 0 ? "unavailable" : checks[i]!;
+    return why === "ready" ? [] : [{ about: a, why }];
+  });
+  if (ready.length > 0) return { agents: ready, state: null, missing };
+  const notConnected = missing.some((m) => m.why === "notConnected" || m.why === "expired");
+  return { agents: [], state: notConnected ? "notConnected" : "unavailable", missing };
 }
 
 /** The claim's answer and, when it starts one, the writes to make once the admission has issued a Permit. */
@@ -95,12 +105,12 @@ async function liveRunning(tx: Tx, uid: string, ops: number, sessionId: string):
 
 export async function planErrand(ctx: RouteContext, x: { stamp: Stamp; turn: Turn; args: ErrandArgs; noteId: ID }): Promise<ErrandPlan> {
   const { uid, deps } = ctx;
-  const answer = (state: ErrandStartState, about: readonly ErrandAbout[], errandId: ID | null): ErrandResult => {
+  const answer = (state: ErrandStartState, about: readonly ErrandAbout[], errandId: ID | null, missing: readonly ErrandMissing[] = []): ErrandResult => {
     const note: W = {
       noteId: x.noteId,
       rev: 1,
       kind: "result",
-      text: errandStartNote(state, about),
+      text: errandStartNote(state, about, missing),
       rootKeys: [],
       dependsOn: [],
       sens: "S0",
@@ -116,8 +126,8 @@ export async function planErrand(ctx: RouteContext, x: { stamp: Stamp; turn: Tur
   const fromExisting = (e: Errand): ErrandResult => (e.status === "dropped" ? answer("stale", e.about, null) : answer("started", e.about, errandId));
   const existing = (await deps.store.get<Errand>(uid, paths.errand(uid, errandId)))?.data ?? null;
   if (existing !== null) return { kind: "answer", result: fromExisting(existing) };
-  const { agents, state } = await readyAgents(ctx, x.args.about);
-  if (state !== null) return { kind: "answer", result: answer(state, x.args.about, null) };
+  const { agents, state, missing } = await readyAgents(ctx, x.args.about);
+  if (state !== null) return { kind: "answer", result: answer(state, x.args.about, null, missing) };
   const about = agents.map((a) => a.about);
   const turnIds = await assignmentTurnIds(storeReader(deps.store, uid), uid, x.stamp.sessionId, x.turn, x.stamp.turnId as ID);
   if (turnIds === null) return { kind: "answer", result: answer("stale", about, null) };
@@ -175,8 +185,8 @@ export async function planErrand(ctx: RouteContext, x: { stamp: Stamp; turn: Tur
         w.update(mark.path, { ...mark.data, errandIds: ids, openUntil, updatedAt: now } satisfies ErrandMark);
       }
     };
-    return { result: answer("started", about, errandId), write, errandId };
+    return { result: answer("started", about, errandId, missing), write, errandId };
   };
   // The answer the model reads if the claim starts it; the claim may answer `busy` or `stale` instead.
-  return { kind: "claim", result: answer("started", about, errandId), claim };
+  return { kind: "claim", result: answer("started", about, errandId, missing), claim };
 }

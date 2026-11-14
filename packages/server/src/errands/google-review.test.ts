@@ -11,7 +11,7 @@ import { paths } from "../store/paths";
 import { ERRAND_OWNER } from "../testing/errand-agent";
 import { settle } from "../testing/fakes";
 import { ACCOUNT_EMAIL, FakeGoogle, calendarEvent, gmailMessage } from "../testing/fake-google";
-import { dmarcPass, googleErrand, readerRequests, readerSays, toolHarness } from "../testing/google-errand";
+import { dmarcPass, googleErrand, readerRequests, readerSays, routeOf, toolHarness } from "../testing/google-errand";
 import { toolRoute } from "../routes/tool";
 import { T0_MS, callRoute, patchRecord, runScheduled } from "../testing/fakes";
 import { type ErrandSetup, type PlannerStep, errandOf, poll, scriptPlanner, tool } from "../testing/errand-agent";
@@ -417,5 +417,47 @@ describe("E3: the attribution's day word comes from the ops clock", () => {
     const e = await errandOf(x);
     expect(e?.lines).toHaveLength(1);
     expect(e!.lines[0]!.attribution).toBe("From Pat Plumber, today:");
+  });
+});
+
+describe("E11: what the call is told about a look-up", () => {
+  const noteOf = (r: { body: { result: { notes: { text: string }[] } } }) => r.body.result.notes[0]!.text;
+  const setState = (x: ErrandSetup, provider: "gmail" | "calendar", state: Connector["state"]) =>
+    patchRecord<Connector>(x.rig.store, ERRAND_OWNER, paths.connector(ERRAND_OWNER, googleConnectorId(x.rig.deps.hasher, ERRAND_OWNER, provider)), { state });
+
+  it("a half-covered ask starts the connected part and names the part that isn't connected", async () => {
+    const { x } = await googleErrand();
+    await setState(x, "calendar", "disconnected");
+    const r = await callRoute(x.rig, toolRoute, tool(x, "1", ["mail", "calendar"]));
+    expect(r.body.result.state).toBe("started");
+    expect(noteOf(r)).toContain("your mail");
+    expect(noteOf(r)).toMatch(/calendar isn't connected/);
+  });
+
+  it("an expired grant says it needs connecting again, never just 'not connected'", async () => {
+    const { x } = await googleErrand();
+    await setState(x, "gmail", "expired");
+    const r = await callRoute(x.rig, toolRoute, tool(x));
+    expect(r.body.result.state).toBe("notConnected");
+    expect(noteOf(r)).toMatch(/needs connecting again/);
+  });
+
+  it("an expired part of a half-covered ask is named as needing connecting again", async () => {
+    const { x } = await googleErrand();
+    await setState(x, "calendar", "expired");
+    const r = await callRoute(x.rig, toolRoute, tool(x, "1", ["mail", "calendar"]));
+    expect(r.body.result.state).toBe("started");
+    expect(noteOf(r)).toMatch(/calendar needs connecting again/);
+  });
+
+  it("T12: readiness reads each provider's own document once: two reads per poll, not four", async () => {
+    const { x } = await googleErrand();
+    const { errandsReady } = await import("./agent");
+    const route = routeOf(x);
+    let gets = 0;
+    const store = x.rig.deps.store;
+    const counted = { ...route, deps: { ...route.deps, store: new Proxy(store, { get: (t, k) => (k === "get" ? (...a: unknown[]) => { gets++; return (t.get as (...b: unknown[]) => unknown).apply(t, a); } : Reflect.get(t, k)) }) } };
+    expect(await errandsReady(counted as never)).toBe(true);
+    expect(gets).toBe(2);
   });
 });
