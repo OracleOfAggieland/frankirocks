@@ -312,3 +312,22 @@ Two properties were written after the code they test, not before it. That depart
 - Not checked in a live call: the run, the late line, the running word and the card on the main screen.
 - The specimens section was not looked at in a browser.
 - The voice corpus was re-recorded and has not been heard.
+
+## Part C: the agents (lane `google`)
+
+Built by Claude in `lane/google` on fakes only (no OpenAI or Google call). Kiro wrote none of it.
+
+### What was built
+- `packages/server/src/errands/google-agents.ts`: the mail agent (`search_mail`, `read_mail`) and the calendar agent (`list_events`, `find_free_time`) over the Part B reads. Every row put in a tool output is registered with its stored class and sensitivity (`evidenceView`) and its sender. For a sender the owner has not mailed, `search_mail` answers ref, address and date only, registered not shown; a mailed sender (or the owner's own message) also gets the subject, registered shown. `read_mail` takes only a ref this run's own search returned, then runs the reader: one tool-less `bg` call, `store: false`, fixed developer text, owner words and message as untrusted user JSON, strict output `{bears, gist ≤240, when, where}`, gist cleaned with `cleanErrandText`. `when` goes through `resolveSpoken` (a day) and, for the calendar, `resolvePeriod` (now to its end, cut to 14 days); else `unresolved`.
+- Readiness: each agent is `ready` only while its connector is readable; `unavailable` when Google isn't configured. Live (`errandAgents` unset), both register only when `googleConfigured` (`errands/agent.ts`, `errands/google-registry.ts`).
+- `google-agents.test.ts`: one end-to-end script (ask, `started`, run with FakeGoogle and scripted models, `ready`, the poll offers the line), no body or poison text in any planner request, the reader request has no tools, no rule or preference rows written, and a foreign ref refused without a reader call.
+
+### Not built
+- The other end-to-end scripts (company, forget midway, not connected, expired grant). No unmailed-sender test (FakeGoogle's `listMessages` answers every message, so `ownerHasMailed` is always true there). No calendar tool test. No poison script beyond the one message. No property test.
+
+### Contract questions
+- **G-300.** Dates resolve in the owner's world-clock zone, not the calendar's zone (the zone is known only after the read).
+- **G-301.** Mail `when` accepts only a day phrase; a period answers `unresolved`.
+- **G-302.** A run's search refs and read context live in a bounded in-process map keyed by owner, Errand and claimed epoch. A second claim on another instance starts with no refs, so `read_mail` refuses until it searches again.
+- **G-303.** The owner's own messages count as mailed.
+- **G-304.** `find_free_time` registers the events behind the gaps as read, not shown.
