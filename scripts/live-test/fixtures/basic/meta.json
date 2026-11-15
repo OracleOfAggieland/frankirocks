@@ -1,0 +1,8 @@
+{
+  "startedAt": "2025-11-14T22:23:20.000Z",
+  "commit": "abc1234",
+  "branch": "lane/live-test",
+  "dirty": false,
+  "node": "v24.0.0",
+  "port": 3000
+}

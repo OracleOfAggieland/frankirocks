@@ -50,7 +50,7 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
   const turnPath = paths.turn(uid, sessionId, turnId);
   const stored = await deps.store.get<Turn>(uid, turnPath);
   if (stored === null || stored.data.role !== "user" || stored.data.parseState !== "failed" || stored.data.text === null) return "skipped";
-  const slow = await runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log }, { turnId, utterance: stored.data.text }, REPAIR_DEADLINE_MS);
+  const slow = await runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log, trace: deps.trace }, { turnId, utterance: stored.data.text }, REPAIR_DEADLINE_MS);
   // Brief 035: the narrow Head a late company or quiet hit needs, compiled before the transaction as the turn does.
   const sessionGen = (await deps.store.get<Session>(uid, paths.session(uid, sessionId)))?.data.generation ?? 1;
   const audienceHead = await precompileAudienceHead({ uid, deps }, slow, sessionGen);

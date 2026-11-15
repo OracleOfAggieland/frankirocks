@@ -1,0 +1,25 @@
+{
+  "title": "Fixture run",
+  "steps": [
+    {
+      "id": "A1",
+      "group": "Voice",
+      "title": "Open a call"
+    },
+    {
+      "id": "B2",
+      "group": "Voice",
+      "title": "Interrupt Franki"
+    },
+    {
+      "id": "C3",
+      "group": "Money",
+      "title": "Ask about money"
+    },
+    {
+      "id": "D4",
+      "group": "Radio",
+      "title": "Turn on the radio"
+    }
+  ]
+}

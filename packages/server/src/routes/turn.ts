@@ -180,7 +180,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
         // anyway, so the parse gets 2,000 ms (review of wave A, item 17).
         const noCall = req.source !== "asr" && (await noCallOpen(ctx, req.sessionId));
         const deadlineMs = noCall ? DECISIONS_NO_CALL_DEADLINE_MS : DECISIONS_DEADLINE_MS;
-        return runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log }, { turnId: req.turnId, utterance: typedText }, deadlineMs);
+        return runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log, trace: deps.trace }, { turnId: req.turnId, utterance: typedText }, deadlineMs);
       })()
     : Promise.resolve(null);
   // A request that fails before it awaits the parse must not leave an unhandled rejection behind.
@@ -605,7 +605,7 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
 
   const text = normalizedTranscript(req.transcript)!;
   const cls = classifyTurn(req);
-  const slow = await runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log }, { turnId: req.turnId, utterance: text });
+  const slow = await runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log, trace: deps.trace }, { turnId: req.turnId, utterance: text });
   // Brief 012 G20 (task B9): the hardRule route only, once per turn, planned in this post's own transaction.
   const late = await lateSlots(ctx, { turnId: req.turnId, text, cls: cls.cls, typed: false, slow, generation: req.generation });
   // Brief 035 (finding 2): a late company or quiet hit narrows; its Head is compiled before the transaction.

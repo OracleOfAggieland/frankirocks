@@ -144,6 +144,17 @@ export interface VoiceClientDeps {
   onErrands?: (stamp: SS, errands: ErrandsView | undefined) => void;
 }
 
+/**
+ * Brief 050 part B: an optional watcher for the development-only live test recorder. It is told every event in and
+ * every command out, and the peer connection and data channel when they appear and go. It never changes call
+ * behavior, and a throwing observer never reaches the call. Absent, nothing here runs.
+ */
+export interface VoiceObserver {
+  event?(event: VoiceEvent): void;
+  command?(command: VoiceCommand): void;
+  link?(peer: PeerLike | null, channel: ChannelLike | null): void;
+}
+
 const liveTimers: TimerApi = { setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
 
 function parsed<T>(schema: Schema<T>, r: ApiResult<unknown>): T | null {
@@ -174,6 +185,8 @@ export class VoiceClient {
   private remoteStream: unknown | null = null;
   /** The last opsClock time the mic level reached LOUD_LEVEL (R18.5). */
   private lastLoudAt: number | null = null;
+  /** Brief 050: the live test recorder's watcher, or null. */
+  private observer: VoiceObserver | null = null;
 
   constructor(private readonly deps: VoiceClientDeps) {
     this.state = initialVoiceState({ transcribeModel: deps.transcribeModel }, deps.clock.read().worldClock.zone);
@@ -240,10 +253,29 @@ export class VoiceClient {
   // The reducer loop ---------------------------------------------------------------------------
 
   dispatch(event: VoiceEvent): void {
+    this.tap((o) => o.event?.(event));
     const r = step(this.state, event, this.deps.clock.read().opsClock.now);
     this.state = r.state;
     for (const l of this.listeners) l();
-    for (const c of r.commands) this.run(c);
+    for (const c of r.commands) {
+      this.tap((o) => o.command?.(c));
+      this.run(c);
+    }
+  }
+
+  /** Brief 050: sets the live test recorder's watcher (null to remove it), and tells it the current link. */
+  observe(observer: VoiceObserver | null): void {
+    this.observer = observer;
+    this.tap((o) => o.link?.(this.peer, this.channel));
+  }
+
+  private tap(f: (o: VoiceObserver) => void): void {
+    if (this.observer === null) return;
+    try {
+      f(this.observer);
+    } catch {
+      // the recorder's problem, not the call's
+    }
   }
 
   private run(c: VoiceCommand): void {
@@ -462,6 +494,7 @@ export class VoiceClient {
       for (const t of mic.getAudioTracks()) pc.addTrack(t, mic);
       const dc = pc.createDataChannel("oai-events");
       this.channel = dc;
+      this.tap((o) => o.link?.(pc, dc));
       dc.onopen = () => {
         if (live()) this.dispatch({ type: "channelOpen" });
       };
@@ -505,6 +538,7 @@ export class VoiceClient {
     const pc = this.peer;
     this.channel = null;
     this.peer = null;
+    if (pc !== null) this.tap((o) => o.link?.(null, null));
     try {
       dc?.close();
     } catch {

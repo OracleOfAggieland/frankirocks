@@ -27,9 +27,34 @@ export interface SlowParseDeps {
   decisions: DecisionsPort;
   env: Env;
   log: Log;
+  /** Brief 050: the live test recorder's Log, set only when it is on. One `turn.slowParse` line per parse. */
+  trace?: Log;
 }
 
-export async function runSlowParse(deps: SlowParseDeps, input: { turnId: string; utterance: string; lastQuestion?: string | null; predicates?: Readonly<Record<IntentName, string>> }, deadlineMs = DECISIONS_DEADLINE_MS): Promise<SlowParse> {
+type SlowParseInput = { turnId: string; utterance: string; lastQuestion?: string | null; predicates?: Readonly<Record<IntentName, string>> };
+
+export async function runSlowParse(deps: SlowParseDeps, input: SlowParseInput, deadlineMs = DECISIONS_DEADLINE_MS): Promise<SlowParse> {
+  const slow = await slowParse(deps, input, deadlineMs);
+  if (deps.trace !== undefined) {
+    try {
+      deps.trace("turn.slowParse", {
+        turnId: input.turnId,
+        ms: slow.ms,
+        ok: slow.parse.kind !== "failed",
+        parse: slow.parse.kind,
+        ...(slow.parse.kind === "failed" ? { why: slow.parse.why } : {}),
+        ...(slow.invalid !== null ? { invalid: slow.invalid.reason } : {}),
+        regex: slow.regex,
+        deadlineMs,
+      });
+    } catch {
+      // The recorder never breaks a turn.
+    }
+  }
+  return slow;
+}
+
+async function slowParse(deps: SlowParseDeps, input: SlowParseInput, deadlineMs: number): Promise<SlowParse> {
   const regex = regexMatch(input.utterance);
   // IDs only, never the words (question 90).
   if (regex.length > 0) deps.log("turn.regex", { turnId: input.turnId, ids: regex });

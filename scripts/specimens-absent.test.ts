@@ -68,6 +68,18 @@ describe("specimens-absent", () => {
     ]);
   });
 
+  it("fails the live test runner page and its /api/dev/live-test route (brief 050)", () => {
+    const next = fakeNext({
+      "app-path-routes-manifest.json": JSON.stringify({ ...CLEAN_ROUTES, "/live-test/page": "/live-test", "/api/dev/live-test/route": "/api/dev/live-test" }),
+      "routes-manifest.json": JSON.stringify({ staticRoutes: [{ page: "/live-test" }] }),
+    });
+    expect(checkBuild(next)).toEqual([
+      "app-path-routes-manifest.json: route /live-test/page",
+      "app-path-routes-manifest.json: route /api/dev/live-test/route",
+      "routes-manifest.json: /live-test",
+    ]);
+  });
+
   it("fails a file with the recorder sentinel", () => {
     const problems = checkBuild(fakeNext({ "server/chunks/r.js": `x="${RECORDER_SENTINEL}"` }));
     expect(problems).toHaveLength(1);

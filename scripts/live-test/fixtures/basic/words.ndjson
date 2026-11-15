@@ -1,0 +1,7 @@
+{"t":1763159003200,"src":"client","kind":"words.owner","text":"Hello Franki, are you there?","itemId":"item-1","responseId":null}
+{"t":1763159003800,"src":"client","kind":"words.franki","text":"I am here. What can I do?","itemId":"item-1b","responseId":"resp-1"}
+{"t":1763159006900,"src":"client","kind":"words.owner","text":"Wait, stop for a second","itemId":"item-2"}
+{"t":1763159008300,"src":"client","kind":"words.franki","text":"Sure, I stopped.","responseId":"resp-2"}
+{"t":1763159009200,"src":"runner","kind":"note","step":"B2","text":"Franki talked over me"}
+{"t":1763159011800,"src":"client","kind":"words.typed","text":"How much did I spend on takeout?"}
+{"t":1763159013000,"src":"client","kind":"words.franki","text":"About forty dollars this week.","responseId":"resp-3"}

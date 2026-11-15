@@ -8,6 +8,7 @@ import { type AuthClient, type AuthState, createAuthClient } from "../client/aut
 import { type BrowserClock, createBrowserClock } from "../client/clock";
 import { DEBUG_POLL_MS, type DebugPanelModel } from "../client/debug-panel";
 import { publicEnv, readFirebaseConfig } from "../client/firebase-config";
+import type { LiveTest } from "../client/live-test";
 import type { TypedState, TypedTurns } from "../client/typed-turns";
 import { type AudioLike, type PeerLike, SIGN_OUT_LIMIT_MS } from "../client/voice-client";
 import { TRANSCRIBE_VAR, transcribeModel } from "../client/voice-config";
@@ -113,6 +114,9 @@ function outputAudio(): AudioLike {
   return el as unknown as AudioLike;
 }
 
+/** Brief 050: the live test recorder once loaded, for API clients made before it arrived. Null unless the dev flag is set. */
+const liveTestNow: { current: LiveTest | null } = { current: null };
+
 /** Called when a forget completes (R17.5). No forget result reaches the browser in this slice. */
 export const ForgetCompleteContext = createContext<() => void>(noop);
 
@@ -150,6 +154,20 @@ export function App() {
   // One browser clock for the controllers and the Time_Badge's real-time reading (brief 027).
   const [clock] = useState(() => createBrowserClock());
   const [, setCopies] = useState(EMPTY_COPIES);
+  // Brief 050: the development-only live test recorder, loaded only when the dev launcher set the flag at build.
+  const [liveTest, setLiveTest] = useState<LiveTest | null>(null);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_FRANKI_LIVE_TEST === "1") {
+      void import("../client/live-test")
+        .then((m) => {
+          const lt = m.startLiveTest();
+          liveTestNow.current = lt;
+          setLiveTest(lt);
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     if (!config.ok) return;
@@ -170,7 +188,11 @@ export function App() {
   // One set of controllers per signed-in user; a new sign-in starts with no Session and clientSeq 0.
   const signedIn = useMemo<SignedInControllers | null>(() => {
     if (tokens === null) return null;
-    const api = createApiClient({ getToken: () => tokens.idToken(), fetch: (input, init) => fetch(input, init) });
+    const api = createApiClient({
+      getToken: () => tokens.idToken(),
+      fetch: (input, init) => fetch(input, init),
+      ...(process.env.NEXT_PUBLIC_FRANKI_LIVE_TEST === "1" ? { observe: (route: string, method: string) => liveTestNow.current?.api(route, method) } : {}),
+    });
     return createSignedInControllers({
       api,
       clock,
@@ -201,6 +223,24 @@ export function App() {
       phone.stop();
     };
   }, [signedIn]);
+
+  // Brief 050: the recorder hears the user, the call, its latency rows and the phone. Nothing when it is off.
+  useEffect(() => {
+    if (liveTest === null || state.kind === "loading") return;
+    liveTest.user(state.kind === "signedIn" ? state.uid : null);
+  }, [liveTest, state]);
+  useEffect(() => {
+    if (liveTest === null || signedIn === null) return;
+    const { voice, phone } = signedIn;
+    voice?.observe(liveTest.voice);
+    const offVoice = voice === null ? noop : liveTest.watchVoice(voice);
+    const offPhone = liveTest.watchPhone(phone);
+    return () => {
+      voice?.observe(null);
+      offVoice();
+      offPhone();
+    };
+  }, [liveTest, signedIn]);
 
   // Brief 046 part B: the bank sheet sends nothing until it is opened, and drops everything on sign-out.
   useEffect(() => {
@@ -248,6 +288,10 @@ export function App() {
     return () => radioHost.stop();
   }, [radioHost]);
   const radio = useSyncExternalStore(radioHost.subscribe, radioHost.getSnapshot, noWatch);
+  useEffect(() => {
+    if (liveTest === null || radio === null) return;
+    return liveTest.watchRadio(radio);
+  }, [liveTest, radio]);
 
   // Brief 047: the radio follows the call's voice (ducking, and the owner's spoken phrase); when the feed ends
   // (sign-out, or a new voice client) it is fed one closed call, so it stops ducking.
@@ -301,7 +345,7 @@ export function App() {
       <ForgetCompleteContext.Provider value={forget}>
         {/* The three.js ghost reads Franki's voice and the mic through the Level_Meter's second analysers (brief 013, D-1). */}
         <AvatarAudioContext.Provider value={meter.audio}>
-          <Screen snap={snap} auth={auth} controllers={signedIn} clock={clock} radio={radio} />
+          <Screen snap={snap} auth={auth} controllers={signedIn} clock={clock} radio={radio} liveTest={liveTest} />
         </AvatarAudioContext.Provider>
       </ForgetCompleteContext.Provider>
     </MotionConfig>
@@ -336,7 +380,21 @@ function StageFor({ snap, phone, radio, onRadio, errandText }: { snap: ScreenSna
  * Signed out or loading (`controllers` null): Dormant, FRANKIROCKS, the sign-in button, and disabled
  * call and typed controls (R13).
  */
-function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapshot; auth: React.ReactNode; controllers: SignedInControllers | null; clock: BrowserClock; radio: RadioWatch | null }) {
+function Screen({
+  snap,
+  auth,
+  controllers,
+  clock,
+  radio,
+  liveTest,
+}: {
+  snap: ScreenSnapshot;
+  auth: React.ReactNode;
+  controllers: SignedInControllers | null;
+  clock: BrowserClock;
+  radio: RadioWatch | null;
+  liveTest: LiveTest | null;
+}) {
   const typed = controllers?.typed ?? null;
   const voice = controllers?.voice ?? null;
   const debug = controllers?.debug ?? null;
@@ -418,12 +476,16 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
   const submit = () => {
     if (!inCall || voice === null) {
       // Brief 047: the radio hears the line the box will send (never a pasted one); it does not wait for the server.
-      if (typed.canSend()) hear(t.text, t.pasted);
+      if (typed.canSend()) {
+        hear(t.text, t.pasted);
+        liveTest?.typed(t.text, false);
+      }
       return void typed.submit();
     }
     // Brief 040, item 3 (replaces the hold of W-179): a pasted line goes into the call as pasted text.
     if (voice.sendTyped(t.text, t.pasted ? "pasted" : "typed")) {
       hear(t.text, t.pasted);
+      liveTest?.typed(t.text, true);
       typed.setText("");
     }
   };
@@ -567,7 +629,7 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
         />
       }
       reply={inCall ? null : <ReplyLine entries={replyEntries(t.entries, shown)} />}
-      cards={allCards}
+      cards={liveTest === null ? allCards : liveTest.wrapCards(allCards)}
       strip={mem.surfaces.strip === null ? null : <Strip {...mem.surfaces.strip} />}
       jar={<Jar motes={mem.surfaces.jar} onOpen={() => (sheetState.open ? sheetModel.close() : void sheetModel.open())} />}
       lab={<Lab counters={mem.surfaces.lab?.counters ?? []} limits={mem.surfaces.lab?.limits ?? []} receipt={receipt} />}
@@ -597,9 +659,29 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
         </div>
       }
       debug={debug === null ? null : <DebugArea debug={debug} typed={typed} voice={v} />}
-      live={live}
+      live={
+        liveTest === null ? (
+          live
+        ) : (
+          <>
+            {live}
+            <CardWatch liveTest={liveTest} cards={allCards} />
+          </>
+        )
+      }
     />
   );
+}
+
+/** Brief 050: tells the live test recorder which cards the dock holds. Draws nothing. */
+function CardWatch({ liveTest, cards }: { liveTest: LiveTest; cards: readonly { id: string; kind: string }[] }) {
+  const ids = cards.map((c) => `${c.kind}:${c.id}`).join("|");
+  useEffect(() => {
+    liveTest.seenCards(cards);
+    // `ids` names the cards; a new array with the same cards is no change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTest, ids]);
+  return null;
 }
 
 /** The Debug_Panel, only behind ?debug=1 in development (R21). It loads at once and polls while live. */

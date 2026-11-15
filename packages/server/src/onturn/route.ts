@@ -30,6 +30,7 @@ import { type HardRuleRun, executeHardRule, planOnTurnMemory } from "./execute";
 import { storeReader } from "../head-build";
 import { anyMemoryRoute, candidateOpens, memoryCandidates, memoryRegexOpens, orRoutes } from "./trigger";
 import { TYPED_ROUTE_BUDGET_MS, planKey, typedCareNote, typedLineNote, typedRouteReply } from "./typed";
+import { traceFastSlots } from "../live-test/trace";
 
 /** Time the typed path keeps for the transaction after its reply (G17's budget). */
 const TYPED_COMMIT_RESERVE_MS = 1_000;
@@ -93,6 +94,7 @@ export async function runHardRuleSlots(
     pendingId: a.askedRuleId,
   };
   const slots = await deps.fastSlots.slots(input, FAST_SLOTS_DEADLINE_MS);
+  traceFastSlots(deps.trace, slots, { eid: a.eid, typed: a.typed });
   // The routes the turn opened, once its parse is in (the turn waits for the parse anyway).
   const slow = parsedFirst !== undefined ? parsedFirst : await a.slowP.catch(() => null);
   const memoryRoutes = orRoutes(memRegex, memoryCandidates(slow));

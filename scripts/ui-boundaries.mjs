@@ -187,7 +187,7 @@ export const SPECIMENS_DIR = APP + "specimens/";
 export const SPECIMENS_PAGE = SPECIMENS_DIR + "page.dev.tsx";
 export const RECORDER_DIR = APP + "recorder/";
 /** The only files that may use the development-only `.dev.tsx` and `.dev.ts` suffixes. */
-export const DEV_FILES = [SPECIMENS_PAGE, SPECIMENS_DIR + "card/page.dev.tsx", SPECIMENS_DIR + "radio/page.dev.tsx", RECORDER_DIR + "page.dev.tsx", APP + "api/dev/takes/route.dev.ts"];
+export const DEV_FILES = [SPECIMENS_PAGE, SPECIMENS_DIR + "card/page.dev.tsx", SPECIMENS_DIR + "radio/page.dev.tsx", RECORDER_DIR + "page.dev.tsx", APP + "api/dev/takes/route.dev.ts", APP + "live-test/page.dev.tsx", APP + "api/dev/live-test/route.dev.ts"];
 const DEV_DIRS = [SPECIMENS_DIR, RECORDER_DIR];
 export const ENTRY_POINTS = [APP + "page.tsx", APP + "lab/page.tsx", APP + "layout.tsx"];
 /** The lab's own entry points: its page and the layout that wraps it. */

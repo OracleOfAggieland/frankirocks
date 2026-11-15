@@ -35,6 +35,27 @@ export interface ApiClientDeps {
   /** The current ID token, or null while signed out. */
   getToken: () => Promise<string | null>;
   fetch: FetchLike;
+  /** Brief 050: the development-only live test recorder's watcher. Absent, nothing is observed. */
+  observe?: ApiObserve;
+}
+
+/** Told when a request goes to the network; the returned function is told how it ended. Never changes a call. */
+export type ApiObserve = (route: string, method: string) => ((end: { status: number | null; err: "timeout" | "network" | null }) => void) | void;
+
+function observeStart(observe: ApiObserve | undefined, route: string, method: string) {
+  if (observe === undefined) return undefined;
+  try {
+    const done = observe(route, method);
+    return (status: number | null, err: "timeout" | "network" | null) => {
+      try {
+        done?.({ status, err });
+      } catch {
+        // the recorder's problem, not the call's
+      }
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export interface ApiCallOptions {
@@ -102,6 +123,7 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
               timedOut = true;
               controller.abort();
             }, options.timeoutMs);
+      const observed = observeStart(deps.observe, route, method);
       try {
         const response = await deps.fetch(withQuery(path, options.query), {
           method,
@@ -117,9 +139,11 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
         } catch {
           body = null;
         }
+        observed?.(response.status, null);
         if (!response.ok) return { ok: false, kind: "http", status: response.status, ...errorFields(body) };
         return { ok: true, status: response.status, body: body as T };
       } catch {
+        observed?.(null, timedOut ? "timeout" : "network");
         return timedOut ? { ok: false, kind: "timeout" } : { ok: false, kind: "network" };
       } finally {
         if (timer !== null) clearTimeout(timer);

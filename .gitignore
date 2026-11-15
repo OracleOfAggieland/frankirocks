@@ -26,3 +26,6 @@ ui-debug.log*
 
 # judge spike audio (brief 006): synthetic speech and the owner's own takes never go in git
 scripts/judge-spike/audio/
+
+# live test runs (brief 050): the default --out of scripts/live-test/dev.mjs; a run holds the owner's words
+.live-test/

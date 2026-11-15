@@ -1,7 +1,8 @@
 // Post-build proof that the development-only pages and routes did not ship (lab-ui-foundation R20.3, R20.4;
 // brief 006 item 3). Runs as the `postbuild` script of apps/web, so a failure makes `npm run build` exit non-zero.
-//   1. No route manifest key under .next names `specimens`, `recorder` or `api/dev` (the Specimens_Page, the
-//      judge spike recorder page and its /api/dev/takes route).
+//   1. No route manifest key under .next names `specimens`, `recorder`, `live-test` or `api/dev` (the
+//      Specimens_Page, the judge spike recorder page and its /api/dev/takes route, and the live test runner page of
+//      brief 050 with its /api/dev/live-test route).
 //   2. No file under .next/server or .next/static holds the Fixture sentinel or the recorder sentinel.
 // Usage: node scripts/specimens-absent.mjs [path/to/.next]
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -19,9 +20,9 @@ const SENTINELS = [
 ];
 
 /** Route manifest keys that only development may have. */
-const DEV_ROUTE_KEY = [/specimens/i, /(^|\/)recorder(\/|$)/i, /(^|\/)api\/dev(\/|$)/i];
+const DEV_ROUTE_KEY = [/specimens/i, /(^|\/)recorder(\/|$)/i, /(^|\/)live-test(\/|$)/i, /(^|\/)api\/dev(\/|$)/i];
 /** The same, for any string in the optional manifests. */
-const DEV_ROUTE_STRING = [/(^|\/)specimens(\/|$|\b)/i, /(^|\/)recorder(\/|$|\b)/i, /(^|\/)api\/dev(\/|$|\b)/i];
+const DEV_ROUTE_STRING = [/(^|\/)specimens(\/|$|\b)/i, /(^|\/)recorder(\/|$|\b)/i, /(^|\/)live-test(\/|$|\b)/i, /(^|\/)api\/dev(\/|$|\b)/i];
 
 /** The Next 16.4.3 route manifests, relative to .next. */
 export const ROUTE_MANIFESTS = ["app-path-routes-manifest.json", "server/app-paths-manifest.json"];
@@ -95,5 +96,5 @@ if (isMain) {
     process.stderr.write(`specimens-absent: the production build includes a development-only page or route:\n${problems.join("\n")}\n`);
     process.exit(1);
   }
-  process.stdout.write("specimens-absent: no Specimens_Page, recorder page or /api/dev route in the build.\n");
+  process.stdout.write("specimens-absent: no Specimens_Page, recorder page, live test page or /api/dev route in the build.\n");
 }

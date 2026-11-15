@@ -51,6 +51,11 @@ export interface RouteDeps {
   timers: Timers;
   tokens: TokenVerifier;
   log: Log;
+  /**
+   * Brief 050: the live test recorder's Log (`events.ndjson`), set only when the recorder is on. New recorder
+   * events go through `deps.trace?.(...)`, so production output and every test without it stay as they are.
+   */
+  trace?: Log;
 }
 
 export interface RouteContext {
@@ -94,6 +99,7 @@ export function parseWith<T>(schema: Schema<T>, value: unknown): T {
 
 export async function runRoute<Req>(spec: RouteSpec<Req>, http: HttpInput, deps: RouteDeps, schedule: Schedule): Promise<HttpResult> {
   const startedOpsAt = deps.clock.read().opsClock.now;
+  let guarded: string | undefined;
   try {
     const bodyText = http.method.toUpperCase() === "GET" ? "" : await http.text();
     const uid = await guardRequest(
@@ -102,6 +108,7 @@ export async function runRoute<Req>(spec: RouteSpec<Req>, http: HttpInput, deps:
       undefined,
       deps.log,
     );
+    guarded = uid;
     let body: unknown = null;
     if (bodyText !== "") {
       try {
@@ -113,10 +120,29 @@ export async function runRoute<Req>(spec: RouteSpec<Req>, http: HttpInput, deps:
     const req = spec.parse({ body, query: new URL(http.url).searchParams });
     const origin = http.method.toUpperCase() === "GET" ? null : http.header("origin");
     const result = await spec.run({ uid, deps, schedule, startedOpsAt, origin }, req);
+    traceRouteDone(deps, spec.name, http.method, startedOpsAt, guarded, 200, null);
     return { status: 200, body: result };
   } catch (error) {
     const e: RouteError = toRouteError(error);
     if (e.code === "DEPENDENCY") deps.log("route.dependency", { route: spec.name, ...dependencyLogFields(error) });
+    traceRouteDone(deps, spec.name, http.method, startedOpsAt, guarded, e.status, e.code);
     return { status: e.status, body: e.body };
+  }
+}
+
+/** Brief 050: one `route.done` line per request when the recorder is on. It never throws into the route. */
+function traceRouteDone(deps: RouteDeps, route: string, method: string, startedOpsAt: number, uid: string | undefined, status: number, code: string | null): void {
+  if (deps.trace === undefined) return;
+  try {
+    deps.trace("route.done", {
+      route,
+      method: method.toUpperCase(),
+      status,
+      ...(code === null ? {} : { code }),
+      ms: deps.clock.read().opsClock.now - startedOpsAt,
+      ...(uid === undefined ? {} : { uid }),
+    });
+  } catch {
+    // The recorder never breaks a request.
   }
 }

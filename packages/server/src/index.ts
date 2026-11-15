@@ -21,6 +21,7 @@ export { debugMemoryRoute } from "./routes/debug-memory";
 // Brief 020: GET /api/memory.
 export { memoryRoute } from "./routes/memory";
 export { TAKE_MAX_BYTES, listTakes, liveTakesDeps, saveTake } from "./dev/takes";
+export { LIVE_TEST_MAX_BYTES, LIVE_TEST_MAX_EVENTS, liveTestDeps, liveTestStatus, postLiveTestEvents } from "./live-test/route";
 // Forget, part one (brief 021). No route calls these yet.
 export * from "./forget/fence";
 export * from "./forget/executor";
