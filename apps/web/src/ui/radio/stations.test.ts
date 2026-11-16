@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { STATIONS, STATIONS_SNAPSHOT } from "./stations";
 
 describe("the station snapshot", () => {
-  it("has 1 to 50 rows", () => {
+  it("has 1 to 70 rows", () => {
     expect(STATIONS.length).toBeGreaterThanOrEqual(1);
-    expect(STATIONS.length).toBeLessThanOrEqual(50);
+    expect(STATIONS.length).toBeLessThanOrEqual(70);
   });
 
   it("names its source and the day it was taken", () => {

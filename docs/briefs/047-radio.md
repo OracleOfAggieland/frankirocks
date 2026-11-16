@@ -6,11 +6,11 @@ Read `docs/briefs/016-plan-stages.md` first. Its rules apply here.
 
 ## What it is
 
-A wooden radio sits on the stage beside Franki. When the owner says "Franki, you rock", the radio turns on, Franki celebrates, and a globe of radio stations opens tuned to a rock station. Pressing the radio does the same thing without the celebration. The globe shows up to 50 stations, one per city, as lights. The owner spins it, presses a light, and that city's station plays.
+A wooden radio sits on the stage beside Franki. When the owner says "Franki, you rock", the radio turns on, Franki celebrates, and a globe of radio stations opens tuned to a rock station. Pressing the radio does the same thing without the celebration. The globe shows up to 70 stations (50 until Nov 15), one per city, as lights. The owner spins it, presses a light, and that city's station plays.
 
 Product rules that bind every part:
 
-- **At most 50 stations,** bundled with the app as a snapshot. Nothing is fetched at run time except the audio stream the owner tuned to.
+- **At most 70 stations** (raised from 50 on Nov 15), bundled with the app as a snapshot. Nothing is fetched at run time except the audio stream the owner tuned to.
 - **Every station names its source.** Each row carries its Radio Browser station ID, and the snapshot file names the day it was taken.
 - **Only the owner's own words turn it on.** The phrase is matched against the owner's spoken transcript and typed lines. Mail, tool results, card text and Franki's own speech never reach the matcher.
 - **Nothing is stored.** The radio keeps no history, writes nothing to memory, and sets no browser storage. A reload starts with the radio off.
@@ -46,8 +46,8 @@ No part runs `npm run build` or a second dev server: the lead has one on port 32
 
 Files: `scripts/radio-stations.mjs`, `apps/web/src/ui/radio/{stations,radio-machine,phrase,gain}.ts` with tests, `apps/web/src/client/{radio-player,radio-watch}.ts` with tests, and the machine's rows in `docs/machines/`.
 
-- **`scripts/radio-stations.mjs`.** Run by hand: `node scripts/radio-stations.mjs --date 2026-11-13`. It holds the city list (about 90 cities with latitude and longitude, every continent, both polar edges where a station exists). It fetches Radio Browser with a plain client name in the User-Agent, finds candidates within 80 km of each city, filters by ruling 4 and 5, ranks by clicks and votes, checks the stream answers 200 or 206 with an `audio/*` content type after redirects (8 second limit), and writes `apps/web/src/ui/radio/stations.ts` with at most 50 rows. It keeps at least 6 rock stations when the list allows, and spreads the 50 so no continent is empty. The date comes from the argument, not the clock. `--check` re-tests the streams of the file as it stands and prints which ones failed, without writing.
-- **`stations.ts`.** Generated. `export const STATIONS: readonly Station[]` sorted by longitude, and `STATIONS_SNAPSHOT = { source, date }`. Names are trimmed to 40 characters. A test pins: 1 to 50 rows, unique IDs, unique cities, HTTPS URLs, coordinates in range, sorted by longitude, at least 3 rock stations.
+- **`scripts/radio-stations.mjs`.** Run by hand: `node scripts/radio-stations.mjs --date 2026-11-13`. It holds the city list (about 120 cities with latitude and longitude, every continent, both polar edges where a station exists). It fetches Radio Browser with a plain client name in the User-Agent, finds candidates within 80 km of each city, filters by ruling 4 and 5, ranks by clicks and votes, checks the stream answers 200 or 206 with an `audio/*` content type after redirects (8 second limit), and writes `apps/web/src/ui/radio/stations.ts` with at most 70 rows (`MAX_STATIONS`). It keeps at least 6 rock stations when the list allows, and spreads them so no continent is empty. The date comes from the argument, not the clock. `--check` re-tests the streams of the file as it stands and prints which ones failed, without writing.
+- **`stations.ts`.** Generated. `export const STATIONS: readonly Station[]` sorted by longitude, and `STATIONS_SNAPSHOT = { source, date }`. Names are trimmed to 40 characters. A test pins: 1 to 70 rows, unique IDs, unique cities, HTTPS URLs, coordinates in range, sorted by longitude, at least 3 rock stations.
 - **`radio-machine.ts`.** `radioStep(state, event, stations)` and `radioView(state, stations)`. Pure. The state carries power, panel, station ID, signal, volume, the duck level, a tune counter and the hop count. Every tune raises the counter, and a player event carrying an older counter is dropped. Events cover everything in `RadioControls`, the two phrases, the player's reports (playing, waiting, failed, blocked, timed out), and the call's level (none, call, speech). The random pick for `spin` arrives in the event as a number from 0 to 1, so the machine stays pure. Properties, written red first: a stale player event never changes the state; off always means silent and panel closed; the station ID is always null or in the list; hops never pass 3; volume stays in 0 to 1; `press` twice from off leaves the radio on with the panel closed.
 - **`phrase.ts`.** `radioPhrase(text): "rock" | "off" | null`, by ruling 10. Table tests with the spellings a transcriber produces ("Frankie, you rock!", "you rock franky", "Franki rocks") and near misses ("you rock", "rock and roll", "Frank Sinatra rocks the house" is a hit by the rule and is listed as one).
 - **`gain.ts`.** `radioGain(volume, duck)`, by ruling 8.
@@ -91,9 +91,9 @@ Check these before promising the radio anywhere.
 - **The model is not told the radio exists.** Franki may say he has no radio while it plays, or answer "radio off" in words while the radio turns off on its own.
 - **Franki celebrates only in a call.** The celebration is the avatar's own celebrate event, and the avatar shows nothing for it while the call is closed (Dormant), in recovery, or during the wake. So a typed "Franki, you rock" outside a call turns the radio on and opens the globe, with no celebration.
 - **The radio hears a typed line when it is sent, not when the server admits it.** Outside a call that is when the box can send; in a call, when the call takes the line. A line the server later refuses has still been heard. Pasted lines are never heard.
-- **Station streams are third parties'.** Any of the 50 may be dead on a given day. The hop rule covers it (at most 3 hops, then "No signal"). `node scripts/radio-stations.mjs --check` lists the dead ones; re-run the script to refresh the snapshot.
+- **Station streams are third parties'.** Any of the 70 may be dead on a given day. The hop rule covers it (at most 3 hops, then "No signal"). `node scripts/radio-stations.mjs --check` lists the dead ones; re-run the script to refresh the snapshot.
 - **A light's city is where Radio Browser lists the station.** Nobody checked where each one broadcasts from. Six East Asian lights (Tokyo, Seoul, Taipei, Hong Kong, Shanghai, Hanoi) came from a search by country and are named by the listing's coordinates, name or state. The Tokyo light, for one, is a Chinese-language classical stream listed under Japan. Station names are the listing's own, tidied by rule.
-- **"Rock" is the listing's tag, not our ear.** A station is rock when one of its tags has the word rock, other than pop rock, soft rock and slow rock. Ten of the 50 are. Nobody listened to check.
+- **"Rock" is the listing's tag, not our ear.** A station is rock when one of its tags has the word rock, other than pop rock, soft rock and slow rock. Twelve of the 70 are (ten of the first 50). Nobody listened to check.
 - **iOS ignores an audio element's `volume`,** so ducking and the volume slider do nothing there.
 - **Nothing is remembered across a reload.** The radio starts off, at the default volume, every time.
 - **The radio does not follow the sound toggle.** It has its own volume and its own off. Signing out leaves it playing.
@@ -133,7 +133,7 @@ The lead's rulings on the snapshot, made while looking at its rows: the stored a
 **Checked in the browser pane by the lead, with the sound muted** (not heard):
 - On the signed-out lab at 1024 px and 375 px: a press started a real rock stream (the element reported playing and its clock ran); closing the panel left it playing; the volume slider set the element's volume; spin and next tuned other real stations; off paused the element and removed its source.
 - On `/specimens/radio`: dragging the globe, the ease round to a station, the hover label and pressing a light, with real pointer events. Typing "Frankie, you rock!" into the live tile's line made the ghost celebrate, turned the radio on and opened the globe on a rock station.
-- All 50 streams started in a muted audio element on Nov 13 (one needed a second try).
+- All 50 streams started in a muted audio element on Nov 13 (one needed a second try). The 70-station snapshot of Nov 15 was not checked this way; see "Update, Nov 15" below.
 
 Changed after looking: the radio on the stage is larger than first built, and the panel is 16 rem wide below 1800 px so it stands clear of the radio.
 
@@ -142,3 +142,14 @@ Changed after looking: the radio on the stage is larger than first built, and th
 **Not checked at all:** a live call and a signed-in typed turn with the radio on. Both need a paid model call.
 
 **Checks on the lane, Nov 13:** lint, typecheck and the production build pass; 625 test files, 5,066 tests pass and 23 fail as expected. three.js stays in one async chunk, out of the lab's first load.
+
+## Update, Nov 15: 70 stations
+
+The limit is now 70 (`MAX_STATIONS` in `scripts/radio-stations.mjs`; the snapshot test allows 1 to 70). The snapshot was taken again on 2026-11-15: 70 stations in 70 cities, 12 of them rock.
+
+- **24 new cities:** Accra, Almaty, Antananarivo, Barcelona, Beirut, Brisbane, Cape Town, Caracas, Dallas, Dhaka, Dubai, Dublin, Helsinki, Los Angeles, Manaus, Mumbai, Novosibirsk, Perth, Port Moresby, Rio de Janeiro, San Francisco, Seattle, Vancouver and Vienna. Helsinki, Dhaka and Vienna were among the five cities dropped to keep 50.
+- **4 cities left the list:** Toronto, Salvador, Dakar and Bengaluru.
+- **6 cities have a different station:** Athens, Addis Ababa, Chicago, Guatemala City, Hong Kong and Wellington.
+- **One more station is denied by ID** (`51232ec5-…`): a talk station whose Chinese name hides the word "talk" from the music check.
+
+Checked on Nov 15: the radio's tests pass (14 files, 203 tests), and `--check` found 69 of 70 streams answering. Shanghai's 上海经典音乐广播 FM 94.7 timed out; the hop rule covers a dead stream. The new snapshot was not played in an audio element or heard.

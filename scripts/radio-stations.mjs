@@ -12,7 +12,7 @@ export const API = "https://de1.api.radio-browser.info";
 export const USER_AGENT = "radio-globe-snapshot/1.0";
 export const SOURCE = "Radio Browser (radio-browser.info), public domain";
 export const OUT_FILE = "apps/web/src/ui/radio/stations.ts";
-export const MAX_STATIONS = 50;
+export const MAX_STATIONS = 70;
 export const RADIUS_KM = 80;
 export const STREAM_TIMEOUT_MS = 8_000;
 export const NAME_MAX = 40;
@@ -183,6 +183,7 @@ const SKIP_WORDS = [
 export const DENY = new Map([
   ["89a65395-9af4-4c9d-9300-d765029785e8", "no tags, and its content could not be confirmed as music"],
   ["c6f6b3d8-c63d-40db-a1be-f1ca31095117", "listed with a radio-garden tracking parameter, and its bare URL times out now and then"],
+  ["51232ec5-c0e7-4741-a86d-a5881c04879f", "a talk station (講台Talkonly, tagged podcasts and technology): the word check misses talk glued to Chinese"],
 ]);
 /** "adult" is skipped, except where it names a music format. */
 const ADULT_FORMATS = [" adult contemporary ", " adult hits ", " adult album alternative ", " adult alternative "];
