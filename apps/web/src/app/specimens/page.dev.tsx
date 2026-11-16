@@ -20,6 +20,7 @@ import { RadioSection } from "./_sections/RadioSection";
 import { SurfaceSections } from "./_sections/SurfaceSections";
 import { ThreeSection } from "./_sections/ThreeSection";
 import { VisitSection } from "./_sections/VisitSection";
+import { XraySection } from "./_sections/XraySection";
 
 export const metadata: Metadata = { title: "Franki specimens" };
 
@@ -35,6 +36,7 @@ export default function SpecimensPage() {
       <VisitSection />
       <PhoneSection />
       <RadioSection full={false} />
+      <XraySection full={false} />
       <BankSection />
       <GoogleSection />
       <ErrandSection />

@@ -65,6 +65,12 @@ import { STATIONS } from "../ui/radio/stations";
 import { RADIO_OFF_VIEW, type RadioView, radioPropView } from "../ui/radio/types";
 import { RadioOnStage } from "./radio/RadioOnStage";
 import { RadioPanel } from "./radio/RadioPanel";
+// Brief 051 part D: the X-ray machine and its screen.
+import { createLiveXray, createXrayHost } from "../client/xray-live";
+import type { XrayWatch } from "../client/xray-watch";
+import { XRAY_OFF_VIEW, type XrayView, xrayPropView } from "../ui/xray/types";
+import { XrayOnStage } from "./xray/XrayOnStage";
+import { XrayPanel } from "./xray/XrayPanel";
 
 const SIGNED_OUT_VOICE = initialVoiceState({ transcribeModel: "" });
 const noop = () => {};
@@ -94,6 +100,14 @@ const noWatch = (): RadioWatch | null => null;
 /** Brief 047: closing the globe puts focus back on the radio on the stage. */
 function focusRadioButton(): void {
   document.querySelector<HTMLElement>("[data-radio-button]")?.focus();
+}
+/** Brief 051: the X-ray before its watch exists (the server render and the first client render): off. */
+const noXray = (): XrayView => XRAY_OFF_VIEW;
+/** Brief 051: no X-ray watch during the server render. */
+const noXrayWatch = (): XrayWatch | null => null;
+/** Brief 051: closing the X-ray screen puts focus back on the machine on the stage. */
+function focusXrayButton(): void {
+  document.querySelector<HTMLElement>("[data-xray-button]")?.focus({ preventScroll: true });
 }
 
 /** The browser's localStorage, or null where it cannot be reached (brief 027: the visit is kept there). */
@@ -257,6 +271,16 @@ export function App() {
     return feedRadioVoice(radio, voice);
   }, [radio, signedIn]);
 
+  // Brief 051: one X-ray machine for the app's life, in both auth states, held as the radio is: StrictMode runs this
+  // twice and dispose() is final (every camera track stops), so each run makes its own watch. Nothing opens a camera
+  // here; only a press on the machine does.
+  const [xrayHost] = useState(() => createXrayHost(() => createLiveXray()));
+  useEffect(() => {
+    xrayHost.start();
+    return () => xrayHost.stop();
+  }, [xrayHost]);
+  const xray = useSyncExternalStore(xrayHost.subscribe, xrayHost.getSnapshot, noXrayWatch);
+
   const snap = useSyncExternalStore(screen.subscribe, screen.getSnapshot, screen.getSnapshot);
   const forget = () => {
     setCopies((c) => onForgetComplete(signedIn?.typed ?? null, c));
@@ -301,19 +325,21 @@ export function App() {
       <ForgetCompleteContext.Provider value={forget}>
         {/* The three.js ghost reads Franki's voice and the mic through the Level_Meter's second analysers (brief 013, D-1). */}
         <AvatarAudioContext.Provider value={meter.audio}>
-          <Screen snap={snap} auth={auth} controllers={signedIn} clock={clock} radio={radio} />
+          <Screen snap={snap} auth={auth} controllers={signedIn} clock={clock} radio={radio} xray={xray} />
         </AvatarAudioContext.Provider>
       </ForgetCompleteContext.Provider>
     </MotionConfig>
   );
 }
 
-function StageFor({ snap, phone, radio, onRadio, errandText }: { snap: ScreenSnapshot; phone: PhoneView; radio: RadioView; onRadio: () => void; errandText: string | null }) {
+function StageFor({ snap, phone, radio, onRadio, xray, onXray, errandText }: { snap: ScreenSnapshot; phone: PhoneView; radio: RadioView; onRadio: () => void; xray: XrayView; onXray: () => void; errandText: string | null }) {
   // Brief 047: the radio stands on the floor beside the phone, in the stage's aside.
   const aside = (
     <>
       <PhoneOnStage view={phone} />
       <RadioOnStage view={radioPropView(radio)} onPress={onRadio} />
+      {/* Brief 051: the X-ray machine stands on the floor at Franki's lower right, the radio's mirror image. */}
+      <XrayOnStage view={xrayPropView(xray)} onPress={onXray} />
       {/* Brief 049 part A, ruling 12: a small word while an errand runs. */}
       <ErrandWord text={errandText} />
     </>
@@ -336,7 +362,7 @@ function StageFor({ snap, phone, radio, onRadio, errandText }: { snap: ScreenSna
  * Signed out or loading (`controllers` null): Dormant, FRANKIROCKS, the sign-in button, and disabled
  * call and typed controls (R13).
  */
-function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapshot; auth: React.ReactNode; controllers: SignedInControllers | null; clock: BrowserClock; radio: RadioWatch | null }) {
+function Screen({ snap, auth, controllers, clock, radio, xray }: { snap: ScreenSnapshot; auth: React.ReactNode; controllers: SignedInControllers | null; clock: BrowserClock; radio: RadioWatch | null; xray: XrayWatch | null }) {
   const typed = controllers?.typed ?? null;
   const voice = controllers?.voice ?? null;
   const debug = controllers?.debug ?? null;
@@ -388,7 +414,19 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
     if (words !== null) radio?.onTypedLine(words);
   };
 
-  const stage = <StageFor snap={snap} phone={phone} radio={radioView} onRadio={pressRadio} errandText={errandWord(errandsShown)} />;
+  // Brief 051: the X-ray machine and its modal screen. On means the screen is open (ruling 4); it rides in the sheet
+  // slot after the radio's panel, so it paints over it, and closing it puts focus back on the machine.
+  const xrayView = useSyncExternalStore(xray?.subscribe ?? noSubscribe, xray?.getSnapshot ?? noXray, noXray);
+  const pressXray = () => xray?.controls.press();
+  const xrayLayer = (
+    <AnimatePresence>
+      {xray !== null && xrayView.power === "on" ? (
+        <XrayPanel key="xray-panel" view={xrayView} feed={xray.feed} controls={xray.controls} reduced={snap.input.reducedMotion} onClosed={focusXrayButton} />
+      ) : null}
+    </AnimatePresence>
+  );
+
+  const stage = <StageFor snap={snap} phone={phone} radio={radioView} onRadio={pressRadio} xray={xrayView} onXray={pressXray} errandText={errandWord(errandsShown)} />;
   const live = <LiveRegion message={snap.live.message} seq={snap.live.seq} />;
   // Brief 038 finding 1, the input gate: no chip, typed line or new call until the server has said which account this is.
   const takesInput = inputAllowed(vis);
@@ -405,7 +443,12 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
         controls={<CallScreen key="call-signed-out" voice={SIGNED_OUT_VOICE} enabled={false} onCall={noop} onHangUp={noop} onToggleMute={noop} onRetry={noop} />}
         typed={<TypedLine key="typed-signed-out" text="" enabled={false} sending={false} canSend={false} error={null} onChange={noop} onSubmit={noop} />}
         live={live}
-        sheet={radioLayer}
+        sheet={
+          <>
+            {radioLayer}
+            {xrayLayer}
+          </>
+        }
       />
     );
   }
@@ -588,6 +631,7 @@ function Screen({ snap, auth, controllers, clock, radio }: { snap: ScreenSnapsho
           {bankLayer}
           {googleLayer}
           {radioLayer}
+          {xrayLayer}
         </>
       }
       bank={

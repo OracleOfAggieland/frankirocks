@@ -66,6 +66,48 @@ describe("App while signed out", () => {
     expect(html).toContain('data-radio-power="off"');
     expect(html).not.toContain("data-radio-panel");
   });
+
+  it("puts the X-ray machine on the stage, off, with its screen closed and no camera asked for (brief 051)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({})));
+    const { App } = await import("./App");
+    const html = renderToStaticMarkup(<App />);
+    const button = html.match(/<button[^>]*data-xray-button=""[^>]*>/)?.[0] ?? "";
+    expect(button).toContain('aria-label="Turn on the X-ray machine"');
+    expect(button).toContain('aria-haspopup="dialog"');
+    expect(button).toContain('aria-expanded="false"');
+    expect(html).toContain('data-xray-power="off"');
+    expect(html).toContain('data-xray-signal="dark"');
+    expect(html).not.toContain("data-xray-panel");
+    // The machine stands in the stage's aside beside the radio.
+    expect(html.indexOf("data-xray-button")).toBeGreaterThan(html.indexOf("data-radio-button"));
+  });
+});
+
+describe("X-ray wiring (brief 051 part D)", () => {
+  const src = readFileSync(join(import.meta.dirname, "App.tsx"), "utf8");
+
+  it("holds one X-ray for the app's life, made on start and disposed on stop, the way the radio is", () => {
+    expect(src.match(/createXrayHost\(/g)).toHaveLength(1);
+    expect(src).toMatch(/const \[xrayHost\] = useState\(\(\) => createXrayHost\(\(\) => createLiveXray\(\)\)\);/);
+    expect(src).toMatch(/xrayHost\.start\(\);\s*return \(\) => xrayHost\.stop\(\);\s*\}, \[xrayHost\]\);/);
+    expect(src).toMatch(/useSyncExternalStore\(xrayHost\.subscribe, xrayHost\.getSnapshot, noXrayWatch\)/);
+  });
+
+  it("opens the camera only from a press: nothing in App.tsx presses or retries the machine but the stage's onPress", () => {
+    expect(src.match(/xray\??\.controls\.(press|retry)\(/g)).toEqual(["xray?.controls.press("]);
+    expect(src).toMatch(/<XrayOnStage view=\{xrayPropView\(xray\)\} onPress=\{onXray\} \/>/);
+    expect(src).toMatch(/onXray=\{pressXray\}/);
+  });
+
+  it("puts the screen in the sheet slot after the radio's panel, in both MainScreen renders", () => {
+    expect([...src.matchAll(/\{radioLayer\}\s*\{xrayLayer\}/g)]).toHaveLength(2);
+    expect(src).not.toMatch(/sheet=\{radioLayer\}/);
+  });
+
+  it("shows the screen exactly while the machine is on, and hands focus back to the machine's button when it closes", () => {
+    expect(src).toMatch(/xray !== null && xrayView\.power === "on" \? \(\s*<XrayPanel key="xray-panel" view=\{xrayView\} feed=\{xray\.feed\} controls=\{xray\.controls\}[^>]*onClosed=\{focusXrayButton\}/);
+    expect(src).toMatch(/function focusXrayButton\(\): void \{\s*document\.querySelector<HTMLElement>\("\[data-xray-button\]"\)\?\.focus\(/);
+  });
 });
 
 describe("Debug_Panel gating (R21)", () => {

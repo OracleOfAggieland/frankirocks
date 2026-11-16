@@ -16,6 +16,7 @@ This is a working build, not a mock-up. What runs today:
 - **The lab is open.** The front door walks a sample month, and the Lab, the memory jar, the receipt and the "What I know" sheet are all on screen.
 - **Franki can make a phone call for you** and shows where the call stands on a wooden wall phone.
 - **Say "Franki, you rock"** and the wooden radio at his feet turns on, Franki celebrates, and a globe of 50 radio stations opens, tuned to rock. Spin the globe and press a city's light to hear it. One press on the radio does the same.
+- **Press the X-ray machine** at Franki's other side and a big X-ray screen opens on your camera. Your picture shows as old film, with a skull that turns and talks with you and the bones of your hands drawn over it. On a phone, flip to the back camera and point it at a friend. It's a toy, and the picture never leaves your device.
 - **3,186 tests pass on every push,** with a full-history secret scan beside them.
 
 What comes next is listed plainly under [Still on the slab](#still-on-the-slab).
@@ -48,7 +49,7 @@ Kiro is the lab Franki was assembled in. Every body part below is a Kiro feature
 
 Kiro wrote the specs and built Franki's foundation and voice path from them: the first spoken call, the lab UI foundation, the judge spike, and the judge in the call. Those commits end `Built-with: Kiro`.
 
-Claude Code built the 3D avatar, the first wave of memory writes, the state machine safety net, the UI build-out, phone calls, the radio with its globe, and the read-only bank and Google connections. Those commits carry its own trailer. The split is in the history, commit by commit.
+Claude Code built the 3D avatar, the first wave of memory writes, the state machine safety net, the UI build-out, phone calls, the radio with its globe, the X-ray machine, and the read-only bank and Google connections. Those commits carry its own trailer. The split is in the history, commit by commit.
 
 ## Still on the slab
 
@@ -105,6 +106,8 @@ tests             Smoke test and emulator tests
 ## Credits
 
 The radio's station list comes from [Radio Browser](https://www.radio-browser.info/) (public domain). The globe's coastlines are [Natural Earth](https://www.naturalearthdata.com/) (public domain), via [world-atlas](https://github.com/topojson/world-atlas).
+
+The X-ray finds faces and hands with [MediaPipe Tasks Vision](https://github.com/google-ai-edge/mediapipe) by Google (Apache-2.0), and its skull is fitted to a few points of MediaPipe's canonical face model. The idea follows [X-Ray Mirror](https://github.com/masterofvfx2070/xray-mirror) by masterofvfx2070; none of its code or models are used, and every bone is drawn in code.
 
 ## License
 
