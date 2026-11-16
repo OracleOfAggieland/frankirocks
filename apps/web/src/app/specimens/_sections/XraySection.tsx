@@ -64,7 +64,7 @@ function WalkTile() {
   // The walk's own machine: a press turns it on or off, and the screen's close turns it off.
   const controls: XrayControls = useMemo(() => ({ press: () => setStep((s) => (s === 0 ? 1 : 0)), close: () => setStep(0), flip: noop, retry: noop }), []);
   const feed = view.signal === "seeing" ? scripted : view.signal === "searching" ? empty : NO_FRAME;
-  const bones = view.signal === "seeing" || view.signal === "searching" ? "auto" : "none";
+  const bones = view.signal === "warming" || view.signal === "searching" || view.signal === "seeing" ? "auto" : "none";
   const input = avatarInput("listening", null, { reduced: false });
   return (
     <ReducedMotionOverride reduced={false}>
