@@ -44,7 +44,7 @@ export const LANDING = {
     eyebrow: "A friendly Frankenstein ghost. A scary good assistant.",
     /** The headline in three parts; `stitched` is the one italic word, with the stitched underline. */
     headline: { before: "Your whole life,", stitched: "stitched", after: "together." },
-    lede: "Franki joins your inbox, calendar, meals and money with one powerful memory system. It understands the complex relationships between them and helps you win at life.",
+    lede: "Franki joins your health, finances, and productivity with one powerful memory system. It understands the complex relationships between them and helps you win at life.",
     wake: "Wake Franki",
     tour: "Watch a win come alive",
     alive: "It's alive!",

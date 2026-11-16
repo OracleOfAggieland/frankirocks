@@ -2,7 +2,7 @@
 
 **Franki Rocks at making your life easier.**
 
-Franki is a friendly Frankenstein ghost you talk to: a very good friend who is also the best personal assistant you've had, stitched from your inbox, calendar, food and money by one memory. You speak, Franki answers out loud, and text shows up only when there's something to read or approve.
+Franki is a friendly Frankenstein ghost you talk to: a very good friend who is also the best personal assistant you've had, stitched from your health, finances, and productivity by one memory. You speak, Franki answers out loud, and text shows up only when there's something to read or approve.
 
 Franki is a Kiroween 2026 entry in the Frankenstein category, and it is built with [Kiro](https://kiro.dev). The name says so: FRAN**KIRO**CKS.
 
