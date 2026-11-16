@@ -56,6 +56,7 @@ Every piece of code that holds state and moves it between named states is listed
 | `ui.dockLayout` | explicit | Whether the Main_Screen's grid has the Card_Dock's column, through the last card's exit | `apps/web/src/ui/dock-layout.ts` | [ui-surfaces](ui-surfaces.md) |
 | `ui.phoneCall` | explicit | Whether the phone hangs beside Franki, and which part of an outbound phone call it acts | `apps/web/src/ui/phone/phone-call.ts` | [ui-surfaces](ui-surfaces.md) |
 | `ui.radio` | explicit | Whether the radio is on, its globe panel open, which station is tuned and what the speaker is doing | `apps/web/src/ui/radio/radio-machine.ts` | [ui-surfaces](ui-surfaces.md) |
+| `ui.xray` | explicit | Whether the X-ray machine is on, which camera it asks for, and what its screen shows of the camera and the tracker | `apps/web/src/ui/xray/xray-machine.ts` | [xray](xray.md) |
 | `ui.cardSource` | explicit | Which source's rows show under a Card | `apps/web/src/components/surfaces/Card.tsx` | [ui-surfaces](ui-surfaces.md) |
 | `ui.ruleForget` | explicit | Which hard rule's Forget is armed for its second tap | `apps/web/src/components/surfaces/WhatIKnowSheet.tsx` | [ui-surfaces](ui-surfaces.md) |
 | `ui.spider` | explicit | The lab spider's springs, rest and travel, one frame at a time | `apps/web/src/ui/cursor/spider.ts` | [ui-surfaces](ui-surfaces.md) |

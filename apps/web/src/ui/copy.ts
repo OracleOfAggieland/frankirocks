@@ -319,6 +319,48 @@ export const COPY = {
       tapToPlay: "Tap to play",
     },
   },
+  // Brief 051: the X-ray machine on the stage and its screen.
+  xray: {
+    /** The machine on the stage: what its button is to a screen reader, by what a press would do. */
+    prop: {
+      turnOn: "Turn on the X-ray machine",
+      turnOff: "Turn off the X-ray machine",
+      /** Shown as words when the 3D machine can't be drawn. */
+      fallback: "X-ray",
+    },
+    panel: {
+      title: "Franki’s X-ray",
+      close: "Turn off the X-ray",
+      flip: "Flip the camera",
+      retry: "Try again",
+      resume: "Start again",
+      /** What the picture is, to a screen reader. */
+      picture: "Your camera’s picture, drawn as an X-ray.",
+      /** Shown while the tracker looks for someone. */
+      hint: "Hold up a hand, or point it at a friend.",
+      /** Always on the screen while it is open. */
+      note: "Not a medical scan. The picture stays on this device.",
+    },
+    /** The few words beside the title. */
+    signal: {
+      dark: "Off",
+      asking: "Allow the camera",
+      warming: "Warming up",
+      searching: "Looking for bones",
+      seeing: "X-ray on",
+      filmOnly: "Film only",
+      blocked: "Camera blocked",
+      noCamera: "No camera",
+      paused: "Paused",
+    },
+    /** One line in the middle of the screen when there is no moving picture, or no bones. */
+    help: {
+      blocked: "Allow the camera for this site in your browser, then try again.",
+      noCamera: "Franki can’t find a camera to use here.",
+      paused: "The camera turned off while you were away.",
+      filmOnly: "The bones didn’t load, so this is the film alone.",
+    },
+  },
   // Brief 049 part A, rulings 11 and 12: the word on the stage while an errand runs.
   errands: {
     running: { mail: "Checking your mail", calendar: "Checking your calendar", both: "Checking your mail and calendar" },
