@@ -339,7 +339,7 @@ export const COPY = {
       /** Shown while the tracker looks for someone. */
       hint: "Hold up a hand, or point it at a friend.",
       /** Always on the screen while it is open. */
-      note: "A toy, not a medical scan. The picture stays on this device.",
+      note: "Not a medical scan. The picture stays on this device.",
     },
     /** The few words beside the title. */
     signal: {

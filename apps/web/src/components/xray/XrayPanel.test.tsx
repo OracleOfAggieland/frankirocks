@@ -44,7 +44,7 @@ describe("XrayPanel", () => {
     }
   });
 
-  it("always says it is a toy and where the picture stays; hints only while searching", () => {
+  it("always says it is not a medical scan and where the picture stays; hints only while searching", () => {
     for (const signal of SIGNALS) {
       const html = draw(on(signal));
       expect(html).toContain(esc(COPY.xray.panel.note));

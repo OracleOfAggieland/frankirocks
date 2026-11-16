@@ -16,7 +16,7 @@ This is a working build, not a mock-up. What runs today:
 - **The lab is open.** The front door walks a sample month, and the Lab, the memory jar, the receipt and the "What I know" sheet are all on screen.
 - **Franki can make a phone call for you** and shows where the call stands on a wooden wall phone.
 - **Say "Franki, you rock"** and the wooden radio at his feet turns on, Franki celebrates, and a globe of 50 radio stations opens, tuned to rock. Spin the globe and press a city's light to hear it. One press on the radio does the same.
-- **Press the X-ray machine** at Franki's other side and a big X-ray screen opens on your camera. Your picture shows as old film, with a skull that turns and talks with you and the bones of your hands drawn over it. On a phone, flip to the back camera and point it at a friend. It's a toy, and the picture never leaves your device.
+- **Press the X-ray machine** at Franki's other side and a big X-ray screen opens on your camera. Your picture shows as old film, with a skull that turns and talks with you and the bones of your hands drawn over it. On a phone, flip to the back camera and point it at a friend. It's not a medical scan, and the picture never leaves your device.
 - **3,186 tests pass on every push,** with a full-history secret scan beside them.
 
 What comes next is listed plainly under [Still on the slab](#still-on-the-slab).

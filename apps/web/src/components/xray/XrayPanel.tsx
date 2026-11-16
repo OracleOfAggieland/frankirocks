@@ -4,7 +4,7 @@
 // 640 px it is a large glass screen in an oak and brass frame, centred, as big as fits.
 // On the glass: the camera's picture as film (no colour, dimmed, tinted toward the ghost's cool green), the bones
 // over it (ThreeBones), and on top, never mirrored: the wordmark with the signal's words in a polite live region, a
-// close button, a flip button when there is another camera, the note that it is a toy, the hint while it looks for
+// close button, a flip button when there is another camera, the note that it is not a medical scan, the hint while it looks for
 // someone, and for blocked, noCamera, paused and filmOnly the help line with "Try again" or "Start again".
 // The selfie picture and the bones are mirrored together (ruling 9): the video by CSS, the bones by their cameras.
 // Cheap to load with the page: three.js arrives only through ThreeBones's one import(). Render it inside an

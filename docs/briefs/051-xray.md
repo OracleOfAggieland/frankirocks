@@ -16,7 +16,7 @@ Product rules that bind every part:
 - **The picture never leaves the browser.** No upload, no recording, no saved image, nothing written to storage, and nothing added to the voice call. The X-ray's own code names none of `MediaRecorder`, `RTCPeerConnection`, `toDataURL`, `toBlob`, `sendBeacon`, `localStorage`, `sessionStorage`, `indexedDB` or `fetch`; a test pins that.
 - **No sound is asked for.** The camera request is video only.
 - **Off means off.** When the screen closes, the tab is hidden, or the app goes away, every camera track is stopped in that same step. A camera that the browser hands over late, after the machine was turned off, is stopped at once.
-- **It is a toy.** The screen says so in one line, with where the picture stays (`COPY.xray.panel.note`).
+- **It is not a medical scan.** The screen says so in one line, with where the picture stays (`COPY.xray.panel.note`). The owner dropped "A toy" from that line on Nov 15.
 - **No model files and no drawings.** The machine, the skull and the hand bones are three.js, built from primitives and code-drawn textures. There is no SVG version. If WebGL fails, words stand in for the machine, and the screen shows the film alone.
 - **Reduced motion** draws the machine still, and drops the screen's decoration (scan line, flicker, grain). The picture and the bones still follow the person: that is the content, not decoration.
 - Every control works by keyboard and has a 44 px target.
