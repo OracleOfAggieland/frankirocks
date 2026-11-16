@@ -24,6 +24,7 @@
   "dependencies": {
     "@franki/core": "*",
     "@franki/server": "*",
+    "@mediapipe/tasks-vision": "1.2.3",
     "firebase": "13.1.0",
     "motion": "14.9.1",
     "next": "16.4.3",
