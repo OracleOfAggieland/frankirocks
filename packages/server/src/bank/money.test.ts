@@ -227,9 +227,9 @@ describe("read_money on a typed turn (the typed reply path)", () => {
     expect(res.body.permit).not.toBeNull();
     expect(res.body.notes.map((n: { text: string }) => n.text)[0]).toMatch(/^From November 1 to November 3: \$46\.75 spent/);
     expect((await callRoute(rig, turnRoute, req)).body).toEqual(res.body);
-    // The request the model saw offered both tools, and the money tool's description carries both rules.
+    // The typed path offers the money read alongside phone actions and results.
     const sent = rig.openai.requests.find((c) => c.endpoint === "responses.create")!.body as { tools: { name: string; description: string }[] };
-    expect(sent.tools.map((t) => t.name)).toEqual(["make_phone_call", "read_money"]);
+    expect(sent.tools.map((t) => t.name)).toEqual(["make_phone_call", "read_money", "read_phone_result"]);
     expect(sent.tools[1]!.description).toMatch(/only when the user asks about their own spending/);
     expect(sent.tools[1]!.description).toMatch(/Never state an amount that the tool did not return/);
   });

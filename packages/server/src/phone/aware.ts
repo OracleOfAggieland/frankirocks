@@ -2,8 +2,7 @@
  * What Franki is told about the Owner's most recent outbound phone call, so a question about it ("did they pick
  * up?") gets a true answer. Read-only: the Owner's own `phoneCall` ledger row, then Twilio's status for that call.
  *
- * The line is worded by code and carries no content from the call or from the request: only how long ago the call
- * was placed and where it stands. Nothing said on the call is stored, and the line says so.
+ * This S0 line carries only carrier status. The separate report tool can return private findings.
  */
 import { type PhoneStatus, type W, msFromTs, tsFromMs } from "@franki/core";
 import { withDeadline } from "../clock/timers";
@@ -41,18 +40,19 @@ const ago = (ms: number) => {
 
 export function phoneLineText(status: Exclude<PhoneStatus, "none">, sinceMs: number): string {
   return `Phone call status, from the phone system: the call you placed for the owner ${ago(sinceMs)} ${STANDS[status]}. ` +
-    "You can't hear that call and nothing said on it comes back to you, so never guess or make up what was said. " +
+    "Carrier status only. Use read_phone_result for the phone specialist's findings. If no report is available, say so. " +
     "Bring the call up only if the owner asks about it.";
 }
 
 /** The line for the Owner's latest phone call, or null when there is none recent enough to mention. */
-export async function phoneCallLine(ctx: RouteContext): Promise<string | null> {
+export async function phoneCallLine(ctx: RouteContext, sessionId?: string): Promise<string | null> {
   const { uid, deps } = ctx;
   const now = deps.clock.read().opsClock.now;
   const rows = await deps.store.query<PhoneEntry>(uid, {
     collection: paths.collection(uid, "ledger"),
     where: [
       { field: "kind", op: "==", value: "phoneCall" },
+      ...(sessionId === undefined ? [] : [{ field: "payload.sessionId", op: "==" as const, value: sessionId }]),
       { field: "at", op: ">=", value: tsFromMs(now - PHONE_AWARE_LIVE_MS) },
     ],
     orderBy: { field: "at", dir: "desc" },
@@ -79,8 +79,8 @@ export async function phoneCallLine(ctx: RouteContext): Promise<string | null> {
 }
 
 /** Never throws: a turn is never lost to the phone line. */
-export function phoneCallLineSafe(ctx: RouteContext): Promise<string | null> {
-  return phoneCallLine(ctx).catch(() => null);
+export function phoneCallLineSafe(ctx: RouteContext, sessionId: string): Promise<string | null> {
+  return phoneCallLine(ctx, sessionId).catch(() => null);
 }
 
 /** The line as an S0 note for a spoken reply's Notes. */

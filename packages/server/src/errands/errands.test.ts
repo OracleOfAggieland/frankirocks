@@ -1,5 +1,5 @@
 /** Brief 049 part A: the errand framework end to end on fakes, with the test-only agent. */
-import { ERRAND_LEASE_MS, ERRAND_RESULT_TTL_MS, ERRAND_SILENCE_MS, type Job, errandFailedLine } from "@franki/core";
+import { delegationTool, type SpecialistCatalog, ERRAND_LEASE_MS, ERRAND_RESULT_TTL_MS, ERRAND_SILENCE_MS, type Job, errandFailedLine } from "@franki/core";
 import { describe, expect, it } from "vitest";
 import { receiptRoute } from "../routes/receipt";
 import { stateRoute } from "../routes/state";
@@ -13,6 +13,19 @@ import { asrTurn } from "../testing/session-fixtures";
 import { errandIdOf } from "./records";
 
 describe("start_errand", () => {
+  it("advertises just the connected assignments and refreshes when grants change", async () => {
+    const x = await setup([]);
+    const mail = testMailAgent(() => []);
+    x.rig.deps.errandAgents = [mail, { ...mail, about: "calendar", available: async () => "expired" }];
+    const state = async () => (await callRoute(x.rig, stateRoute, { ...poll(x), includeSpecialists: true })).body.specialists as SpecialistCatalog;
+    const first = await state();
+    expect(first).toEqual({ mail: "ready", calendar: "expired", phone: "unavailable" });
+    expect(delegationTool(first)?.parameters.properties.specialist.enum).toEqual(["mail"]);
+    x.rig.deps.errandAgents = [{ ...mail, about: "calendar" }];
+    expect(delegationTool(await state())?.parameters.properties.specialist.enum).toEqual(["calendar"]);
+    expect((await callRoute(x.rig, stateRoute, poll(x))).body).not.toHaveProperty("specialists");
+  });
+
   it("answers unavailable with no agent registered, and starts nothing", async () => {
     const x = await setup([], { agents: false });
     const res = await callRoute(x.rig, toolRoute, tool(x));

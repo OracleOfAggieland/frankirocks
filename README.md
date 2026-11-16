@@ -14,7 +14,7 @@ This is a working build, not a mock-up. What runs today:
 - **Franki has a body.** A 3D ghost drawn entirely in code listens, thinks with electricity between its neck bolts, speaks, goes translucent on mute, and celebrates your wins.
 - **A judge sits in every call.** Each thing you say is admitted before Franki may answer it, so a "forget that" or a hard moment is never talked over.
 - **The lab is open.** The front door walks a sample month, and the Lab, the memory jar, the receipt and the "What I know" sheet are all on screen.
-- **Franki can make a phone call for you** and shows where the call stands on a wooden wall phone.
+- **Franki can make a phone call for you** and shows where the call stands on a wooden wall phone. The phone specialist can return a short report to your private conversation.
 - **Say "Franki, you rock"** and the wooden radio at his feet turns on, Franki celebrates, and a globe of 50 radio stations opens, tuned to rock. Spin the globe and press a city's light to hear it. One press on the radio does the same.
 - **3,186 tests pass on every push,** with a full-history secret scan beside them.
 

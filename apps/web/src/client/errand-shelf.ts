@@ -59,12 +59,21 @@ export class ErrandShelf {
   }
 
   /** Told every call state: what belongs to a Session or generation the call has left goes. */
-  onVoice(call: Pick<VoiceState, "session">): void {
+  onVoice(call: Pick<VoiceState, "session"> & Partial<Pick<VoiceState, "phase">>): void {
     const s = call.session;
+    if (!s || call.phase === "SWAPPING") this.hidePrivateCards();
     if (this.shown === NO_ERRANDS_SHOWN) return;
     if (s !== null && (s.sessionId !== this.shown.sessionId || s.generation !== this.shown.generation)) this.clear();
     // Between calls nothing polls: the running word goes, and the cards stay until they expire.
     else if (s === null && this.shown.running.length > 0) this.set({ ...this.shown, running: [] });
+  }
+
+  hidePrivateCards(): void {
+    const cards = this.shown.cards.filter((c) => c.sens !== "S2");
+    if (cards.length === this.shown.cards.length) return;
+    for (const c of this.shown.cards) if (c.sens === "S2") this.seenAt.delete(c.id);
+    this.set({ ...this.shown, cards });
+    this.arm();
   }
 
   clear(): void {

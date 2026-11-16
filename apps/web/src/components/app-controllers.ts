@@ -115,7 +115,10 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
           // Brief 044, item 1: a tool answer's cards that fit the call go to the Card_Dock.
           onToolCards: (cards, stamp) => callCards.show(cards, stamp),
           // Brief 045 part S: the toggle shows the audience the call's answers confirm.
-          onAudience: (stamp, audience) => company.adopt(stamp, audience),
+          onAudience: (stamp, audience) => {
+            company.adopt(stamp, audience);
+            if (audience !== "private") errands.hidePrivateCards();
+          },
           // Brief 049 part A: the errands' word and cards.
           onErrands: (stamp, view) => errands.onState(stamp, view),
         });

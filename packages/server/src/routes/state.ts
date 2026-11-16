@@ -5,7 +5,7 @@
  * ignores core/bundle.expiresAt. The route does only its own reads and one write, and schedules `tick` without
  * awaiting it, so OpenAI or extraction never delay it.
  */
-import { type ID, type Infer, type Session, StateRequest, type StateResponse, type Turn, msFromTs, tsFromMs } from "@franki/core";
+import { type Card, type ID, type Infer, type Session, StateRequest, type StateResponse, type Turn, msFromTs, tsFromMs } from "@franki/core";
 import { effectiveAudience, expireLease, hasParseGap } from "../audience";
 import { ensureCoreDocs, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck } from "../deck";
@@ -24,6 +24,7 @@ import { narrowedHere } from "../audience-swap";
 // Brief 048: the typed forget's acknowledgment, once it is ready.
 import { typedAckOnState } from "../forget/on-turn";
 // Brief 049 part A: the owner's Errands, their running word, cards and one late line.
+import { phoneReportCards } from "../phone/report";
 import { errandsOnState } from "../errands/deliver";
 
 type StateReq = Infer<typeof StateRequest>;
@@ -57,6 +58,7 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
   await ensureCoreDocs(uid, deps);
   scheduleTick(ctx);
   let seen: Session | null = null;
+  let phoneCards: Card[] = [];
   const res = await retryStale(() =>
     deps.store.transaction(uid, async (tx) => {
       const doc = await tx.get<Session>(paths.session(uid, req.sessionId));
@@ -76,6 +78,7 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
       // Brief 012 CQ 126: none while an allergy question is asked, so the answer is held rather than passed as `O`.
       // Brief 035 (finding 9): none on a Session narrowed here, whose call is being swapped, and no Deck either.
       const ack = narrowedHere(next) || effectiveAudience(next, ops) === "unknown" || hasParseGap(next) || hasRecentS2(recent) || askOpen(core.rules.data, req.sessionId) ? null : stateAck(stamp, ops);
+      if ("includeSpecialists" in req) phoneCards = await phoneReportCards(tx, deps, uid, req.sessionId, next, stamp.epoch);
       // The Deck carries the Session's current safe turns, as the next turn's would (review of wave A, item 2).
       const safe = await safeTurnsOf(tx, uid, recent, next.nextClientSeq, ctx);
       // Question 84: polled once a second, the Session is written only when something it shows would change.
@@ -108,7 +111,13 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
   // Brief 049 ruling 9: a waiting Errand result goes before an idle whisper; at most one line per poll.
   // Review fix R1: inside what is left of the poll's budget; out of it, no `errands` (the screen keeps what it has).
   const errands = seen === null ? null : await errandsOnState(ctx, { sessionId: req.sessionId as ID, session: seen, stamp: res.stamp, deck: res.deck, mayOffer, budgetMs: STATE_BUDGET_MS - spent });
-  const withErrands: StateRes = errands === null ? res : { ...res, ...(errands.view === null ? {} : { errands: errands.view }), proactive: res.proactive ?? errands.proactive };
+  const view = errands?.view;
+  const withErrands: StateRes = {
+    ...res,
+    ...(view ? { errands: view } : {}),
+    ...("includeSpecialists" in req && view && errands?.specialists ? { specialists: errands.specialists, phoneReports: phoneCards, errands: view } : {}),
+    proactive: res.proactive ?? errands?.proactive ?? null,
+  };
   if (errands?.proactive != null) return withErrands;
   const spentNow = ctx.deps.clock.read().opsClock.now - (ctx.startedOpsAt ?? ctx.deps.clock.read().opsClock.now);
   return !mayOffer ? withErrands : { ...withErrands, proactive: await idleProactive(ctx, res.stamp, STATE_BUDGET_MS - spentNow, res.deck!) };

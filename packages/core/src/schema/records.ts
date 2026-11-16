@@ -3,6 +3,7 @@
  * Every tenant row carries the Common_Fields C. Document IDs (eid, mid, sessionId, ...) are path segments,
  * not fields, as in contracts §1.
  */
+import { PhoneReport } from "../phone";
 import { checkPredicateFit } from "./predicates";
 import {
   Au,
@@ -335,7 +336,7 @@ export type Turn = Infer<typeof Turn>;
 // ---------------------------------------------------------------------------------------------
 // ledger/{entryId}
 
-const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "gate", "rule", "bank", "google", "errand"] as const;
+const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "phoneReport", "gate", "rule", "bank", "google", "errand"] as const;
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
 /**
@@ -491,6 +492,7 @@ export type ErrandLedgerPayload = Infer<typeof ErrandLedgerPayload>;
 
 export const LEDGER_PAYLOADS = {
   // Earlier calls have no indexed call ID. Their receipts remain readable and replayable.
+  phoneReport: obj({ sessionId: ID, turnId: ID, report: nullable(PhoneReport) }),
   phoneCall: union(obj({ ...phoneCallFields, phoneCallId: ID }), obj(phoneCallFields)),
   request: obj({
     route: RouteName,

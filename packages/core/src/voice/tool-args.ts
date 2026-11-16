@@ -10,7 +10,7 @@
  *   answer                             both IDs null, whatever the model wrote (H-186): the model never sees a pending
  *                                      ID or a choice ID, and code resolves the offer and the choice on the server.
  */
-export const CALL_TOOL_NAMES = ["recall", "make_phone_call", "suggest", "answer", "read_money", "start_errand"] as const;
+export const CALL_TOOL_NAMES = ["recall", "make_phone_call", "suggest", "answer", "read_money", "start_errand", "delegate_specialist", "read_phone_result"] as const;
 export type CallToolName = (typeof CALL_TOOL_NAMES)[number];
 
 export const isCallToolName = (name: string): name is CallToolName => (CALL_TOOL_NAMES as readonly string[]).includes(name);

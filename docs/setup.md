@@ -25,7 +25,9 @@ While a call is out, a wall phone hangs beside Franki and shows where the call s
 
 Any signed-in user can call. Franki saves the call request in that user's conversation and passes an opaque call ID through Twilio. The signed OpenAI webhook looks up that ID in Firestore to find the original request.
 
-Known gaps: what the callee says is not returned to the owner, nothing confirms before dialing, and no real call has been tested yet.
+The phone specialist can file a short answer, voicemail report, or inconclusive outcome through `/api/phone/report`. In the original private conversation, the report appears as a result card. Ask “What did they say?” to hear the latest call’s findings. A call can end before the specialist files a report. Carrier status alone cannot confirm a reservation or answer.
+
+The report tool accepts a credential scoped to the assigned SIP call. For a tunnel or a separate deployment, set `FRANKI_PHONE_REPORT_ORIGIN` to the public HTTPS origin serving the webhook and report route. App Hosting sets this origin to `https://frankirocks.com`.
 
 For local development, use `apps/web/.env.local`. App Hosting reads the same five phone settings from Secret Manager at runtime. Deploy the Firestore indexes in this repository before enabling the webhook.
 

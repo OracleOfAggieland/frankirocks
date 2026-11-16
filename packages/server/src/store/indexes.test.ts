@@ -8,11 +8,11 @@ const declared = JSON.parse(readFileSync(new URL("../../../../firestore.indexes.
 };
 
 describe("firestore.indexes.json (R7.8, KS08)", () => {
-  it("declares exactly the five composite indexes the Store_Port allows (Q03, Q13, Q17, Q18, Q33)", () => {
+  it("declares the composite indexes used by the Store_Port", () => {
     expect(declared.indexes).toEqual(
       COMPOSITE_INDEXES.map((i) => ({ collectionGroup: i.collection, queryScope: "COLLECTION", fields: i.fields })),
     );
-    expect(COMPOSITE_INDEXES.map((i) => i.query)).toEqual(["Q03", "Q13", "Q17", "Q18", "Q33"]);
+    expect(COMPOSITE_INDEXES.map((i) => i.query)).toEqual(["Q03", "Q13", "Q17", "Q18", "Q33", "sessionPhoneCalls"]);
   });
 
   it("has no composite index for Q14 (turns by seq) or Q28 (by document ID)", () => {

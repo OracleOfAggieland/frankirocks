@@ -15,6 +15,7 @@ import {
   type ID,
   type Memory,
   PHONE_TOOL,
+  READ_PHONE_TOOL,
   MONEY_TOOL,
   MoneyArgs,
   type SafeTurn,
@@ -61,7 +62,7 @@ export function typedReplyRequest(model: string, instructions: string, turns: re
     reasoning: { effort: "low" },
     store: false,
     // Brief 046 part C: the money read is offered beside the phone, to the owner's own typed line only.
-    tools: allowPhone ? [{ ...PHONE_TOOL, strict: true }, { ...MONEY_TOOL, strict: true }] : [],
+    tools: allowPhone ? [{ ...PHONE_TOOL, strict: true }, { ...MONEY_TOOL, strict: true }, { ...READ_PHONE_TOOL, strict: true }] : [],
     instructions,
     input: [...turns.map((t) => ({ role: t.role, content: t.text })), { role: "user", content: text }],
     max_output_tokens: 512,
@@ -88,7 +89,7 @@ export async function typedReplyNote(
   phoneLine: Promise<string | null> = Promise.resolve(null),
 ): Promise<W | "make_phone_call" | null> {
   const out = await typedReplyOutcome(ctx, req, text, safeTurns, allowPhone, phoneLine);
-  return out !== null && typeof out === "object" && "readMoney" in out ? null : out;
+  return out === "read_phone_result" || (out !== null && typeof out === "object" && "readMoney" in out) ? null : out;
 }
 
 /** The typed reply, or the phone or money tool the brain model asked for (the turn route runs either after commit). */
@@ -99,7 +100,7 @@ export async function typedReplyOutcome(
   safeTurns: (reader: Reader) => Promise<SafeTurn[]>,
   allowPhone: boolean,
   phoneLine: Promise<string | null> = Promise.resolve(null),
-): Promise<W | "make_phone_call" | MoneyAsk | null> {
+): Promise<W | "make_phone_call" | "read_phone_result" | MoneyAsk | null> {
   const { uid, deps } = ctx;
   if (req.source === "asr") return null;
   const session = await deps.store.get<Session>(uid, paths.session(uid, req.sessionId));
@@ -125,6 +126,8 @@ Notes:
   } catch {
     return null;
   }
+  if (allowPhone && said === text && result.status === "completed" && result.refusal === null &&
+      result.functionCalls?.some((c) => c.name === "read_phone_result" && /^\s*\{\s*\}\s*$/.test(c.arguments))) return "read_phone_result";
   if (allowPhone && result.phoneCallRequested && result.status === "completed" && result.refusal === null) return "make_phone_call";
   // Brief 046 part C: a money read asked for by the brain model, with arguments that parse as the closed shape.
   if (allowPhone && said === text && result.moneyCallArguments !== undefined && result.status === "completed" && result.refusal === null) {

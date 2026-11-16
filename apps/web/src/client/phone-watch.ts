@@ -6,7 +6,7 @@
  *
  * It never changes call behavior: it only reads. Nothing is sent before a call is known, and one read at a time.
  */
-import { type VoiceState, isPhoneStatus } from "@franki/core";
+import { type VoiceState, callToolArgs, specialistExecution, isPhoneStatus } from "@franki/core";
 import {
   ABSENT_PHONE,
   INITIAL_PHONE,
@@ -41,7 +41,12 @@ const liveTimers: PhoneWatchTimers = { setTimeout: (fn, ms) => setTimeout(fn, ms
 /** The turn whose reply has a `make_phone_call` out at `/api/tool`, or null. */
 export function pendingPhoneCall(v: VoiceState): PhoneCallRef | null {
   const a = v.active;
-  if (a === null || a.pendingTool === null || a.pendingTool.name !== "make_phone_call") return null;
+  const tool = a?.pendingTool;
+  if (!a || !tool) return null;
+  const execution = tool.name === "delegate_specialist"
+    ? specialistExecution(callToolArgs(tool.name, tool.arguments)?.args)?.name
+    : tool.name;
+  if (execution !== "make_phone_call") return null;
   return { sessionId: a.permit.stamp.sessionId, turnId: a.permit.stamp.turnId };
 }
 

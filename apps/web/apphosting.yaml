@@ -71,6 +71,10 @@ env:
     secret: OPENAI_WEBHOOK_SECRET
     availability: [RUNTIME]
 
+  - variable: FRANKI_PHONE_REPORT_ORIGIN
+    value: https://frankirocks.com
+    availability: [RUNTIME]
+
   # Keep account identifiers and the calling number in the deployment environment.
   - variable: TWILIO_ACCOUNT_SID
     secret: TWILIO_ACCOUNT_SID

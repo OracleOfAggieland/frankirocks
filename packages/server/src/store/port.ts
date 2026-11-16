@@ -17,7 +17,7 @@ export type FieldValue = string | number | boolean | null;
 export type Op = "==" | "<" | "<=" | ">" | ">=";
 
 export interface Filter {
-  /** A top-level field name, or `__name__` for the document ID (Q28). */
+  /** A Firestore field path, or `__name__` for the document ID (Q28). */
   field: string;
   op: Op;
   value: FieldValue;

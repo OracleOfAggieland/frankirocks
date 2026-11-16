@@ -1,4 +1,5 @@
 import { type Ledger, type Session, type Stamp, type Turn, msFromTs, tsFromMs } from "@franki/core";
+import { narrowedHere } from "../audience-swap";
 import { ConfigError } from "../config/env";
 import { readCoreDocs } from "../core-docs";
 import { currentStamp, sameStamp } from "../deck";
@@ -8,6 +9,7 @@ import type { RouteContext } from "../routes/runtime";
 import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
 import type { StorePort, Tx } from "../store/port";
+import { startPhoneReport } from "./report";
 import { DialRejected, E164, dialTwilio, phoneConfig } from "./twilio";
 
 export type PhoneEntry = Extract<Ledger, { kind: "phoneCall" }>;
@@ -56,7 +58,7 @@ export async function currentPhoneTurn(tx: Tx, uid: string, stamp: Stamp) {
   const current = currentStamp(stamp.sessionId, s.generation, {
     epoch: core.epoch.data, rules: core.rules.data, bundle: core.bundle.data,
   });
-  if (!sameStamp(stamp, current) || (s.status !== "active" && s.status !== "minting") || t.seq !== s.lastClientSeq) return null;
+  if (narrowedHere(s) || !sameStamp(stamp, current) || (s.status !== "active" && s.status !== "minting") || t.seq !== s.lastClientSeq) return null;
   if (t.role !== "user" || t.sourceClass !== "U" || !t.final || t.parseState !== "committed" || !t.text) return null;
   return { session: s, turn: t, text: t.text };
 }
@@ -92,6 +94,7 @@ export async function placePhoneCall(ctx: RouteContext, stamp: Stamp): Promise<s
       ...cFields(uid, at, stamp.epoch, stamp.policyRev), kind: "phoneCall", state: "pending", at, retainUntil: null,
       payload: { phoneCallId: id, sessionId: stamp.sessionId, turnId: stamp.turnId, twilioSid: null, realtimeCallId: null, accepted: false },
     };
+    startPhoneReport(tx, uid, id, deps.hasher, entry);
     tx.create(path, entry);
     return { to };
   });

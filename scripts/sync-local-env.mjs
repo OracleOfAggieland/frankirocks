@@ -12,7 +12,7 @@ export const APPHOSTING_PATH = resolve(WEB_DIR, "apphosting.yaml");
 export const OUTPUT_PATH = resolve(WEB_DIR, ".env.development.local");
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 // A deployment's own address. It would shadow the localhost value in .env.local (.env.development.local wins).
-const DEPLOYMENT_ONLY = new Set(["GOOGLE_OAUTH_REDIRECT_URI"]);
+const DEPLOYMENT_ONLY = new Set(["GOOGLE_OAUTH_REDIRECT_URI", "FRANKI_PHONE_REPORT_ORIGIN"]);
 
 /**
  * Pure: returns [{ name, value }] for each `env:` entry with a `variable`, a nonempty scalar `value` and no `secret`.

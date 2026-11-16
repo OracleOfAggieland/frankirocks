@@ -56,6 +56,8 @@ import { completeRequest } from "../ledger/request";
 import { admitRule } from "../admission/seam";
 import { effectiveAudience, hasParseGap } from "../audience";
 import type { ResponsesResult } from "../openai/responses";
+import { cachedPhoneTool, replayPhoneTool } from "../phone/replay";
+import { readPhoneReport } from "../phone/report";
 import { placePhoneCall } from "../phone/outbound";
 // Brief 049 part A.
 import { type ErrandPlan, planErrand } from "../errands/start";
@@ -179,6 +181,7 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
     let errandPlan: ErrandPlan | null = null;
     const result: Result = req.tool.name === "make_phone_call"
       ? { name: "make_phone_call", requestId: req.requestId, message: await placePhoneCall(ctx, req.stamp) }
+      : req.tool.name === "read_phone_result" ? { name: "read_phone_result", report: null }
       : req.tool.name === "suggest" ? answered!.result
       : req.tool.name === "answer" ? answered!.result
       // Brief 046 part C: the money read, on the owner's own committed turn only (bank/money-read.ts).
@@ -239,7 +242,11 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       const planned = serverRule(rule);
       const limited = claimed.name === "recall" && planned.kind === "permit" && planned.notes !== "all" ? { ...claimed, notes: claimed.notes.filter((n) => n.sens === "S0"), snapshot: claimed.snapshot === null ? null : limitSnapshot(claimed.snapshot, "S0") } : claimed;
       // Brief 045 finding 10: in company (or narrowed here), suggest asks nothing drawn from a Memory and shows only S0.
-      const shaped = limited.name === "suggest" ? suggestForAudience(limited, narrowed ? "narrowed" : rule.audience) : limited;
+      let shaped = limited.name === "suggest" ? suggestForAudience(limited, narrowed ? "narrowed" : rule.audience) : limited;
+      if (shaped.name === "read_phone_result" && planned.kind === "permit" && planned.notes === "all" &&
+          s.lastClientSeq === turn.seq && turn.sourceClass === "U" && (turn.itemIds.length === 0 || turn.judge === "O")) {
+        shaped = { ...shaped, report: await readPhoneReport(tx, deps, uid, req.stamp.sessionId, s, current.epoch) };
+      }
       // Brief 030 part A: the Gate in front of the result, its rows written here.
       const gated = await gateToolOutput(tx, ctx, { session: s, turn, stamp: req.stamp, core, purpose: req.tool.name === "recall" ? req.tool.args.purpose : null }, shaped);
       // Brief 046 part C: the Server_Rule's S0 limit holds for a money read too, after the Gate has written its rows.
@@ -272,14 +279,14 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
         admitted.kind === "permit"
           ? { stamp: req.stamp, callId: req.callId, status: "ready", result: output, deck, permit: admitted.permit }
           : { ...empty, status: "hold", deck };
-      await completeRequest(tx, key, response, ops);
+      await completeRequest(tx, key, cachedPhoneTool(response), ops);
       return response;
     });
     // Brief 049 ruling 4: the run is scheduled after the commit that created it.
     const run = errandToRun as ID | null;
     if (run !== null) ctx.schedule(() => runErrand(ctx, run));
     return response;
-  });
+  }, (response) => replayPhoneTool(ctx, response));
 }
 
 export const toolRoute: RouteSpec<ToolReq> = {

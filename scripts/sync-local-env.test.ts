@@ -59,6 +59,7 @@ describe("parsePlainEnv", () => {
     expect(parsePlainEnv(yaml)).toEqual([{ name: "GOOGLE_OAUTH_CLIENT_ID", value: "id.apps.googleusercontent.com" }]);
     const real = parsePlainEnv(readFileSync(APPHOSTING_PATH, "utf8")).map((e) => e.name);
     expect(real).not.toContain("GOOGLE_OAUTH_REDIRECT_URI");
+    expect(real).not.toContain("FRANKI_PHONE_REPORT_ORIGIN");
     expect(real).toContain("GOOGLE_OAUTH_CLIENT_ID");
   });
 

@@ -559,6 +559,18 @@ describe("voice state machine", () => {
     expect(turnId).toBe(stamp.turnId);
   });
 
+  it.each([
+    ["phone", { name: "make_phone_call", args: {} }],
+    ["mail", { name: "start_errand", args: { about: ["mail"] } }],
+    ["mail_and_calendar", { name: "start_errand", args: { about: ["mail", "calendar"] } }],
+  ])("dispatches the %s assignment under the original provider call ID", (specialist, tool) => {
+    const r = speaking();
+    const args = JSON.stringify({ specialist });
+    const cmds = r.rt({ type: "response.function_call_arguments.done", response_id: "resp_1", call_id: "delegated", name: "delegate_specialist", arguments: args });
+    expect(cmds).toContainEqual({ kind: "tool", body: { stamp: localStamp(r.st), callId: "delegated", tool } });
+    expect(r.st.active?.pendingTool).toEqual({ callId: "delegated", name: "delegate_specialist", arguments: args });
+  });
+
   it("waits TOOL_LIMIT_MS for a recall result, even after the words said before the call finish playing", () => {
     const r = speaking();
     const cmds = r.rt({ type: "response.function_call_arguments.done", response_id: "resp_1", call_id: "call_1", name: "recall", arguments: "{}" });

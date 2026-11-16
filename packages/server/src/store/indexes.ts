@@ -55,6 +55,13 @@ export const COMPOSITE_INDEXES: readonly CompositeIndex[] = [
       { fieldPath: "at", order: "DESCENDING" },
     ],
   },
+  {
+    query: "sessionPhoneCalls", collection: "ledger", fields: [
+      { fieldPath: "kind", order: "ASCENDING" },
+      { fieldPath: "payload.sessionId", order: "ASCENDING" },
+      { fieldPath: "at", order: "DESCENDING" },
+    ],
+  },
 ];
 
 /** Names the query ID a spec matches, or returns null when no declared shape serves it. */

@@ -69,7 +69,8 @@ import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
 import type { StoredDoc } from "../store/port";
 import type { ProactiveDeck } from "../time/proactive";
-import { errandsReady } from "./agent";
+import type { SpecialistCatalog } from "@franki/core";
+import { specialistCatalog } from "./agent";
 import { cardShows, errandCard, sourceLine } from "./card";
 import { type LineVerdict, gateErrandLines } from "./gate";
 import { errandDeliveryId } from "./records";
@@ -94,6 +95,7 @@ export interface ErrandStateInput {
 
 /** `view: null`: nothing was read (out of budget, or a failure), so the screen keeps what it shows. */
 export interface ErrandStateOutput {
+  specialists?: SpecialistCatalog;
   view: ErrandsView | null;
   proactive: Proactive | null;
 }
@@ -122,10 +124,15 @@ async function markedErrands(ctx: RouteContext, sessionId: string, ops: number):
 const hasContent = (e: Errand) => e.lines.length > 0 || e.reads.length > 0 || e.gate !== null || e.offer !== null;
 
 async function errandsOnce(ctx: RouteContext, x: ErrandStateInput): Promise<ErrandStateOutput> {
-  const { uid, deps } = ctx;
-  const ops = deps.clock.read().opsClock.now;
+  const ops = ctx.deps.clock.read().opsClock.now;
   // Review fix R2: the agents' readiness, beside the Session's mark.
-  const [rows, ready] = await Promise.all([markedErrands(ctx, x.sessionId, ops), errandsReady(ctx)]);
+  const [rows, specialists] = await Promise.all([markedErrands(ctx, x.sessionId, ops), specialistCatalog(ctx)]);
+  const ready = specialists.mail === "ready" || specialists.calendar === "ready";
+  return { ...await errandView(ctx, x, rows, ready, ops), specialists };
+}
+
+async function errandView(ctx: RouteContext, x: ErrandStateInput, rows: StoredDoc<Errand>[] | null, ready: boolean, ops: number): Promise<ErrandStateOutput> {
+  const { uid, deps } = ctx;
   if (rows === null || rows.length === 0) return { view: { ...NO_ERRANDS, ready }, proactive: null };
   const epoch = x.stamp.epoch;
   const live: StoredDoc<Errand>[] = [];

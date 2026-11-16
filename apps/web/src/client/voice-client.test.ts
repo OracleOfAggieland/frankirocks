@@ -228,11 +228,13 @@ const specCreate = (events: any[]) => ofType(events, "response.create").find((e)
 const judgeCreate = (events: any[]) => ofType(events, "response.create").find((e) => e.response?.metadata?.purpose === "judge");
 
 describe("Voice_Client", () => {
-  it("one session.update with no model or voice; the offer goes only to /api/session/sdp", async () => {
+  it("configures audio once, then updates only the tools when the specialist catalog arrives", async () => {
     const { rig, sent, routeCalls, connect, peer, track } = await setup();
     await connect();
     const updates = ofType(sent(), "session.update");
-    expect(updates).toHaveLength(1);
+    expect(updates).toHaveLength(2);
+    expect(Object.keys(updates[1].session).sort()).toEqual(["tools", "type"]);
+    expect(updates[1].session.tools.map((t: { name: string }) => t.name)).toEqual(["recall", "suggest", "answer", "read_money", "read_phone_result"]);
     expect(updates[0].session).not.toHaveProperty("model");
     expect(updates[0].session).not.toHaveProperty("voice");
     expect(updates[0].session).toMatchObject({ type: "realtime", tracing: null, audio: { input: { transcription: { model: "test-transcribe-model" } } } });
@@ -254,7 +256,7 @@ describe("Voice_Client", () => {
     expect(routeCalls("/api/session/state")).toHaveLength(2);
     await timers.advance(1_000);
     expect(routeCalls("/api/session/state")).toHaveLength(3);
-    expect(routeCalls("/api/session/state")[2]!.body).toMatchObject({ generation: 1, seen: { epoch: 1, policyRev: 1, rulesRev: 1 } });
+    expect(routeCalls("/api/session/state")[2]!.body).toMatchObject({ generation: 1, includeSpecialists: true, seen: { epoch: 1, policyRev: 1, rulesRev: 1 } });
   });
 
   it("the slow path plays the speculative reply when its hash matches the seam's Permit; audio unmutes only at its start; receipts reach the server", async () => {

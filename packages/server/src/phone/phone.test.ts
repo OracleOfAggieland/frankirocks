@@ -4,9 +4,13 @@ import { testId } from "@franki/core/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ok } from "../openai/fake";
 import { normalizeResponse } from "../openai/live";
+import { PHONE_REPORT_WINDOW_MS, clearPhoneReports } from "./report";
+import { reportTool, phoneReportEndpoint } from "./report-mcp";
+import { stateRoute } from "../routes/state";
+import { paths } from "../store/paths";
 import { turnRoute } from "../routes/turn";
 import { toolRoute } from "../routes/tool";
-import { T0_MS, TEST_ENV, callRoute, testRig } from "../testing/fakes";
+import { T0_MS, TEST_ENV, callRoute, patchRecord, testRig } from "../testing/fakes";
 import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
 import { destination, queued } from "./outbound";
 import { DialRejected, dialTwilio, phoneConfig } from "./twilio";
@@ -53,9 +57,83 @@ describe("outbound phone calls", () => {
     await answerPhoneCall(rig.deps, data, sip, lookupUid);
     await answerPhoneCall(rig.deps, data, sip, lookupUid);
     await answerPhoneCall(rig.deps, { ...data, call_id: "rtc_another" }, sip, lookupUid);
-    expect(sip.accept).toHaveBeenCalledExactlyOnceWith(data.call_id, text);
+    expect(sip.accept).toHaveBeenCalledExactlyOnceWith(data.call_id, text, { uid: "owner-1", dialId: correlation });
     expect(sip.greet).toHaveBeenCalledExactlyOnceWith(data.call_id);
     expect(sip.reject).toHaveBeenCalledExactlyOnceWith("rtc_another");
+  });
+
+  it("returns the SIP agent's report to the private card, typed reply, and live voice tool", async () => {
+    const { rig, dial, session } = await setup();
+    const uid = "owner-1";
+    rig.openai.script("responses.create", ok(intent));
+    const placed = await callRoute(rig, turnRoute, typedTurn(session.stamp, 1, text));
+    const dialId = dial.mock.calls[0]![2], callId = "rtc_report";
+    await answerPhoneCall(rig.deps, { call_id: callId, sip_headers: [{ name: "x-franki-call", value: dialId }] }, controls(), lookupUid);
+    expect(reportTool(rig.deps, uid, dialId, callId, "https://other.test")).toBeNull();
+    const tool = reportTool(rig.deps, uid, dialId, callId, "https://frankirocks.com")!;
+    const rpc = (method: string, params: object, authorization = tool.headers.Authorization) =>
+      phoneReportEndpoint(new Request(tool.server_url, { method: "POST", headers: { authorization }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) }), rig.deps);
+    const rpcBody = async (method: string, params: object) => (await rpc(method, params)).json();
+    expect(await rpcBody("initialize", { protocolVersion: "2025-06-18" })).toMatchObject({ result: { protocolVersion: "2025-06-18" } });
+    expect(await rpcBody("tools/list", {})).toMatchObject({ result: { tools: [{ name: "report_call_outcome" }] } });
+    const report = { outcome: "answered", summary: "The shop said it opens at 9 a.m. on Monday." };
+    const params = { name: "report_call_outcome", arguments: report };
+    expect((await rpc("tools/call", params, "Bearer invalid")).status).toBe(401);
+    for (let i = 0; i < 2; i++) expect(await rpcBody("tools/call", params)).toMatchObject({ result: { isError: false } });
+    expect(await rpcBody("tools/call", { ...params, arguments: { ...report, summary: "Different answer" } })).toMatchObject({ result: { isError: true } });
+    const { epoch, policyRev, bundleRev, rulesRev } = placed.body.stamp;
+    const poll = () => callRoute(rig, stateRoute, { sessionId: session.sessionId, generation: 1, seen: { epoch, policyRev, bundleRev, rulesRev }, ackStamp: null, speechStartedOpsAt: null, includeSpecialists: true });
+    await patchRecord(rig.store, uid, paths.session(uid, session.sessionId), { audience: "private" });
+    const view = await poll();
+    expect(view.body.specialists.phone).toBe("ready");
+    expect(view.body.phoneReports[0]).toMatchObject({ lines: [report.summary], sens: "S2" });
+    rig.openai.script("responses.create", ok(normalizeResponse({ status: "completed", output: [
+      { type: "function_call", name: "read_phone_result", call_id: "result", arguments: "{}" },
+    ] })));
+    const followUp = typedTurn(placed.body.stamp, 2, "What did the shop say?");
+    const typed = await callRoute(rig, turnRoute, followUp);
+    expect((await callRoute(rig, turnRoute, followUp)).body).toEqual(typed.body);
+    expect(typed.body.notes[0]).toMatchObject({ sens: "S2", text: expect.stringContaining(report.summary) });
+    const spoken = await callRoute(rig, turnRoute, { ...asrTurn(typed.body.stamp, 3, "What did they say?", [{ itemId: "item3", commitSeq: 3 }]), judge: "O" });
+    const lookup = (id: string) => callRoute(rig, toolRoute, { requestId: testId(id), stamp: spoken.body.stamp, callId: id, tool: { name: "read_phone_result", args: {} } });
+    const result = await lookup("private");
+    expect(result.body.result.report).toEqual(report);
+    expect((await lookup("private")).body).toEqual(result.body);
+    await patchRecord(rig.store, uid, paths.session(uid, session.sessionId), { audience: "company" });
+    expect((await lookup("company")).body.result.report).toBeNull();
+    expect((await lookup("private")).body).toMatchObject({ status: "stale", result: null });
+    expect((await callRoute(rig, turnRoute, followUp)).body).toMatchObject({ status: "stale", notes: [] });
+    expect((await poll()).body.phoneReports).toEqual([]);
+    await clearPhoneReports(rig.store, uid);
+    expect(await rpcBody("tools/call", params)).toMatchObject({ result: { isError: true } });
+    rig.clock.advance(PHONE_REPORT_WINDOW_MS + 1);
+    expect((await rpc("tools/call", params)).status).toBe(401);
+    expect(dial).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps overlapping calls separate when their reports arrive in reverse order", async () => {
+    const { rig, dial, session } = await setup();
+    const uid = "owner-1";
+    rig.openai.always("responses.create", ok(intent));
+    const first = await callRoute(rig, turnRoute, typedTurn(session.stamp, 1, text));
+    rig.clock.advance(10);
+    const second = await callRoute(rig, turnRoute, typedTurn(first.body.stamp, 2, "Call 415 555 0199 and ask about pickup."));
+    for (const i of [1, 0]) {
+      const dialId = dial.mock.calls[i]![2], callId = "rtc_" + i;
+      await answerPhoneCall(rig.deps, { call_id: callId, sip_headers: [{ name: "x-franki-call", value: dialId }] }, controls(), lookupUid);
+      const tool = reportTool(rig.deps, uid, dialId, callId, "https://frankirocks.com")!;
+      const response = await phoneReportEndpoint(new Request(tool.server_url, {
+        method: "POST", headers: { authorization: tool.headers.Authorization },
+        body: JSON.stringify({ jsonrpc: "2.0", id: i, method: "tools/call", params: { name: "report_call_outcome", arguments:
+          i === 0 ? { outcome: "answered", summary: "The shop opens at nine." } : { outcome: "voicemail", summary: "Left a message about pickup." } } }),
+      }), rig.deps);
+      expect(await response.json()).toMatchObject({ result: { isError: false } });
+    }
+    await patchRecord(rig.store, uid, paths.session(uid, session.sessionId), { audience: "private" });
+    const { epoch, policyRev, bundleRev, rulesRev } = second.body.stamp;
+    const view = await callRoute(rig, stateRoute, { sessionId: session.sessionId, generation: 1,
+      seen: { epoch, policyRev, bundleRev, rulesRev }, ackStamp: null, speechStartedOpsAt: null, includeSpecialists: true });
+    expect(view.body.phoneReports.map((c: { lines: string[] }) => c.lines)).toEqual([["Left a message about pickup."], ["The shop opens at nine."]]);
   });
 
   it("uses an admitted spoken tool request and replays an ambiguous provider result without redialing", async () => {

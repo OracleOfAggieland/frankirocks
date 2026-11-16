@@ -92,7 +92,7 @@ export class MemoryStore implements StorePort {
     for (const [path, data] of this.docs) {
       if (!path.startsWith(prefix) || path.slice(prefix.length).includes("/")) continue;
       const id = path.slice(prefix.length);
-      const valueOf = (field: string) => (field === "__name__" ? id : data[field]);
+      const valueOf = (field: string) => field === "__name__" ? id : field.split(".").reduce<unknown>((v, key) => v && typeof v === "object" ? (v as Data)[key] : undefined, data);
       if (valueOf(spec.orderBy.field) === undefined) continue;
       if (spec.where.every((f) => valueOf(f.field) !== undefined && matches(valueOf(f.field), f.op, f.value))) {
         rows.push({ path, id, data });

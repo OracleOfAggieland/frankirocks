@@ -23,13 +23,14 @@ export async function mutation<R>(
   requestId: string,
   body: unknown,
   run: (key: RequestKey) => Promise<R>,
+  replay?: (response: R) => Promise<R>,
 ): Promise<R> {
   const { uid, deps } = ctx;
   const key = requestKey(uid, route, requestId, body, deps.hasher);
   const epoch = await deps.store.get<CoreEpoch>(uid, paths.core(uid, "epoch"));
   const core = { epoch: epoch?.data.epoch ?? 1, policyRev: epoch?.data.policyRev ?? 1 };
   const begin = await beginRequest<R>(uid, key, deps.clock.read().opsClock.now, core, deps);
-  if (begin.kind === "replay") return begin.response;
+  if (begin.kind === "replay") return replay ? replay(begin.response) : begin.response;
   try {
     return await run(key);
   } catch (error) {

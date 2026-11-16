@@ -60,6 +60,13 @@ describe("errand shelf, review fix V6", () => {
     expect(shelf.getSnapshot().running).toEqual(["mail"]);
   });
 
+  it("clears a private specialist result when its call ends", () => {
+    const shelf = new ErrandShelf({ now: () => 0 });
+    shelf.onState(stamp, { ready: false, running: [], cards: [card, { ...card, id: "report", sens: "S2" }] });
+    shelf.onVoice({ session: null });
+    expect(shelf.getSnapshot().cards).toEqual([card]);
+  });
+
   it("a card the server no longer lists (dropped or forgotten) goes at once", () => {
     const shelf = new ErrandShelf({ now: () => 0 });
     shelf.onState(stamp, { ready: false, running: [], cards: [card] });

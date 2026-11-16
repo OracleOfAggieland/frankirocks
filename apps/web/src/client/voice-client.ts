@@ -305,10 +305,13 @@ export class VoiceClient {
       case "state": {
         // `sentAt` dates the StateAck: one requested before the last turn answer can't grant fastO (R4.4).
         const sentAt = this.deps.clock.read().opsClock.now;
-        void this.post("/api/session/state", c.body, STATE_TIMEOUT_MS, StateResponse).then((res) => {
+        void this.post("/api/session/state", { ...c.body, includeSpecialists: true }, STATE_TIMEOUT_MS, StateResponse).then((res) => {
           this.dispatch(res === null ? { type: "stateFailed" } : { type: "stateOk", response: res, sentAt });
           if (res !== null) this.tellAudience(res.stamp, res.audience);
-          if (res !== null) this.tellErrands(res.stamp, "errands" in res ? res.errands : undefined);
+          if (res !== null) {
+            const view = "errands" in res ? res.errands : undefined;
+            this.tellErrands(res.stamp, view && "phoneReports" in res ? { ...view, cards: [...res.phoneReports, ...view.cards] } : view);
+          }
         });
         return;
       }
@@ -400,6 +403,8 @@ export class VoiceClient {
     const held = this.state.session;
     if (held === null || held.sessionId !== stamp.sessionId || held.generation !== stamp.generation) return;
     try {
+      const deck = this.state.deck;
+      if (this.state.phase === "SWAPPING" || (deck && (stamp.epoch < deck.epoch || stamp.policyRev < deck.policyRev))) return;
       this.deps.onErrands?.(stamp, errands);
     } catch {
       // the screen's problem, not the call's

@@ -15,6 +15,7 @@ export { turnRoute } from "./routes/turn";
 export { sdpRoute } from "./routes/sdp";
 export { receiptRoute } from "./routes/receipt";
 export { toolRoute } from "./routes/tool";
+export { phoneReportEndpoint } from "./phone/report-mcp";
 export { phoneWebhook } from "./phone/webhook";
 export { phoneStatusRoute } from "./phone/status";
 export { debugMemoryRoute } from "./routes/debug-memory";

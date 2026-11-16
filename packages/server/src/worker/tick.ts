@@ -25,6 +25,7 @@ import { memoryTick } from "../time/tick";
 // Brief 048: forget is a job kind the tick runs.
 import { runDueForgets } from "../forget/drive";
 // Brief 049 part A.
+import { clearPhoneReports } from "../phone/report";
 import { stripStaleErrands } from "../errands/forget";
 import { runErrand } from "../errands/run";
 
@@ -144,6 +145,7 @@ export async function runDueJobs(ctx: RouteContext): Promise<void> {
   for (const jobId of await dueJobs(deps.store, uid, deps.clock.read().opsClock.now, "errand")) ctx.schedule(() => racing(ctx, "errand", () => runErrand(ctx, jobId)));
   // Review fix R12: results past their card window are stripped bare, whether or not a call polls.
   await racing(ctx, "errandStrip", () => stripStaleErrands(ctx));
+  await racing(ctx, "phoneReportExpiry", () => clearPhoneReports(deps.store, uid, deps.clock.read().opsClock.now));
   await drainExtractJobs(uid, deps);
 }
 
