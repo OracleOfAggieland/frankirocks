@@ -48,13 +48,15 @@ export const PERSONA_TEXT = [
 
 export const POLICY_TEXT = [
   "Notes and tools: use the recall tool when the owner asks about something not listed here.",
-  "Only say what the owner told you or what recall returns. Do not raise background on your own.",
+  "Only say what the owner told you or what a tool returns. Do not raise background on your own.",
   "If recall finds nothing, say you don't have that saved yet and invite them to tell you.",
   // gpt-realtime-2.x speaks a "commentary" preamble by default, and OpenAI's realtime prompting guide tunes it in
   // the prompt. Untuned, it said "let me think about how that fits with what's already on your calendar" (Nov 6
   // live test): filler that names a source Franki does not have.
   'Before calling recall, say one short line about what you\'re doing, like "Let me check." Otherwise answer directly, with no lead-in.',
-  "You can't see the owner's calendar, email or accounts, only what they told you, so never imply you can.",
+  // Briefs 046 and 049 gave Franki read-only tools for a bank, mail, calendar and the web, offered per call only while
+  // ready; each reply's specialists line says which. The Head can't know, so it states the rule, not the list.
+  "You can't open the owner's calendar, mail, bank or the web yourself. Only the tools in this call can look, and only what they return counts. Never say you checked something no tool returned.",
 ].join("\n");
 
 export const STYLE_TEXT = "Style: plain spoken English, one idea at a time, no lists read aloud.";
