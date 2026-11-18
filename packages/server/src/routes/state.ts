@@ -5,7 +5,7 @@
  * ignores core/bundle.expiresAt. The route does only its own reads and one write, and schedules `tick` without
  * awaiting it, so OpenAI or extraction never delay it.
  */
-import { type Card, type ID, type Infer, type Session, StateRequest, type StateResponse, type Turn, msFromTs, tsFromMs } from "@franki/core";
+import { type ID, type Infer, type Session, StateRequest, type StateResponse, type Turn, type WebSearchView, msFromTs, tsFromMs } from "@franki/core";
 import { effectiveAudience, expireLease, hasParseGap } from "../audience";
 import { ensureCoreDocs, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck } from "../deck";
@@ -24,7 +24,10 @@ import { narrowedHere } from "../audience-swap";
 // Brief 048: the typed forget's acknowledgment, once it is ready.
 import { typedAckOnState } from "../forget/on-turn";
 // Brief 049 part A: the owner's Errands, their running word, cards and one late line.
-import { phoneReportCards } from "../phone/report";
+import { phoneStateView } from "../phone/report";
+import { schedulePhoneCheck } from "../phone/reconcile";
+import { readWebSearchView, runWebSearchTask } from "../search/tasks";
+import { offerWebAnswer } from "../search/delivery";
 import { errandsOnState } from "../errands/deliver";
 
 type StateReq = Infer<typeof StateRequest>;
@@ -58,7 +61,10 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
   await ensureCoreDocs(uid, deps);
   scheduleTick(ctx);
   let seen: Session | null = null;
-  let phoneCards: Card[] = [];
+  let phone: Awaited<ReturnType<typeof phoneStateView>> = { cards: [], phoneActivity: [], checks: [] };
+  let webSearch: WebSearchView = { status: "none", cards: [] };
+  let resumeId: string | null = null;
+  let offerSearchId: string | null = null;
   const res = await retryStale(() =>
     deps.store.transaction(uid, async (tx) => {
       const doc = await tx.get<Session>(paths.session(uid, req.sessionId));
@@ -78,7 +84,21 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
       // Brief 012 CQ 126: none while an allergy question is asked, so the answer is held rather than passed as `O`.
       // Brief 035 (finding 9): none on a Session narrowed here, whose call is being swapped, and no Deck either.
       const ack = narrowedHere(next) || effectiveAudience(next, ops) === "unknown" || hasParseGap(next) || hasRecentS2(recent) || askOpen(core.rules.data, req.sessionId) ? null : stateAck(stamp, ops);
-      if ("includeSpecialists" in req) phoneCards = await phoneReportCards(tx, deps, uid, req.sessionId, next, stamp.epoch);
+      if ("includeTaskActivity" in req) {
+        // These are optional observations. A temporarily missing index or unreadable task must not withhold
+        // the state acknowledgment that lets the owner's conversation continue.
+        const [phoneRead, searchRead] = await Promise.allSettled([
+          phoneStateView(tx, deps, uid, req.sessionId, next, stamp.epoch, true),
+          readWebSearchView(tx, ctx, req.sessionId, next, stamp.epoch),
+        ]);
+        phone = phoneRead.status === "fulfilled" ? phoneRead.value : { cards: [], phoneActivity: [], checks: [] };
+        const searchView = searchRead.status === "fulfilled" ? searchRead.value : null;
+        webSearch = { status: searchView?.status ?? "none", cards: searchView?.cards ?? [] };
+        resumeId = searchView?.resumeId ?? null;
+        offerSearchId = searchView?.offerId ?? null;
+      } else if ("includeSpecialists" in req) {
+        phone = await phoneStateView(tx, deps, uid, req.sessionId, next, stamp.epoch, false);
+      }
       // The Deck carries the Session's current safe turns, as the next turn's would (review of wave A, item 2).
       const safe = await safeTurnsOf(tx, uid, recent, next.nextClientSeq, ctx);
       // Question 84: polled once a second, the Session is written only when something it shows would change.
@@ -103,6 +123,9 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
       return { stamp, state: "LISTENING", deck, ack, barrierReceiptId: null, proactive, audience: effectiveAudience(next, ops) } satisfies StateRes;
     }),
   );
+  const resume = resumeId;
+  if (resume !== null) ctx.schedule(() => runWebSearchTask(ctx, resume));
+  for (const check of phone.checks) schedulePhoneCheck(ctx, check.dialId, check.dial);
   // Brief 030 part A: an idle whisper, gated inside `chooseNow`, only where the ack checks passed.
   // Coordinator ruling on brief 042: the poll's budget holds; the whisper gets what is left of it, or waits.
   const spent = ctx.deps.clock.read().opsClock.now - (ctx.startedOpsAt ?? ctx.deps.clock.read().opsClock.now);
@@ -115,12 +138,19 @@ export async function sessionState(ctx: RouteContext, req: StateReq): Promise<St
   const withErrands: StateRes = {
     ...res,
     ...(view ? { errands: view } : {}),
-    ...("includeSpecialists" in req && view && errands?.specialists ? { specialists: errands.specialists, phoneReports: phoneCards, errands: view } : {}),
+    ...("includeSpecialists" in req && view && errands?.specialists ? { specialists: errands.specialists, phoneReports: phone.cards, errands: view } : {}),
+    ...("includeTaskActivity" in req ? { phoneActivity: phone.phoneActivity, webSearch } : {}),
     proactive: res.proactive ?? errands?.proactive ?? null,
   };
   if (errands?.proactive != null) return withErrands;
-  const spentNow = ctx.deps.clock.read().opsClock.now - (ctx.startedOpsAt ?? ctx.deps.clock.read().opsClock.now);
-  return !mayOffer ? withErrands : { ...withErrands, proactive: await idleProactive(ctx, res.stamp, STATE_BUDGET_MS - spentNow, res.deck!) };
+  if (!mayOffer || !res.deck) return withErrands;
+  const started = ctx.startedOpsAt ?? ctx.deps.clock.read().opsClock.now;
+  const remaining = () => STATE_BUDGET_MS - (ctx.deps.clock.read().opsClock.now - started);
+  if (offerSearchId !== null) {
+    const answer = await offerWebAnswer(ctx, offerSearchId, res.stamp, res.deck, remaining(), req.speechStartedOpsAt);
+    if (answer) return { ...withErrands, proactive: answer };
+  }
+  return { ...withErrands, proactive: await idleProactive(ctx, res.stamp, remaining(), res.deck) };
 }
 
 export const stateRoute: RouteSpec<StateReq> = {

@@ -5,6 +5,7 @@
  */
 import type { Card, ErrandAbout, ErrandsView, SS } from "@franki/core";
 import type { CardProps } from "../surface-props";
+import { readCardProps } from "../read-card";
 import { COPY } from "../copy";
 
 export interface ShownErrands {
@@ -31,9 +32,16 @@ export function errandWord(shown: ShownErrands): string | null {
   return null;
 }
 
-/** The errands' cards for the Card_Dock. No links: a source is a line of text. */
+/** Result cards for the dock, including the links behind each web finding. */
 export function errandCardProps(shown: ShownErrands): CardProps[] {
-  return shown.cards
-    .filter((c) => c.title.trim() !== "" || c.lines.some((l) => l.trim() !== ""))
-    .map((c) => ({ kind: "read" as const, id: `errand-${c.id}`, title: c.title, lines: [...c.lines], sources: [], onOpenSource: () => {} }));
+  const findings = shown.cards.filter(c => "citations" in c);
+  const cards = shown.cards
+    .filter((c) => !("citations" in c) && (c.title.trim() !== "" || c.lines.some((l) => l.trim() !== "")))
+    .map((c) => readCardProps(c, `errand-${c.id}`));
+  // The dock exposes one card face. Keep each option and its own links together on that face.
+  if (findings.length) cards.unshift({
+    ...readCardProps(findings[0]!, `web-${findings[0]!.id}`),
+    lines: findings.map(c => c.lines.join(" ")), citationsByLine: findings.map(c => c.citations),
+  });
+  return cards;
 }

@@ -27,6 +27,8 @@ Any signed-in user can call. Franki saves the call request in that user's conver
 
 The phone specialist files its answer, voicemail report, or inconclusive finding through `/api/phone/report`. An early report is available in the original private conversation while the carrier still tracks the call. If the carrier reports an answered call has ended, Franki waits 15 seconds for its report before showing an unconfirmed outcome. A later report within the existing one-hour retention window updates the same card. Busy, unanswered, and failed calls have immediate outcomes. Ask “What did they say?” to hear the latest call’s result.
 
+During a private voice conversation the live model receives silent status updates for up to four recently updated calls. You can switch topics while a call runs, then ask “Are they still on the line?” or “What did the first place say?” The next voice reply can use the call's status and request that specific report. Deploy the composite ledger index on `kind`, `payload.sessionId` and `updatedAt` with the web app.
+
 The report tool accepts a credential scoped to the assigned SIP call. For a tunnel or a separate deployment, set `FRANKI_PHONE_REPORT_ORIGIN` to the public HTTPS origin serving the Twilio callback and specialist report routes. App Hosting sets this origin to `https://frankirocks.com`. Each dial registers its own callback URL with Twilio.
 
 For local development, use `apps/web/.env.local`. App Hosting reads the five phone settings below from Secret Manager at runtime. Deploy the Firestore indexes before rolling out the updated app and scheduled function. The function's service account needs Firestore access and access to the existing `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `FRANKI_ID_HMAC_KEY` secrets.
@@ -39,6 +41,12 @@ For local development, use `apps/web/.env.local`. App Hosting reads the five pho
 | `OPENAI_WEBHOOK_SECRET` | Signing secret for the project's webhook |
 
 In the OpenAI project, subscribe a webhook to `realtime.call.incoming` at `https://<your-public-host>/api/phone/openai`. Local testing needs a public HTTPS tunnel to the running app. Twilio receives the SIP address in each call's TwiML. On a Twilio trial account, verify the destination as well. [OpenAI SIP setup](https://developers.openai.com/api/docs/guides/voice-sip?voice-api=realtime) · [Twilio outbound calls](https://www.twilio.com/docs/voice/api/call-resource)
+
+## Web search during a voice conversation
+
+Ask Franki about a current fact, restaurant or public event. For example, ask “Which museums in Austin are open this Sunday?” For “near me,” give a city or neighborhood when Franki asks. In a private voice session Franki delegates the question to the OpenAI Responses API with hosted `web_search`, using the existing `OPENAI_API_KEY` and `FRANKI_BRAIN_MODEL`. The configured model needs hosted web search support.
+
+One web lookup runs at a time in the session. You can keep talking or let Franki answer at the next pause. The answer card groups each finding with its clickable sources. If the sources do not verify the answer, Franki says so. The worker has a 30-second provider deadline. The latest result is available for up to an hour in its original session and generation. [OpenAI web search guide](https://developers.openai.com/api/docs/guides/tools-web-search)
 
 ## A connected bank (read-only)
 

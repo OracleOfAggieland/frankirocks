@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { type Session, type Stamp, TurnResponse, payloadHash, validate } from "@franki/core";
+import { type Session, type Stamp, StateResponse, TurnResponse, payloadHash, validate } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ok } from "../openai/fake";
@@ -171,9 +171,32 @@ describe("outbound phone calls", () => {
     }
     await patchRecord(rig.store, uid, paths.session(uid, session.sessionId), { audience: "private" });
     const { epoch, policyRev, bundleRev, rulesRev } = second.body.stamp;
-    const view = await callRoute(rig, stateRoute, { sessionId: session.sessionId, generation: 1,
-      seen: { epoch, policyRev, bundleRev, rulesRev }, ackStamp: null, speechStartedOpsAt: null, includeSpecialists: true });
+    const poll = () => callRoute(rig, stateRoute, { sessionId: session.sessionId, generation: 1,
+      seen: { epoch, policyRev, bundleRev, rulesRev }, ackStamp: null, speechStartedOpsAt: null, includeSpecialists: true, includeTaskActivity: true });
+    const view = await poll();
+    const firstDial = dial.mock.calls[0]![2], secondDial = dial.mock.calls[1]![2];
+    expect(validate(StateResponse, view.body).ok).toBe(true);
     expect(view.body.phoneReports.map((c: { lines: string[] }) => c.lines)).toEqual([["Left a message about pickup."], ["The shop opens at nine."]]);
+    expect(view.body.phoneActivity).toEqual([
+      { dialId: secondDial, turnId: second.body.stamp.turnId, status: "dialing", completion: "active", hasReport: true },
+      { dialId: firstDial, turnId: first.body.stamp.turnId, status: "dialing", completion: "active", hasReport: true },
+    ]);
+    await saveCarrierEvent(rig.deps, uid, { dialId: firstDial, sid, status: "completed" });
+    expect((await poll()).body.phoneActivity).toMatchObject([
+      { dialId: secondDial, completion: "active" }, { dialId: firstDial, status: "ended", completion: "reported" },
+    ]);
+    const spoken = await callRoute(rig, turnRoute, { ...asrTurn(second.body.stamp, 3, "What did the first shop say?", [{ itemId: "item3", commitSeq: 3 }]), judge: "O", hasTaskActivity: true });
+    expect(spoken.body.notes.some((n: { text: string }) => n.text.includes("Phone call status"))).toBe(false);
+    const lookup = (id: string) => callRoute(rig, toolRoute, { requestId: testId("lookup" + id.slice(0, 10)), stamp: spoken.body.stamp, callId: id,
+      tool: { name: "read_phone_result", args: { dialId: id }, includeCompletion: true } });
+    const earlier = await lookup(firstDial);
+    expect(earlier.body.result).toMatchObject({ report: { summary: "The shop opens at nine." }, completion: "reported" });
+    expect((await lookup(firstDial)).body).toEqual(earlier.body);
+    expect((await lookup(secondDial)).body.result).toMatchObject({ report: { summary: "Left a message about pickup." }, completion: "active" });
+    expect((await lookup(testId("unrelated"))).body.result).toMatchObject({ report: null });
+    await patchRecord(rig.store, uid, paths.session(uid, session.sessionId), { audience: "company" });
+    expect((await poll()).body.phoneActivity).toEqual([]);
+    expect((await lookup(firstDial)).body).toMatchObject({ status: "stale", result: null });
   });
 
   it("uses an admitted spoken tool request and replays an ambiguous provider result without redialing", async () => {

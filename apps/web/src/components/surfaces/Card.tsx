@@ -8,6 +8,7 @@
 // With `sourceRows`, tapping a source tag that has rows opens them inside the card (tapping it again closes
 // them), and the tap still calls onOpenSource. With `openSource` the host holds which source is open instead.
 import { type ReactNode, useState } from "react";
+import { isWebCitationUrl } from "@franki/core";
 import { COPY } from "../../ui/copy";
 import type { CardKind, CardProps, HardRule, SourceTag } from "../../ui/surface-props";
 import { Rivet } from "../lab/Rivet";
@@ -268,10 +269,12 @@ function Content({ p, plan, tags }: { p: CardProps; plan: SourceTagPlan; tags: T
     case "read":
       return (
         <ul className="flex flex-col gap-1.5">
-          {p.lines.filter((l) => !blank(l)).map((l, i) => (
+          {p.lines.map((l, i) => !blank(l) && (
             <li key={i} className="flex items-baseline gap-2.5 text-base text-ink">
               <span aria-hidden="true" className="pointer-events-none inline-block size-1 shrink-0 -translate-y-0.5 rounded-full bg-ink-dim" />
-              <span className="min-w-0">{l}</span>
+              <span className="min-w-0">{l}{p.citationsByLine?.[i]?.map(({ title, url }) => isWebCitationUrl(url) && (
+                <a key={url} href={url} target="_blank" rel="noopener noreferrer" className={`${FOCUS} block break-words text-sm text-brass underline underline-offset-2`}>{title}</a>
+              ))}</span>
             </li>
           ))}
         </ul>
@@ -342,7 +345,7 @@ function CardFace({ p, tags }: { p: CardViewProps; tags: TagState }) {
         <KindGlyph kind={p.kind} className="text-ink-dim" />
         <span className="min-w-0 truncate">{p.title}</span>
       </h2>
-      <div data-section="content">
+      <div data-section="content" className={p.kind === "read" && p.citationsByLine ? "max-h-[42dvh] overflow-y-auto" : undefined}>
         <Content p={p} plan={plan} tags={tags} />
       </div>
       {plan.row.length > 0 ? (

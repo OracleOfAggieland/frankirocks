@@ -12,7 +12,7 @@ describe("firestore.indexes.json (R7.8, KS08)", () => {
     expect(declared.indexes).toEqual(
       COMPOSITE_INDEXES.map((i) => ({ collectionGroup: i.collection, queryScope: "COLLECTION", fields: i.fields })),
     );
-    expect(COMPOSITE_INDEXES.map((i) => i.query)).toEqual(["Q03", "Q13", "Q17", "Q18", "Q33", "sessionPhoneCalls"]);
+    expect(COMPOSITE_INDEXES.map((i) => i.query)).toEqual(["Q03", "Q13", "Q17", "Q18", "Q33", "sessionPhoneCalls", "sessionPhoneActivity"]);
   });
 
   it("has no composite index for Q14 (turns by seq) or Q28 (by document ID)", () => {

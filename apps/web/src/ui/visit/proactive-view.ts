@@ -3,6 +3,7 @@
 import type { Card } from "@franki/core";
 import type { ReplyEntry } from "../turn-copies";
 import type { CardProps } from "../surface-props";
+import { readCardProps } from "../read-card";
 
 /** A shown proactive line: its words, its cards, and how many typed entries there were when it came. */
 export interface ShownProactive {
@@ -21,10 +22,10 @@ export function replyEntries<E extends ReplyEntry>(typed: readonly E[], shown: S
   return [...typed, { role: "user", text: "" }, { role: "franki", text: shown.text }];
 }
 
-/** The proactive cards as read cards: their title and lines, no actions and no sources to open. */
+/** Spoken reply cards as they appear in the dock. */
 export function proactiveCards(shown: ShownProactive | null): CardProps[] {
   if (shown === null) return [];
   return shown.cards
     .filter((c) => c.title.trim() !== "" || c.lines.some((l) => l.trim() !== ""))
-    .map((c) => ({ kind: "read" as const, id: `proactive-${c.id}`, title: c.title, lines: [...c.lines], sources: [], onOpenSource: () => {} }));
+    .map((c) => readCardProps(c, `proactive-${c.id}`));
 }

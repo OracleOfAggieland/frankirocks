@@ -82,6 +82,7 @@ import { forgetJobId, forgetReceiptId } from "./fence";
 import type { ForgetResolvePort } from "./resolve-port";
 // Brief 049 part A.
 import { clearPhoneReports } from "../phone/report";
+import { clearPrivateRows } from "../ledger/private-rows";
 import { dropAllErrands, dropErrandsInTx, errandsToDrop } from "../errands/forget";
 
 export const FORGET_LEASE_MS = 30_000;
@@ -304,6 +305,7 @@ async function runClose(deps: ForgetDeps, uid: string, jobId: ID, lease: Lease, 
   // of them, a chunk per transaction; whatever a last read still finds goes in the step's own transaction.
   await dropAllErrands(deps.store, uid, now);
   await clearPhoneReports(deps.store, uid);
+  await clearPrivateRows(deps.store, uid, "webSearch");
   const errandIds = await errandsToDrop(deps.store, uid);
   return commitStep(deps.store, uid, jobId, lease, async (tx, job, epoch) => {
     await dropErrandsInTx(tx, uid, errandIds, now);

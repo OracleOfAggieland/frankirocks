@@ -59,6 +59,9 @@ import type { ResponsesResult } from "../openai/responses";
 import { cachedPhoneTool, replayPhoneTool } from "../phone/replay";
 import { readPhoneResult } from "../phone/report";
 import { placePhoneCall } from "../phone/outbound";
+import { cachedWebTool, replayWebTool } from "../search/replay";
+import { reserveWebAnswer } from "../search/delivery";
+import { prepareWebSearch, readWebResult, runWebSearchTask, webSearchId, type WebSearchEntry } from "../search/tasks";
 // Brief 049 part A.
 import { type ErrandPlan, planErrand } from "../errands/start";
 import { runErrand } from "../errands/run";
@@ -67,6 +70,7 @@ import { limitMoneyToS0, readMoney } from "../bank/money-read";
 import { answerTool, suggestForAudience, suggestTool } from "./tool-food";
 import { recordHeroDeclined } from "../time/answered";
 import { paths } from "../store/paths";
+import { retryStale } from "../store/errors";
 import { barrierError, scopeError } from "./errors";
 import { Unrecorded, mutation } from "./mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
@@ -160,6 +164,7 @@ async function readRecall(ctx: RouteContext, req: ToolReq, args: Extract<ToolReq
 }
 
 export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes> {
+  const dialId = req.tool.name === "read_phone_result" && "dialId" in req.tool.args ? req.tool.args.dialId : undefined;
   const { uid, deps } = ctx;
   await ensureCoreDocs(uid, deps);
   const empty = { stamp: req.stamp, callId: req.callId, result: null, deck: null, permit: null };
@@ -182,6 +187,8 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
     const result: Result = req.tool.name === "make_phone_call"
       ? { name: "make_phone_call", requestId: req.requestId, message: await placePhoneCall(ctx, req.stamp) }
       : req.tool.name === "read_phone_result" ? { name: "read_phone_result", report: null }
+      : req.tool.name === "search_web" ? { name: "search_web", requestId: req.requestId, state: "unavailable" }
+      : req.tool.name === "read_web_result" ? { name: "read_web_result", requestId: req.requestId, taskId: null, status: "none", findings: [] }
       : req.tool.name === "suggest" ? answered!.result
       : req.tool.name === "answer" ? answered!.result
       // Brief 046 part C: the money read, on the owner's own committed turn only (bank/money-read.ts).
@@ -192,8 +199,10 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
 
     // Brief 049 review fix V9: the Errand to run, set only when its writes went into a transaction that committed.
     let errandToRun: ID | null = null;
-    const response = await deps.store.transaction(uid, async (tx) => {
+    let searchToRun: ID | null = null;
+    const transact = () => deps.store.transaction(uid, async (tx) => {
       errandToRun = null;
+      searchToRun = null;
       const doc = await tx.get<Session>(paths.session(uid, req.stamp.sessionId));
       if (doc === null) throw scopeError();
       const s = doc.data;
@@ -243,9 +252,22 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       const limited = claimed.name === "recall" && planned.kind === "permit" && planned.notes !== "all" ? { ...claimed, notes: claimed.notes.filter((n) => n.sens === "S0"), snapshot: claimed.snapshot === null ? null : limitSnapshot(claimed.snapshot, "S0") } : claimed;
       // Brief 045 finding 10: in company (or narrowed here), suggest asks nothing drawn from a Memory and shows only S0.
       let shaped = limited.name === "suggest" ? suggestForAudience(limited, narrowed ? "narrowed" : rule.audience) : limited;
+      let searchEntry: WebSearchEntry | null = null;
+      if (planned.kind === "permit" && planned.notes === "all" && (req.tool.name === "search_web" || req.tool.name === "read_web_result")) {
+        const owner = await tx.get<Turn>(paths.turn(uid, req.stamp.sessionId, req.stamp.turnId));
+        if (owner && s.lastClientSeq === owner.data.seq && owner.data.sourceClass === "U" && owner.data.final &&
+            owner.data.state !== "dead" && owner.data.parseState === "committed" && (owner.data.itemIds.length === 0 || owner.data.judge === "O")) {
+          if (req.tool.name === "read_web_result") shaped = await readWebResult(tx, ctx, req.stamp.sessionId, s, current.epoch, req.requestId);
+          else {
+            const search = await prepareWebSearch(tx, ctx, req.stamp, s, owner.data, req.tool.args, core.state.data.currentZone, req.requestId);
+            shaped = search.result;
+            searchEntry = search.entry;
+          }
+        }
+      }
       if (shaped.name === "read_phone_result" && planned.kind === "permit" && planned.notes === "all" &&
           s.lastClientSeq === turn.seq && turn.sourceClass === "U" && (turn.itemIds.length === 0 || turn.judge === "O")) {
-        const phone = await readPhoneResult(tx, deps, uid, req.stamp.sessionId, s, current.epoch);
+        const phone = await readPhoneResult(tx, deps, uid, req.stamp.sessionId, s, current.epoch, dialId);
         if (phone) shaped = { ...shaped, report: phone.report, ...("includeCompletion" in req.tool ? { completion: phone.completion } : {}) };
       }
       // Brief 030 part A: the Gate in front of the result, its rows written here.
@@ -272,6 +294,13 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
         deps,
       );
       if (admitted.kind === "permit") heroWrite?.();
+      if (admitted.kind === "permit" && output.name === "read_web_result" && output.taskId !== null && output.status !== "searching" && output.status !== "none") {
+        await reserveWebAnswer(tx, ctx, req.stamp, output.taskId, admitted.permit.permitId);
+      }
+      if (admitted.kind === "permit" && searchEntry) {
+        searchToRun = webSearchId(ctx, req.stamp);
+        tx.create(paths.ledger(uid, searchToRun), searchEntry);
+      }
       if (admitted.kind === "permit" && errandClaim?.write != null) {
         errandClaim.write(tx);
         errandToRun = errandClaim.errandId;
@@ -280,14 +309,17 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
         admitted.kind === "permit"
           ? { stamp: req.stamp, callId: req.callId, status: "ready", result: output, deck, permit: admitted.permit }
           : { ...empty, status: "hold", deck };
-      await completeRequest(tx, key, cachedPhoneTool(response), ops);
+      await completeRequest(tx, key, cachedWebTool(cachedPhoneTool(response)), ops);
       return response;
     });
     // Brief 049 ruling 4: the run is scheduled after the commit that created it.
+    const response = req.tool.name === "search_web" || req.tool.name === "read_web_result" ? await retryStale(transact) : await transact();
     const run = errandToRun as ID | null;
     if (run !== null) ctx.schedule(() => runErrand(ctx, run));
+    const searchId = searchToRun as ID | null;
+    if (searchId !== null) ctx.schedule(() => runWebSearchTask(ctx, searchId));
     return response;
-  }, (response) => replayPhoneTool(ctx, response));
+  }, (response) => response.result?.name === "read_web_result" ? replayWebTool(ctx, response) : replayPhoneTool(ctx, response, dialId));
 }
 
 export const toolRoute: RouteSpec<ToolReq> = {

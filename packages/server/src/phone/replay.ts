@@ -18,20 +18,20 @@ export function cachedPhoneTurn(ctx: RouteContext, response: TurnResponse): Turn
     ? { ...response, notes: response.notes.map((n) => n.noteId === id ? { ...n, text: "" } : n) } : response;
 }
 
-async function replaySource(ctx: RouteContext, stamp: Stamp, expiresAt: string) {
+async function replaySource(ctx: RouteContext, stamp: Stamp, expiresAt: string, dialId?: string) {
   const { uid, deps } = ctx;
   if (msFromTs(expiresAt) <= deps.clock.read().opsClock.now) return null;
   return deps.store.transaction(uid, async (tx) => {
     const current = await currentPhoneTurn(tx, uid, stamp);
     if (!current) return null;
-    const result = await readPhoneResult(tx, deps, uid, stamp.sessionId, current.session, stamp.epoch);
+    const result = await readPhoneResult(tx, deps, uid, stamp.sessionId, current.session, stamp.epoch, dialId);
     return { result, audioIds: current.turn.itemIds };
   });
 }
 
-export async function replayPhoneTool(ctx: RouteContext, response: ToolRes): Promise<ToolRes> {
+export async function replayPhoneTool(ctx: RouteContext, response: ToolRes, dialId?: string): Promise<ToolRes> {
   if (response.result?.name !== "read_phone_result" || !response.permit) return response;
-  const source = await replaySource(ctx, response.stamp, response.permit.expiresAt);
+  const source = await replaySource(ctx, response.stamp, response.permit.expiresAt, dialId);
   if (source) {
     const input = { stamp: response.stamp, head: response.deck?.head ?? null, turns: response.deck?.turns ?? [], notes: [], audioIds: source.audioIds };
     if ("completion" in response.result && source.result?.completion !== response.result.completion) {

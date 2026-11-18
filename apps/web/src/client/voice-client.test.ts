@@ -234,7 +234,7 @@ describe("Voice_Client", () => {
     const updates = ofType(sent(), "session.update");
     expect(updates).toHaveLength(2);
     expect(Object.keys(updates[1].session).sort()).toEqual(["tools", "type"]);
-    expect(updates[1].session.tools.map((t: { name: string }) => t.name)).toEqual(["recall", "suggest", "answer", "read_money", "read_phone_result"]);
+    expect(updates[1].session.tools.map((t: { name: string }) => t.name)).toEqual(["recall", "suggest", "answer", "read_money", "read_phone_result", "search_web", "read_web_result"]);
     expect(updates[0].session).not.toHaveProperty("model");
     expect(updates[0].session).not.toHaveProperty("voice");
     expect(updates[0].session).toMatchObject({ type: "realtime", tracing: null, audio: { input: { transcription: { model: "test-transcribe-model" } } } });

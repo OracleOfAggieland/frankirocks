@@ -305,12 +305,16 @@ export class VoiceClient {
       case "state": {
         // `sentAt` dates the StateAck: one requested before the last turn answer can't grant fastO (R4.4).
         const sentAt = this.deps.clock.read().opsClock.now;
-        void this.post("/api/session/state", { ...c.body, includeSpecialists: true }, STATE_TIMEOUT_MS, StateResponse).then((res) => {
+        void this.post("/api/session/state", { ...c.body, includeSpecialists: true, includeTaskActivity: true }, STATE_TIMEOUT_MS, StateResponse).then((res) => {
           this.dispatch(res === null ? { type: "stateFailed" } : { type: "stateOk", response: res, sentAt });
-          if (res !== null) this.tellAudience(res.stamp, res.audience);
-          if (res !== null) {
+          if (res !== null && (!("webSearch" in res) || this.state.taskActivityPolledAt === sentAt)) {
+            this.tellAudience(res.stamp, res.audience);
             const view = "errands" in res ? res.errands : undefined;
-            this.tellErrands(res.stamp, view && "phoneReports" in res ? { ...view, cards: [...res.phoneReports, ...view.cards] } : view);
+            const searchCards = "webSearch" in res && res.audience === "private" ? res.webSearch.cards : [];
+            const phoneCards = "phoneReports" in res && res.audience === "private" ? res.phoneReports : [];
+            if (view || searchCards.length || phoneCards.length) {
+              this.tellErrands(res.stamp, { ready: view?.ready ?? false, running: view?.running ?? [], cards: [...searchCards, ...phoneCards, ...(view?.cards ?? [])] });
+            }
           }
         });
         return;

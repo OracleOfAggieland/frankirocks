@@ -177,6 +177,8 @@ export interface ErrandLineInput {
   /** The decision row's ID: one per Errand (`errandDeliveryId`). */
   decisionId: string;
   errandId: ID;
+  /** Web searches keep their task record in the ledger. */
+  taskRefType?: "ledger";
   stamp: Stamp;
   head: PayloadInput["head"];
   turns: PayloadInput["turns"];
@@ -200,7 +202,7 @@ export async function admitErrandLine(tx: Tx, input: ErrandLineInput, deps: { ha
     payload: {
       purpose: "proactive",
       acceptedRefs: [
-        { type: "job", id: input.errandId, rev: 1 },
+        { type: input.taskRefType ?? "job", id: input.errandId, rev: 1 },
         { type: "turn", id: input.stamp.turnId as ID, parentId: input.stamp.sessionId as ID, rev: 1 },
       ],
       heldRefs: [],

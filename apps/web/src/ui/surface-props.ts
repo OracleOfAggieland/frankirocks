@@ -1,5 +1,6 @@
 // Surface props (lab-ui-foundation R15, R16, R17.5; design "Data Models"). Browser-side props only:
 // nothing here is a Record, written to Firestore or sent on the wire. Type-only module.
+import type { WebCitation } from "@franki/core";
 
 /** "Bank · 6 purchases" */
 export interface SourceTag {
@@ -31,7 +32,7 @@ export type CardProps =
       checkedFor: { person: string; rules: HardRule[] }[];
     })
   | (CardBase & { kind: "ask"; question: string; options: { id: string; label: string }[]; onAnswer: (id: string) => void })
-  | (CardBase & { kind: "read"; lines: string[]; /** With this, the card offers Close. */ onClose?: () => void });
+  | (CardBase & { kind: "read"; lines: string[]; citationsByLine?: readonly (readonly WebCitation[])[]; /** With this, the card offers Close. */ onClose?: () => void });
 
 export type CardKind = CardProps["kind"];
 

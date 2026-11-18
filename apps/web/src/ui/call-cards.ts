@@ -6,6 +6,7 @@
 // The server decides what a card may hold (company, an unknown audience); this file adds and removes no content.
 import type { Card, Infer, Stamp, ToolResponse, VoiceState } from "@franki/core";
 import type { CardProps } from "./surface-props";
+import { readCardProps } from "./read-card";
 
 type Call = Pick<VoiceState, "phase" | "session" | "deck">;
 
@@ -33,12 +34,12 @@ export interface ShownCallCards {
   cards: readonly Card[];
 }
 
-/** The call's cards as read cards: their title and lines, no actions and no sources to open (as a proactive line's). */
+/** Tool answer cards as they appear in the dock. */
 export function callCardProps(shown: ShownCallCards | null): CardProps[] {
   if (shown === null) return [];
   return shown.cards
     .filter((c) => c.title.trim() !== "" || c.lines.some((l) => l.trim() !== ""))
-    .map((c) => ({ kind: "read" as const, id: `call-${shown.key}-${c.id}`, title: c.title, lines: [...c.lines], sources: [], onOpenSource: () => {} }));
+    .map((c) => readCardProps(c, `call-${shown.key}-${c.id}`));
 }
 
 /**

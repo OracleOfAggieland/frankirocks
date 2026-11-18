@@ -42,7 +42,7 @@ export function phoneLineText(status: Exclude<PhoneStatus, "none">, sinceMs: num
 }
 
 /** The line for the Owner's latest phone call, or null when there is none recent enough to mention. */
-export async function phoneCallLine(ctx: RouteContext, sessionId?: string): Promise<string | null> {
+export async function phoneCallLine(ctx: RouteContext, sessionId?: string, epoch?: number): Promise<string | null> {
   const { uid, deps } = ctx;
   const now = deps.clock.read().opsClock.now;
   const rows = await deps.store.query<PhoneEntry>(uid, {
@@ -55,7 +55,7 @@ export async function phoneCallLine(ctx: RouteContext, sessionId?: string): Prom
     limit: 1,
   });
   const doc = rows[0];
-  if (!doc || doc.data.kind !== "phoneCall") return null;
+  if (!doc || doc.data.kind !== "phoneCall" || (epoch !== undefined && doc.data.epoch !== epoch)) return null;
   const row = doc.data;
   const sinceMs = Math.max(0, now - msFromTs(row.at));
   const status = storedPhoneStatus(row, now);
@@ -66,8 +66,8 @@ export async function phoneCallLine(ctx: RouteContext, sessionId?: string): Prom
 }
 
 /** Never throws: a turn is never lost to the phone line. */
-export function phoneCallLineSafe(ctx: RouteContext, sessionId: string): Promise<string | null> {
-  return phoneCallLine(ctx, sessionId).catch(() => null);
+export function phoneCallLineSafe(ctx: RouteContext, sessionId: string, epoch: number): Promise<string | null> {
+  return phoneCallLine(ctx, sessionId, epoch).catch(() => null);
 }
 
 /** The line as an S0 note for a spoken reply's Notes. */

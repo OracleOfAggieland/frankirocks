@@ -26,6 +26,8 @@ import { memoryTick } from "../time/tick";
 import { runDueForgets } from "../forget/drive";
 // Brief 049 part A.
 import { clearPhoneReports } from "../phone/report";
+import { clearPrivateRows } from "../ledger/private-rows";
+import { WEB_SEARCH_RETAIN_MS } from "../search/tasks";
 import { stripStaleErrands } from "../errands/forget";
 import { runErrand } from "../errands/run";
 
@@ -146,6 +148,7 @@ export async function runDueJobs(ctx: RouteContext): Promise<void> {
   // Review fix R12: results past their card window are stripped bare, whether or not a call polls.
   await racing(ctx, "errandStrip", () => stripStaleErrands(ctx));
   await racing(ctx, "phoneReportExpiry", () => clearPhoneReports(deps.store, uid, deps.clock.read().opsClock.now));
+  await racing(ctx, "webSearchExpiry", () => clearPrivateRows(deps.store, uid, "webSearch", deps.clock.read().opsClock.now - WEB_SEARCH_RETAIN_MS));
   await drainExtractJobs(uid, deps);
 }
 

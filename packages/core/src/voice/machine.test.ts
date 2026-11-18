@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { RECOVERY_LINE, payloadHash } from "../admission";
 import { type Hasher, canonicalJSON } from "../ids";
+import { type PhoneActivity, phoneActivityInstruction } from "../phone";
 import { tsFromMs } from "../schema/primitives";
 import type { Deck, Permit, TurnResponse } from "../schema/wire";
 import type { Infer } from "../schema/v";
@@ -711,6 +712,78 @@ function fastOTurn(r: Rig) {
   judgeDone(r, "resp_j", "O", 300);
   return t;
 }
+
+describe("background task awareness", () => {
+  const ringing: PhoneActivity = { dialId: testId("dial"), turnId: testId("owner-request"), status: "ringing", completion: "active", hasReport: false };
+  const ended: PhoneActivity = { ...ringing, status: "ended", completion: "reported", hasReport: true };
+  function poll(r: Rig, activity: PhoneActivity, sentAt = r.now, audience: "private" | "company" = "private") {
+    const d = r.st.deck!;
+    return r.ev({ type: "stateOk", sentAt, response: { stamp: ss(d), deck: d, state: "LISTENING", audience,
+      ack: ackAt(d, r.now), barrierReceiptId: null, proactive: null, phoneActivity: [activity], webSearch: { status: "none", cards: [] } } }, 1);
+  }
+
+  it("keeps a finish silent during audible playback and includes it in the next owner turn", () => {
+    const r = speaking();
+    poll(r, ringing);
+    const active = r.st.active;
+    expect(sends(poll(r, ended))).toEqual([]);
+    expect(r.st.phase).toBe("SPEAKING");
+    expect(r.st.outputMuted).toBe(false);
+    expect(r.st.active).toBe(active);
+    r.rt({ type: "output_audio_buffer.stopped", response_id: "resp_1" });
+    const next = commitTurn(r, "item_2");
+    expect(next.spec?.response).toMatchObject({ instructions: expect.stringContaining("ended, reported, specialist report available") });
+    expect(JSON.stringify(next.judge)).not.toContain(ringing.dialId);
+  });
+
+  it("lets the owner finish speaking and answers from the most recent nonstale poll", () => {
+    const r = listening();
+    poll(r, ringing);
+    const before = r.now;
+    r.rt({ type: "input_audio_buffer.speech_started", item_id: "item_1", audio_start_ms: 0 }, 10);
+    expect(sends(poll(r, ended))).toEqual([]);
+    expect(sends(poll(r, ringing, before))).toEqual([]);
+    expect(r.st.phoneActivity).toEqual([ended]);
+    r.rt({ type: "input_audio_buffer.speech_stopped", item_id: "item_1", audio_end_ms: 1200 }, 1200);
+    r.rt({ type: "input_audio_buffer.committed", item_id: "item_1" }, 10);
+    const creates = sends(r.rt({ type: "conversation.item.added", item: { id: "item_1" } }, 5));
+    expect(creates).toContainEqual(expect.objectContaining({ response: expect.objectContaining({ instructions: expect.stringContaining("ended, reported") }) }));
+  });
+
+  it("rechecks an unplayed speculative reply at admission when the carrier changed", () => {
+    const r = listening();
+    poll(r, ringing);
+    const { judge, spec } = commitTurn(r);
+    expect(spec?.response).toMatchObject({ instructions: expect.stringContaining("ringing, active") });
+    created(r, judge!, "resp_j");
+    created(r, spec!, "resp_s");
+    answerHash(r);
+    expect(sends(poll(r, ended))).toEqual([]);
+    judgeDone(r, "resp_j", "O", 40);
+    const outbound = sends(answerVerify(r));
+    expect(outbound).toContainEqual({ type: "response.cancel", response_id: "resp_s" });
+    expect(outbound).toContainEqual(expect.objectContaining({ response: expect.objectContaining({ instructions: expect.stringContaining("ended, reported") }) }));
+    expect(r.st.outputMuted).toBe(true);
+  });
+
+  it("drops owner-only activity on an audience change and prevents its restoration by a delayed poll", () => {
+    const r = listening();
+    const prior = r.now;
+    poll(r, ended);
+    poll(r, ended, r.now, "company");
+    poll(r, ended, prior);
+    expect(r.st.phoneActivity).toEqual([]);
+    expect(JSON.stringify(commitTurn(r).spec)).not.toContain(ended.dialId);
+  });
+
+  it("ties each call to an already-admitted input message and never copies its private text into instructions", () => {
+    const turns = [{ turnId: ringing.turnId, role: "user", text: "Call (415) 555-1234" }];
+    const instructions = phoneActivityInstruction([ringing], turns);
+    expect(instructions).toContain(ringing.dialId + " (requested in input message 1)");
+    expect(instructions).not.toContain(turns[0]!.text);
+    expect(phoneActivityInstruction([ringing], [])).not.toContain("input message 1");
+  });
+});
 
 describe("judge and speculative reply at the commit (task 24)", () => {
   it("sends both in one step, muted, with event IDs, and arms the judge deadline at t0 + 1,200", () => {

@@ -5,7 +5,9 @@
  * `realtime.calls.hangup` posts to `/v1/realtime/calls/{id}/hangup`. `decisions.create` posts to `/v1/decisions`.
  */
 import OpenAI from "openai";
+import type { ResponseOutputText } from "openai/resources/responses/responses";
 import { type Env, openaiApiKey } from "../config/env";
+import { citedSearchFindings } from "../search/findings";
 import type { CallOptions, OpenAIEndpoint, OpenAIPort } from "./fake";
 import { type CreateCallBody, type CreateCallResult, HANGUP_CALL_DEADLINE_MS } from "./realtime-calls";
 import type { ResponsesFunctionCall, ResponsesResult } from "./responses";
@@ -13,7 +15,7 @@ import type { ResponsesFunctionCall, ResponsesResult } from "./responses";
 interface SdkResponse {
   status?: string | null;
   output_text?: string | null;
-  output?: { type: string; name?: string; arguments?: string; call_id?: string; status?: string; content?: { type: string; text?: string; refusal?: string }[] }[];
+  output?: { type: string; name?: string; arguments?: string; call_id?: string; status?: string; phase?: string | null; content?: { type: string; text?: string; refusal?: string; annotations?: ResponseOutputText["annotations"] }[] }[];
   usage?: { input_tokens?: number; output_tokens?: number } | null;
 }
 
@@ -50,7 +52,9 @@ export function normalizeResponse(r: SdkResponse): ResponsesResult {
   }
   const status = r.status === "completed" ? "completed" : r.status === "incomplete" ? "incomplete" : "failed";
   const text = typeof r.output_text === "string" && r.output_text.length > 0 ? r.output_text : null;
+  const findings = refusal === null && status === "completed" ? citedSearchFindings(r.output ?? []) : undefined;
   return {
+    ...(findings === undefined ? {} : { webSearchFindings: findings }),
     ...(r.output?.some((item) =>
       item.type === "function_call" && item.name === "make_phone_call" &&
       (item.status === undefined || item.status === "completed") && /^\s*\{\s*\}\s*$/.test(item.arguments ?? "")

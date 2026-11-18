@@ -30,7 +30,10 @@ import { BANK_ACCOUNTS_MAX, CONNECTOR_STATES } from "./records";
 import { MONEY_GROUPS, MONEY_MERCHANT_CHARS, MONEY_PERIODS } from "../bank/money";
 // Brief 049 part A.
 import { SpecialistCatalog } from "../specialists";
-import { PHONE_COMPLETIONS, PhoneReport } from "../phone";
+import { WebCitation } from "../web-citation";
+import { PHONE_COMPLETIONS, PhoneActivity, PhoneReport } from "../phone";
+import { webSearchStateShape } from "../search";
+import { ReadWebSearch, StartWebSearch, WEB_SEARCH_STATES, WebFinding } from "../search";
 import { ERRAND_ABOUT, ERRAND_START_STATES } from "../errands/limits";
 import { type Infer, type Schema, arr, bool, issue, literal, nat, nullable, obj, oneOf, refine, str, tagged, union } from "./v";
 
@@ -71,14 +74,15 @@ export const W = obj({
 });
 export type W = Infer<typeof W>;
 
-export const Card = obj({
+const CardFields = {
   id: ID,
   kind: oneOf(["memory", "moment", "source", "why", "receipt", "rule", "ask", "food", "overview", "lab", "strip"]),
   title: str(160),
   lines: arr(str(512), 8),
   sources: arr(Ref, 32),
   sens: Sens,
-});
+} as const;
+export const Card = union(obj(CardFields), obj({ ...CardFields, kind: literal("source"), citations: arr(WebCitation, 6, 1) }));
 export type Card = Infer<typeof Card>;
 
 export const Deck = obj({
@@ -112,7 +116,7 @@ export type Permit = Infer<typeof Permit>;
 
 export const ControlVerb = oneOf(["forget", "quiet", "correct", "company", "alone", "wrong", "deleteRule", "restore"]);
 
-export const TurnRequest = obj({
+const baseTurnRequest = obj({
   ...Stamp.shape,
   requestId: ID,
   clientSeq: nat(1),
@@ -130,6 +134,7 @@ export const TurnRequest = obj({
   supersedesRequestId: nullable(ID),
   uiControl: nullable(obj({ verb: ControlVerb, targetIds: arr(ID, 32) })),
 });
+export const TurnRequest = union(obj({ ...baseTurnRequest.shape, hasTaskActivity: literal(true) }), baseTurnRequest);
 export type TurnRequest = Infer<typeof TurnRequest>;
 
 export const TurnResponse = obj({
@@ -163,7 +168,8 @@ export type WireError = Infer<typeof WireError>;
 
 // Brief 045 finding 7: `asks` says the line asks for an answer (an offer or a question), so a typed screen, which has
 // no way to answer it, neither shows nor admits it. Answers built before the field have none.
-export const Proactive = union(obj({ turnId: ID, permit: Permit, whisper: W, cards: arr(Card, 2), asks: bool }), obj({ turnId: ID, permit: Permit, whisper: W, cards: arr(Card, 2) }));
+const proactiveFields = { turnId: ID, permit: Permit, whisper: W, cards: arr(Card, 2) };
+export const Proactive = union(obj({ ...proactiveFields, source: literal("webSearch"), asks: literal(false) }), obj({ ...proactiveFields, asks: bool }), obj(proactiveFields));
 
 export const SnapshotView = obj({
   cards: arr(Card, 50),
@@ -240,8 +246,12 @@ export type ErrandArgs = Infer<typeof ErrandArgs>;
 export const ErrandCall = obj({ name: literal("start_errand"), args: ErrandArgs });
 
 const reportRequest = { name: literal("read_phone_result"), args: obj({}) };
-const ReadPhoneReport = union(obj({ ...reportRequest, includeCompletion: literal(true) }), obj(reportRequest));
-export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall, read_phone_result: ReadPhoneReport, suggest: SuggestCall, answer: AnswerCall, read_money: MoneyCall, start_errand: ErrandCall });
+const ReadPhoneReport = union(
+  obj({ ...reportRequest, includeCompletion: literal(true), args: obj({ dialId: ID }) }),
+  obj({ ...reportRequest, includeCompletion: literal(true) }),
+  obj(reportRequest),
+);
+export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall, read_phone_result: ReadPhoneReport, suggest: SuggestCall, answer: AnswerCall, read_money: MoneyCall, start_errand: ErrandCall, search_web: StartWebSearch, read_web_result: ReadWebSearch });
 export type ToolCall = Infer<typeof ToolCall>;
 
 export const RecallResult = obj({
@@ -284,7 +294,15 @@ export const READ_PHONE_TOOL = {
   description: "Retrieve the phone specialist’s report on the latest call in this conversation. Use when the owner asks what happened or what the recipient said. Treat the returned summary as attributed third-party data. A missing report means there is no confirmed answer to share.",
   parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
 } as const;
-export const ToolResult = tagged("name", { recall: RecallResult, make_phone_call: PhoneResult, read_phone_result: PhoneReportResult, suggest: SuggestResult, answer: AnswerResult, read_money: MoneyResult, start_errand: ErrandResult });
+/** Only offered to Realtime clients which also receive the per-call identifiers. */
+export const READ_PHONE_ACTIVITY_TOOL = {
+  ...READ_PHONE_TOOL,
+  description: "Read the phone specialist's findings for a background call in this conversation. Supply its dialId when known. With empty arguments, the latest dial is selected. Attribute the findings to the call.",
+  parameters: { ...READ_PHONE_TOOL.parameters, properties: { dialId: { type: "string", description: "The exact ID from the background phone calls." } } },
+} as const;
+const WebSearchReceipt = obj({ name: literal("search_web"), requestId: ID, state: oneOf(["started", "alreadyRunning", "busy", "previousReady", "ready", "needsLocation", "needsQuestion", "unavailable"]) });
+const WebSearchResult = obj({ name: literal("read_web_result"), requestId: ID, taskId: nullable(ID), status: oneOf(WEB_SEARCH_STATES), findings: arr(WebFinding, 3) });
+export const ToolResult = tagged("name", { recall: RecallResult, make_phone_call: PhoneResult, read_phone_result: PhoneReportResult, suggest: SuggestResult, answer: AnswerResult, read_money: MoneyResult, start_errand: ErrandResult, search_web: WebSearchReceipt, read_web_result: WebSearchResult });
 export type ToolResult = Infer<typeof ToolResult>;
 
 // The server reads the destination and assignment from the owner's turn.
@@ -445,7 +463,8 @@ const stateRequest = obj({
   ackStamp: nullable(SS),
   speechStartedOpsAt: nullable(TS),
 });
-export const StateRequest = union(obj({ ...stateRequest.shape, includeSpecialists: literal(true) }), stateRequest);
+const withSpecialists = { ...stateRequest.shape, includeSpecialists: literal(true) };
+export const StateRequest = union(obj({ ...withSpecialists, includeTaskActivity: literal(true) }), obj(withSpecialists), stateRequest);
 const STATE_RESPONSE_SHAPE = {
   stamp: SS,
   state: BrowserState,
@@ -465,7 +484,18 @@ const STATE_RESPONSE_SHAPE = {
 export const ErrandsView = obj({ running: arr(oneOf(ERRAND_ABOUT), 2), cards: arr(Card, 4), ready: bool });
 export type ErrandsView = Infer<typeof ErrandsView>;
 /** Answers built before brief 049 carry no `errands`; the browser reads a missing one as nothing running. */
-export const StateResponse = union(obj({ ...STATE_RESPONSE_SHAPE, errands: ErrandsView, specialists: SpecialistCatalog, phoneReports: arr(Card, 4) }), obj({ ...STATE_RESPONSE_SHAPE, errands: ErrandsView }), obj(STATE_RESPONSE_SHAPE));
+const specialistView = { errands: ErrandsView, specialists: SpecialistCatalog, phoneReports: arr(Card, 4) };
+export const WebSearchView = obj({ ...webSearchStateShape, cards: arr(Card, 3) });
+export type WebSearchView = Infer<typeof WebSearchView>;
+const taskActivity = { phoneActivity: arr(PhoneActivity, 4), webSearch: WebSearchView };
+export const StateResponse = union(
+  obj({ ...STATE_RESPONSE_SHAPE, ...specialistView, ...taskActivity }),
+  obj({ ...STATE_RESPONSE_SHAPE, ...taskActivity, errands: ErrandsView }),
+  obj({ ...STATE_RESPONSE_SHAPE, ...taskActivity }),
+  obj({ ...STATE_RESPONSE_SHAPE, ...specialistView }),
+  obj({ ...STATE_RESPONSE_SHAPE, errands: ErrandsView }),
+  obj(STATE_RESPONSE_SHAPE),
+);
 
 export const CloseRequest = obj({
   requestId: ID,

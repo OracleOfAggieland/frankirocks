@@ -1,8 +1,12 @@
+import type { SearchFinding } from "../search/findings";
+
 /**
  * The normalized result of one Responses API call, as returned through `OpenAIPort.call("responses.create", ...)`.
  * The live adapter maps the SDK response to this shape; Fake_OpenAI scripts it directly.
  */
 export interface ResponsesResult {
+  /** Present after completed hosted web search. Only provider-annotated findings are returned. */
+  webSearchFindings?: SearchFinding[];
   /** True only for a complete, argument-free phone tool call. */
   phoneCallRequested?: boolean;
   /** Brief 046 part C: the arguments of a complete `read_money` call, as the model wrote them (unparsed). */

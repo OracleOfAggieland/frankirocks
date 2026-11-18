@@ -4,6 +4,7 @@
  * not fields, as in contracts §1.
  */
 import { PHONE_CARRIER_STATUSES, PhoneReport } from "../phone";
+import { WebFinding } from "../search";
 import { checkPredicateFit } from "./predicates";
 import {
   Au,
@@ -336,7 +337,7 @@ export type Turn = Infer<typeof Turn>;
 // ---------------------------------------------------------------------------------------------
 // ledger/{entryId}
 
-const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "phoneReport", "gate", "rule", "bank", "google", "errand"] as const;
+const LEDGER_KINDS = ["request", "decision", "action", "delivery", "usage", "forgetReceipt", "phoneCall", "phoneReport", "webSearch", "gate", "rule", "bank", "google", "errand"] as const;
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
 /**
@@ -495,6 +496,13 @@ export const ErrandLedgerPayload = obj({
 export type ErrandLedgerPayload = Infer<typeof ErrandLedgerPayload>;
 
 export const LEDGER_PAYLOADS = {
+  webSearch: obj({
+    sessionId: ID, generation: nat(1), turnId: ID, status: oneOf(["searching", "found", "unverified", "unavailable"]),
+    questionKey: ID, query: nullable(str(600)), location: nullable(str(120)), timezone: Zone, findings: arr(WebFinding, 3),
+    leaseUntil: nullable(TS), attempts: nat(), offer: nullable(obj({
+      attempt: nat(1), turnId: ID, noteId: ID, expiresAt: TS, state: oneOf(["offered", "playing", "cancelled"]),
+    })), delivered: bool,
+  }),
   phoneReport: obj({ sessionId: ID, turnId: ID, report: nullable(PhoneReport) }),
   // Tracking can be added to an older call, including one created before the indexed dial ID existed.
   phoneCall: union(

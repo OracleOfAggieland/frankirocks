@@ -12,6 +12,7 @@ import { PREDICATE_SPECS } from "../schema/predicates";
 import { Civil, CivilDate, PREDICATES, TS, Value, Zone, tsFromMs } from "../schema/primitives";
 import { LEDGER_PAYLOADS, Ledger, Memory, MemoryShape } from "../schema/records";
 import { RESPONSE_BY_ROUTE } from "../schema/wire";
+import { WebCitationUrl } from "../web-citation";
 import { type ObjSchema, type Schema, type Shape, obj } from "../schema/v";
 
 type Overrides = Map<Schema<unknown>, () => fc.Arbitrary<unknown>>;
@@ -80,6 +81,7 @@ export function arbitraryFor<T>(root: Schema<T>, extra: Overrides = new Map()): 
     [Civil, () => civilArb],
     [CivilDate, () => civilDateArb],
     [Zone, () => fc.constantFrom(...ZONES)],
+    [WebCitationUrl, () => fc.webUrl()],
     [Memory, () => memoryArb(get)],
     [Ledger, () => ledgerArb(get)],
     ...extra,

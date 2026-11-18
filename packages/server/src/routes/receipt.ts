@@ -44,6 +44,7 @@ import { goneCheck, receiptMoments } from "./receipt-moments";
 import { ackDeliveredAs } from "../forget/ack";
 // Brief 049 review fixes V2 and V11: an Errand's line is delivered on its receipt, and its transcript keeps its class.
 import { errandReceipt, errandSaidRow } from "../errands/receipt";
+import { webAnswerReceipt } from "../search/delivery";
 
 type ReceiptReq = Infer<typeof ReceiptRequest>;
 type ReceiptRes = Infer<typeof ReceiptResponse>;
@@ -77,6 +78,14 @@ export async function postReceipt(ctx: RouteContext, req: ReceiptReq): Promise<R
           const refused: ReceiptRes = { accepted: false, controlCheck: "none" };
           await completeRequest(tx, key, refused, ops);
           return refused;
+        }
+        if (await webAnswerReceipt(tx, ctx, req, ops)) {
+          const accepted = { accepted: true, controlCheck: "none" } as const;
+          if (s.status === "minting" || s.status === "active") tx.update(doc.path, {
+            ...s, lastTurnAt: now, expiresAt: tsFromMs(ops + SESSION_IDLE_MS), updatedAt: now,
+          });
+          await completeRequest(tx, key, accepted, ops);
+          return accepted;
         }
         // Brief 048 ruling 11: a "gone" with no receipt in its turn still asks; a forget's acknowledgment has one.
         const check = goneCheck(req) === "pending" && (await ackDeliveredAs(tx, deps.store, uid, req.stamp, req.text, deps.hasher)) ? "none" : goneCheck(req);

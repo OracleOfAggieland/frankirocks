@@ -188,7 +188,10 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
   // A request that fails before it awaits the parse must not leave an unhandled rejection behind.
   slowP.catch(() => {});
   // The Owner's latest phone call, read beside the parse so the reply can say where it stands (phone/aware.ts).
-  const phoneLineP = req.supersedesRequestId === null && req.transcriptState === "final" && cls.cls === "U" ? phoneCallLineSafe(ctx, req.sessionId) : Promise.resolve(null);
+  // Updated live clients already carry the poll snapshot in each reply. A legacy slow-path note could
+  // contradict a newer carrier event and would prevent an ordinary speculative reply from being reused.
+  const phoneLineP = !("hasTaskActivity" in req) && req.supersedesRequestId === null && req.transcriptState === "final" && cls.cls === "U"
+    ? phoneCallLineSafe(ctx, req.sessionId, req.epoch) : Promise.resolve(null);
   const errandLineP = req.supersedesRequestId === null && req.transcriptState === "final" && cls.cls === "U" ? errandRunningLineSafe(ctx, req.sessionId) : Promise.resolve(null);
   await ensureCoreDocs(uid, deps);
   // Brief 046 part C: the model's money question, kept for the step after the commit (a replay has none).

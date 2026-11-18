@@ -12,11 +12,12 @@
 // A leaving card, and the dock as it leaves, are inert and hidden from assistive tech for the whole exit.
 // The host learns that the last card has gone through onExitComplete.
 import { AnimatePresence, type Transition, motion, useIsPresent } from "motion/react";
-import type { CSSProperties, ReactNode } from "react";
+import { type CSSProperties, type ReactNode, useState } from "react";
 import { useReducedMotion } from "../../ui/hooks/reduced-motion";
 import { DUR, EASE, SPRING } from "../../ui/motion";
 import type { CardProps } from "../../ui/surface-props";
 import { Card, type CardExtras, type SourceRowsBySource, cardHasContent } from "./Card";
+import { QUIET_BUTTON } from "./classes";
 
 export const STACK_SCALES = [1, 0.96, 0.92] as const;
 /** How far each older card's top edge peeks out above the one in front, in px. */
@@ -98,7 +99,13 @@ export function frontExtras(id: string, p: Pick<CardDockProps, "sourceRows" | "d
 
 export function CardDock({ cards, sourceRows, defaultOpenSource, openSource, onExitComplete }: CardDockProps) {
   const reduced = useReducedMotion();
-  const shown = cards.filter(cardHasContent).slice(0, STACK_SCALES.length);
+  const [selected, select] = useState<string | null>(null);
+  const available = cards.filter(cardHasContent);
+  const search = available.find(c => c.kind === "read" && c.citationsByLine?.length);
+  const other = available.find(c => c !== search);
+  const front = [search, other].find(c => c?.id === selected) ?? available[0];
+  const alternate = search && other && (front === search ? other : search);
+  const shown = front ? [front, ...available.filter(c => c !== front)].slice(0, STACK_SCALES.length) : [];
   const lift = (shown.length - 1) * STACK_PEEK;
   const leave = dockMotion(0, reduced);
   return (
@@ -113,7 +120,13 @@ export function CardDock({ cards, sourceRows, defaultOpenSource, openSource, onE
           exit={leave.exit}
           transition={leave.transition}
         >
-          <UntilLeaving className="relative w-full max-w-[343px]" style={{ paddingTop: lift }}>
+          <UntilLeaving className="w-full max-w-[343px]">
+            {alternate && (
+              <button type="button" className={`${QUIET_BUTTON} mb-2`} onClick={() => select(alternate.id)}>
+                {alternate === search ? "View web sources" : `View ${alternate.title}`}
+              </button>
+            )}
+            <div className="relative" style={{ paddingTop: lift }}>
             <AnimatePresence initial mode="popLayout">
               {shown
                 .map((card, depth) => {
@@ -145,6 +158,7 @@ export function CardDock({ cards, sourceRows, defaultOpenSource, openSource, onE
                 })
                 .reverse()}
             </AnimatePresence>
+            </div>
           </UntilLeaving>
         </motion.aside>
       ) : null}

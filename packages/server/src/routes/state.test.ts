@@ -3,6 +3,7 @@ import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { never } from "../openai/fake";
 import { paths } from "../store/paths";
+import type { Tx } from "../store/port";
 import { callRoute, patchRecord, runScheduled, testRig } from "../testing/fakes";
 import { openRoute } from "./open";
 import { stateRoute } from "./state";
@@ -27,6 +28,23 @@ async function opened() {
 }
 
 describe("POST /api/session/state", () => {
+  it("keeps the voice acknowledgment available when optional task queries fail", async () => {
+    const { rig, body } = await opened();
+    const transaction = rig.store.transaction.bind(rig.store);
+    rig.store.transaction = (uid, fn) => transaction(uid, async (tx) => {
+      const query: Tx["query"] = (spec) => {
+        if (spec.where.some((f) => f.field === "kind" && (f.value === "webSearch" || f.value === "phoneCall"))) throw new Error("index not available");
+        return tx.query(spec);
+      };
+      return fn({ ...tx, query });
+    });
+    const res = await callRoute(rig, stateRoute, body({ includeSpecialists: true, includeTaskActivity: true }));
+    expect(res.status).toBe(200);
+    expect(res.body.ack).not.toBeNull();
+    expect(res.body).toMatchObject({ phoneActivity: [], webSearch: { status: "none", cards: [] } });
+    expect(validate(StateResponse, res.body).ok).toBe(true);
+  });
+
   it("re-issues Deck every call", async () => {
     const { rig, sessionId, deck, body } = await opened();
     rig.clock.advance(45_000);
