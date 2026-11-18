@@ -24,8 +24,8 @@ describe("Built with Kiro footer (R16.7)", () => {
       ["home page", <Home key="home" />],
       ["lab page", <LabPage key="lab" />],
       ["specimens page", <SpecimensPage key="specimens" />],
-      ["loading", <AuthPanel key="l" state={{ kind: "loading" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />],
-      ["signed out", <AuthPanel key="o" state={{ kind: "signedOut", error: null }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />],
+      ["loading", <AuthPanel key="l" state={{ kind: "loading" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} onDeleteAccount={async () => true} />],
+      ["signed out", <AuthPanel key="o" state={{ kind: "signedOut", error: null }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} onDeleteAccount={async () => true} />],
       [
         "signed out after an error",
         <AuthPanel
@@ -34,12 +34,12 @@ describe("Built with Kiro footer (R16.7)", () => {
           busy={false}
           configMissing={null}
           onSignIn={noop}
-          onSignOut={noop}
+          onSignOut={noop} onDeleteAccount={async () => true}
         />,
       ],
       [
         "signed in",
-        <AuthPanel key="i" state={{ kind: "signedIn", email: "owner@example.com", uid: "u1" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />,
+        <AuthPanel key="i" state={{ kind: "signedIn", email: "owner@example.com", uid: "u1" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} onDeleteAccount={async () => true} />,
       ],
       ["any other page", <p key="x">Not found</p>],
     ];
@@ -84,13 +84,13 @@ describe("Built with Kiro footer (R16.7)", () => {
 
   it("signed-in view shows the email; signed-out view shows an enabled sign-in control", () => {
     const signedIn = renderToStaticMarkup(
-      <AuthPanel state={{ kind: "signedIn", email: "owner@example.com", uid: "u1" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />,
+      <AuthPanel state={{ kind: "signedIn", email: "owner@example.com", uid: "u1" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} onDeleteAccount={async () => true} />,
     );
     expect(signedIn).toContain("owner@example.com");
     expect(signedIn).not.toContain("Sign in to wake Franki");
 
     const signedOut = renderToStaticMarkup(
-      <AuthPanel state={{ kind: "signedOut", error: { cause: "popupBlocked", message: "blocked msg" } }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />,
+      <AuthPanel state={{ kind: "signedOut", error: { cause: "popupBlocked", message: "blocked msg" } }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} onDeleteAccount={async () => true} />,
     );
     // The bolt glyph leads the words inside the button (brief 015).
     expect(signedOut).toMatch(/<button type="button"[^>]*>(<svg[^>]*aria-hidden="true"[\s\S]*?<\/svg>)Sign in to wake Franki<\/button>/);
@@ -99,7 +99,7 @@ describe("Built with Kiro footer (R16.7)", () => {
     expect(signedOut).not.toMatch(/<button[^>]*\sdisabled=""/);
     expect(signedOut).toContain('data-cause="popupBlocked"');
 
-    const loading = renderToStaticMarkup(<AuthPanel state={{ kind: "loading" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />);
+    const loading = renderToStaticMarkup(<AuthPanel state={{ kind: "loading" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} onDeleteAccount={async () => true} />);
     expect(loading).toMatch(/<button[^>]*\sdisabled=""[^>]*>(<svg[\s\S]*?<\/svg>)?Sign in to wake Franki/);
   });
 });

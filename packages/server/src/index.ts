@@ -49,4 +49,6 @@ export { STALE_AFTER_MS as BANK_STALE_AFTER_MS, pullIfStale } from "./bank/pull"
 // Brief 049 (lane google): the Google connection (read-only). The four routes, and the reads the errand tools call.
 export { googleConnectRoute, googleDisconnectRoute, googleStartRoute, googleStatusRoute } from "./google/routes";
 export { googleConfigured } from "./google/config";
+// POST /api/account/delete: erases everything stored for the caller, then their sign-in.
+export { accountDeleteRoute } from "./account/delete";
 export { freeTime, googleReadContext, listEvents, readableMessage, searchMail } from "./google/read";

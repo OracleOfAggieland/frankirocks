@@ -43,6 +43,8 @@ export interface ControllerDeps {
 }
 
 export interface SignedInControllers {
+  /** The signed-in API client, for calls no controller owns (the account delete). */
+  api: ApiClient;
   typed: TypedTurns;
   debug: DebugPanelModel | null;
   voice: VoiceClient | null;
@@ -202,6 +204,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
   // Brief 049 part B. A start over keeps a connected Google account (ruling 22), as it keeps a bank.
   const google = new GoogleWatch({ api, now: () => clock.mono(), newId: () => randomId() });
   return {
+    api,
     bank,
     google,
     typed,

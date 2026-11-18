@@ -6,6 +6,8 @@
  * The browser sets `Origin` itself on same-origin POSTs, which the Route_Guard checks (R10.3).
  */
 import {
+  type AccountDeleteRequest,
+  AccountDeleteResponse,
   AdvanceRequest,
   AdvanceResponse,
   BankConnectRequest,
@@ -294,4 +296,15 @@ export async function disconnectBank(api: ApiClient, body: BankDisconnectRequest
   if (!r.ok) return { ok: false, why: r.kind === "http" && r.status !== 429 && r.status !== 408 ? "failed" : "unknown" };
   const parsed = validate(BankDisconnectResponse, r.body);
   return parsed.ok ? { ok: true, bank: (parsed.value as BankDisconnectResponse).bank } : { ok: false, why: "unknown" };
+}
+
+export const ACCOUNT_DELETE_PATH = "/api/account/delete";
+/** The delete makes up to six calls to Plaid and Google, then deletes the whole tenant twice. */
+export const ACCOUNT_DELETE_TIMEOUT_MS = 90_000;
+
+/** POST /api/account/delete. True only when the server answered that everything is deleted. */
+export async function deleteAccount(api: ApiClient): Promise<boolean> {
+  const body: AccountDeleteRequest = { confirm: "delete everything" };
+  const r = await api.call<unknown>(ACCOUNT_DELETE_PATH, { method: "POST", body, timeoutMs: ACCOUNT_DELETE_TIMEOUT_MS });
+  return r.ok && validate(AccountDeleteResponse, r.body).ok;
 }

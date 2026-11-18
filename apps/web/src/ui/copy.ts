@@ -90,6 +90,16 @@ export const COPY = {
   captions: { toggle: "Captions" },
   sound: { toggle: "Sound effects" },
   auth: { signIn: "Sign in to wake Franki", signOut: "Sign out", about: "About Franki" },
+  account: {
+    menu: "Account",
+    delete: "Delete my data",
+    title: "Delete everything Franki knows?",
+    body: "This erases your memories, conversations, calls and everything else Franki stored for you, disconnects any bank and Google account, and deletes your sign-in. It can't be undone.",
+    confirm: "Delete everything",
+    cancel: "Cancel",
+    deleting: "Deleting…",
+    failed: "The delete didn't finish. You're still signed in, so you can try again.",
+  },
   typed: { open: "Type to Franki", label: "Type to Franki", send: "Send" },
   call: {
     start: "Call Franki",

@@ -597,6 +597,14 @@ export type GoogleDisconnectRequest = Infer<typeof GoogleDisconnectRequest>;
 export const GoogleDisconnectResponse = obj({ google: GoogleView });
 export type GoogleDisconnectResponse = Infer<typeof GoogleDisconnectResponse>;
 
+// ---------------------------------------------------------------------------------------------
+// POST /api/account/delete: erases everything stored for the caller and their sign-in. The body must say so in
+// words, so no request made for something else can reach it.
+export const AccountDeleteRequest = obj({ confirm: literal("delete everything") });
+export type AccountDeleteRequest = Infer<typeof AccountDeleteRequest>;
+export const AccountDeleteResponse = obj({ deleted: literal(true) });
+export type AccountDeleteResponse = Infer<typeof AccountDeleteResponse>;
+
 /** WireResult by route: the stored `request.response` must be that route's response type. */
 export const RESPONSE_BY_ROUTE: Record<RouteName, Schema<unknown>> = {
   open: OpenResponse,

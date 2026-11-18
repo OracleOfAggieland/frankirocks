@@ -53,7 +53,7 @@ function render(signedIn: boolean, voice: VoiceState = initialVoiceState({ trans
           busy={false}
           configMissing={null}
           onSignIn={noop}
-          onSignOut={noop}
+          onSignOut={noop} onDeleteAccount={async () => true}
         />
       }
       soundToggle={<SoundToggle preference={new SoundPreference(storage())} />}
@@ -111,12 +111,16 @@ describe("MainScreen", () => {
     }
   });
 
-  it("signed in: header wordmark, email and sign-out", () => {
+  it("signed in: header wordmark and the account menu with the email", () => {
     const html = render(true);
     expect(html).toContain('data-wordmark="header"');
     expect(html).toContain('data-testid="signed-in-email"');
     expect(html).toContain("owner@example.com");
-    expect(html).toContain(">Sign out<");
+    expect(html).toContain(`aria-label="Account: owner@example.com"`);
+    expect(html).toContain(`aria-haspopup="menu"`);
+    // The menu is closed until pressed; the delete confirmation is a closed dialog.
+    expect(html).not.toContain(">Sign out<");
+    expect(html).toMatch(/<dialog[^>]*data-account-delete=""/);
     expect(html.indexOf('data-area="header"')).toBeLessThan(html.indexOf("owner@example.com"));
     expect(html.indexOf("owner@example.com")).toBeLessThan(html.indexOf('data-area="stage"'));
   });
@@ -213,7 +217,7 @@ describe("MainScreen", () => {
       expect(c, c).toMatch(/focus-visible:outline/);
       expect(c, c).toMatch(/min-h-11|h-16/);
     }
-    const order = ["data-sound-toggle", ">Sign out<", 'data-form="hangup"', "Mute microphone", 'data-typed-line="collapsed"'].map((s) => html.indexOf(s));
+    const order = ["data-sound-toggle", "data-account-delete", 'data-form="hangup"', "Mute microphone", 'data-typed-line="collapsed"'].map((s) => html.indexOf(s));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
@@ -230,10 +234,10 @@ describe("the lab's shell (brief 015)", () => {
     expect(html).toMatch(/data-part="halo"[^>]*class="[^"]*inset-\[-20%\]/);
   });
 
-  it("the header is a rail: wordmark and bolt, the time-badge slot, sound, email in mono 12, Sign out, over a fading seam", () => {
+  it("the header is a rail: wordmark and bolt, the time-badge slot, sound, email in mono 12 in the account menu, over a fading seam", () => {
     const html = render(true);
     const header = /<header[\s\S]*?<\/header>/.exec(html)?.[0] ?? "";
-    const order = ["data-wordmark-bolt", ">Franki<", 'data-slot="time-badge"', "data-sound-toggle", 'data-testid="signed-in-email"', ">Sign out<", "data-rail-seam"].map((m) => header.indexOf(m));
+    const order = ["data-wordmark-bolt", ">Franki<", 'data-slot="time-badge"', "data-sound-toggle", 'data-testid="signed-in-email"', "data-account-delete", "data-rail-seam"].map((m) => header.indexOf(m));
     expect(order.every((i) => i >= 0), String(order)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(header).toMatch(/data-testid="signed-in-email" class="[^"]*font-mono text-xs/);

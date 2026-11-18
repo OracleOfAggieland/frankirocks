@@ -3,7 +3,7 @@
 import { type VoiceState, initialVoiceState } from "@franki/core";
 import { AnimatePresence, MotionConfig } from "motion/react";
 import { createContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { createApiClient } from "../client/api";
+import { createApiClient, deleteAccount as deleteAccountCall } from "../client/api";
 import { type AuthClient, type AuthState, createAuthClient } from "../client/auth";
 import { type BrowserClock, createBrowserClock } from "../client/clock";
 import { DEBUG_POLL_MS, type DebugPanelModel } from "../client/debug-panel";
@@ -360,8 +360,20 @@ export function App() {
     await auth.signOut();
   };
 
+  // Delete my data: hang up and close the Session first, as a sign-out does, so nothing writes while the tenant is
+  // deleted. Only after the server answers that everything is gone does the screen sign out.
+  const deleteAccount = async (): Promise<boolean> => {
+    const auth = authRef.current;
+    if (auth === null || signedIn === null) return false;
+    const limit = new Promise<void>((resolve) => setTimeout(resolve, SIGN_OUT_LIMIT_MS));
+    await Promise.race([Promise.all([signedIn.voice?.signOut(), signedIn.typed.closeSession(SIGN_OUT_LIMIT_MS)]), limit]);
+    if (!(await deleteAccountCall(signedIn.api))) return false;
+    await auth.signOut();
+    return true;
+  };
+
   const auth = (
-    <AuthPanel state={state} busy={busy} configMissing={config.ok ? null : config.missing} onSignIn={() => void signIn()} onSignOut={() => void signOut()} />
+    <AuthPanel state={state} busy={busy} configMissing={config.ok ? null : config.missing} onSignIn={() => void signIn()} onSignOut={() => void signOut()} onDeleteAccount={deleteAccount} />
   );
 
   return (
