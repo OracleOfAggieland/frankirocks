@@ -5,7 +5,7 @@
  */
 import { ResetRequest } from "@franki/core";
 import { ensureCoreDocs, readCoreDocs } from "../core-docs";
-import { type CallStatus, twilioCallStatus } from "../phone/status";
+import { type CallStatus, twilioCallStatus } from "../phone/carrier-read";
 import { phoneCallOut, phoneOutError } from "../seed/phone-out";
 import { type ResetReq, type ResetRes, resetVisit } from "../seed/reset";
 import { readSnapshot } from "../store/port";

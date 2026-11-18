@@ -8,7 +8,7 @@
  * read is out. A `failed` dial never rang. A full page of recent rows also counts as out.
  */
 import { type Ledger, msFromTs, tsFromMs } from "@franki/core";
-import type { CallStatus } from "../phone/status";
+import type { CallStatus } from "../phone/carrier-read";
 import { phoneConfig } from "../phone/twilio";
 import { RouteError } from "../routes/errors";
 import type { RouteContext } from "../routes/runtime";

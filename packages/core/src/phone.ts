@@ -13,6 +13,13 @@ export const PHONE_SUMMARY_CHARS = 400;
 export const PhoneReport = obj({ outcome: oneOf(PHONE_OUTCOMES), summary: str(PHONE_SUMMARY_CHARS, { min: 1 }) });
 export type PhoneReport = Infer<typeof PhoneReport>;
 
+export const PHONE_CARRIER_STATUSES = ["queued", "initiated", "ringing", "in-progress", "completed", "busy", "no-answer", "failed", "canceled"] as const;
+export type CarrierStatus = (typeof PHONE_CARRIER_STATUSES)[number];
+
+/** The outcome of reconciling one dial with its own private specialist report. */
+export const PHONE_COMPLETIONS = ["unknown", "active", "awaitingReport", "reported", "unconfirmed", "busy", "noAnswer", "failed"] as const;
+export type PhoneCompletion = (typeof PHONE_COMPLETIONS)[number];
+
 export const PHONE_STATUSES = ["none", "dialing", "ringing", "talking", "ended", "busy", "noAnswer", "failed", "unknown"] as const;
 export type PhoneStatus = (typeof PHONE_STATUSES)[number];
 

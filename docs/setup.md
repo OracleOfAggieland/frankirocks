@@ -21,15 +21,15 @@ Sign in to Franki and say or type “Call +1 415 555 0123 and ask what time they
 
 Phone calls use the live agent's existing `OPENAI_API_KEY` and voice model. Twilio authenticates dialing with its account SID and auth token. The OpenAI webhook signing secret verifies incoming callbacks.
 
-While a call is out, a wall phone hangs beside Franki and shows where the call stands: dialing, ringing, on the phone, ended, or why it was missed. The browser reads that from `GET /api/phone/status`, which checks the caller's own call record and then asks Twilio for the call's status.
+While a call is out, the wall phone shows dialing, ringing, connected, ended, or why the call was missed. Twilio sends signed progress updates to `/api/phone/twilio` for each dial. The screen and ordinary conversation read the stored status. The scheduled `reconcilePhoneCalls` function checks due calls every minute to recover missed updates, including after the user closes the browser. Calls placed before this feature enter recovery when their status is next read. If carrier lookups keep failing for 48 hours after a dial, tracking shows an unknown status and a later signed terminal callback can still settle it.
 
 Any signed-in user can call. Franki saves the call request in that user's conversation and passes an opaque call ID through Twilio. The signed OpenAI webhook looks up that ID in Firestore to find the original request.
 
-The phone specialist can file a short answer, voicemail report, or inconclusive outcome through `/api/phone/report`. In the original private conversation, the report appears as a result card. Ask “What did they say?” to hear the latest call’s findings. A call can end before the specialist files a report. Carrier status alone cannot confirm a reservation or answer.
+The phone specialist files its answer, voicemail report, or inconclusive finding through `/api/phone/report`. An early report is available in the original private conversation while the carrier still tracks the call. If the carrier reports an answered call has ended, Franki waits 15 seconds for its report before showing an unconfirmed outcome. A later report within the existing one-hour retention window updates the same card. Busy, unanswered, and failed calls have immediate outcomes. Ask “What did they say?” to hear the latest call’s result.
 
-The report tool accepts a credential scoped to the assigned SIP call. For a tunnel or a separate deployment, set `FRANKI_PHONE_REPORT_ORIGIN` to the public HTTPS origin serving the webhook and report route. App Hosting sets this origin to `https://frankirocks.com`.
+The report tool accepts a credential scoped to the assigned SIP call. For a tunnel or a separate deployment, set `FRANKI_PHONE_REPORT_ORIGIN` to the public HTTPS origin serving the Twilio callback and specialist report routes. App Hosting sets this origin to `https://frankirocks.com`. Each dial registers its own callback URL with Twilio.
 
-For local development, use `apps/web/.env.local`. App Hosting reads the same five phone settings from Secret Manager at runtime. Deploy the Firestore indexes in this repository before enabling the webhook.
+For local development, use `apps/web/.env.local`. App Hosting reads the five phone settings below from Secret Manager at runtime. Deploy the Firestore indexes before rolling out the updated app and scheduled function. The function's service account needs Firestore access and access to the existing `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `FRANKI_ID_HMAC_KEY` secrets.
 
 | Variable | Value |
 | --- | --- |

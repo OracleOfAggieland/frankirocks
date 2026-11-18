@@ -3,7 +3,7 @@
  * Every tenant row carries the Common_Fields C. Document IDs (eid, mid, sessionId, ...) are path segments,
  * not fields, as in contracts §1.
  */
-import { PhoneReport } from "../phone";
+import { PHONE_CARRIER_STATUSES, PhoneReport } from "../phone";
 import { checkPredicateFit } from "./predicates";
 import {
   Au,
@@ -357,6 +357,10 @@ const phoneCallFields = {
   realtimeCallId: nullable(s128),
   accepted: bool,
 };
+const phoneTrackingFields = {
+  carrier: nullable(obj({ status: oneOf(PHONE_CARRIER_STATUSES), observedAt: TS })),
+  nextCarrierCheckAt: nullable(TS),
+};
 
 // Brief 024: what the Gate said, held, steered, declined or blocked, as IDs and codes, never words.
 const GatePayload = obj({
@@ -491,9 +495,14 @@ export const ErrandLedgerPayload = obj({
 export type ErrandLedgerPayload = Infer<typeof ErrandLedgerPayload>;
 
 export const LEDGER_PAYLOADS = {
-  // Earlier calls have no indexed call ID. Their receipts remain readable and replayable.
   phoneReport: obj({ sessionId: ID, turnId: ID, report: nullable(PhoneReport) }),
-  phoneCall: union(obj({ ...phoneCallFields, phoneCallId: ID }), obj(phoneCallFields)),
+  // Tracking can be added to an older call, including one created before the indexed dial ID existed.
+  phoneCall: union(
+    obj({ ...phoneCallFields, phoneCallId: ID, ...phoneTrackingFields }),
+    obj({ ...phoneCallFields, ...phoneTrackingFields }),
+    obj({ ...phoneCallFields, phoneCallId: ID }),
+    obj(phoneCallFields),
+  ),
   request: obj({
     route: RouteName,
     keyHash: ID,

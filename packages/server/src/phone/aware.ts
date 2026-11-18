@@ -1,31 +1,28 @@
 /**
  * What Franki is told about the Owner's most recent outbound phone call, so a question about it ("did they pick
- * up?") gets a true answer. Read-only: the Owner's own `phoneCall` ledger row, then Twilio's status for that call.
+ * up?") gets a true answer from the stored carrier observations.
  *
  * This S0 line carries only carrier status. The separate report tool can return private findings.
  */
 import { type PhoneStatus, type W, msFromTs, tsFromMs } from "@franki/core";
-import { withDeadline } from "../clock/timers";
 import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
 import type { PhoneEntry } from "./outbound";
-import { phoneStatusOf, twilioCallStatus } from "./status";
-import { phoneConfig } from "./twilio";
+import { carrierOf, storedPhoneStatus } from "./lifecycle";
+import { schedulePhoneCheck } from "./reconcile";
 
-/** A call that may still be out is mentioned for this long after the dial. */
+/** A nonterminal status remains relevant for this long after its last observation. */
 export const PHONE_AWARE_LIVE_MS = 30 * 60_000;
-/** A call that is over is mentioned for this long after the dial. */
+/** A call that is over is mentioned for this long after its terminal observation. */
 export const PHONE_AWARE_ENDED_MS = 10 * 60_000;
-/** The turn never waits longer than this for Twilio's answer. */
-export const PHONE_AWARE_STATUS_MS = 1_000;
 const NOTE_TTL_MS = 60_000;
 
 const LIVE: readonly PhoneStatus[] = ["dialing", "ringing", "talking", "unknown"];
 
 const STANDS: Record<Exclude<PhoneStatus, "none">, string> = {
   dialing: "is being dialed right now",
-  ringing: "is ringing, and nobody has answered yet",
-  talking: "is connected right now: the person who answered is talking with your phone-side self",
+  ringing: "is ringing or still connecting to your phone-side self",
+  talking: "is connected to your phone-side self right now",
   ended: "was answered and has now ended",
   busy: "got a busy signal and did not connect",
   noAnswer: "rang out with no answer",
@@ -53,28 +50,18 @@ export async function phoneCallLine(ctx: RouteContext, sessionId?: string): Prom
     where: [
       { field: "kind", op: "==", value: "phoneCall" },
       ...(sessionId === undefined ? [] : [{ field: "payload.sessionId", op: "==" as const, value: sessionId }]),
-      { field: "at", op: ">=", value: tsFromMs(now - PHONE_AWARE_LIVE_MS) },
     ],
     orderBy: { field: "at", dir: "desc" },
     limit: 1,
   });
-  const row = rows[0]?.data;
-  if (row === undefined || row.kind !== "phoneCall") return null;
+  const doc = rows[0];
+  if (!doc || doc.data.kind !== "phoneCall") return null;
+  const row = doc.data;
   const sinceMs = Math.max(0, now - msFromTs(row.at));
-  let status: Exclude<PhoneStatus, "none">;
-  if (row.state === "pending") status = "dialing";
-  else if (row.state === "failed") status = "failed";
-  else if (row.payload.twilioSid === null) status = "unknown";
-  else {
-    try {
-      const twilio = await withDeadline((deps.callStatus ?? twilioCallStatus)(phoneConfig(deps.env), row.payload.twilioSid), PHONE_AWARE_STATUS_MS, deps.timers);
-      const mapped = phoneStatusOf(twilio, row.payload.accepted);
-      status = mapped === "none" ? "unknown" : mapped;
-    } catch {
-      status = "unknown";
-    }
-  }
-  if (!LIVE.includes(status) && sinceMs > PHONE_AWARE_ENDED_MS) return null;
+  const status = storedPhoneStatus(row, now);
+  const lastChange = carrierOf(row)?.observedAt ?? row.updatedAt;
+  if (now - msFromTs(lastChange) > (LIVE.includes(status) ? PHONE_AWARE_LIVE_MS : PHONE_AWARE_ENDED_MS)) return null;
+  schedulePhoneCheck(ctx, doc.id, row);
   return phoneLineText(status, sinceMs);
 }
 

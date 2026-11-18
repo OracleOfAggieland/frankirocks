@@ -11,7 +11,7 @@ import type { Timers } from "../clock/timers";
 import type { Env } from "../config/env";
 import type { FastSlotsPort } from "../onturn/fast-slots-port";
 import type { OpenAIPort } from "../openai/fake";
-import type { CallStatus } from "../phone/status";
+import type { CallStatus } from "../phone/carrier-read";
 import type { Dial } from "../phone/twilio";
 import type { BankPort } from "../bank/plaid";
 import type { GooglePort } from "../google/port";
@@ -31,7 +31,7 @@ export type Log = (event: string, fields: Record<string, string | number | boole
 
 export interface RouteDeps {
   dial?: Dial;
-  /** Twilio's status for one call, read for the phone line in a reply's notes. Fake in tests. */
+  /** Background reconciliation reads carrier status through this port. */
   callStatus?: CallStatus;
   /** Brief 046: the bank (Plaid) port. Live when unset; a throwing fake in tests. */
   bank?: BankPort;

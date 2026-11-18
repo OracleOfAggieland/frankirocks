@@ -14,6 +14,7 @@ import type { RouteDeps } from "../routes/runtime";
 import { paths } from "../store/paths";
 import { reportTool } from "./report-mcp";
 import { type PhoneEntry, SIP_WINDOW_MS, phoneTransaction } from "./outbound";
+import { carrierOf, isTerminalCarrier } from "./lifecycle";
 
 interface SipControls {
   accept(callId: string, assignment: string, binding: { uid: string; dialId: string }): Promise<unknown>;
@@ -54,6 +55,8 @@ export async function answerPhoneCall(
     const { payload } = row.data;
     if (payload.realtimeCallId !== null && payload.realtimeCallId !== data.call_id) return { kind: "reject" } as const;
     if (payload.accepted) return { kind: "done" } as const;
+    const carrier = carrierOf(row.data);
+    if (carrier && isTerminalCarrier(carrier.status)) return { kind: "reject" } as const;
     const now = deps.clock.read().opsClock.now;
     if (msFromTs(row.data.at) + SIP_WINDOW_MS < now) return { kind: "reject" } as const;
     if (payload.realtimeCallId && msFromTs(row.data.updatedAt) + 15_000 > now) throw new Error("SIP acceptance in progress");

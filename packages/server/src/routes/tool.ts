@@ -57,7 +57,7 @@ import { admitRule } from "../admission/seam";
 import { effectiveAudience, hasParseGap } from "../audience";
 import type { ResponsesResult } from "../openai/responses";
 import { cachedPhoneTool, replayPhoneTool } from "../phone/replay";
-import { readPhoneReport } from "../phone/report";
+import { readPhoneResult } from "../phone/report";
 import { placePhoneCall } from "../phone/outbound";
 // Brief 049 part A.
 import { type ErrandPlan, planErrand } from "../errands/start";
@@ -245,7 +245,8 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       let shaped = limited.name === "suggest" ? suggestForAudience(limited, narrowed ? "narrowed" : rule.audience) : limited;
       if (shaped.name === "read_phone_result" && planned.kind === "permit" && planned.notes === "all" &&
           s.lastClientSeq === turn.seq && turn.sourceClass === "U" && (turn.itemIds.length === 0 || turn.judge === "O")) {
-        shaped = { ...shaped, report: await readPhoneReport(tx, deps, uid, req.stamp.sessionId, s, current.epoch) };
+        const phone = await readPhoneResult(tx, deps, uid, req.stamp.sessionId, s, current.epoch);
+        if (phone) shaped = { ...shaped, report: phone.report, ...("includeCompletion" in req.tool ? { completion: phone.completion } : {}) };
       }
       // Brief 030 part A: the Gate in front of the result, its rows written here.
       const gated = await gateToolOutput(tx, ctx, { session: s, turn, stamp: req.stamp, core, purpose: req.tool.name === "recall" ? req.tool.args.purpose : null }, shaped);

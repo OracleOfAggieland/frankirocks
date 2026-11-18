@@ -1,10 +1,10 @@
 import { createHmac } from "node:crypto";
-import { type Stamp, TurnResponse, payloadHash, validate } from "@franki/core";
+import { type Session, type Stamp, TurnResponse, payloadHash, validate } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ok } from "../openai/fake";
 import { normalizeResponse } from "../openai/live";
-import { PHONE_REPORT_WINDOW_MS, clearPhoneReports } from "./report";
+import { PHONE_REPORT_WINDOW_MS, clearPhoneReports, phoneReportCards, readPhoneResult } from "./report";
 import { reportTool, phoneReportEndpoint } from "./report-mcp";
 import { stateRoute } from "../routes/state";
 import { paths } from "../store/paths";
@@ -13,8 +13,10 @@ import { toolRoute } from "../routes/tool";
 import { T0_MS, TEST_ENV, callRoute, patchRecord, testRig } from "../testing/fakes";
 import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
 import { destination, queued } from "./outbound";
-import { DialRejected, dialTwilio, phoneConfig } from "./twilio";
+import { DialRejected, dialConfig, dialTwilio } from "./twilio";
 import { answerPhoneCall, phoneWebhook } from "./webhook";
+import { saveCarrierEvent } from "./callback";
+import { PHONE_REPORT_GRACE_MS } from "./lifecycle";
 
 const lookupUid = async () => "owner-1";
 const env = { ...TEST_ENV, TWILIO_ACCOUNT_SID: "AC" + "1".repeat(32),
@@ -28,7 +30,7 @@ const intent = normalizeResponse({ status: "completed", output: [
 const controls = () => ({ accept: vi.fn(async () => {}), greet: vi.fn(async () => {}), reject: vi.fn(async () => {}) });
 
 async function setup() {
-  const rig = testRig(env);
+  const rig = testRig({ ...env, FRANKI_PHONE_REPORT_ORIGIN: "https://frankirocks.com" });
   const dial = vi.fn<typeof dialTwilio>().mockResolvedValue(sid);
   rig.deps.dial = dial;
   const session = await openTestSession(rig);
@@ -69,7 +71,7 @@ describe("outbound phone calls", () => {
     const placed = await callRoute(rig, turnRoute, typedTurn(session.stamp, 1, text));
     const dialId = dial.mock.calls[0]![2], callId = "rtc_report";
     await answerPhoneCall(rig.deps, { call_id: callId, sip_headers: [{ name: "x-franki-call", value: dialId }] }, controls(), lookupUid);
-    expect(reportTool(rig.deps, uid, dialId, callId, "https://other.test")).toBeNull();
+    expect(reportTool({ ...rig.deps, env }, uid, dialId, callId, "https://other.test")).toBeNull();
     const tool = reportTool(rig.deps, uid, dialId, callId, "https://frankirocks.com")!;
     const rpc = (method: string, params: object, authorization = tool.headers.Authorization) =>
       phoneReportEndpoint(new Request(tool.server_url, { method: "POST", headers: { authorization }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) }), rig.deps);
@@ -95,12 +97,16 @@ describe("outbound phone calls", () => {
     expect((await callRoute(rig, turnRoute, followUp)).body).toEqual(typed.body);
     expect(typed.body.notes[0]).toMatchObject({ sens: "S2", text: expect.stringContaining(report.summary) });
     const spoken = await callRoute(rig, turnRoute, { ...asrTurn(typed.body.stamp, 3, "What did they say?", [{ itemId: "item3", commitSeq: 3 }]), judge: "O" });
-    const lookup = (id: string) => callRoute(rig, toolRoute, { requestId: testId(id), stamp: spoken.body.stamp, callId: id, tool: { name: "read_phone_result", args: {} } });
+    const lookup = (id: string, includeCompletion = false) => callRoute(rig, toolRoute, { requestId: testId(id), stamp: spoken.body.stamp, callId: id,
+      tool: { name: "read_phone_result", args: {}, ...(includeCompletion ? { includeCompletion: true } : {}) } });
     const result = await lookup("private");
-    expect(result.body.result.report).toEqual(report);
+    expect(result.body.result).toEqual({ name: "read_phone_result", report });
     expect((await lookup("private")).body).toEqual(result.body);
+    expect((await lookup("before-hangup", true)).body.result).toMatchObject({ completion: "active", report });
+    await saveCarrierEvent(rig.deps, uid, { dialId, sid, status: "completed" });
+    expect((await lookup("after-hangup", true)).body.result).toMatchObject({ completion: "reported", report });
     await patchRecord(rig.store, uid, paths.session(uid, session.sessionId), { audience: "company" });
-    expect((await lookup("company")).body.result.report).toBeNull();
+    expect((await lookup("company", true)).body.result).toEqual({ name: "read_phone_result", report: null });
     expect((await lookup("private")).body).toMatchObject({ status: "stale", result: null });
     expect((await callRoute(rig, turnRoute, followUp)).body).toMatchObject({ status: "stale", notes: [] });
     expect((await poll()).body.phoneReports).toEqual([]);
@@ -109,6 +115,40 @@ describe("outbound phone calls", () => {
     rig.clock.advance(PHONE_REPORT_WINDOW_MS + 1);
     expect((await rpc("tools/call", params)).status).toBe(401);
     expect(dial).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows one unconfirmed outcome after grace, then updates the same private card when a late report arrives", async () => {
+    const { rig, dial, session } = await setup();
+    const uid = "owner-1";
+    rig.openai.script("responses.create", ok(intent));
+    const placed = await callRoute(rig, turnRoute, typedTurn(session.stamp, 1, text));
+    const dialId = dial.mock.calls[0]![2];
+    const callId = "rtc_late_report";
+    await answerPhoneCall(rig.deps, { call_id: callId, sip_headers: [{ name: "x-franki-call", value: dialId }] }, controls(), lookupUid);
+    await patchRecord(rig.store, uid, paths.session(uid, session.sessionId), { audience: "private" });
+    const { epoch, policyRev, bundleRev, rulesRev } = placed.body.stamp;
+    const poll = () => callRoute(rig, stateRoute, { sessionId: session.sessionId, generation: 1,
+      seen: { epoch, policyRev, bundleRev, rulesRev }, ackStamp: null, speechStartedOpsAt: null, includeSpecialists: true });
+    await saveCarrierEvent(rig.deps, uid, { dialId, sid, status: "completed" });
+    expect((await poll()).body.phoneReports).toEqual([]);
+    rig.openai.always("responses.create", ok(normalizeResponse({ status: "completed", output: [
+      { type: "function_call", name: "read_phone_result", call_id: "lookup", arguments: "{}" },
+    ] })));
+    const waiting = await callRoute(rig, turnRoute, typedTurn(placed.body.stamp, 2, "What did they say?"));
+    expect(waiting.body.notes[0].text).toContain("waiting for the phone specialist");
+    rig.clock.advance(PHONE_REPORT_GRACE_MS);
+    const afterGrace = (await poll()).body.phoneReports;
+    expect(afterGrace).toHaveLength(1);
+    expect(afterGrace[0].lines).toEqual(["The call ended. I don’t have a confirmed outcome to share."]);
+    const unknown = await callRoute(rig, turnRoute, typedTurn(waiting.body.stamp, 3, "Did they confirm anything?"));
+    expect(unknown.body.notes[0].text).toBe(afterGrace[0].lines[0]);
+    const tool = reportTool(rig.deps, uid, dialId, callId, "https://frankirocks.com")!;
+    const report = { outcome: "voicemail", summary: "Left a voicemail asking for the shop hours." };
+    const response = await phoneReportEndpoint(new Request(tool.server_url, { method: "POST", headers: { authorization: tool.headers.Authorization },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "report_call_outcome", arguments: report } }),
+    }), rig.deps);
+    expect(await response.json()).toMatchObject({ result: { isError: false } });
+    expect((await poll()).body.phoneReports).toMatchObject([{ id: afterGrace[0].id, title: "Phone call · voicemail", lines: [report.summary], sens: "S2" }]);
   });
 
   it("keeps overlapping calls separate when their reports arrive in reverse order", async () => {
@@ -168,6 +208,35 @@ describe("outbound phone calls", () => {
     expect(dial).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects a delayed incoming SIP leg after the carrier has already ended the call", async () => {
+    const { rig, dial, session } = await setup();
+    rig.openai.script("responses.create", ok(intent));
+    await callRoute(rig, turnRoute, typedTurn(session.stamp, 1, text));
+    const dialId = dial.mock.calls[0]![2];
+    await saveCarrierEvent(rig.deps, "owner-1", { dialId, sid, status: "completed" });
+    const sip = controls();
+    await answerPhoneCall(rig.deps, { call_id: "rtc_late", sip_headers: [{ name: "x-franki-call", value: dialId }] }, sip, lookupUid);
+    expect(sip.reject).toHaveBeenCalledExactlyOnceWith("rtc_late");
+    expect(sip.accept).not.toHaveBeenCalled();
+  });
+
+  it("preserves a recent hangup from a long call after the private report window closes", async () => {
+    const { rig, dial, session } = await setup();
+    const uid = "owner-1";
+    rig.openai.script("responses.create", ok(intent));
+    const placed = await callRoute(rig, turnRoute, typedTurn(session.stamp, 1, text));
+    rig.clock.advance(PHONE_REPORT_WINDOW_MS + 1);
+    await clearPhoneReports(rig.store, uid, rig.clock.read().opsClock.now);
+    await saveCarrierEvent(rig.deps, uid, { dialId: dial.mock.calls[0]![2], sid, status: "completed" });
+    await patchRecord(rig.store, uid, paths.session(uid, session.sessionId), { audience: "private" });
+    await rig.store.transaction(uid, async (tx) => {
+      const current = (await tx.get<Session>(paths.session(uid, session.sessionId)))!.data;
+      const args = [tx, rig.deps, uid, session.sessionId, current, placed.body.stamp.epoch] as const;
+      expect(await readPhoneResult(...args)).toMatchObject({ completion: "unconfirmed", report: null });
+      expect(await phoneReportCards(...args)).toMatchObject([{ lines: ["The call ended. I don’t have a confirmed outcome to share."] }]);
+    });
+  });
+
   it("reports Twilio rejection and keeps stale, pasted and signed-out requests from dialing", async () => {
     const { rig, dial, session } = await setup();
     dial.mockRejectedValue(new DialRejected());
@@ -188,7 +257,7 @@ describe("outbound phone calls", () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ sid }, { status: 201 }));
     vi.stubGlobal("fetch", fetcher);
     const id = testId("sip");
-    expect(await dialTwilio(phoneConfig(env), "+14155550123", id)).toBe(sid);
+    expect(await dialTwilio(dialConfig(env, "https://frankirocks.com"), "+14155550123", id)).toBe(sid);
     const [url, options] = fetcher.mock.calls[0]!;
     expect(url).toBe(`https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_ACCOUNT_SID}/Calls.json`);
     expect(options?.method).toBe("POST");
@@ -196,6 +265,9 @@ describe("outbound phone calls", () => {
     const form = options!.body as URLSearchParams;
     expect(form.get("From")).toBe(env.TWILIO_PHONE_NUMBER);
     expect(form.get("To")).toBe("+14155550123");
+    expect(form.get("StatusCallback")).toBe(`https://frankirocks.com/api/phone/twilio?dialId=${id}#rt=5000&rc=2&rp=ct,rt,5xx`);
+    expect(form.get("StatusCallbackMethod")).toBe("POST");
+    expect(form.getAll("StatusCallbackEvent")).toEqual(["initiated", "ringing", "answered", "completed"]);
     expect(form.get("Twiml")).toContain(`sip:proj_test@sip.api.openai.com;transport=tls;secure=true?x-franki-call=${id}</Sip>`);
   });
 

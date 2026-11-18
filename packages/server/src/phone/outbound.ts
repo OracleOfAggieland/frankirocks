@@ -10,7 +10,8 @@ import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
 import type { StorePort, Tx } from "../store/port";
 import { startPhoneReport } from "./report";
-import { DialRejected, E164, dialTwilio, phoneConfig } from "./twilio";
+import { advanceCarrier, dialIdForTurn, PHONE_SUBMISSION_WINDOW_MS } from "./lifecycle";
+import { DialRejected, E164, dialConfig, dialTwilio } from "./twilio";
 
 export type PhoneEntry = Extract<Ledger, { kind: "phoneCall" }>;
 export const SIP_WINDOW_MS = 10 * 60_000;
@@ -32,7 +33,7 @@ export function destination(text: string, from: string): string | null {
 }
 
 export const phoneId = (ctx: RouteContext, stamp: Stamp) =>
-  ctx.deps.hasher.id(["outbound-phone", ctx.uid, stamp.sessionId, stamp.turnId]);
+  dialIdForTurn(ctx.deps.hasher, ctx.uid, stamp.sessionId, stamp.turnId);
 
 // The dial response and SIP webhook can update the same record at the same time.
 // Only database work belongs inside a retryable transaction.
@@ -67,9 +68,9 @@ export async function currentPhoneTurn(tx: Tx, uid: string, stamp: Stamp) {
 export async function placePhoneCall(ctx: RouteContext, stamp: Stamp): Promise<string> {
   const { uid, deps } = ctx;
   const { env, store } = deps;
-  let config: ReturnType<typeof phoneConfig>;
+  let config: ReturnType<typeof dialConfig>;
   try {
-    config = phoneConfig(env);
+    config = dialConfig(env, ctx.origin);
   } catch (error) {
     if (error instanceof ConfigError) return `Phone calling needs a valid ${error.variable} in the server environment.`;
     throw error;
@@ -80,7 +81,7 @@ export async function placePhoneCall(ctx: RouteContext, stamp: Stamp): Promise<s
     const existing = await tx.get<PhoneEntry>(path);
     if (existing) {
       const entry = existing.data;
-      if (entry.state === "pending" && msFromTs(entry.at) + 10_000 > deps.clock.read().opsClock.now) throw inFlightError();
+      if (entry.state === "pending" && msFromTs(entry.at) + PHONE_SUBMISSION_WINDOW_MS > deps.clock.read().opsClock.now) throw inFlightError();
       return { message: entry.state === "complete" ? queued : entry.state === "failed" ? rejected : unknown };
     }
     const current = await currentPhoneTurn(tx, uid, stamp);
@@ -92,7 +93,8 @@ export async function placePhoneCall(ctx: RouteContext, stamp: Stamp): Promise<s
     const at = tsFromMs(now);
     const entry: PhoneEntry = {
       ...cFields(uid, at, stamp.epoch, stamp.policyRev), kind: "phoneCall", state: "pending", at, retainUntil: null,
-      payload: { phoneCallId: id, sessionId: stamp.sessionId, turnId: stamp.turnId, twilioSid: null, realtimeCallId: null, accepted: false },
+      payload: { phoneCallId: id, sessionId: stamp.sessionId, turnId: stamp.turnId, twilioSid: null, realtimeCallId: null, accepted: false,
+        carrier: null, nextCarrierCheckAt: null },
     };
     startPhoneReport(tx, uid, id, deps.hasher, entry);
     tx.create(path, entry);
@@ -107,11 +109,17 @@ export async function placePhoneCall(ctx: RouteContext, stamp: Stamp): Promise<s
   } catch (error) {
     state = error instanceof DialRejected ? "failed" : "blocked";
   }
-  await phoneTransaction(store, uid, async (tx) => {
+  const confirmedState = await phoneTransaction(store, uid, async (tx) => {
     const row = await tx.get<PhoneEntry>(path);
     if (!row) throw new Error("Missing phone call record");
-    tx.update(path, { ...row.data, state, updatedAt: tsFromMs(deps.clock.read().opsClock.now),
-      payload: { ...row.data.payload, twilioSid: sid } });
+    // A signed callback can confirm this dial even if the REST response is lost.
+    // It may also have advanced the call to a terminal state before this write.
+    const boundSid = row.data.payload.twilioSid;
+    if (boundSid !== null) return row.data.state;
+    const now = deps.clock.read().opsClock.now;
+    const receipt = { ...row.data, state, updatedAt: tsFromMs(now), payload: { ...row.data.payload, twilioSid: sid } };
+    tx.update(path, sid === null ? receipt : advanceCarrier(receipt, "queued", now));
+    return state;
   });
-  return state === "complete" ? queued : state === "failed" ? rejected : unknown;
+  return confirmedState === "complete" ? queued : confirmedState === "failed" ? rejected : unknown;
 }

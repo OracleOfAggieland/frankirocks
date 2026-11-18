@@ -11,7 +11,8 @@
   },
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./phone-reconciliation": "./src/phone/reconcile-live.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."
@@ -20,6 +21,7 @@
     "@franki/core": "*",
     "firebase-admin": "14.5.0",
     "openai": "7.45.1",
+    "twilio": "6.3.0",
     "ws": "8.22.2"
   }
 }

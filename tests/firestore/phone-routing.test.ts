@@ -27,14 +27,16 @@ it("routes simultaneous users' typed and spoken call requests to their own conve
   const rig = testRig({
     ...TEST_ENV, TWILIO_ACCOUNT_SID: "AC" + "1".repeat(32), TWILIO_AUTH_TOKEN: "test",
     TWILIO_PHONE_NUMBER: "+14155550100", OPENAI_PROJECT_ID: "proj_test", OPENAI_WEBHOOK_SECRET: "test",
+    FRANKI_PHONE_REPORT_ORIGIN: "https://frankirocks.com",
   });
   const dial = vi.fn<Dial>().mockResolvedValue("CA" + "1".repeat(32));
   const deps = { ...rig.deps, dial, timers: liveTimers, store: new FirestoreStore(db, rig.deps.hasher) };
   rig.openai.always("responses.create", ok({ ...completed(""), phoneCallRequested: true }));
   const texts = ["Call +14155550123 and ask for today's hours.", "Call +14155550124 and ask about delivery."];
   const requestId = testId("same-open-request");
+  const uids = texts.map((_, i) => `caller-${i}-${randomUUID()}`);
   for (const [i, text] of texts.entries()) {
-    const token = `token:caller-${i}-${randomUUID()}`;
+    const token = "token:" + uids[i];
     const request = (body: unknown) => fakeRequest({ body, token });
     const opened = await runRoute(openRoute, request({ requestId, initiator: "user", previousSessionId: null, clientZone: "UTC", visitId: null }), deps, rig.sched.schedule);
     expect(opened.status).toBe(200);
@@ -61,8 +63,9 @@ it("routes simultaneous users' typed and spoken call requests to their own conve
   const lookup = (id: string) => findPhoneUid(db, id);
   await Promise.all(callbacks.toReversed().map(data => answerPhoneCall(deps, data, sip, lookup)));
   expect(sip.accept).toHaveBeenCalledTimes(2);
-  expect(sip.accept).toHaveBeenCalledWith("rtc_0", texts[0]);
-  expect(sip.accept).toHaveBeenCalledWith("rtc_1", texts[1]);
+  for (const [i, uid] of uids.entries()) {
+    expect(sip.accept).toHaveBeenCalledWith(`rtc_${i}`, texts[i], { uid, dialId: dial.mock.calls[i]![2] });
+  }
   expect(sip.reject).not.toHaveBeenCalled();
   await answerPhoneCall(deps, { call_id: "rtc_unknown", sip_headers: [{ name: "X-Franki-Call", value: testId("unrequested") }] }, sip, lookup);
   expect(sip.reject).toHaveBeenCalledExactlyOnceWith("rtc_unknown");

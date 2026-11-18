@@ -17,6 +17,7 @@ export { receiptRoute } from "./routes/receipt";
 export { toolRoute } from "./routes/tool";
 export { phoneReportEndpoint } from "./phone/report-mcp";
 export { phoneWebhook } from "./phone/webhook";
+export { twilioStatusWebhook } from "./phone/callback";
 export { phoneStatusRoute } from "./phone/status";
 export { debugMemoryRoute } from "./routes/debug-memory";
 // Brief 020: GET /api/memory.

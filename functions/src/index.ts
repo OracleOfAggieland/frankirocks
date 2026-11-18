@@ -1,4 +1,5 @@
 import { SMOKE } from "@franki/core";
+import { reconcileDuePhoneCalls } from "@franki/server/phone-reconciliation";
 import { KeyManagementServiceClient } from "@google-cloud/kms";
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
@@ -21,6 +22,20 @@ initializeApp();
 const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
 const BG_MODEL = defineString("FRANKI_BG_MODEL");
 const LIMB_TOKENS_KEY = defineString("FRANKI_LIMB_TOKENS_KEY");
+const TWILIO_ACCOUNT_SID = defineSecret("TWILIO_ACCOUNT_SID");
+const TWILIO_AUTH_TOKEN = defineSecret("TWILIO_AUTH_TOKEN");
+const FRANKI_ID_HMAC_KEY = defineSecret("FRANKI_ID_HMAC_KEY");
+
+/** Recovers a missed carrier callback even after the original browser conversation closes. */
+export const reconcilePhoneCalls = onSchedule(
+  { schedule: "* * * * *", secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, FRANKI_ID_HMAC_KEY], maxInstances: 1, timeoutSeconds: 120 },
+  async () => {
+    const counts = await reconcileDuePhoneCalls(getFirestore(), {
+      account: TWILIO_ACCOUNT_SID.value(), token: TWILIO_AUTH_TOKEN.value(), hmacKey: FRANKI_ID_HMAC_KEY.value(),
+    }, opsNowMs);
+    if (counts.failed || counts.unavailable) logger.warn("Phone status reconciliation incomplete", counts);
+  },
+);
 
 /** Proves the scheduler, Secret Manager, OpenAI, Cloud KMS and Firestore are wired. Read by /api/health. */
 export const heartbeat = onSchedule(

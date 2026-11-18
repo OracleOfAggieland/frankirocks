@@ -54,6 +54,11 @@
   "fieldOverrides": [
     {
       "collectionGroup": "ledger",
+      "fieldPath": "payload.nextCarrierCheckAt",
+      "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }]
+    },
+    {
+      "collectionGroup": "ledger",
       "fieldPath": "payload.phoneCallId",
       "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }]
     }

@@ -1,14 +1,17 @@
-import { type Card, type CoreEpoch, type Hasher, type Ledger, type PhoneReport, type Session, type Turn, msFromTs, tsFromMs } from "@franki/core";
+import { type Card, type CoreEpoch, type Hasher, type Ledger, type PhoneCompletion, type PhoneReport, type Session, type Turn, msFromTs, tsFromMs } from "@franki/core";
 import { gateAudience } from "../audience";
 import { narrowedHere } from "../audience-swap";
 import { cFields } from "../records";
 import type { RouteDeps } from "../routes/runtime";
 import { paths } from "../store/paths";
 import type { StorePort, Tx } from "../store/port";
+import { carrierOf, phoneCompletion } from "./lifecycle";
+import type { PhoneEntry } from "./outbound";
 
 type ReportEntry = Extract<Ledger, { kind: "phoneReport" }>;
 export const PHONE_REPORT_WINDOW_MS = 60 * 60_000;
-const reportPath = (uid: string, dialId: string, hasher: Hasher) => paths.ledger(uid, hasher.id(["phone-report", uid, dialId]));
+const reportId = (uid: string, dialId: string, hasher: Hasher) => hasher.id(["phone-report", uid, dialId]);
+const reportPath = (uid: string, dialId: string, hasher: Hasher) => paths.ledger(uid, reportId(uid, dialId, hasher));
 
 /** Each accepted dial owns one result slot, including when two assignments overlap. */
 export function startPhoneReport(tx: Tx, uid: string, dialId: string, hasher: Hasher, call: Extract<Ledger, { kind: "phoneCall" }>) {
@@ -40,30 +43,63 @@ export async function savePhoneReport(tx: Tx, deps: RouteDeps, uid: string, dial
   return true;
 }
 
-/** Called inside the same transaction as reply admission. Only the original private conversation can read its report. */
-export async function readPhoneReport(tx: Tx, deps: RouteDeps, uid: string, sessionId: string, session: Session, epoch: number): Promise<PhoneReport | null> {
-  const rows = await recentReports(tx, deps, uid, sessionId, session, epoch, 1);
-  return rows[0]?.data.payload.report ?? null;
+export interface PhoneResult {
+  completion: PhoneCompletion;
+  report: PhoneReport | null;
 }
 
-async function recentReports(tx: Tx, deps: RouteDeps, uid: string, sessionId: string, session: Session, epoch: number, limit: number) {
+/** Called in the same transaction as reply admission, under the original session's audience and retention checks. */
+export async function readPhoneResult(tx: Tx, deps: RouteDeps, uid: string, sessionId: string, session: Session, epoch: number): Promise<PhoneResult | null> {
+  const results = await recentPhoneResults(tx, deps, uid, sessionId, session, epoch, 1);
+  return results[0] ?? null;
+}
+
+const noReportLines: Record<Exclude<PhoneCompletion, "reported">, string> = {
+  active: "The call is still in progress. I don’t have a report yet.",
+  awaitingReport: "The call has ended. I’m still waiting for the phone specialist’s report.",
+  unconfirmed: "The call ended. I don’t have a confirmed outcome to share.",
+  noAnswer: "The call rang out with no answer.",
+  busy: "The line was busy.",
+  failed: "The call did not go through.",
+  unknown: "I couldn’t confirm the call’s status.",
+};
+
+export function phoneResultLine(result: PhoneResult | null): string {
+  if (result?.report) return `Phone specialist (${result.report.outcome}): ${result.report.summary}`;
+  return result && result.completion !== "reported" ? noReportLines[result.completion] : "I don’t have a confirmed report from this call.";
+}
+
+/** Start with the carrier record so a long call can end after its private report slot expires. */
+async function recentPhoneResults(tx: Tx, deps: RouteDeps, uid: string, sessionId: string, session: Session, epoch: number, limit: number) {
   const now = deps.clock.read().opsClock.now;
   const { audience, modifiers } = gateAudience(session, now);
   if (audience !== "private" || modifiers.crisis || narrowedHere(session)) return [];
-  const docs = await tx.query<ReportEntry>({
+  const docs = await tx.query<PhoneEntry>({
     collection: paths.collection(uid, "ledger"), where: [
-      { field: "kind", op: "==", value: "phoneReport" }, { field: "payload.sessionId", op: "==", value: sessionId },
-      { field: "at", op: ">", value: tsFromMs(now - PHONE_REPORT_WINDOW_MS) },
+      { field: "kind", op: "==", value: "phoneCall" }, { field: "payload.sessionId", op: "==", value: sessionId },
     ], orderBy: { field: "at", dir: "desc" }, limit,
   });
-  return docs.filter(({ data }) => data.epoch === epoch && data.retainUntil !== null && msFromTs(data.retainUntil) > now);
+  const recent = docs.filter(({ data }) => data.epoch === epoch && now - msFromTs(carrierOf(data)?.observedAt ?? data.at) < PHONE_REPORT_WINDOW_MS);
+  return Promise.all(recent.map(async ({ id: dialId, data: dial }) => {
+    const id = reportId(uid, dialId, deps.hasher);
+    const withinReportWindow = now - msFromTs(dial.at) < PHONE_REPORT_WINDOW_MS;
+    const slot = withinReportWindow ? (await tx.get<ReportEntry>(paths.ledger(uid, id)))?.data : null;
+    const report = slot?.kind === "phoneReport" && slot.epoch === epoch && slot.payload.sessionId === sessionId &&
+      slot.payload.turnId === dial.payload.turnId && slot.retainUntil !== null && msFromTs(slot.retainUntil) > now
+      ? slot.payload.report : null;
+    const state = phoneCompletion(dial, report, now);
+    const completion = state === "awaitingReport" && !withinReportWindow ? "unconfirmed" : state;
+    return { id, completion, report } satisfies PhoneResult & { id: string };
+  }));
 }
 
 export async function phoneReportCards(tx: Tx, deps: RouteDeps, uid: string, sessionId: string, session: Session, epoch: number): Promise<Card[]> {
-  const rows = await recentReports(tx, deps, uid, sessionId, session, epoch, 4);
-  return rows.flatMap(({ id, data }): Card[] => {
-    const report = data.payload.report;
-    return report ? [{ id, kind: "source", title: report.outcome === "voicemail" ? "Phone call · voicemail" : report.outcome === "inconclusive" ? "Phone call · inconclusive" : "Phone call · answer", lines: [report.summary], sens: "S2", sources: [] }] : [];
+  const results = await recentPhoneResults(tx, deps, uid, sessionId, session, epoch, 4);
+  return results.flatMap((result): Card[] => {
+    const { id, report, completion } = result;
+    if (report) return [{ id, kind: "source", title: report.outcome === "voicemail" ? "Phone call · voicemail" : report.outcome === "inconclusive" ? "Phone call · inconclusive" : "Phone call · answer", lines: [report.summary], sens: "S2", sources: [] }];
+    if (completion === "active" || completion === "unknown" || completion === "awaitingReport") return [];
+    return [{ id, kind: "source", title: "Phone call", lines: [phoneResultLine(result)], sens: "S2", sources: [] }];
   });
 }
 

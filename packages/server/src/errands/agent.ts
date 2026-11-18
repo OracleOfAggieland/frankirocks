@@ -8,7 +8,7 @@
  * `unavailable`. Tests pass their own through `RouteDeps.errandAgents`.
  */
 import { ERRAND_ABOUT, type SpecialistCatalog } from "@franki/core";
-import { phoneConfig } from "../phone/twilio";
+import { dialConfig } from "../phone/twilio";
 import type { Class, ErrandAbout, ErrandSender, ErrandSource, ID, Sens } from "@franki/core";
 import type { RouteContext } from "../routes/runtime";
 import { googleConfigured } from "../google/config";
@@ -113,7 +113,7 @@ export async function errandsReady(ctx: RouteContext): Promise<boolean> {
 export async function specialistCatalog(ctx: RouteContext): Promise<SpecialistCatalog> {
   const catalog: SpecialistCatalog = { phone: "unavailable", mail: "unavailable", calendar: "unavailable" };
   try {
-    phoneConfig(ctx.deps.env);
+    dialConfig(ctx.deps.env, ctx.origin);
     catalog.phone = "ready";
   } catch { /* Calling is unavailable until the dial and answering legs are configured. */ }
   await Promise.all(agentsFor(errandAgentsOf(ctx), ERRAND_ABOUT).map(async (agent) => {

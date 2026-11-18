@@ -4,7 +4,7 @@ import { type CoreEpoch, tsFromMs } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import type { PhoneEntry } from "../phone/outbound";
-import type { CallStatus } from "../phone/status";
+import type { CallStatus } from "../phone/carrier-read";
 import { seedResetRouteWith } from "../routes/seed-reset";
 import { cFields } from "../records";
 import { paths } from "../store/paths";

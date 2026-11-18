@@ -2,7 +2,7 @@
   "name": "@franki/functions",
   "version": "0.0.0",
   "private": true,
-  "description": "Franki's Cloud Functions (2nd gen): scheduled work, today the heartbeat that /api/health reads.",
+  "description": "Franki's scheduled heartbeat and phone-call reconciliation workers.",
   "license": "MIT",
   "repository": {
     "type": "git",

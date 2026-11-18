@@ -64,8 +64,8 @@ import { lateSlots, routeHandled } from "../onturn/late";
 import { storeReader } from "../head-build";
 import { turnEvidenceId } from "../turns";
 import { finishTypedPhoneCall } from "../phone/typed";
-import { cachedPhoneTurn, replayPhoneTurn, phoneReportNoteId, reportText } from "../phone/replay";
-import { readPhoneReport } from "../phone/report";
+import { cachedPhoneTurn, replayPhoneTurn, phoneReportNoteId } from "../phone/replay";
+import { phoneResultLine, readPhoneResult } from "../phone/report";
 import { phoneId } from "../phone/outbound";
 // Brief 046 part C.
 import { finishTypedMoney, isMoneyAsk, moneyPendingId } from "../bank/money-typed";
@@ -380,9 +380,9 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           // Brief 035 (finding 10): the rule's Head compiles with the audience the turn ends with.
           const audienceNow = turnEndAudience(effectiveAudience(s0, ops), slow?.parse ?? null, fastO !== null ? "O" : req.judge);
           if (reply === "read_phone_result" && audienceNow === "private" && !held && route === null && slow?.parse.kind === "ordinary") {
-            const report = await readPhoneReport(tx, deps, uid, req.sessionId, s0, stamp.epoch);
-            const answer = phoneNote(ctx, req.sessionId, req.turnId, report ? reportText(report) : "I don’t have a confirmed report from this call.", ops);
-            candidateNotes = [report ? { ...answer, noteId: phoneReportNoteId(ctx, stamp), sens: "S2" } : answer];
+            const result = await readPhoneResult(tx, deps, uid, req.sessionId, s0, stamp.epoch);
+            const answer = phoneNote(ctx, req.sessionId, req.turnId, phoneResultLine(result), ops);
+            candidateNotes = [result?.report ? { ...answer, noteId: phoneReportNoteId(ctx, stamp), sens: "S2" } : answer];
           } else if (reply === "read_phone_result") {
             candidateNotes = [phoneNote(ctx, req.sessionId, req.turnId, "I don’t have a phone report I can share here.", ops)];
           }
