@@ -10,7 +10,7 @@ Source: `docs/design/architecture-decision.md` and `.nvmrc`. If this file and a 
 
 | Part | Version |
 |---|---|
-| Next.js (App Router, `apps/web`) | 16.4.3; fallback 15.5.28; never 15.2.x |
+| Next.js (App Router, `apps/web`) | 16.4.6 (16.4.3 until Nov 17: two cache advisories); fallback 15.5.28; never 15.2.x |
 | Node | 24 (`.nvmrc`) |
 | TypeScript | 6.0.3 |
 | Tests | Vitest 5 with fast-check (property tests) |
