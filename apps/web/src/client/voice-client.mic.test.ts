@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { ok } from "../../../../packages/server/src/openai/fake";
 import { paths } from "../../../../packages/server/src/store/paths";
 import { T0_MS, type TestRig, settle, testRig } from "../../../../packages/server/src/testing/fakes";
+import { meetAlreadyHappened } from "../../../../packages/server/src/testing/meet";
 import { type FetchLike, createApiClient } from "./api";
 import { createBrowserClock } from "./clock";
 import { type AudioLike, type ChannelLike, type PeerLike, type StreamLike, type TimerApi, type TrackLike, VoiceClient } from "./voice-client";
@@ -171,8 +172,10 @@ function promptedMic() {
   };
 }
 
-function setup() {
+async function setup() {
   const rig = testRig();
+  // Brief 052: the first meeting is over, so a call connects to LISTENING with no meet line to say first.
+  await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
   rig.openai.always("realtime.calls.create", ok({ answerSdp: "v=0 answer", location: "/v1/realtime/calls/rtc_test1" }));
   rig.openai.always("realtime.calls.hangup", ok(null));
   const fetch = serverFetch(rig);
@@ -209,7 +212,7 @@ function setup() {
 
 describe("Voice_Client microphone at call start (today)", () => {
   it("today: mic allowed at 8 s goes through RECOVERY, and the call connects on a second Session", async () => {
-    const { vc, mic, peers, timers, phases, routeCalls, sessions } = setup();
+    const { vc, mic, peers, timers, phases, routeCalls, sessions } = await setup();
     vc.call();
     await until(() => mic.requests === 1, "the first mic request");
     expect(vc.getSnapshot().phase).toBe("CONNECTING");
@@ -238,7 +241,7 @@ describe("Voice_Client microphone at call start (today)", () => {
   });
 
   it("today: a rejected mic opens four Sessions and shows no mic message", async () => {
-    const { vc, mic, timers, phases, routeCalls, sessions } = setup();
+    const { vc, mic, timers, phases, routeCalls, sessions } = await setup();
     mic.deny();
     vc.call();
     await until(() => mic.requests === 1, "the first mic request");

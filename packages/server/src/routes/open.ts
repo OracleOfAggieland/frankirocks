@@ -21,6 +21,7 @@ import {
   type CoreBundle,
   type CoreEpoch,
   type CoreState,
+  type ID,
   type Infer,
   OpenRequest,
   type OpenResponse,
@@ -52,6 +53,8 @@ import { checkOpenVisit } from "./open-visit";
 import { openingProactive } from "./delivery-wire";
 // Brief 048: the forget's acknowledgment on a fresh call.
 import { ackRule, ackTurnId, dueAcks, outsideTx, readAckCandidates, takeDueAck } from "../forget/ack";
+// Brief 052: the first meeting's line.
+import { closeMeet, meetLineOf, meetOffer, meetRule, meetTurnId, readMeetRows, recordMeetSaid } from "../meet";
 
 /**
  * Server time for one open, from runRoute's first line to the answer. The browser gives the whole request 5 s
@@ -161,7 +164,8 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       // The request entry is read with the core documents, in the same round trip: `completeRequest` reads it again
       // at the end, which the transaction answers from what it already read (the tail reserve's count, below).
       // Brief 048 ruling 7: the pending acknowledgments are read in the same round trip, outside the transaction (`outsideTx`).
-      const [core, , ackCandidates] = await Promise.all([readCoreDocs(tx, uid), tx.get(key.path), readAckCandidates(outsideTx(deps.store, uid), uid)]);
+      // Brief 052 ruling 6: the two meet rows by ID, in the same first round, so every read precedes the first write.
+      const [core, , ackCandidates, meetRows] = await Promise.all([readCoreDocs(tx, uid), tx.get(key.path), readAckCandidates(outsideTx(deps.store, uid), uid), readMeetRows(tx, uid, deps.hasher)]);
       const ops = deps.clock.read().opsClock.now;
       if (core.epoch.data.barrier !== null) {
         const blocked: OpenRes = { sessionId, generation: 0, deck: null, state: "blocked", ack: null, proactive: null, audience: null };
@@ -238,6 +242,34 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
         );
         if (admitted.kind === "permit" && admitted.notes.length === 1) proactive = { turnId, permit: admitted.permit, whisper: admitted.notes[0]!, cards: [] };
       }
+      // Brief 052 rulings 5 and 6: the first meeting's line, after the acknowledgment and the swap line had their turn,
+      // only on a private open that inherited nothing, with no crisis or hold, no owner name and an offer left; not on a
+      // sample visit until the owner rules on contract question M-1 (spec §15 beat 1 opens the sample with the wish). Its
+      // row is written beside its Permit's decision, so an offer is consumed only when the line goes out.
+      const rowCtx = { opsNow: ops, core: { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev } };
+      const offer = meetOffer(meetRows, {
+        acked: ack !== null,
+        inherited: inherited !== null,
+        audience: created.audience,
+        crisis: created.modifiers.crisis !== null,
+        held: holdCarried(state, pair.worldClock.now),
+        ownerName: compiled.ownerName,
+        sampleVisit: state.clockMode === "fixture",
+      });
+      if (proactive === null && offer !== null) {
+        const turnId = meetTurnId(deps.hasher, sessionId);
+        const admitted = admitRule(
+          tx,
+          { uid, requestId: req.requestId, requestEntryId: key.keyHash, turnRef: turnRef(turnId, sessionId, 1), core: rowCtx.core, opsNow: ops, stamp: { ...stamp, turnId }, head, notes: [], turns: [], audioIds: [], toolOutput: null, rule: meetRule(meetLineOf(offer)) },
+          deps,
+        );
+        if (admitted.kind === "permit" && admitted.notes.length === 1) {
+          proactive = { turnId, permit: admitted.permit, whisper: admitted.notes[0]!, cards: [] };
+          recordMeetSaid(tx, uid, offer, { ...rowCtx, sessionId: sessionId as ID, turnId, permitId: admitted.permit.permitId }, deps.hasher);
+        }
+      }
+      // Ruling 6: knowing a name closes the meeting, so a later forget of the name never brings the question back.
+      if (compiled.ownerName !== null) closeMeet(tx, uid, meetRows, rowCtx, deps.hasher);
       const opened: OpenRes = { sessionId, generation: 1, deck: issueDeck(stamp, head, ops), state: "connecting", ack: stateAck(stamp, ops), proactive, audience: created.audience };
       await completeRequest(tx, key, opened, ops);
       return { response: opened, prior: prior === null ? null : { id: priorId!, ...prior }, stamp, session: created, narrow: inherited !== null };

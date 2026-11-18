@@ -12,6 +12,7 @@ import { toolRoute } from "../routes/tool";
 import { turnRoute } from "../routes/turn";
 import { paths } from "../store/paths";
 import { callRoute, testRig } from "./fakes";
+import { meetAlreadyHappened } from "./meet";
 import { type OpenedSession, asrTurn, openTestSession } from "./session-fixtures";
 
 export const UID = "owner-1";
@@ -35,6 +36,8 @@ export async function hero() {
   const rig = testRig();
   rig.clock.setWorld(instantAt("2026-10-26", 12 * 60, HERO_ZONE));
   await ensureCoreDocs(UID, rig.deps);
+  // Brief 052: the hero offer is the opening line under test, so the first meeting is already over.
+  await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
   await rig.store.transaction(UID, async (tx) => {
     const state = await tx.get<CoreState>(paths.core(UID, "state"));
     tx.update(paths.core(UID, "state"), { ...state!.data, currentZone: HERO_ZONE, coverage: HERO_COVERAGE });

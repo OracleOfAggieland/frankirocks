@@ -5,6 +5,7 @@ import { createHasher } from "../crypto";
 import { turnRoute } from "../routes/turn";
 import { paths } from "../store/paths";
 import { FAKE_HMAC_KEY, TEST_ENV, callRoute, testRig } from "../testing/fakes";
+import { meetAlreadyHappened, meetRowIds } from "../testing/meet";
 import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
 import { admitRule, fastODecisionId, lateHitDecisionId, recordFastO, recordLateHit } from "./seam";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -50,7 +51,11 @@ const input = (over: Partial<RuleInput> = {}) => ({
 });
 
 async function decisions(rig: ReturnType<typeof testRig>) {
-  return (await rig.store.query<Ledger>(UID, { collection: paths.collection(UID, "ledger"), where: [{ field: "kind", op: "==", value: "decision" }], orderBy: { field: "at", dir: "desc" }, limit: 100 })).map((d) => ({ id: d.id, e: d.data }));
+  // Brief 052: the first meeting's delivery rows are decisions too, but no admission's; they are left out of the count.
+  const meet = meetRowIds(rig.deps.hasher);
+  return (await rig.store.query<Ledger>(UID, { collection: paths.collection(UID, "ledger"), where: [{ field: "kind", op: "==", value: "decision" }], orderBy: { field: "at", dir: "desc" }, limit: 100 }))
+    .filter((d) => !meet.includes(d.id))
+    .map((d) => ({ id: d.id, e: d.data }));
 }
 
 describe("Admission_Seam with the server rule", () => {
@@ -142,6 +147,8 @@ describe("Admission_Seam: checks carried from devAdmit", () => {
 
   it("the turn route admits in production (R8.2)", async () => {
     const rig = testRig();
+    // Brief 052: the first meeting is over, so the open says no meet line and writes no meet rows here.
+    await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
     const s = await openTestSession(rig);
     rig.deps.env = { ...TEST_ENV, NODE_ENV: "production" };
     const res = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "hello"));
@@ -152,6 +159,8 @@ describe("Admission_Seam: checks carried from devAdmit", () => {
 
   it("one decision per outcome through the route, keyed by permitId; a replay makes none; the Permit binds the Stamp and the Deck", async () => {
     const rig = testRig();
+    // Brief 052: the first meeting is over, so the open says no meet line and writes no meet rows here.
+    await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
     const s = await openTestSession(rig);
     const a = await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "hello"));
     const b = await callRoute(rig, turnRoute, asrTurn(s.stamp, 2, "", [{ itemId: "item_1", commitSeq: 1 }], "missing"));

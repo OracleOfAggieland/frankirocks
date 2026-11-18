@@ -5,6 +5,7 @@ import { admitRule, recordFastO } from "../admission/seam";
 import type { StorePort } from "../store/port";
 import { commitUserTurnForTest, insertMemoryForTest } from "../testing/extract-fixtures";
 import { type TestRig, callRoute, testRig } from "../testing/fakes";
+import { meetAlreadyHappened, meetRowIds } from "../testing/meet";
 import { asrTurn, openTestSession, typedTurn } from "../testing/session-fixtures";
 import { debugMemoryRoute } from "./debug-memory";
 import { turnRoute } from "./turn";
@@ -52,6 +53,8 @@ describe("GET /api/debug/memory", () => {
 
   it("lists Turns in seq order and admission entries with issuer seam and the Permit kind from the request entry", async () => {
     const rig = testRig();
+    // Brief 052: the first meeting is over, so the open says no meet line and writes no meet rows here.
+    await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
     const s = await openTestSession(rig);
     await callRoute(rig, turnRoute, typedTurn(s.stamp, 1, "first line"));
     await callRoute(rig, turnRoute, typedTurn(s.stamp, 2, "From: x\nsecond"));
@@ -60,7 +63,9 @@ describe("GET /api/debug/memory", () => {
     expect((await get(rig, { section: "turns" })).body.items).toHaveLength(2);
     const ledger = await get(rig, { section: "ledger" });
     expect(validate(DebugPage, ledger.body).ok).toBe(true);
-    expect(ledger.body.items.map((i: { issuer: string; permitKind: string }) => [i.issuer, i.permitKind]).sort()).toEqual([
+    // Brief 052: the first meeting's delivery rows are listed too; they are no admission, so they are left out here.
+    const meet = meetRowIds(rig.deps.hasher);
+    expect(ledger.body.items.filter((i: { id: string }) => !meet.includes(i.id)).map((i: { issuer: string; permitKind: string }) => [i.issuer, i.permitKind]).sort()).toEqual([
       ["seam", "postCommitControl"],
       ["seam", "slowOrdinary"],
     ]);
@@ -105,6 +110,8 @@ describe("GET /api/debug/memory", () => {
 
   it("a hold has no Permit kind", async () => {
     const rig = testRig();
+    // Brief 052: the first meeting is over, so the open says no meet line and writes no meet rows here.
+    await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
     const s = await openTestSession(rig);
     const stamp = { ...s.stamp, turnId: testId("turn-1") };
     const rule = { source: "tool", transcript: "final", judge: "O", parse: { kind: "ordinary" }, regexMatch: false, audience: "private", narrowedHere: false, callLive: true, parseGap: false, noteSens: "none", wordsPer2s: true, allFinal: true, toolParseCommitted: false, wave: "A" } as const;
@@ -112,7 +119,8 @@ describe("GET /api/debug/memory", () => {
     const r = await rig.store.transaction(UID, async (tx) => admitRule(tx, input, rig.deps));
     expect(r.kind).toBe("hold");
     const ledger = await get(rig, { section: "ledger" });
-    expect(ledger.body.items.map((i: { issuer: string; permitKind: string | null; record: { state: string }; played: boolean }) => [i.issuer, i.record.state, i.permitKind, i.played])).toEqual([["seam", "blocked", null, false]]);
+    const meet = meetRowIds(rig.deps.hasher);
+    expect(ledger.body.items.filter((i: { id: string }) => !meet.includes(i.id)).map((i: { issuer: string; permitKind: string | null; record: { state: string }; played: boolean }) => [i.issuer, i.record.state, i.permitKind, i.played])).toEqual([["seam", "blocked", null, false]]);
   });
 
   it("the turns section carries the Session view: audience, repair pending, failed parses and the parse gap (R13.5)", async () => {

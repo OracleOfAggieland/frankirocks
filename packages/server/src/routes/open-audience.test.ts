@@ -8,6 +8,7 @@ import { completed } from "../openai/responses";
 import { paths } from "../store/paths";
 import { decisionAnswer } from "../testing/decisions";
 import { type TestRig, callRoute, patchRecord, settle, testRig } from "../testing/fakes";
+import { meetAlreadyHappened } from "../testing/meet";
 import { asrTurn, openTestSession } from "../testing/session-fixtures";
 import { PERSONAL_FACT, PLAIN_FACT, seedTwoMemories } from "../testing/two-memories";
 import { CARE_SWAP_WAIT_MS, SWAP_WAIT_MS, swapLineTurnId } from "../audience-swap";
@@ -22,6 +23,8 @@ async function rigWithCall(uid = UID, token?: string) {
   const rig = testRig();
   rig.openai.always("responses.create", ok(completed("All right.")));
   rig.openai.always("realtime.calls.hangup", ok(null));
+  // Brief 052: the first meeting is over, so these opens say only the lines under test.
+  await meetAlreadyHappened(rig.store, uid, rig.deps.hasher);
   await seedTwoMemories(rig, uid);
   const s = await openTestSession(rig, "open1", token);
   await patchRecord<Session>(rig.store, uid, paths.session(uid, s.sessionId), { status: "active", registeredCallIds: ["rtc_a"], callId: "rtc_a" });
@@ -96,6 +99,7 @@ describe("/api/session/open: the carried audience (task 50)", () => {
     await narrow(other.rig, other.s, { company: 0.9 }, "token:owner-2");
     // The same rig serves owner-1, who names owner-2's narrowed Session.
     await seedTwoMemories(other.rig, UID);
+    await meetAlreadyHappened(other.rig.store, UID, other.rig.deps.hasher);
     const res = await open(other.rig, other.s.sessionId, "open-owner-1");
     expect(res.status).toBe(200);
     expect((await sessionOf(other.rig, res.body.sessionId)).audience).toBe("private");

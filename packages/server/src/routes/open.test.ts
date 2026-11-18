@@ -1,4 +1,4 @@
-import { type CoreBundle, type CoreEpoch, type Job, type Session, utf8, validate, OpenResponse } from "@franki/core";
+import { MEET_LINE, type CoreBundle, type CoreEpoch, type Job, type Session, utf8, validate, OpenResponse } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { fail, ok } from "../openai/fake";
@@ -27,7 +27,8 @@ describe("POST /api/session/open", () => {
     expect(res.status).toBe(200);
     expect(validate(OpenResponse, res.body).ok).toBe(true);
     const { sessionId, deck, ack } = res.body;
-    expect(res.body).toMatchObject({ generation: 1, state: "connecting", proactive: null });
+    // Brief 052 ruling 5: a fresh account's first open says the first meeting's line (it said nothing before).
+    expect(res.body).toMatchObject({ generation: 1, state: "connecting", proactive: { whisper: { kind: "ack", text: MEET_LINE } } });
 
     const bundle = (await get<CoreBundle>(rig, paths.core(UID, "bundle")))!;
     const session = (await get<Session>(rig, paths.session(UID, sessionId)))!;

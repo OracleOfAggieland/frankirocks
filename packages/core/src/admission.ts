@@ -51,6 +51,11 @@ export interface RuleInput {
    * acknowledgment writer (`server/forget/ack.ts`) once the receipt's `blockedAt` is set. Absent everywhere else.
    */
   forgetAck?: AckText;
+  /**
+   * Brief 052 ruling 5: the first meeting's line, set only by the open's meeting writer (`server/meet.ts`) once every
+   * condition of the ruling holds. Absent everywhere else.
+   */
+  meetLine?: AckText;
 }
 
 export type NotesAllowed = "none" | "S0" | "all";
@@ -99,6 +104,9 @@ const failReasons = (why: "deadline" | "transport" | "invalid" | "oversize" | "n
 export function serverRule(i: RuleInput): RuleOutcome {
   // 1. A call closed by narrowing speaks no more (R14.5).
   if (i.narrowedHere) return hold(["audience"], true);
+  // Brief 052 ruling 5: the first meeting's line, code's words with no tools and no notes, on an open before the owner
+  // has spoken. No row below can carry a line nobody asked for, so it has its own; private only (fails closed).
+  if (i.meetLine !== undefined) return i.audience === "private" ? permit("postCommitControl", "ack", "none", true, { line: i.meetLine }) : hold(["audience"]);
   // 2. Pasted T text: no parse, postCommitControl, never an S1+ note (R8.10).
   if (i.source === "pasted") return i.noteSens === "S1+" ? hold(["sensitivity"]) : permit("postCommitControl", "reply", "S0", false);
   // 3. A tool continuation, once the Turn's parse has committed (R8.11, R12.7). All notes only on a judge-O (or

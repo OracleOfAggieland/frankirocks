@@ -4,6 +4,7 @@ import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { paths } from "../store/paths";
 import { callRoute, patchRecord, testRig } from "../testing/fakes";
+import { meetAlreadyHappened } from "../testing/meet";
 import { resetAs } from "../testing/seed";
 import { momentsOf, ofKind } from "../time/testing";
 import { openRoute } from "./open";
@@ -57,6 +58,8 @@ describe("delivery on open", () => {
 
   it("an open with nothing due answers proactive: null", async () => {
     const rig = testRig();
+    // Brief 052: past the first meeting, which would otherwise say its line here.
+    await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
     const res = await callRoute(rig, openRoute, { ...openBody(3), visitId: null });
     expect(res.body).toMatchObject({ state: "connecting", proactive: null });
   });

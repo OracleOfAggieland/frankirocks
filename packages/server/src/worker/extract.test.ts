@@ -8,6 +8,7 @@ import {
   type Turn,
   extractOutputJsonSchema,
   idParts,
+  knownNameLine,
   needsEarlierTurns,
   restoreCopiedIds,
 } from "@franki/core";
@@ -385,7 +386,8 @@ describe("ExtractV1 extractor", () => {
           expect(m.contextIds).toEqual([{ type: "memory", id: alId, rev: 1 }]);
         }
         const lines = await headLines(rig);
-        expect(lines).toContain("- The owner's name is Alex.");
+        // Brief 052 ruling 3: the owner's own name is promoted to the Head's now line, not a know line.
+        expect(lines).toContain(knownNameLine("Alex"));
         expect(lines.some((l) => /hiking/i.test(l))).toBe(true);
         expect(lines.some((l) => /\bAl\b/.test(l))).toBe(false);
       });

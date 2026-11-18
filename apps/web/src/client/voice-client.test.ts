@@ -17,6 +17,7 @@ import { completed } from "../../../../packages/server/src/openai/responses";
 import { paths } from "../../../../packages/server/src/store/paths";
 import { commitUserTurnForTest, insertMemoryForTest } from "../../../../packages/server/src/testing/extract-fixtures";
 import { T0_MS, type TestRig, runScheduled, settle, testRig } from "../../../../packages/server/src/testing/fakes";
+import { meetAlreadyHappened } from "../../../../packages/server/src/testing/meet";
 import { callCardProps } from "../ui/call-cards";
 import { type ApiClient, type FetchLike, createApiClient } from "./api";
 import { CallCardShelf } from "./call-cards";
@@ -155,6 +156,8 @@ function virtualTimers(rig: TestRig): TimerApi & { advance(ms: number): Promise<
 
 async function setup(opts: { hang?: string[]; hash?: (p: unknown) => Promise<string>; inputLevel?: () => number; wrapApi?: (api: ApiClient, rig: TestRig) => ApiClient; onControlCheck?: () => void; onToolCards?: VoiceClientDeps["onToolCards"]; onAudience?: VoiceClientDeps["onAudience"] } = {}) {
   const rig = testRig();
+  // Brief 052: the first meeting is over, so the call opens to LISTENING with no meet line to say first.
+  await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
   // One Memory to recall; extraction requests fail, recall requests answer from `recallAnswer`.
   const t = await commitUserTurnForTest(rig.store, UID, testId("src"), "My dog is called Pip", rig.clock, rig.deps.hasher);
   const memId = await insertMemoryForTest(rig.store, UID, t, rig.deps.hasher);
