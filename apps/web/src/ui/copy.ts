@@ -129,8 +129,8 @@ export const COPY = {
     readout: { title: "What I know", empty: "Nothing yet. Tell me something and I'll keep it." },
     lab: {
       read: "Read emails",
-      guessed: "Guessed private things",
-      said: "Said",
+      guessed: "Prophesies",
+      said: "Foretold",
       /** Spec §11: the floor reads every line at once, and the Lab says so. */
       floorRecall: "I read every line I keep at once, up to 200, instead of searching.",
     },

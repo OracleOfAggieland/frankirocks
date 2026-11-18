@@ -115,8 +115,8 @@ export const KNOWN_MOTES: readonly { id: string; kind: MoteKind }[] = KNOWN_ITEM
 
 export const LAB_COUNTERS: LabProps["counters"] = [
   { id: "read", label: "Read emails", value: 128 },
-  { id: "guessed", label: "Guessed private things", value: 3 },
-  { id: "said", label: "Said", value: null },
+  { id: "guessed", label: "Prophesies", value: 3 },
+  { id: "said", label: "Foretold", value: null },
 ];
 
 export const SAMPLE_RECEIPT: ReceiptProps = {
