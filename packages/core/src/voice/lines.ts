@@ -26,7 +26,14 @@ export const FORGET_ASK_LINE = "I'm not sure which one you mean. Can you say a b
 /** `askAllergies`, after any line but the ask: the forget cleared a confirmed "no allergies". */
 export const ASK_ALLERGIES_LINE = "Any allergies I should know?";
 
-export const FIXED_LINES = { RECOVERY_LINE, COMPANY_LINE, ALONE_LINE, GONE_LINE, GONE_EXCEPT_RULE_LINE, RETELL_LINE, FORGET_ASK_LINE, ASK_ALLERGIES_LINE } as const;
+// The first meeting (brief 052 ruling 4). Said by the open, before the owner speaks, only while Franki has no name the
+// owner gave, and at most twice: the first offer, then the second.
+/** The first offer: one short line, one question. */
+export const MEET_LINE = "Hi, I'm Franki. I'm here to make your life easier. What should I call you?";
+/** The second offer, on the next call when the first ended with no name saved. */
+export const MEET_AGAIN_LINE = "Hi again, it's Franki. What should I call you?";
+
+export const FIXED_LINES = { RECOVERY_LINE, COMPANY_LINE, ALONE_LINE, GONE_LINE, GONE_EXCEPT_RULE_LINE, RETELL_LINE, FORGET_ASK_LINE, ASK_ALLERGIES_LINE, MEET_LINE, MEET_AGAIN_LINE } as const;
 export type FixedLine = (typeof FIXED_LINES)[keyof typeof FIXED_LINES];
 
 /** The acknowledgment kinds, as the forget job stores them (`ForgetAck["kind"]`). */

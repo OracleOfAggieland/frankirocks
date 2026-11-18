@@ -18,6 +18,8 @@ export * from "./dates";
 export * from "./eligible";
 export * from "./spoken";
 export * from "./head";
+// Brief 052: the owner's own name, and the Head's filter it shares.
+export * from "./owner-name";
 export * from "./admission";
 export * from "./schema/json-schema";
 export * from "./extract";

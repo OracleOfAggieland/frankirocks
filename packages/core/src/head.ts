@@ -7,12 +7,12 @@
  * at or below 4 × tokenCount ≤ 14,000 characters. Over 3,500 tokens, whole lines drop from openers, then know,
  * apply, next72 and people, each emptied before the next. Persona, policy, rules and now never drop.
  */
-import { type Dependent, type DocRef, type EC, type Snapshot, eligible } from "./eligible";
+import { type DocRef, type EC, type Snapshot, eligible } from "./eligible";
 import type { ClockPair } from "./clock";
 import { HEAD_SECTIONS, type Au, type Head, type Ref, type Value } from "./schema/primitives";
 import type { CoreRules, Memory } from "./schema/records";
 import { renderedMemory } from "./memory-text";
-import { spokenGrade } from "./spoken";
+import { type OwnerName, headAdmits, isSelfNameRow, ownerName, restsOnlyOnFixture } from "./owner-name";
 import { civilDay } from "./time";
 import { renameIndex, renameLine } from "./writes/renames";
 import { fromPaste, pasteQuestion } from "./writes/paste";
@@ -61,6 +61,14 @@ export const POLICY_TEXT = [
 
 export const STYLE_TEXT = "Style: plain spoken English, one idea at a time, no lists read aloud.";
 
+// Brief 052 ruling 3: the owner's name, in the `now` section straight after the `Now:` line, private audience only.
+/** The line when the owner's own name is known; it carries that Memory's ref. */
+export const knownNameLine = (name: string): string =>
+  `You're talking with ${name}. Say their name when you greet them, when you celebrate or comfort them, and when you say goodbye. Leave it out otherwise: a name in every reply sounds fake.`;
+/** The line when it isn't: fixed text, no ref. */
+export const NO_NAME_LINE =
+  "The owner hasn't told you what to call them. Don't ask for it yourself. If they tell you, say it back once so they can correct it, then in one short sentence say you can help with their day, food and money, and ask what they'd like help with first. If they'd rather not say, drop it.";
+
 export interface HeadMemory {
   id: string;
   memory: Memory;
@@ -90,7 +98,8 @@ export interface HeadLine {
   nameRefs?: Ref[];
 }
 
-export type HeadResult = { ok: true; head: Head; lines: HeadLine[] } | { ok: false; error: "budgetExceeded" };
+/** `ownerName` (brief 052 ruling 3): the name the Head promoted, or null. It is not stored. */
+export type HeadResult = { ok: true; head: Head; lines: HeadLine[]; ownerName: string | null } | { ok: false; error: "budgetExceeded" };
 
 export const lineTokens = (text: string) => Math.ceil((text.length + 1) / 4);
 
@@ -146,16 +155,18 @@ export function compileHead(input: HeadInput): HeadResult {
     if (eligible({ ref: memoryDocRef(hm), row: m }, { ...input.ec, stage: "project" }, input.snapshot).allow) deceased.add(m.subjectId);
   }
 
-  // Candidate Memory lines: eligible and spoken-grade only (R26.2, R26.3, R28.1–R28.3).
+  // Brief 052 ruling 3: the owner's own name, private audience only. Its Memory moves to the `now` line (one ref, one
+  // line), and a self name resting only on fixture Evidence (the sample persona's) leaves the Head while it is known.
+  const audience = input.audience ?? "private";
+  const name = audience === "private" ? ownerName({ memories: input.memories, ec: input.ec, snapshot: input.snapshot, audience }) : null;
+
+  // Candidate Memory lines: eligible and spoken-grade only (R26.2, R26.3, R28.1–R28.3). By audience (voice-control
+  // R14.2, task 45): outside a private audience only S0 lines, as the admission rule lets only S0 notes through
+  // (`notesAllowed`) and the Gate holds S1+ in company. The rules section is untouched. One filter, `headAdmits`.
   const passing: { section: "people" | "apply" | "know"; m: HeadMemory }[] = [];
   for (const hm of input.memories) {
-    const x: Dependent = { ref: memoryDocRef(hm), row: hm.memory };
-    if (!eligible(x, { ...input.ec, stage: "project" }, input.snapshot).allow) continue;
-    if (!spokenGrade(x, input.ec, input.snapshot).allow) continue;
-    if (hm.memory.sens === "S2") continue;
-    // By audience (voice-control R14.2, task 45): outside a private audience only S0 lines, as the admission rule
-    // lets only S0 notes through (`notesAllowed`) and the Gate holds S1+ in company. The rules section is untouched.
-    if (!headAdmitsSens(input.audience ?? "private", hm.memory.sens)) continue;
+    if (!headAdmits(hm, input.ec, input.snapshot, audience)) continue;
+    if (name !== null && (hm.id === name.ref.id || (isSelfNameRow(hm.memory) && restsOnlyOnFixture(hm.memory, input.snapshot)))) continue;
     passing.push({ section: sectionOf(hm.memory, deceased), m: hm });
   }
   // Deterministic order: (section, predicate, key, id), so input order never matters (R26.12).
@@ -170,8 +181,8 @@ export function compileHead(input: HeadInput): HeadResult {
   const sections: Record<HeadSection, HeadLine[]> = {
     persona: PERSONA_TEXT.split("\n").map((text) => ({ section: "persona", text, ref: null })),
     policy: POLICY_TEXT.split("\n").map((text) => ({ section: "policy", text, ref: null })),
-    rules: rulesLines(rules, input.audience ?? "private"),
-    now: nowLines(clock, input.audience ?? "private"),
+    rules: rulesLines(rules, audience),
+    now: nowLines(clock, audience, name),
     style: [{ section: "style", text: STYLE_TEXT, ref: null }],
     people: [],
     next72: [],
@@ -220,7 +231,7 @@ export function compileHead(input: HeadInput): HeadResult {
     selectedRefs: selected(lines),
     sections: HEAD_SECTIONS.map((id) => ({ id, tokens: tokensOf(sections[id]) })),
   };
-  return { ok: true, head, lines };
+  return { ok: true, head, lines, ownerName: name?.text ?? null };
 }
 
 /** Each line's ref, then the name rows renamed lines lean on, once each. */
@@ -252,18 +263,16 @@ function rulesLines(rules: CoreRules, audience: Au): HeadLine[] {
   return lines;
 }
 
-/** Absolute date, weekday and IANA zone from worldClock; no relative words (R26.7). */
-function nowLines(clock: ClockPair, audience: Au): HeadLine[] {
-  const { date, weekday } = civilDay(clock.worldClock.now, clock.worldClock.zone);
-  return [{ section: "now", text: `Now: ${weekday} ${date}, time zone ${clock.worldClock.zone}. Audience: ${audience}.`, ref: null }];
-}
-
 /**
- * Whether a Memory line of this Sensitivity may sit in a Head compiled for this audience (task 45). Private takes
- * every spoken-grade line below S2; company and unknown take S0 only (fails closed for unknown).
+ * Absolute date, weekday and IANA zone from worldClock; no relative words (R26.7). Then, for a private audience only,
+ * the owner's name line (brief 052 ruling 3): the known name with its Memory's ref, or the fixed "hasn't told you".
  */
-export function headAdmitsSens(audience: Au, sens: Memory["sens"]): boolean {
-  return audience === "private" || sens === "S0";
+function nowLines(clock: ClockPair, audience: Au, name: OwnerName | null): HeadLine[] {
+  const { date, weekday } = civilDay(clock.worldClock.now, clock.worldClock.zone);
+  const lines: HeadLine[] = [{ section: "now", text: `Now: ${weekday} ${date}, time zone ${clock.worldClock.zone}. Audience: ${audience}.`, ref: null }];
+  if (audience !== "private") return lines;
+  lines.push(name === null ? { section: "now", text: NO_NAME_LINE, ref: null } : { section: "now", text: knownNameLine(name.text), ref: name.ref });
+  return lines;
 }
 
 function memoryDocRef(hm: HeadMemory): DocRef {

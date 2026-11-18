@@ -12,11 +12,14 @@ import {
   FORGET_ASK_LINE,
   GONE_EXCEPT_RULE_LINE,
   GONE_LINE,
+  MEET_AGAIN_LINE,
+  MEET_LINE,
   RECOVERY_LINE,
   RETELL_LINE,
   ackNote,
   forgetAckText,
   isFixedLine,
+  quoteSafe,
   sayExactly,
 } from "./lines";
 import { SEMANTIC_VAD } from "./vad";
@@ -36,6 +39,16 @@ describe("Fixed_Lines", () => {
     expect(RETELL_LINE).toBe("A few things that went with it are gone too. Tell me again anytime.");
     expect(FORGET_ASK_LINE).toBe("I'm not sure which one you mean. Can you say a bit more?");
     expect(Object.values(FIXED_LINES)).not.toContain("I can't forget things yet.");
+  });
+
+  it("are the exact texts of brief 052 ruling 4, Fixed_Lines that pass quoteSafe unchanged", () => {
+    expect(MEET_LINE).toBe("Hi, I'm Franki. I'm here to make your life easier. What should I call you?");
+    expect(MEET_AGAIN_LINE).toBe("Hi again, it's Franki. What should I call you?");
+    for (const line of [MEET_LINE, MEET_AGAIN_LINE] as const) {
+      expect(isFixedLine(line)).toBe(true);
+      expect(quoteSafe(line)).toBe(line);
+      expect(validate(W, ackNote(line, testId("note"), "2026-11-10T12:00:10.000Z")).ok).toBe(true);
+    }
   });
 
   it("make each acknowledgment from the job's ack, in order", () => {
