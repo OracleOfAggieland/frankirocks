@@ -4,6 +4,7 @@
  * `schedule`, and returns the result as JSON. Everything else (guard, parse, core documents, route logic, error
  * mapping) runs here, independent of the web framework.
  */
+import type { AccountPort } from "../account/live";
 import type { ClockPort, Hasher, Schema } from "@franki/core";
 import { validate } from "@franki/core";
 import { BODY_CAP_BYTES, type TokenVerifier, guardRequest } from "../auth/guard";
@@ -37,6 +38,8 @@ export interface RouteDeps {
   bank?: BankPort;
   /** Brief 049 (lane google): the Google port. Live when unset; a throwing fake in tests. */
   google?: GooglePort;
+  /** POST /api/account/delete: the tenant and sign-in delete. Live when unset; a fake in tests. */
+  account?: AccountPort;
   /** Brief 048: the forget job's ForgetResolveV1 port. Over `openai` when unset (`forget/resolve-live.ts`). */
   forgetResolve?: ForgetResolvePort;
   /** Brief 049 part A: the errand agents. The production registry (empty in part A) when unset. */

@@ -49,7 +49,7 @@ function MemoryScreen() {
           reduced={reduced}
           paused={false}
           cards={cards}
-          auth={<AuthPanel state={{ kind: "signedIn", email: "owner@example.com", uid: "specimen" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} />}
+          auth={<AuthPanel state={{ kind: "signedIn", email: "owner@example.com", uid: "specimen" }} busy={false} configMissing={null} onSignIn={noop} onSignOut={noop} onDeleteAccount={async () => false} />}
           soundToggle={<SoundToggle preference={preference} />}
           stage={
             <Stage reduced={reduced}>

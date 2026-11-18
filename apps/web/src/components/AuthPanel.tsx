@@ -1,13 +1,11 @@
 import Link from "next/link";
 import type { AuthState } from "../client/auth";
 import { COPY } from "../ui/copy";
+import { AccountMenu } from "./AccountMenu";
 import { FOCUS, TARGET } from "./surfaces/classes";
 
 /** The large brass sign-in button: something you can touch, pressed 2 px on press. */
 const SIGN_IN = `${TARGET} ${FOCUS} mat-brass inline-flex h-14 items-center justify-center gap-2.5 rounded-chip pl-6 pr-7 text-base font-medium transition-[transform,filter] duration-(--dur-quick) hover:brightness-110 active:translate-y-0.5 disabled:opacity-50 disabled:hover:brightness-100`;
-
-/** Sign out, in the header rail: a quiet capsule. */
-const SIGN_OUT = `${TARGET} ${FOCUS} inline-flex items-center justify-center rounded-chip border border-ink-dim/70 px-4 text-sm text-ink transition-colors duration-(--dur-quick) hover:border-ink hover:bg-night-2`;
 
 /** The quiet link to the front door, under the sign-in button. */
 const ABOUT = `${TARGET} ${FOCUS} inline-flex items-center rounded-control px-3 text-sm text-ink-dim underline decoration-ink-dim/50 underline-offset-4 transition-colors duration-(--dur-quick) hover:text-ink hover:decoration-ink`;
@@ -29,16 +27,19 @@ export interface AuthPanelProps {
   configMissing: string[] | null;
   onSignIn: () => void;
   onSignOut: () => void;
+  /** Deletes everything stored for the user and their sign-in; true once done. */
+  onDeleteAccount: () => Promise<boolean>;
 }
 
 /**
  * Sign-in control and signed-in identity (FSC R9.1, R9.2, R9.4, R9.6, R9.7; lab-ui-foundation R13.1,
  * R13.4, R13.5, R14.9). Signed out: one brass "Sign in to wake Franki" button for the same Google
  * sign-in, disabled until Firebase reports and while a popup is open, with any error inline, and under it a
- * quiet link to the front door. Signed in: the email in mono 12 and "Sign out", for the header rail.
+ * quiet link to the front door. Signed in: the account menu (the email in mono 12; Sign out and Delete my data),
+ * for the header rail.
  * Presentational only.
  */
-export function AuthPanel({ state, busy, configMissing, onSignIn, onSignOut }: AuthPanelProps) {
+export function AuthPanel({ state, busy, configMissing, onSignIn, onSignOut, onDeleteAccount }: AuthPanelProps) {
   if (configMissing !== null) {
     return (
       <section aria-label="Sign-in" className="flex flex-col items-center gap-2">
@@ -54,12 +55,7 @@ export function AuthPanel({ state, busy, configMissing, onSignIn, onSignOut }: A
   if (state.kind === "signedIn") {
     return (
       <section aria-label="Signed in" className="flex min-w-0 items-center gap-3">
-        <span data-testid="signed-in-email" className="truncate font-mono text-xs text-ink-dim">
-          {state.email}
-        </span>
-        <button type="button" onClick={onSignOut} className={SIGN_OUT}>
-          {COPY.auth.signOut}
-        </button>
+        <AccountMenu email={state.email} onSignOut={onSignOut} onDeleteAccount={onDeleteAccount} />
       </section>
     );
   }
