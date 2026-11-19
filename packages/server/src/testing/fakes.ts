@@ -30,6 +30,8 @@ export const TEST_ENV = {
   FRANKI_TRANSCRIBE_MODEL: "test-transcribe-model",
   OPENAI_API_KEY: "test-not-a-key",
   NODE_ENV: "test",
+  // Brief 053: off in the app unless set; on here, so the company machinery stays under test.
+  FRANKI_COMPANY_MODE: "on",
 };
 
 /** Accepts tokens of the form `token:<uid>`; anything else (including `revoked:<uid>`) is rejected. */

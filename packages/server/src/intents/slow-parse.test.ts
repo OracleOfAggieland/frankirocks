@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { fail, never, ok } from "../openai/fake";
 import { decisionAnswer } from "../testing/decisions";
-import { settle, testRig } from "../testing/fakes";
+import { TEST_ENV, settle, testRig } from "../testing/fakes";
 import { decisionsPort } from "./decisions-port";
 import { runSlowParse } from "./slow-parse";
 
-function parser() {
-  const rig = testRig();
+function parser(env: Record<string, string> = TEST_ENV) {
+  const rig = testRig(env);
   const deps = { decisions: decisionsPort(rig.deps), env: rig.deps.env, log: rig.deps.log };
   const run = (utterance: string) => settle(runSlowParse(deps, { turnId: "t1", utterance }), rig.clock, rig.timers).then((r) => r.value);
   return { rig, run };
@@ -18,6 +18,16 @@ describe("runSlowParse", () => {
     rig.openai.script("decisions.create", ok(decisionAnswer()), ok(decisionAnswer({ forget: 0.9, food: 0.4 })));
     expect((await run("my dog loves the park")).parse).toEqual({ kind: "ordinary" });
     expect((await run("forget that")).parse).toEqual({ kind: "hit", chosen: "forget", candidates: ["forget", "food"], uncertain: false, candidateP: { forget: 0.9, food: 0.4 } });
+  });
+
+  it("brief 053: with company mode off, company and quiet are never candidates; the probabilities stay the model's", async () => {
+    const { rig, run } = parser({ ...TEST_ENV, FRANKI_COMPANY_MODE: "off" });
+    rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.95, quiet: 0.9 })), ok(decisionAnswer({ company: 0.9, forget: 0.9 })));
+    const walkIn = await run("my cousin just walked in, keep it between us");
+    expect(walkIn.parse).toEqual({ kind: "ordinary" });
+    // G19 still reads these, so a walk-in line writes no fact as the owner's and starts no moment.
+    expect(walkIn.probabilities).toMatchObject({ company: 0.95, quiet: 0.9 });
+    expect((await run("forget that")).parse).toEqual({ kind: "hit", chosen: "forget", candidates: ["forget"], uncertain: false, candidateP: { forget: 0.9 } });
   });
 
   it("fails on a missed deadline, a transport error, a bad answer and an oversize turn", async () => {

@@ -267,10 +267,13 @@ const AU_RANK: Readonly<Record<Au, number>> = { private: 0, unknown: 1, company:
 /**
  * Brief 045 (finding 2): the narrowest of what each candidate passes on (`inheritedAudience`): `company` over
  * `unknown` over private (`AU_RANK`), and a crisis from any of them. Only the Owner's own hang-up (`userCloseCarry`) or an
- * `alone` line, which make that Session private, widen.
+ * `alone` line, which make that Session private, widen. Brief 053: with company mode off, a Session left in `company`
+ * (before the switch, or by a tap) passes on nothing, so an account it narrowed opens private again.
  */
-export function narrowestInherited(candidates: readonly Session[], opsNow: number): ReturnType<typeof inheritedAudience> {
-  const all = candidates.map((c) => inheritedAudience(c, opsNow)).filter((i): i is NonNullable<typeof i> => i !== null);
+export function narrowestInherited(candidates: readonly Session[], opsNow: number, companyMode = true): ReturnType<typeof inheritedAudience> {
+  const all = candidates
+    .filter((c) => companyMode || c.audience !== "company")
+    .map((c) => inheritedAudience(c, opsNow)).filter((i): i is NonNullable<typeof i> => i !== null);
   if (all.length === 0) return null;
   const crisisAt = all.map((i) => i.crisisAt).filter((t): t is NonNullable<typeof t> => t !== null).sort().at(-1) ?? null;
   const audience = all.map((i) => i.audience).reduce((a, b) => (AU_RANK[b] > AU_RANK[a] ? b : a));

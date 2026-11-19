@@ -4,8 +4,8 @@
  * deadline or a transport error is `failed`, and the Server_Rule decides from that (R11.2). A regex match is
  * recorded and returned; it decides only when the parse failed (R10.2; question 90).
  */
-import { DECISIONS_DEADLINE_MS, type IntentName, type InvalidReason, type Probabilities, type RuleParse, buildTurnIntents, outcomeOf, parseDecision, regexMatch } from "@franki/core";
-import type { Env } from "../config/env";
+import { DECISIONS_DEADLINE_MS, type IntentName, type InvalidReason, type Probabilities, type RuleParse, buildTurnIntents, outcomeOf, parseDecision, regexMatch, withoutCompanyMode } from "@franki/core";
+import { type Env, companyModeOn } from "../config/env";
 import type { Log } from "../routes/runtime";
 import { type DecisionsPort, decisionsModel } from "./decisions-port";
 
@@ -68,5 +68,8 @@ async function slowParse(deps: SlowParseDeps, input: SlowParseInput, deadlineMs:
     deps.log("turn.parseInvalid", { turnId: input.turnId, reason: parsed.reason, index: parsed.index ?? -1, question: parsed.name ?? "" });
     return { parse: { kind: "failed", why: "invalid" }, regex, probabilities: null, ms: r.ms, invalid };
   }
-  return { parse: outcomeOf(parsed.intents.p), regex, probabilities: parsed.intents.p, ms: r.ms, invalid: null };
+  // Brief 053: with company mode off, no walk-in or keep-it-between-us answer reaches the parse, so nothing narrows.
+  // `probabilities` stays the model's own answer: G19 (`speakerCertain`) still holds back writes and moments on it.
+  const p = parsed.intents.p;
+  return { parse: outcomeOf(companyModeOn(deps.env) ? p : withoutCompanyMode(p)), regex, probabilities: p, ms: r.ms, invalid: null };
 }

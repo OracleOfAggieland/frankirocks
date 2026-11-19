@@ -97,6 +97,10 @@ What it doesn't do:
 
 Known gaps: no real Google call has been tested; everything runs against a scripted fake. Mail and events are read only when asked, never in the background, and Google sends no push notifications here.
 
+## Company mode (off)
+
+Company mode is off unless `FRANKI_COMPANY_MODE` is `on` (brief 053). While it is off, a walk-in or a "keep that between us" never ends the call, and an account an earlier company hit narrowed opens private. Nothing sets the variable, on App Hosting or locally. The tests turn it on in `packages/server/src/testing/fakes.ts`.
+
 ## Deploy
 
 Set each runtime secret listed in `apps/web/apphosting.yaml` in Secret Manager and grant the `franki-web` backend access. For example:

@@ -78,6 +78,14 @@ export type ParseOutcome =
   /** `candidateP` holds each candidate's probability, for the route rule (review of the live run, item 5). */
   | { kind: "hit"; chosen: ControlClass | null; candidates: ControlClass[]; uncertain: boolean; candidateP: Partial<Record<ControlClass, number>> };
 
+/**
+ * Company mode off (owner, Nov 18; brief 053): the walk-in (`company`) and keep-it-between-us (`quiet`) answers read
+ * as 0, so neither is ever a candidate and nothing narrows the audience. Every other answer is kept as the model gave it.
+ */
+export function withoutCompanyMode(p: Probabilities): Probabilities {
+  return { ...p, company: 0, quiet: 0 };
+}
+
 export function outcomeOf(p: Probabilities): ParseOutcome {
   const cands = candidates(p);
   if (isOrdinary(p)) return { kind: "ordinary" };

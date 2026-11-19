@@ -43,6 +43,7 @@ import { openForgetPass } from "../forget/drive";
 import { drainExtractJobs } from "../worker/drain";
 import { driveHangupJob, hangupAll, hangupJobId } from "../worker/hangup";
 import { startTick } from "../worker/tick";
+import { companyModeOn } from "../config/env";
 import { configError } from "./errors";
 import { mutation } from "./mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
@@ -186,7 +187,7 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       // Brief 045 (finding 2): also the Owner's active Session and the latest closing or closed one; the narrowest wins.
       // Brief 048: whether each acknowledgment was already said is read beside the Sessions, in the same round trip.
       const [candidates, due] = await Promise.all([inheritCandidates(tx, uid, { named: req.previousSessionId, active: core.epoch.data.activeSessionId, sessionId }), dueAcks(tx, uid, ackCandidates, deps.hasher)]);
-      const inherited = narrowestInherited(candidates, ops);
+      const inherited = narrowestInherited(candidates, ops, companyModeOn(deps.env));
       const compiled = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: core.epoch.data, rules }, pair, 1, inherited?.audience));
       if (!compiled.ok) throw configError(500, "head fixed sections exceed the token cap");
       const head = compiled.head;

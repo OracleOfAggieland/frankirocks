@@ -37,6 +37,11 @@ export const openaiApiKey = (env: Env = process.env): string => requireEnv(ENV_V
 export const idHmacKey = (env: Env = process.env): string => requireEnv(ENV_VARS.idHmacKey, env);
 export const firebaseProjectId = (env: Env = process.env): string => requireEnv(ENV_VARS.firebaseProjectId, env);
 
+/** Company mode (brief 053; owner, Nov 18: off for the demo). On only when FRANKI_COMPANY_MODE is "on". */
+export function companyModeOn(env: Env = process.env): boolean {
+  return env.FRANKI_COMPANY_MODE === "on";
+}
+
 /** True when NODE_ENV is "production". */
 export function isProduction(env: Env = process.env): boolean {
   return env.NODE_ENV === "production";
