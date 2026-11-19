@@ -12,7 +12,7 @@ import type { PhoneEntry } from "./outbound";
 type ReportEntry = Extract<Ledger, { kind: "phoneReport" }>;
 export const PHONE_REPORT_WINDOW_MS = 60 * 60_000;
 const reportId = (uid: string, dialId: string, hasher: Hasher) => hasher.id(["phone-report", uid, dialId]);
-const reportPath = (uid: string, dialId: string, hasher: Hasher) => paths.ledger(uid, reportId(uid, dialId, hasher));
+export const reportPath = (uid: string, dialId: string, hasher: Hasher) => paths.ledger(uid, reportId(uid, dialId, hasher));
 
 /** Each accepted dial owns one result slot, including when two assignments overlap. */
 export function startPhoneReport(tx: Tx, uid: string, dialId: string, hasher: Hasher, call: Extract<Ledger, { kind: "phoneCall" }>) {
@@ -25,7 +25,8 @@ export function startPhoneReport(tx: Tx, uid: string, dialId: string, hasher: Ha
   tx.create(path, entry);
 }
 
-export async function savePhoneReport(tx: Tx, deps: RouteDeps, uid: string, dialId: string, callId: string, report: PhoneReport): Promise<boolean> {
+/** `callId` null files a report for a dial that no SIP leg ever reached; its caller checks the carrier first. */
+export async function savePhoneReport(tx: Tx, deps: RouteDeps, uid: string, dialId: string, callId: string | null, report: PhoneReport): Promise<boolean> {
   const dial = (await tx.get<Extract<Ledger, { kind: "phoneCall" }>>(paths.ledger(uid, dialId)))?.data;
   if (!dial || dial.kind !== "phoneCall" || dial.payload.realtimeCallId !== callId || dial.state === "failed") return false;
   const { sessionId, turnId } = dial.payload;

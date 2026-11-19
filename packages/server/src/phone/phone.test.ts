@@ -27,7 +27,7 @@ const text = "Call +1 (415) 555-0123 and ask when the shop opens.";
 const intent = normalizeResponse({ status: "completed", output: [
   { type: "function_call", status: "completed", name: "make_phone_call", arguments: "{}" },
 ] });
-const controls = () => ({ accept: vi.fn(async () => {}), greet: vi.fn(async () => {}), reject: vi.fn(async () => {}) });
+const controls = () => ({ accept: vi.fn(async () => {}), greet: vi.fn(async () => {}), reject: vi.fn(async () => {}), listen: vi.fn(async () => {}) });
 
 async function setup() {
   const rig = testRig({ ...env, FRANKI_PHONE_REPORT_ORIGIN: "https://frankirocks.com" });
@@ -61,6 +61,8 @@ describe("outbound phone calls", () => {
     await answerPhoneCall(rig.deps, { ...data, call_id: "rtc_another" }, sip, lookupUid);
     expect(sip.accept).toHaveBeenCalledExactlyOnceWith(data.call_id, text, { uid: "owner-1", dialId: correlation });
     expect(sip.greet).toHaveBeenCalledExactlyOnceWith(data.call_id);
+    expect(sip.listen).toHaveBeenCalledExactlyOnceWith(data.call_id, { uid: "owner-1", dialId: correlation });
+    expect(sip.greet.mock.invocationCallOrder[0]).toBeLessThan(sip.listen.mock.invocationCallOrder[0]!);
     expect(sip.reject).toHaveBeenCalledExactlyOnceWith("rtc_another");
   });
 
@@ -228,6 +230,7 @@ describe("outbound phone calls", () => {
     await answerPhoneCall(rig.deps, data, sip, lookupUid);
     expect(sip.accept).toHaveBeenCalledTimes(2);
     expect(sip.greet).toHaveBeenCalledExactlyOnceWith(data.call_id);
+    expect(sip.listen).toHaveBeenCalledOnce();
     expect(dial).toHaveBeenCalledTimes(1);
   });
 
