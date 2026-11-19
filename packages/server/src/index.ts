@@ -18,6 +18,8 @@ export { toolRoute } from "./routes/tool";
 export { phoneReportEndpoint } from "./phone/report-mcp";
 export { phoneWebhook } from "./phone/webhook";
 export { twilioStatusWebhook } from "./phone/callback";
+// Owner ruling, Nov 19 (lane mail-limits): an Errand runs inside a request that stays open.
+export { errandRunEndpoint } from "./errands/run-endpoint";
 export { phoneStatusRoute } from "./phone/status";
 export { debugMemoryRoute } from "./routes/debug-memory";
 // Brief 020: GET /api/memory.

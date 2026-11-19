@@ -25,7 +25,7 @@ export async function recentErrands(reader: Pick<Reader, "query">, uid: string):
 
 /**
  * The owner's running Errands (ruling 7's count): the most recent ones, filtered in code, so no composite index is
- * needed. A run lasts at most `ERRAND_WALL_MS` and at most two claims, so a running Errand is always among them.
+ * needed. A run lasts at most `ERRAND_RUN_SPAN_MS` over at most two claims, so a running Errand is always among them.
  */
 export async function runningErrands(reader: Pick<Reader, "query">, uid: string): Promise<StoredDoc<Errand>[]> {
   return (await recentErrands(reader, uid)).filter((r) => r.data.status === "running");

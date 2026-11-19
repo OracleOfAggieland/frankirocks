@@ -103,14 +103,17 @@ describe("the run and its delivery", () => {
     expect(st.body.proactive?.whisper.text ?? "").not.toContain("Thursday");
   });
 
-  it("a sender the owner never mailed is carded, not spoken", async () => {
+  // Owner ruling, Nov 19 (lane mail-limits): was "carded, not spoken".
+  it("a sender the owner never mailed is spoken, named by code", async () => {
     const x = await setup([{ call: "search_mail" }, { outcome: "answered", lines: [{ text: "The plumber comes Thursday at 9.", refs: ["r1"] }] }], { noMail: true });
     x.mail.push(await seedMail(x.rig, "stranger", { text: "Thursday at 9.", from: "Stranger", mailedByOwner: false }));
     await callRoute(x.rig, toolRoute, tool(x));
     await runScheduled(x.rig);
     x.rig.clock.advance(ERRAND_SILENCE_MS + 100);
     const st = await callRoute(x.rig, stateRoute, poll(x));
-    expect(st.body.proactive?.whisper.text).toBe("I found something. It's on your screen.");
+    const said = st.body.proactive?.whisper.text as string;
+    expect(said).toContain("From Stranger");
+    expect(said).toContain("The plumber comes Thursday at 9.");
     expect(st.body.errands.cards).toHaveLength(1);
   });
 

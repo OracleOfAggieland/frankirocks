@@ -39,11 +39,10 @@ export interface ErrandToolContext {
   errandId: ID;
   /** The assignment: the owner's own committed words, oldest first (ruling 2). */
   ownerWords: readonly string[];
-  /** The ops time by which the tool must have answered. */
-  deadlineAt: number;
   /**
-   * Review fix R5: aborted at the deadline. A tool passes it to its own requests; after it aborts, `read` registers
-   * nothing and answers null, since the tool's output no longer reaches the planner.
+   * Review fix R5: aborted once the tool has answered or the run has stopped (owner ruling, Nov 19: a tool has no
+   * deadline of its own). A tool passes it to its own requests; after it aborts, `read` registers nothing and
+   * answers null, since the tool's output no longer reaches the planner.
    */
   signal: AbortSignal;
   read(r: ErrandReadInput): string | null;
@@ -64,7 +63,9 @@ export interface ErrandToolContext {
  * Review fix T8: what a tool tells the runner. `read`: a read that answered (it found something or nothing);
  * `failed`: the provider couldn't be read; `expired`: the grant needs connecting again; `unresolved`: a time phrase
  * code couldn't place; `partial`: part of what was asked couldn't be read (a message that didn't load, a list cut
- * short); `unmailed`: a search found mail only shown to the runner, from someone the owner hasn't written to.
+ * short); `unmailed`: a search found mail only shown to the runner, from someone the owner hasn't written to (owner
+ * ruling, Nov 19: the mail agent no longer raises it, since such mail is now shown and may be said with its sender
+ * named; `noticeOf` still words it for an agent that does).
  */
 export const ERRAND_TOOL_FLAGS = ["read", "failed", "expired", "unresolved", "partial", "unmailed"] as const;
 export type ErrandToolFlag = (typeof ERRAND_TOOL_FLAGS)[number];

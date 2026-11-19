@@ -2,7 +2,7 @@
  * Brief 049 part C, review fixes (Nov 14): each finding's test, written to fail on the code the reviewers read. All
  * on fakes: FakeOpenAI, FakeGoogle, the fake clock.
  */
-import { type Connector, type CoreState, localMinuteAt, ERRAND_SILENCE_MS, ERRAND_HELD_LINE, ERRAND_ON_SCREEN_LINE, ERRAND_UNMAILED_MARKER, type Errand, errandFailedLine, errandNoticeLine, type ErrandRead, type Evidence } from "@franki/core";
+import { type Connector, type CoreState, localMinuteAt, ERRAND_SILENCE_MS, ERRAND_HELD_LINE, ERRAND_ON_SCREEN_LINE, ERRAND_UNMAILED_MARKER, type Errand, errandFailedLine, errandNoticeLine, errandNothingLine, type ErrandRead, type Evidence } from "@franki/core";
 import { errandCard } from "./card";
 import { errandResultCard, errandWords } from "./deliver";
 import { GoogleCallError } from "../google/port";
@@ -19,7 +19,7 @@ import { testId } from "@franki/core/testing";
 import { stateRoute } from "../routes/state";
 import { googleDisconnectRoute } from "../google/routes";
 import { googleConnectorId } from "../google/connector";
-import { READER_CALL_MS, calendarAgent, mailAgent } from "./google-agents";
+import { calendarAgent, mailAgent } from "./google-agents";
 
 const search = mailAgent.tools.find((t) => t.name === "search_mail")!;
 const readMail = mailAgent.tools.find((t) => t.name === "read_mail")!;
@@ -47,7 +47,8 @@ describe("T11: per-run state lives in the runner's scratch, never in the module"
     expect(readerRequests(x)).toHaveLength(0);
   });
 
-  it("the reader call carries its own timeout and the run's abort signal", async () => {
+  // Owner ruling, Nov 19 (lane mail-limits): the reader has no deadline of its own; it stops only with the run.
+  it("the reader call carries the run's abort signal and no timeout of its own", async () => {
     const { x } = await started();
     x.rig.openai.respond("responses.create", readerSays("The sender says the lease renewal is due Friday."));
     const h = toolHarness(x);
@@ -55,11 +56,10 @@ describe("T11: per-run state lives in the runner's scratch, never in the module"
     await settle(readMail.run(h.ctx, { ref: out.messages[0]!.ref }), x.rig.clock, x.rig.timers);
     const req = readerRequests(x)[0]!;
     expect(req.options?.signal).toBe(h.ctx.signal);
-    expect(req.options?.timeoutMs).toBeGreaterThan(0);
-    expect(req.options?.timeoutMs).toBeLessThanOrEqual(READER_CALL_MS);
+    expect(req.options?.timeoutMs).toBeUndefined();
   });
 
-  it("the sent-mail checks for up to 8 senders run in parallel, inside the tool's deadline", async () => {
+  it("the sent-mail checks for up to 8 senders run a few at a time, in parallel", async () => {
     const { x, google } = await started();
     google.messages.clear();
     for (let i = 1; i <= 8; i++) google.messages.set(`m${i}`, gmailMessage(`m${i}`, { from: `Sender ${i} <s${i}@example.org>`, subject: `Lease ${i}`, headers: [dmarcPass("example.org")] }));
@@ -125,20 +125,37 @@ describe("T1: a sender is mailed only on Gmail's DMARC pass, a sent message to t
   });
 });
 
-describe("T2: an unmailed sender reaches the planner as a ref, a date and unread only", () => {
-  it("no address, no name, no subject", async () => {
+/**
+ * Owner ruling, Nov 19 (lane mail-limits), replacing T2 (a stranger was a ref, a date and unread only): every message
+ * reaches the planner with its address, subject and date, so a broad ask can pick what matters; the display name
+ * only when the owner mailed the sender or Gmail's DMARC check passed for the From domain.
+ */
+describe("T2: an unmailed sender reaches the planner with address, subject and date; a display name only when authenticated", () => {
+  async function searched(headers: NonNullable<Parameters<typeof gmailMessage>[1]>["headers"]) {
     const { x, google } = await started();
     google.messages.clear();
-    google.messages.set("m1", gmailMessage("m1", { from: "Dana Park <dana@example.org>", subject: "URGENT call 555 0199", text: "Lease." }));
+    google.messages.set("m1", gmailMessage("m1", { from: "Dana Park <dana@example.org>", subject: "Your order shipped", text: "Lease.", ...(headers === undefined ? {} : { headers }) }));
     const h = toolHarness(x);
     const out = (await settle(search.run(h.ctx, SEARCH), x.rig.clock, x.rig.timers)).value as { messages: Record<string, unknown>[] };
+    return { out, h };
+  }
+
+  it("an unchecked domain: the address and subject, never the display name", async () => {
+    const { out, h } = await searched(undefined);
     expect(out.messages).toHaveLength(1);
-    expect(Object.keys(out.messages[0]!).sort()).toEqual(["at", "ref", "unread"]);
-    const s = JSON.stringify(out);
-    for (const bad of ["dana", "Dana", "URGENT", "555"]) expect(s).not.toContain(bad);
-    expect(h.reads[0]!.shown).toBe(false);
-    // What the Errand keeps of it names nothing the stranger chose either.
-    expect(h.reads[0]!.source).toMatchObject({ kind: "mail", from: "", subject: "" });
+    expect(Object.keys(out.messages[0]!).sort()).toEqual(["at", "bulk", "from", "ref", "subject", "unread"]);
+    expect(out.messages[0]).toMatchObject({ from: "dana@example.org", subject: "Your order shipped" });
+    expect(JSON.stringify(out)).not.toContain("Dana Park");
+    expect(h.reads[0]!.shown).toBe(true);
+    expect(h.reads[0]!.sender).toMatchObject({ name: "", address: "dana@example.org", mailed: false });
+    expect(h.reads[0]!.source).toMatchObject({ kind: "mail", from: "", subject: "Your order shipped", mailedByOwner: false });
+  });
+
+  it("a domain that passed DMARC: the display name too, still not mailed", async () => {
+    const { out, h } = await searched([dmarcPass("example.org")]);
+    expect(out.messages[0]).toMatchObject({ from: "dana@example.org", name: "Dana Park", subject: "Your order shipped" });
+    expect(h.reads[0]!.sender).toMatchObject({ name: "Dana Park", mailed: false });
+    expect(h.reads[0]!.source).toMatchObject({ from: "Dana Park", mailedByOwner: false });
   });
 });
 
@@ -158,20 +175,29 @@ describe("T3: for the owner's own sent message, the reader gets the owner's own 
   });
 });
 
+/**
+ * Owner ruling, Nov 19 (lane mail-limits): a stranger's mail is attributed line by line, so mail alone adds no marker
+ * (an invite from someone else still does), and its source line shows the subject, by the kept name else by address.
+ */
 describe("T4, T5: the card of a run that read strangers", () => {
   const base = { evidenceId: "e1" as never, rev: 1, sens: "S1" as const, shown: true };
-  const stranger: ErrandRead = { ...base, ref: "r1", cls: "T", sender: { name: "", address: "alerts@evil.example", mailed: false }, source: { kind: "mail", from: "", subject: "", at: "2026-11-13T15:00:00.000Z", mailedByOwner: false } };
+  const stranger: ErrandRead = { ...base, ref: "r1", cls: "T", sender: { name: "", address: "alerts@evil.example", mailed: false }, source: { kind: "mail", from: "", subject: "Your account", at: "2026-11-13T15:00:00.000Z", mailedByOwner: false } };
   const own: ErrandRead = { ...base, ref: "r2", evidenceId: "e2" as never, cls: "O", sender: null, source: { kind: "event", title: "Gym", startsAt: "2026-11-14T15:00:00.000Z", allDay: false } };
+  const invite: ErrandRead = { ...base, ref: "r3", evidenceId: "e3" as never, cls: "T", sender: null, source: { kind: "event", title: "Dinner", startsAt: "2026-11-14T15:00:00.000Z", allDay: false } };
   const errand = { about: ["mail"], reads: [stranger, own], lines: [], outcome: "answered" } as unknown as Errand;
   const verdict = (refs: string[], attribution: string | null) => ({ index: 0, candidateId: "c" as never, result: {} as never, shown: "card" as const, line: { text: "Something.", refs, cls: "T" as const, sens: "S1" as const, attribution, speak: false } });
+  const at = { id: "card" as never, zone: "America/Chicago", audience: "private" as const };
 
-  it("carries the one code-worded marker line, and names the stranger by address only", () => {
-    const card = errandCard(errand, [verdict(["r2"], null)], { id: "card" as never, zone: "America/Chicago", audience: "private" })!;
-    expect(card.lines).toContain(ERRAND_UNMAILED_MARKER);
-    const card2 = errandCard(errand, [verdict(["r1"], "From alerts@evil.example, yesterday:")], { id: "card" as never, zone: "America/Chicago", audience: "private" })!;
-    const src = card2.lines.find((l) => l.includes("alerts@evil.example") && !l.startsWith("From"));
-    expect(src).toBeDefined();
-    expect(src).not.toContain("(no subject)");
+  it("mail from a stranger adds no marker; an invite from someone else does", () => {
+    expect(errandCard(errand, [verdict(["r2"], null)], at)!.lines).not.toContain(ERRAND_UNMAILED_MARKER);
+    const withInvite = { ...errand, reads: [stranger, own, invite] } as Errand;
+    expect(errandCard(withInvite, [verdict(["r2"], null)], at)!.lines).toContain(ERRAND_UNMAILED_MARKER);
+  });
+
+  it("names a stranger with no kept name by address, with the subject", () => {
+    const card = errandCard(errand, [verdict(["r1"], "From alerts@evil.example, yesterday:")], at)!;
+    const src = card.lines.find((l) => l.includes("alerts@evil.example") && !l.startsWith("From"));
+    expect(src).toContain("alerts@evil.example · Your account ·");
   });
 });
 
@@ -216,18 +242,17 @@ describe("T8, E4: code words an outcome with no citeable line", () => {
     expect(words).toBe(errandNoticeLine("partial", ["mail"]));
   });
 
-  it("hits only from unmailed senders: a code line, and the card lists address and date", async () => {
-    const { x, e, words } = await runWith(searchThenNothing, () => {});
-    expect(e.notice).toBe("unmailed");
-    expect(words).toBe(errandNoticeLine("unmailed", ["mail"]));
-    const card = errandResultCard(e, [], "private", { id: "c" as never, zone: "America/Chicago" })!;
-    expect(card.lines.join(" ")).toContain("dana@example.org");
-    expect(card.lines.join(" ")).not.toContain("Dana Park");
-    expect(card.lines.join(" ")).not.toContain("Lease");
-    // In company it is held, and nothing of it shows.
-    expect(errandWords(e, [], "company").text).toBe(ERRAND_HELD_LINE);
-    expect(JSON.stringify(errandResultCard(e, [], "company", { id: "c" as never, zone: "America/Chicago" }))).not.toContain("dana@");
-    void x;
+  // Owner ruling, Nov 19 (lane mail-limits): a stranger's mail no longer raises the `unmailed` notice, since it can be
+  // said; what nothing bears on is the plain nothing line. An older row's notice is still worded as before.
+  it("hits only from unmailed senders, and nothing bears on the ask: the nothing line", async () => {
+    const { e, words } = await runWith(searchThenNothing, () => {});
+    expect(e.notice).toBeNull();
+    expect(e.outcome).toBe("nothing");
+    expect(words).toBe(errandNothingLine(["mail"]));
+    const older = { ...e, notice: "unmailed" as const };
+    expect(errandWords(older, [], "private").text).toBe(errandNoticeLine("unmailed", ["mail"]));
+    expect(errandWords(older, [], "company").text).toBe(ERRAND_HELD_LINE);
+    expect(JSON.stringify(errandResultCard(older, [], "company", { id: "c" as never, zone: "America/Chicago" }))).not.toContain("dana@");
   });
 });
 

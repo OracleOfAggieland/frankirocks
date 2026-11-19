@@ -96,10 +96,10 @@ export const ERRAND_ON_SCREEN_LINE = "I found something. It's on your screen.";
 /** Ruling 10: some lines were said, and the rest is on the card. */
 export const ERRAND_REST_ON_SCREEN_LINE = "The rest is on your screen.";
 /**
- * Review fix T4: one card line on any run whose planner was shown a message or an invite from someone the owner
- * hasn't written to. Code-worded, S0, and names nobody.
+ * Review fix T4: one card line on any run whose planner was shown an invite from someone else (owner ruling, Nov 19:
+ * no longer for mail, which is attributed line by line). Code-worded, S0, and names nobody.
  */
-export const ERRAND_UNMAILED_MARKER = "While looking this up, I read messages or invites from people you haven't written to.";
+export const ERRAND_UNMAILED_MARKER = "While looking this up, I read invites from other people.";
 /** Ruling 10: the result is held, and nothing of it is shown here. */
 export const ERRAND_HELD_LINE = "I found something, but I can't go into it right now.";
 

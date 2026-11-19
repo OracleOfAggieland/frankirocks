@@ -1,5 +1,5 @@
 /** Brief 049 part A, the review fixes: each test reproduces one reviewer finding on fakes (see brief 049's report). */
-import { ERRAND_CARD_KEEP_MS, ERRAND_LEASE_MS, ERRAND_OFFER_MS, ERRAND_TOOL_CALL_MS, type Errand, tsFromMs, ERRAND_ON_SCREEN_LINE, ERRAND_RESULT_TTL_MS, ERRAND_SILENCE_MS, type ID, type Ledger, type Session, type Turn, errandFailedLine, errandNothingLine } from "@franki/core";
+import { ERRAND_CARD_KEEP_MS, ERRAND_LEASE_MS, ERRAND_OFFER_MS, ERRAND_STUCK_MS, ERRAND_TOOL_CALLS_MAX, type Errand, type Job, msFromTs, tsFromMs, ERRAND_ON_SCREEN_LINE, ERRAND_RESULT_TTL_MS, ERRAND_SILENCE_MS, type ID, type Ledger, type Session, type Turn, errandFailedLine, errandNothingLine } from "@franki/core";
 import { describe, expect, it } from "vitest";
 import { receiptRoute } from "../routes/receipt";
 import { stateRoute } from "../routes/state";
@@ -389,13 +389,16 @@ describe("R3: every function call sent back has its output", () => {
 });
 
 describe("R6: past the tool-call limit the calls get error outputs and the planner must answer", () => {
-  it("eleven calls in one response: ten run, one is refused, and the next request allows no tools", async () => {
-    const x = await setup([{ raw: callsResponse(Array.from({ length: 11 }, (_, i) => fcall(`c${i}`))) }, answered]);
+  // Owner ruling, Nov 19 (lane mail-limits): the limit is a runaway guard (ERRAND_TOOL_CALLS_MAX), no longer 10.
+  it("one call past the limit is refused, and the next request allows no tools", async () => {
+    const PER = 16;
+    const full = Array.from({ length: Math.ceil(ERRAND_TOOL_CALLS_MAX / PER) }, (_, k) => ({ raw: callsResponse(Array.from({ length: Math.min(PER, ERRAND_TOOL_CALLS_MAX - k * PER) }, (_, i) => fcall(`c${k}_${i}`))) }));
+    const x = await setup([...full, { raw: callsResponse([fcall("over")]) }, answered]);
     await callRoute(x.rig, toolRoute, tool(x));
     await runScheduled(x.rig);
     const reqs = plannerRequests(x.rig);
-    expect(reqs).toHaveLength(2);
-    const next = reqs[1]!.body as { input: { type?: string; output?: string }[]; tool_choice: string };
+    expect(reqs).toHaveLength(full.length + 2);
+    const next = reqs[full.length + 1]!.body as { input: { type?: string; output?: string }[]; tool_choice: string };
     expect(paired(next.input as never)).toBe(true);
     expect(next.input.filter((i) => i.type === "function_call_output" && /limit/i.test(i.output ?? ""))).toHaveLength(1);
     expect(next.tool_choice).toBe("none");
@@ -403,27 +406,59 @@ describe("R6: past the tool-call limit the calls get error outputs and the plann
   });
 });
 
-describe("R5: the helper's calls have deadlines that stop them", () => {
-  it("a model call past its deadline is aborted through the port and tried once more; the retry's answer stands", async () => {
-    const x = await setup([{ never: true }, { call: "search_mail" }, answered]);
+/** Owner ruling, Nov 19 (lane mail-limits): no wall clock and no per-call timeout; a stuck run still ends. */
+describe("R5: the helper's calls have no deadline; a failed call is tried once more; a stuck run ends", () => {
+  it("a model call that fails is tried once more; the retry's answer stands", async () => {
+    const x = await setup([{ error: true }, { call: "search_mail" }, answered]);
     await callRoute(x.rig, toolRoute, tool(x));
     await runScheduled(x.rig);
     const reqs = plannerRequests(x.rig);
     expect(reqs).toHaveLength(3);
-    expect(reqs[0]!.options?.signal?.aborted).toBe(true);
-    expect(reqs[0]!.options?.timeoutMs).toBeGreaterThan(0);
+    expect(reqs[0]!.options?.timeoutMs).toBeUndefined();
     expect((await errandOf(x))?.outcome).toBe("answered");
   });
 
-  it("only once: a second failure in a row ends the run failed", async () => {
-    const x = await setup([{ never: true }, { never: true }, answered]);
+  it("a slow planner and a slow tool are waited for, past the old 40 s wall, and the lease is kept meanwhile", async () => {
+    const x = await setup(found());
+    const slow: ErrandTool = {
+      ...searchTool(() => x.mail),
+      async run(ctx, args) {
+        await x.rig.deps.timers.sleep(50_000);
+        return searchTool(() => x.mail).run(ctx, args);
+      },
+    };
+    x.rig.deps.errandAgents = [{ ...testMailAgent(() => x.mail), tools: [slow] }];
+    const t0 = x.rig.clock.read().opsClock.now;
     await callRoute(x.rig, toolRoute, tool(x));
-    await runScheduled(x.rig);
-    expect(plannerRequests(x.rig)).toHaveLength(2);
-    expect((await errandOf(x))?.outcome).toBe("failed");
+    let leaseAt = 0;
+    const watch = (async () => {
+      // Mid-run, past the 20 s lease: the Job is still this run's, its lease renewed.
+      await x.rig.deps.timers.sleep(45_000);
+      const job = (await x.rig.store.get<Job>(UID, paths.job(UID, x.errandId)))?.data;
+      leaseAt = job?.status === "leased" && job.leaseUntil !== null ? msFromTs(job.leaseUntil) : 0;
+    })();
+    await settle(Promise.all([x.rig.sched.runAll(), watch]), x.rig.clock, x.rig.timers);
+    expect(x.rig.clock.read().opsClock.now - t0).toBeGreaterThanOrEqual(50_000);
+    expect(leaseAt).toBeGreaterThan(t0 + 45_000);
+    const e = await errandOf(x);
+    expect(e?.outcome).toBe("answered");
+    expect(e?.lines[0]?.text).toBe(FOUND);
   });
 
-  it("a tool past its deadline is told to stop, and what it reads afterwards is never registered", async () => {
+  it("a planner call that never answers ends the run failed at ERRAND_STUCK_MS, its call aborted", async () => {
+    const x = await setup([{ never: true }, answered]);
+    const t0 = x.rig.clock.read().opsClock.now;
+    await callRoute(x.rig, toolRoute, tool(x));
+    await runScheduled(x.rig);
+    const reqs = plannerRequests(x.rig);
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0]!.options?.signal?.aborted).toBe(true);
+    expect(x.rig.clock.read().opsClock.now - t0).toBeGreaterThanOrEqual(ERRAND_STUCK_MS);
+    expect((await errandOf(x))?.outcome).toBe("failed");
+    expect((await errandOf(x))?.status).not.toBe("running");
+  });
+
+  it("a stuck tool is told to stop, and what it reads afterwards is never registered", async () => {
     const x = await setup([{ call: "search_mail" }, { outcome: "nothing" }]);
     let signal: AbortSignal | undefined;
     let late: string | null | undefined;
@@ -433,7 +468,7 @@ describe("R5: the helper's calls have deadlines that stop them", () => {
       ...searchTool(() => x.mail),
       async run(ctx) {
         signal = ctx.signal;
-        await x.rig.deps.timers.sleep(ERRAND_TOOL_CALL_MS + 1_000);
+        await x.rig.deps.timers.sleep(ERRAND_STUCK_MS + 60_000);
         const m = x.mail[0]!;
         late = ctx.read({ evidenceId: m.eid, rev: m.rev, cls: m.cls, sens: m.sens, shown: true, sender: m.sender, source: m.source });
         lateDone();
@@ -446,6 +481,7 @@ describe("R5: the helper's calls have deadlines that stop them", () => {
     await settle(lateRead, x.rig.clock, x.rig.timers);
     expect(signal?.aborted).toBe(true);
     expect(late).toBeNull();
+    expect((await errandOf(x))?.outcome).toBe("failed");
     expect((await errandOf(x))?.reads).toEqual([]);
   });
 

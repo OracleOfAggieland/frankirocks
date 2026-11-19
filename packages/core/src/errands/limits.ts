@@ -42,18 +42,24 @@ export const ERRAND_SILENCE_MS = 2_000;
 /** A card stays offered on the state poll this long after its result was ready. */
 export const ERRAND_CARD_KEEP_MS = 30 * 60_000;
 
-/** The helper's wall time, from the claim that started the run (ruling 5). */
-export const ERRAND_WALL_MS = 40_000;
-/** Model calls one run makes at most (ruling 5). */
-export const ERRAND_MODEL_CALLS_MAX = 6;
-/** Tool calls one run makes at most (ruling 5). */
-export const ERRAND_TOOL_CALLS_MAX = 10;
-/** One model call's limit (ruling 5). Below the lease, so a renewed lease outlives every call. */
-export const ERRAND_MODEL_CALL_MS = 12_000;
-/** One tool call's limit, which covers each Google call inside it (ruling 5: 8 s). */
-export const ERRAND_TOOL_CALL_MS = 8_000;
-/** The run's lease, renewed at each step (ruling 4). Longer than any one step. */
+/*
+ * Owner ruling, Nov 19 (lane mail-limits): no time limit ends a working run. The 40 s wall clock and the per-call
+ * timeouts of ruling 5 are gone; what is left are runaway guards on counts, so a broken loop still ends, and the
+ * stuck-run guard below, so a call that never answers can't hold an Errand `running` for good.
+ */
+/** Model calls one run makes at most: a runaway guard, far above any real ask (ruling 5 had 6). */
+export const ERRAND_MODEL_CALLS_MAX = 24;
+/** Tool calls one run makes at most: a runaway guard, far above any real ask (ruling 5 had 10). */
+export const ERRAND_TOOL_CALLS_MAX = 64;
+/** The run's lease (ruling 4). Renewed at each step and every `ERRAND_LEASE_RENEW_MS` while a step works. */
 export const ERRAND_LEASE_MS = 20_000;
+/** How often a working run renews its lease, so a slow call never lets it lapse and a second runner start. */
+export const ERRAND_LEASE_RENEW_MS = 5_000;
+/**
+ * A run still going this long after its Errand started is stuck, not slow: it is stopped, ends `failed`, and its
+ * lease is no longer renewed. Cloud Run ends the request that runs it at 300 s anyway (`errands/hand-off.ts`).
+ */
+export const ERRAND_STUCK_MS = 5 * 60_000;
 /** Claims of one run: the second after a lapsed lease starts again from nothing; a third never runs (ruling 4). */
 export const ERRAND_RUNS_MAX = 2;
 
@@ -77,9 +83,12 @@ export const ERRAND_LABEL_CHARS = 120;
  * time a result waits to be said, and the card window. At `finish` it is set again from `readyAt`
  * (`ERRAND_RESULT_TTL_MS + ERRAND_CARD_KEEP_MS`). Past it the row is stripped bare.
  */
-/** Review fix R4: the longest a run can last, both claims: a running Errand older than this is stranded. */
-export const ERRAND_RUN_SPAN_MS = ERRAND_RUNS_MAX * (ERRAND_WALL_MS + ERRAND_LEASE_MS);
-export const ERRAND_RETAIN_MS = ERRAND_RUNS_MAX * (ERRAND_WALL_MS + ERRAND_LEASE_MS) + ERRAND_RESULT_TTL_MS + ERRAND_CARD_KEEP_MS;
+/**
+ * Review fix R4: the longest a run can last, both claims: a running Errand older than this is stranded. Every claim
+ * stops at `ERRAND_STUCK_MS` from the Errand's start, and its lease lapses at most `ERRAND_LEASE_MS` later.
+ */
+export const ERRAND_RUN_SPAN_MS = ERRAND_STUCK_MS + ERRAND_LEASE_MS;
+export const ERRAND_RETAIN_MS = ERRAND_RUN_SPAN_MS + ERRAND_RESULT_TTL_MS + ERRAND_CARD_KEEP_MS;
 
 /** Review fix V2: one offer of a waiting result lives this long; offered again only after it, with no receipt. */
 export const ERRAND_OFFER_MS = 10_000;

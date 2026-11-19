@@ -75,6 +75,12 @@ env:
     value: https://frankirocks.com
     availability: [RUNTIME]
 
+  # Not a secret. The public origin an errand run is handed to (POST /api/errand/run), so it runs inside a request:
+  # this service has CPU throttling on, so work left for after() a response gets almost no CPU. Unset: in-process.
+  - variable: FRANKI_ERRAND_RUN_ORIGIN
+    value: https://frankirocks.com
+    availability: [RUNTIME]
+
   # Keep account identifiers and the calling number in the deployment environment.
   - variable: TWILIO_ACCOUNT_SID
     secret: TWILIO_ACCOUNT_SID

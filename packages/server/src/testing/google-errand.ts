@@ -53,7 +53,6 @@ export function toolHarness(x: ErrandSetup, over: Partial<ErrandToolContext> = {
     route: routeOf(x),
     errandId: x.errandId as ID,
     ownerWords: [ASK],
-    deadlineAt: x.rig.clock.read().opsClock.now + 8_000,
     signal: abort.signal,
     read,
     epoch: x.stamp.epoch,

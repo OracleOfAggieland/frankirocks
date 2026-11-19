@@ -60,6 +60,8 @@ describe("parsePlainEnv", () => {
     const real = parsePlainEnv(readFileSync(APPHOSTING_PATH, "utf8")).map((e) => e.name);
     expect(real).not.toContain("GOOGLE_OAUTH_REDIRECT_URI");
     expect(real).not.toContain("FRANKI_PHONE_REPORT_ORIGIN");
+    // A local errand run stays in-process; it is never handed to the deployed site.
+    expect(real).not.toContain("FRANKI_ERRAND_RUN_ORIGIN");
     expect(real).toContain("GOOGLE_OAUTH_CLIENT_ID");
   });
 
