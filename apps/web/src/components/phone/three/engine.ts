@@ -1,7 +1,8 @@
 // The wall phone's own small three.js scene, on a canvas with a clear background that lies over the stage beside
-// Franki. It is separate from the ghost's engine: that canvas is opaque and masked to a circle, so nothing can hang
-// outside it. The lights repeat the ghost's (a warm key from the upper left, a mint rim from behind, and the
-// ghost's own green glow from the left), so the two read as one room. The engine lives only while a call is shown.
+// Franki. It is separate from the ghost's engine: that canvas is opaque and masked to a circle, so nothing can float
+// outside it. The canvas holds the phone alone, up by Franki's shoulder, and nothing in it reaches Franki. The lights
+// are the radio's and the X-ray machine's (a warm key from the upper left, a mint rim from behind, and the ghost's own
+// green glow from where Franki floats), so the three props match. The engine lives only while a call is shown.
 import * as THREE from "three";
 import { C, COL } from "../../avatar/three/config";
 import { HANDSET_CORD_Y, HANDSET_EAR_Y, HANDSET_REST, type PhoneModel, buildPhone } from "./model";
@@ -22,18 +23,28 @@ export interface PhoneEngine {
   dispose(): void;
 }
 
-/** The canvas's width over its height. The camera frames the phone on the right and Franki's ear on the left. */
-export const PHONE_CANVAS_ASPECT = 1.2;
+/** The canvas's width over its height: the phone, its lifted handset and the waves that leave it toward Franki. */
+export const PHONE_CANVAS_ASPECT = 0.8;
 /** The most device pixels drawn per CSS pixel. */
 export const PHONE_MAX_DPR = 2;
 
-const CAM_X = -0.6;
-const CAM_DIST = 5.2;
+/** Where the camera looks: left of the phone's middle, so the waves on its left have room. */
+const LOOK = new THREE.Vector3(-0.25, 0.02, 0);
+const CAM_DIST = 5.4;
+/** Above, so the tops of the caps, the bells and the shelf catch the key light, as on the radio. */
+const CAM_RISE = 1.1;
 const CAM_FOV = 24;
-/** The phone is turned a little toward Franki. */
-const PHONE_YAW = -0.24;
+/** The phone is turned toward Franki, who floats to its left, and shows its crank side. */
+const PHONE_YAW = -0.32;
+/** How far the phone rises and falls in its float, in model units (the cabinet is 0.74 wide). */
+const FLOAT_HEIGHT = 0.035;
+/** How far below its place the phone starts as it arrives. */
+const ARRIVE_DROP = 0.16;
 
-/** A small studio for reflections: a warm softbox upper left, a mint strip behind right, a warm bounce from below. */
+/**
+ * The radio's studio for reflections (a warm softbox upper left, a mint strip behind right, a warm bounce from below),
+ * with a soft card behind the camera for the phone's flat fronts and Franki's green turned down on the left.
+ */
 function studio(renderer: THREE.WebGLRenderer): THREE.Texture {
   const env = new THREE.Scene();
   const O = new THREE.Vector3();
@@ -48,7 +59,10 @@ function studio(renderer: THREE.WebGLRenderer): THREE.Texture {
   card(0.9, 5.5, COL.rimTop, 2.6, 5.0, 1.4, -3.4);
   card(6.0, 0.7, COL.arcOuter, 1.8, 0.0, -2.2, 4.0);
   card(1.6, 1.6, COL.spark, 1.8, 3.6, 2.2, 4.2);
-  card(2.2, 2.2, COL.ecto, 0.5, -5.0, 0.4, 1.5);
+  // A broad soft card behind the camera, so the phone's flat varnished fronts carry a sheen as the radio's curves do.
+  card(5.0, 3.0, COL.spark, 0.9, -1.2, 2.6, 6.5);
+  // Franki's green, dimmer than on the radio: the bells face him, and their domes would turn green.
+  card(2.2, 2.2, COL.ecto, 0.25, -5.0, 0.4, 1.5);
   const pm = new THREE.PMREMGenerator(renderer);
   const tex = pm.fromScene(env, 0.04).texture;
   pm.dispose();
@@ -63,7 +77,7 @@ function studio(renderer: THREE.WebGLRenderer): THREE.Texture {
 }
 
 export interface PhoneEngineOptions {
-  /** Reduced_Motion: every frame is the settled pose for the view, so nothing travels, shakes or pulses. */
+  /** Reduced_Motion: every frame is the settled pose for the view, so nothing travels, floats, shakes or pulses. */
   still: boolean;
 }
 
@@ -77,17 +91,18 @@ export function createPhoneEngine(canvas: HTMLCanvasElement, initial: PhoneSize,
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(CAM_FOV, PHONE_CANVAS_ASPECT, 0.5, 20);
-  camera.position.set(CAM_X, 0.12, CAM_DIST);
-  camera.lookAt(CAM_X, 0, 0);
+  camera.position.set(LOOK.x, LOOK.y + CAM_RISE, CAM_DIST);
+  camera.lookAt(LOOK);
 
   const key = new THREE.DirectionalLight(C(COL.spark), 2.4);
   key.position.set(-3, 4.2, 4);
   const rim = new THREE.DirectionalLight(C(COL.rimTop), 1.5);
   rim.position.set(2.6, 2.9, -3.2);
   const hemi = new THREE.HemisphereLight(C(COL.ghostCool), C(COL.lamp), 0.55);
-  // Franki's own glow, from where Franki stands.
-  const ghostGlow = new THREE.PointLight(C(COL.ecto), 1.3, 5, 1.6);
-  ghostGlow.position.set(-2.3, 0.3, 1.2);
+  // Franki's own glow, from where Franki floats: to the left and below, low enough to edge the phone without
+  // painting its bells green.
+  const ghostGlow = new THREE.PointLight(C(COL.ecto), 0.6, 5, 1.6);
+  ghostGlow.position.set(-2.6, -1.2, 0.5);
   scene.add(key, rim, hemi, ghostGlow);
   const env = studio(renderer);
   scene.environment = env;
@@ -98,7 +113,7 @@ export function createPhoneEngine(canvas: HTMLCanvasElement, initial: PhoneSize,
   scene.add(model.root, ...model.waves, ...model.ticks);
 
   const qHook = new THREE.Quaternion().setFromEuler(HANDSET_REST.hook.rotation);
-  const qEar = new THREE.Quaternion().setFromEuler(HANDSET_REST.ear.rotation);
+  const qLifted = new THREE.Quaternion().setFromEuler(HANDSET_REST.lifted.rotation);
   const qSway = new THREE.Quaternion();
   const swayAxis = new THREE.Vector3(0, 0, 1);
   const cordEnd = new THREE.Vector3();
@@ -106,24 +121,26 @@ export function createPhoneEngine(canvas: HTMLCanvasElement, initial: PhoneSize,
   const earAt = new THREE.Vector3();
   const bellAt = new THREE.Vector3();
   const lampOff = C(COL.brassDeep), lampLive = C(COL.ecto), lampMissed = C(COL.arcEdge);
-  const lampNow = new THREE.Color();
 
   let current: ShownView = view;
   let motion: PhoneMotion = { ...INITIAL_MOTION, phase: view.phase };
   let disposed = false;
 
   const apply = (m: PhoneMotion) => {
-    const { root, handset, bells, clapper, wheel, lamp, lampGlow, waves, ticks } = model;
-    root.scale.setScalar(0.9 + 0.1 * m.appear);
-    root.position.y = (1 - Math.min(1, m.appear)) * -0.06;
+    const { root, handset, bells, clapper, wheel, lamp, lampGlow, aura, waves, ticks } = model;
+    const arrived = Math.min(1, m.appear);
+    // The float: a slow rise and fall with a small nod, and a slower rock. The phone rises into place as it arrives.
+    root.scale.setScalar(0.92 + 0.08 * m.appear);
+    root.position.y = m.hover * FLOAT_HEIGHT - (1 - arrived) * ARRIVE_DROP;
+    root.rotation.set(m.hover * 0.012, PHONE_YAW + m.rock * 0.05, m.rock * 0.025);
 
-    // The handset travels from the hook to Franki's ear on a shallow arc.
+    // The handset drifts off its cradle to float just in front of the phone, and back.
     const k = THREE.MathUtils.clamp(m.lift, -0.05, 1.08);
-    handset.position.lerpVectors(HANDSET_REST.hook.position, HANDSET_REST.ear.position, k);
-    handset.position.y += Math.sin(Math.PI * THREE.MathUtils.clamp(k, 0, 1)) * 0.1;
-    handset.position.z += Math.sin(Math.PI * THREE.MathUtils.clamp(k, 0, 1)) * 0.12;
-    handset.quaternion.slerpQuaternions(qHook, qEar, THREE.MathUtils.clamp(k, 0, 1));
-    handset.quaternion.multiply(qSway.setFromAxisAngle(swayAxis, m.sway * 0.03 * THREE.MathUtils.clamp(k, 0, 1)));
+    const k01 = THREE.MathUtils.clamp(k, 0, 1);
+    handset.position.lerpVectors(HANDSET_REST.hook.position, HANDSET_REST.lifted.position, k);
+    handset.position.y += Math.sin(Math.PI * k01) * 0.04 + m.sway * 0.012;
+    handset.quaternion.slerpQuaternions(qHook, qLifted, k01);
+    handset.quaternion.multiply(qSway.setFromAxisAngle(swayAxis, m.sway * 0.05));
 
     cordEnd.set(0, HANDSET_CORD_Y, 0).applyQuaternion(handset.quaternion).add(handset.position);
     if (cordEnd.distanceToSquared(lastCordEnd) > 0.004 * 0.004) {
@@ -138,10 +155,13 @@ export function createPhoneEngine(canvas: HTMLCanvasElement, initial: PhoneSize,
     bells[1].position.y = 0.745 - m.bell * 0.004;
     clapper.rotation.z = m.clapper * 0.2;
 
-    lampNow.copy(lampOff).lerp(m.lamp === "missed" ? lampMissed : lampLive, m.lamp === "off" ? 0 : m.lampLevel);
-    (lamp.material as THREE.MeshBasicMaterial).color.copy(lampNow).multiplyScalar(1 + m.lampLevel * 1.4);
+    const lit = m.lamp === "off" ? 0 : m.lampLevel;
+    lamp.material.emissive.copy(lampOff).lerp(m.lamp === "missed" ? lampMissed : lampLive, lit);
+    lamp.material.emissiveIntensity = 0.8 + lit * 1.8;
     (lampGlow.material as THREE.SpriteMaterial).color.copy(m.lamp === "missed" ? lampMissed : lampLive);
-    (lampGlow.material as THREE.SpriteMaterial).opacity = m.lamp === "off" ? 0 : m.lampLevel * 0.85;
+    (lampGlow.material as THREE.SpriteMaterial).opacity = lit * 0.85;
+    // Franki's glow behind the phone breathes with the float, and warms a little while the line is live.
+    (aura.material as THREE.SpriteMaterial).opacity = Math.max(0, m.appear) * (0.3 + 0.04 * m.hover + (m.lamp === "live" ? 0.08 * lit : 0));
 
     root.updateMatrixWorld(true);
     // The waves leave the earpiece toward Franki.

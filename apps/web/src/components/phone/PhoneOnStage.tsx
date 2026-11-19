@@ -1,13 +1,15 @@
 "use client";
-// The phone on Franki's wall: a wooden wall telephone with two brass bells, a finger wheel, a crank and a handset on
-// a cradle, built in three.js (phone/three/). It hangs beside Franki only while a phone call is out, and acts the call:
-//   dialing   the handset goes to Franki's ear and the wheel winds and returns, digit by digit
+// The phone from Franki's lab: a wooden wall telephone with two brass bells, a finger wheel, a crank and a handset on
+// a cradle, built in three.js (phone/three/). It floats up by Franki's shoulder only while a phone call is out,
+// rising and falling slowly, and never touches Franki. It acts the call:
+//   dialing   the handset drifts off its cradle and floats in front of the phone; the wheel winds and returns
 //   ringing   the bells shake in bursts, the clapper swings, strokes flash off the bells
-//   talking   the lamp in the dial glows and waves pulse at the earpiece
-//   ended     the handset goes back on the cradle and the bell gives one last tap
-//   missed    the handset goes back on the cradle and the lamp glows ember
-// Under Reduced_Motion the same phone is drawn still, in the pose each phase comes to rest in. The words under the
-// phone say the same thing it shows, so nothing depends on the motion, and they are all that shows if WebGL fails.
+//   talking   the jewel lamp in the dial glows and waves leave the earpiece toward Franki
+//   ended     the handset settles back on the cradle and the bell gives one last tap
+//   missed    the handset settles back on the cradle and the lamp glows ember
+// Under Reduced_Motion the same phone is drawn still and level, in the pose each phase comes to rest in. The words
+// under the phone say the same thing it shows, so nothing depends on the motion, and they are all that shows if WebGL
+// fails.
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useState } from "react";
 import { COPY } from "../../ui/copy";
@@ -24,14 +26,14 @@ export function phoneCaption(phase: ShownPhase, reason: MissReason | null): stri
 }
 
 /**
- * Where the phone's canvas lies on the stage. It is far wider than the phone: the phone hangs in its right half,
- * beside Franki's shoulder, and the left half reaches over Franki so the handset can travel to its ear. Smaller and
- * closer in on a narrow screen, where it still ends inside the viewport.
+ * Where the phone's canvas lies on the stage: up by Franki's right shoulder, past his edge and above the X-ray
+ * machine, holding the phone and the room on its left where the waves travel toward him. Smaller and closer in on a
+ * narrow screen, where it still ends inside the viewport.
  */
-export const PHONE_PLACE = "pointer-events-none absolute left-[35%] top-[2%] aspect-[6/5] w-[115%] max-sm:left-[30%] max-sm:top-[10%] max-sm:w-[92%]";
+export const PHONE_PLACE = "pointer-events-none absolute left-[90%] top-[-12%] aspect-[4/5] w-[44%] max-sm:left-[82%] max-sm:top-[-15%] max-sm:w-[36%]";
 
 /** The words sit under the phone itself, which is right of the canvas's middle. */
-export const PHONE_CAPTION = "absolute left-[72%] top-[97%] -translate-x-1/2 whitespace-nowrap font-mono text-xs text-ink-dim";
+export const PHONE_CAPTION = "absolute left-[63%] top-[94%] -translate-x-1/2 whitespace-nowrap font-mono text-xs text-ink-dim";
 
 /**
  * The phone in its place, with its words. It appears when a call starts and fades when the call is over; the phone

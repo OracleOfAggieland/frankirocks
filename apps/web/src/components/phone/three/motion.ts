@@ -1,6 +1,9 @@
 // How the three.js wall phone moves, as plain numbers: no three.js, no clock, no randomness. The engine steps this
 // once a frame with the frame's own time step and poses the model from the result, so every number here can be
 // tested in node. Times are seconds, angles are radians.
+//
+// The phone floats beside Franki while a call is out, rising and falling slowly on its own, and never reaches him:
+// while the line is open the handset lifts a little off its cradle and hovers in front of the phone.
 import type { MissReason, PhonePhase } from "../../../ui/phone/phone-call";
 
 export type ShownPhase = Exclude<PhonePhase, "absent">;
@@ -16,10 +19,16 @@ export interface PhoneMotion {
   readonly phase: ShownPhase;
   /** Seconds in this phase. */
   readonly t: number;
-  /** 0 as the phone arrives, 1 once it hangs still. A spring, so it may pass 1 briefly. */
+  /** Seconds since the phone appeared, whatever the phase: the float's clock, so a change of phase never jolts it. */
+  readonly age: number;
+  /** 0 as the phone arrives, 1 once it floats in its place. A spring, so it may pass 1 briefly. */
   readonly appear: number;
   readonly appearV: number;
-  /** 0 on the hook, 1 at Franki's ear. A spring. */
+  /** -1 to 1: where the whole phone is in its slow rise and fall. */
+  readonly hover: number;
+  /** -1 to 1: the whole phone's slow rock, out of step with the rise. */
+  readonly rock: number;
+  /** 0 on the cradle, 1 floating just off it. A soft spring. */
   readonly lift: number;
   readonly liftV: number;
   /** The finger wheel's turn, 0 at rest and negative while wound. */
@@ -32,7 +41,7 @@ export interface PhoneMotion {
   /** 0 to 1: the waves at the earpiece, and where the first one is in its travel. */
   readonly waves: number;
   readonly wavePhase: number;
-  /** A small sway of the handset while it is held. */
+  /** -1 to 1: the lifted handset's own small drift. 0 on the cradle. */
   readonly sway: number;
   readonly lamp: LampKind;
   /** 0 to 1: the lamp's brightness. */
@@ -42,8 +51,11 @@ export interface PhoneMotion {
 export const INITIAL_MOTION: PhoneMotion = Object.freeze({
   phase: "dialing",
   t: 0,
+  age: 0,
   appear: 0,
   appearV: 0,
+  hover: 0,
+  rock: 0,
   lift: 0,
   liftV: 0,
   wheel: 0,
@@ -57,16 +69,27 @@ export const INITIAL_MOTION: PhoneMotion = Object.freeze({
   lampLevel: 0,
 });
 
-/** Franki holds the handset while the line is open, exactly as the drawn phone does. */
+/** The handset is off its cradle exactly while the line is open. */
 export const liftedIn = (phase: ShownPhase): boolean => phase === "dialing" || phase === "ringing" || phase === "talking";
 
 /** The longest step taken at once; a longer frame is cut into steps this size, so the springs stay stable. */
 export const MAX_STEP = 1 / 60;
 /** A frame longer than this (a hidden tab coming back) counts as this long. */
 export const MAX_FRAME = 0.25;
+/** The float's clock wraps here, a whole number of both its periods, so it never loses precision or jumps. */
+export const AGE_WRAP = 4.6 * 7.3 * 100;
 
-const SPRING_K = 150;
-const SPRING_C = 17;
+/** The phone's arrival. */
+const APPEAR_K = 150;
+const APPEAR_C = 17;
+/** The handset's lift: softer than the arrival, so it drifts up rather than jumps. */
+const LIFT_K = 70;
+const LIFT_C = 13;
+
+/** One whole rise and fall of the floating phone. Franki's own float takes 4 s, so the two drift in and out of step. */
+export const FLOAT_PERIOD = 4.6;
+/** The rock is slower than the rise. */
+export const ROCK_PERIOD = 7.3;
 
 /** How long the handset takes to leave the hook before the wheel is touched. */
 export const DIAL_LEAD = 0.45;
@@ -91,9 +114,25 @@ const ease = (x: number) => {
 };
 const toward = (from: number, to: number, rate: number, dt: number) => from + (to - from) * (1 - Math.exp(-rate * dt));
 
-function spring(x: number, v: number, target: number, dt: number): [number, number] {
-  const nv = v + (SPRING_K * (target - x) - SPRING_C * v) * dt;
+function spring(x: number, v: number, target: number, k: number, c: number, dt: number): [number, number] {
+  const nv = v + (k * (target - x) - c * v) * dt;
   return [x + nv * dt, nv];
+}
+
+/** The float at `age` seconds: the rise and fall, and the rock. Both start at 0, so the phone arrives level. */
+export function floatAt(age: number): { hover: number; rock: number } {
+  return {
+    hover: Math.sin((2 * Math.PI * age) / FLOAT_PERIOD),
+    rock: Math.sin((2 * Math.PI * age) / ROCK_PERIOD),
+  };
+}
+
+/**
+ * The lifted handset's own drift at `age` seconds, before it is scaled by how far it is lifted. Its two periods
+ * divide AGE_WRAP too, so it runs on through the wrap.
+ */
+export function swayAt(age: number): number {
+  return Math.sin((2 * Math.PI * age) / (ROCK_PERIOD / 2) + 0.6) * 0.7 + Math.sin((2 * Math.PI * age) / (FLOAT_PERIOD / 2) + 2) * 0.3;
 }
 
 /** The wheel's turn at `t` seconds into dialing: wound quickly by the finger, returned slowly by the governor. */
@@ -115,15 +154,16 @@ export function ringAt(t: number): number {
   return Math.min(1, at / 0.06, (RING_ON - at) / 0.18);
 }
 
-/** One tap of the bell as the handset lands on the hook, fading out. */
+/** One tap of the bell as the handset settles on the cradle, fading out. */
 export function dingAt(t: number): number {
   const since = t - DING_AT;
   return since < 0 ? 0 : Math.exp(-4.5 * since);
 }
 
 /**
- * Where the motion comes to rest in `view`, with nothing moving: the pose shown under Reduced_Motion. The handset is
- * already where it belongs, the lamp is steady, and a ring or a voice shows as still strokes and still waves.
+ * Where the motion comes to rest in `view`, with nothing moving: the pose shown under Reduced_Motion. The phone is
+ * level and still, the handset is already where it belongs, the lamp is steady, and a ring or a voice shows as still
+ * strokes and still waves.
  */
 export function settledMotion(view: ShownView): PhoneMotion {
   const talking = view.phase === "talking";
@@ -143,8 +183,10 @@ export function settledMotion(view: ShownView): PhoneMotion {
 
 function one(m: PhoneMotion, view: ShownView, dt: number): PhoneMotion {
   const t = view.phase === m.phase ? m.t + dt : dt;
-  const [appear, appearV] = spring(m.appear, m.appearV, 1, dt);
-  const [lift, liftV] = spring(m.lift, m.liftV, liftedIn(view.phase) ? 1 : 0, dt);
+  const age = (m.age + dt) % AGE_WRAP;
+  const [appear, appearV] = spring(m.appear, m.appearV, 1, APPEAR_K, APPEAR_C, dt);
+  const [lift, liftV] = spring(m.lift, m.liftV, liftedIn(view.phase) ? 1 : 0, LIFT_K, LIFT_C, dt);
+  const { hover, rock } = floatAt(age);
 
   const ringing = view.phase === "ringing" ? ringAt(t) : view.phase === "ended" ? dingAt(t) * 0.55 : 0;
   const shake = 2 * Math.PI * SHAKE_HZ * t;
@@ -155,8 +197,11 @@ function one(m: PhoneMotion, view: ShownView, dt: number): PhoneMotion {
   return {
     phase: view.phase,
     t,
+    age,
     appear,
     appearV,
+    hover,
+    rock,
     lift,
     liftV,
     // Leaving dialing mid-turn, the wheel runs home instead of snapping.
@@ -166,7 +211,8 @@ function one(m: PhoneMotion, view: ShownView, dt: number): PhoneMotion {
     clapper: ringing * Math.cos(shake),
     waves: toward(m.waves, talking ? 1 : 0, 5, dt),
     wavePhase: (m.wavePhase + dt / WAVE_SECONDS) % 1,
-    sway: liftedIn(view.phase) ? Math.sin(t * 1.3) * 0.5 + Math.sin(t * 2.9) * 0.2 : 0,
+    // On the age clock, and scaled by the lift, so it fades in and out with the handset and never jumps.
+    sway: swayAt(age) * clamp01(lift),
     lamp,
     lampLevel: toward(m.lampLevel, lampTarget, 8, dt),
   };

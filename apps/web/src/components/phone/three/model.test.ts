@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { CORD_ROOT, HANDSET_CORD_Y, HANDSET_REST, WHEEL_HOLES, WHEEL_HOLE_RING, buildPhone, holeAngle } from "./model";
+import { BOARD, CORD_ROOT, HANDSET_CORD_Y, HANDSET_REST, WHEEL_HOLES, WHEEL_HOLE_RING, buildPhone, holeAngle } from "./model";
 
 describe("buildPhone", () => {
   it("builds every moving part, with no WebGL", () => {
@@ -8,7 +8,7 @@ describe("buildPhone", () => {
     expect(m.bells).toHaveLength(2);
     expect(m.waves).toHaveLength(3);
     expect(m.ticks).toHaveLength(6);
-    for (const part of [m.clapper, m.wheel, m.handset, m.cord, m.lamp, m.lampGlow, ...m.bells]) {
+    for (const part of [m.clapper, m.wheel, m.handset, m.cord, m.lamp, m.lampGlow, m.aura, ...m.bells]) {
       let top: THREE.Object3D = part;
       while (top.parent !== null) top = top.parent;
       expect(top).toBe(m.root);
@@ -22,8 +22,24 @@ describe("buildPhone", () => {
     const m = buildPhone();
     expect(m.handset.position.equals(HANDSET_REST.hook.position)).toBe(true);
     expect(HANDSET_REST.hook.position.x).toBeLessThan(-0.37 - 0.1);
-    // At the ear it has moved toward the ghost, who stands to the left.
-    expect(HANDSET_REST.ear.position.x).toBeLessThan(HANDSET_REST.hook.position.x);
+    m.dispose();
+  });
+
+  it("lifts the handset only a little, up and out from its cradle, so it stays beside the phone and never reaches Franki", () => {
+    const { hook, lifted } = HANDSET_REST;
+    expect(lifted.position.y).toBeGreaterThan(hook.position.y);
+    expect(lifted.position.z).toBeGreaterThan(hook.position.z);
+    expect(lifted.position.distanceTo(hook.position)).toBeLessThan(0.35);
+    // No further left than a handset's width past the backboard's edge.
+    expect(lifted.position.x).toBeGreaterThan(-BOARD.halfW - 0.25);
+  });
+
+  it("arches the backboard over the bells, and keeps Franki's glow behind it", () => {
+    // The bells' tops are at 0.745 + 0.155.
+    expect(BOARD.shoulder + BOARD.arch).toBeGreaterThan(0.745 + 0.155);
+    const m = buildPhone();
+    // The backboard's back face is at z = -0.074; the glow is behind it, so only its edge shows past the phone.
+    expect(m.aura.position.z).toBeLessThan(-0.074);
     m.dispose();
   });
 
@@ -43,7 +59,7 @@ describe("buildPhone", () => {
     const m = buildPhone();
     for (const end of [
       new THREE.Vector3(0, HANDSET_CORD_Y, 0).add(HANDSET_REST.hook.position),
-      new THREE.Vector3(0, HANDSET_CORD_Y, 0).applyEuler(HANDSET_REST.ear.rotation).add(HANDSET_REST.ear.position),
+      new THREE.Vector3(0, HANDSET_CORD_Y, 0).applyEuler(HANDSET_REST.lifted.rotation).add(HANDSET_REST.lifted.position),
     ]) {
       m.setCord(end);
       const pos = m.cord.geometry.getAttribute("position");

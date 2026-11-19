@@ -1,21 +1,26 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  AGE_WRAP,
   DIAL_CYCLE,
   DIAL_LEAD,
   DIAL_TURNS,
+  FLOAT_PERIOD,
   INITIAL_MOTION,
   MAX_FRAME,
   type PhoneMotion,
   RING_CYCLE,
   RING_ON,
+  ROCK_PERIOD,
   type ShownPhase,
   type ShownView,
   dingAt,
+  floatAt,
   liftedIn,
   ringAt,
   settledMotion,
   stepMotion,
+  swayAt,
   wheelAt,
 } from "./motion";
 
@@ -27,12 +32,54 @@ const run = (m: PhoneMotion, v: ShownView, seconds: number) => {
   return next;
 };
 
+describe("the float", () => {
+  it("starts level, then rises and falls on its own clock", () => {
+    expect(floatAt(0)).toEqual({ hover: 0, rock: 0 });
+    const m = run(INITIAL_MOTION, view("dialing"), FLOAT_PERIOD / 4);
+    expect(m.hover).toBeCloseTo(1, 2);
+    expect(Math.abs(run(INITIAL_MOTION, view("dialing"), FLOAT_PERIOD / 2).hover)).toBeLessThan(0.02);
+    expect(run(INITIAL_MOTION, view("dialing"), (3 * FLOAT_PERIOD) / 4).hover).toBeCloseTo(-1, 2);
+  });
+
+  it("runs on through every change of phase, so the phone never jolts", () => {
+    let m = INITIAL_MOTION;
+    let elapsed = 0;
+    for (const phase of ["dialing", "ringing", "talking", "ended", "dialing", "missed"] as const) {
+      for (let i = 0; i < 70; i++) {
+        const before = m;
+        m = stepMotion(m, view(phase, phase === "missed" ? "noAnswer" : null), 1 / 60);
+        elapsed += 1 / 60;
+        // One frame moves the float by at most its steepest slope times the frame.
+        expect(Math.abs(m.hover - before.hover)).toBeLessThan(((2 * Math.PI) / FLOAT_PERIOD) * (1 / 60) + 1e-9);
+        expect(Math.abs(m.rock - before.rock)).toBeLessThan(((2 * Math.PI) / ROCK_PERIOD) * (1 / 60) + 1e-9);
+      }
+    }
+    expect(m.age).toBeCloseTo(elapsed, 6);
+  });
+
+  it("wraps its clock where the rise, the rock and the handset's drift all start over, so nothing jumps", () => {
+    const late: PhoneMotion = { ...run(INITIAL_MOTION, view("talking"), 2), age: AGE_WRAP - 1 / 120 };
+    const next = stepMotion(late, view("talking"), 1 / 60);
+    expect(next.age).toBeLessThan(1 / 60);
+    expect(Math.abs(next.hover - floatAt(AGE_WRAP + 1 / 120).hover)).toBeLessThan(1e-6);
+    expect(Math.abs(next.rock - floatAt(AGE_WRAP + 1 / 120).rock)).toBeLessThan(1e-6);
+    expect(Math.abs(swayAt(next.age) - swayAt(AGE_WRAP + 1 / 120))).toBeLessThan(1e-6);
+  });
+});
+
 describe("the handset", () => {
-  it("is held exactly while the line is open", () => {
+  it("is off its cradle exactly while the line is open", () => {
     expect((["dialing", "ringing", "talking", "ended", "missed"] as const).filter(liftedIn)).toEqual(["dialing", "ringing", "talking"]);
   });
 
-  it("settles at the ear while held and back on the hook when the call is over", () => {
+  it("drifts only while it is off the cradle, and fades its drift in and out with the lift", () => {
+    expect(Math.abs(run(INITIAL_MOTION, view("ended"), 3).sway)).toBe(0);
+    const lifted = run(INITIAL_MOTION, view("talking"), 3);
+    expect(lifted.sway).toBeCloseTo(swayAt(lifted.age), 2);
+    expect(Math.abs(run(lifted, view("missed", "busy"), 3).sway)).toBeLessThan(0.01);
+  });
+
+  it("settles just off the cradle while lifted and back on it when the call is over", () => {
     const held = run(INITIAL_MOTION, view("dialing"), 2);
     expect(held.lift).toBeCloseTo(1, 2);
     expect(Math.abs(held.liftV)).toBeLessThan(0.05);
@@ -131,7 +178,7 @@ describe("the lamp and the waves", () => {
 });
 
 describe("settledMotion: the still pose under Reduced_Motion", () => {
-  it("has the handset where the moving phone comes to rest, and nothing mid-travel", () => {
+  it("has the handset where the moving phone comes to rest, the phone level, and nothing mid-travel", () => {
     for (const phase of ["dialing", "ringing", "talking", "ended", "missed"] as const) {
       const v = view(phase, phase === "missed" ? "busy" : null);
       const still = settledMotion(v);
@@ -144,6 +191,8 @@ describe("settledMotion: the still pose under Reduced_Motion", () => {
       expect(still.bell).toBe(0);
       expect(still.clapper).toBe(0);
       expect(still.sway).toBe(0);
+      expect(still.hover).toBe(0);
+      expect(still.rock).toBe(0);
     }
   });
 
@@ -172,8 +221,13 @@ describe("stepMotion on any frames", () => {
         let m = INITIAL_MOTION;
         for (const [phase, dt] of frames) {
           m = stepMotion(m, view(phase, phase === "missed" ? "failed" : null), dt);
-          for (const v of [m.t, m.appear, m.lift, m.wheel, m.ring, m.bell, m.clapper, m.waves, m.wavePhase, m.sway, m.lampLevel]) expect(Number.isFinite(v)).toBe(true);
+          for (const v of [m.t, m.age, m.appear, m.hover, m.rock, m.lift, m.wheel, m.ring, m.bell, m.clapper, m.waves, m.wavePhase, m.sway, m.lampLevel]) expect(Number.isFinite(v)).toBe(true);
           expect(m.phase).toBe(phase);
+          expect(m.age).toBeGreaterThanOrEqual(0);
+          expect(m.age).toBeLessThan(AGE_WRAP);
+          expect(Math.abs(m.hover)).toBeLessThanOrEqual(1);
+          expect(Math.abs(m.rock)).toBeLessThanOrEqual(1);
+          expect(Math.abs(m.sway)).toBeLessThanOrEqual(1.1);
           expect(m.lift).toBeGreaterThan(-0.2);
           expect(m.lift).toBeLessThan(1.2);
           expect(m.appear).toBeGreaterThanOrEqual(0);
