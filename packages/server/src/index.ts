@@ -16,6 +16,7 @@ export { sdpRoute } from "./routes/sdp";
 export { receiptRoute } from "./routes/receipt";
 export { toolRoute } from "./routes/tool";
 export { phoneReportEndpoint } from "./phone/report-mcp";
+export { phoneListenEndpoint } from "./phone/listen";
 export { phoneWebhook } from "./phone/webhook";
 export { twilioStatusWebhook } from "./phone/callback";
 export { phoneStatusRoute } from "./phone/status";

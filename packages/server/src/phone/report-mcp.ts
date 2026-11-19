@@ -18,18 +18,24 @@ const spec = {
 
 interface Binding { uid: string; dialId: string; callId: string; until: number }
 
-/** Credentials stay in transport headers. The model never supplies the call identity. */
-export function reportTool(deps: RouteDeps, uid: string, dialId: string, callId: string, origin: string) {
-  // Never send a capability to an origin supplied by an untrusted Host header.
+/** The public HTTPS origin that serves the phone routes. Never one supplied by an untrusted Host header. */
+export function phonePublicOrigin(deps: RouteDeps, origin: string): string | null {
   const publicOrigin = deps.env.FRANKI_PHONE_REPORT_ORIGIN || (ALLOWED_ORIGINS.includes(origin) && origin.startsWith("https:") ? origin : null);
   if (!publicOrigin) return null;
   const url = new URL(publicOrigin);
   if (url.protocol !== "https:" || url.username || url.password || url.origin !== publicOrigin) throw new Error("Invalid phone report origin");
+  return url.origin;
+}
+
+/** Credentials stay in transport headers. The model never supplies the call identity. */
+export function reportTool(deps: RouteDeps, uid: string, dialId: string, callId: string, origin: string) {
+  const publicOrigin = phonePublicOrigin(deps, origin);
+  if (!publicOrigin) return null;
   const binding: Binding = { uid, dialId, callId, until: deps.clock.read().opsClock.now + PHONE_REPORT_WINDOW_MS };
   const body = Buffer.from(JSON.stringify(binding)).toString("base64url");
   const proof = deps.hasher.id(["phone-report-capability", body]);
   return {
-    type: "mcp" as const, server_label: "phone_results", server_url: url.origin + "/api/phone/report",
+    type: "mcp" as const, server_label: "phone_results", server_url: publicOrigin + "/api/phone/report",
     headers: { Authorization: `Bearer ${body}.${proof}` }, allowed_tools: [TOOL], require_approval: "never" as const,
   };
 }

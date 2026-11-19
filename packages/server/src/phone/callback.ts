@@ -7,6 +7,7 @@ import { type Env, requireEnv } from "../config/env";
 import { liveRouteDeps } from "../routes/live-deps";
 import type { RouteDeps } from "../routes/runtime";
 import { paths } from "../store/paths";
+import { reportUnconnectedCall } from "./fallback";
 import { type CarrierStatus, advanceCarrier, carrierStatus } from "./lifecycle";
 import { type PhoneEntry, phoneTransaction } from "./outbound";
 import { CALL_SID, CARRIER_CALLBACK_PATH, callbackOrigin } from "./twilio";
@@ -79,6 +80,9 @@ export function twilioStatusWebhook(request: Request): Promise<Response> {
   return receiveTwilioStatus(request, process.env, async (event) => {
     const deps = liveRouteDeps();
     const uid = await findPhoneUid(adminFirestore(deps.env), event.dialId);
-    if (uid !== null) await saveCarrierEvent(deps, uid, event);
+    if (uid === null) return;
+    await saveCarrierEvent(deps, uid, event);
+    // A pickup that ended before Franki got on the line still reports back. A failure here is retried by Twilio.
+    if (event.status === "completed") await reportUnconnectedCall(deps, uid, event.dialId);
   });
 }

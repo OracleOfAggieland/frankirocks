@@ -31,6 +31,8 @@ During a private voice conversation the live model receives silent status update
 
 The report tool accepts a credential scoped to the assigned SIP call. For a tunnel or a separate deployment, set `FRANKI_PHONE_REPORT_ORIGIN` to the public HTTPS origin serving the Twilio callback and specialist report routes. App Hosting sets this origin to `https://frankirocks.com`. Each dial registers its own callback URL with Twilio.
 
+Every answered call ends with a report. The specialist is told to file it the moment it hears the answer. After the greeting, the webhook opens `POST /api/phone/listen` on the same origin, and that request stays attached to the call until it ends, because Cloud Run only gives CPU to open requests. The call's session transcribes the recipient with `FRANKI_TRANSCRIBE_MODEL`. When the call ends without a report, the listener sums up both sides' words on `FRANKI_BG_MODEL` and files that instead, inside the 15-second wait. A call with no words from the recipient is reported as inconclusive without a model call. The transcript stays in memory and only the report is saved. Cloud Run ends a request after 300 seconds, so at 3 minutes 45 seconds Franki is told to wrap up, and at 4 minutes 10 seconds the listener hangs up. When the recipient picks up and the call ends before Franki joins, the Twilio callback files that as an inconclusive report.
+
 For local development, use `apps/web/.env.local`. App Hosting reads the five phone settings below from Secret Manager at runtime. Deploy the Firestore indexes before rolling out the updated app and scheduled function. The function's service account needs Firestore access and access to the existing `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `FRANKI_ID_HMAC_KEY` secrets.
 
 | Variable | Value |
