@@ -40,6 +40,7 @@ import {
   TurnResponse,
   W,
   WireError,
+  openSurface,
 } from "./wire";
 import { type Schema, validate } from "./v";
 
@@ -297,5 +298,26 @@ describe("recall tool definition", () => {
     expect([...RECALL_TOOL.parameters.required].sort()).toEqual(keys);
     expect(RECALL_TOOL.parameters.additionalProperties).toBe(false);
     expect(RECALL_TOOL.description).toBe(RECALL_TOOL.name);
+  });
+});
+
+describe("OpenRequest surface (brief 052, contract question M-5)", () => {
+  const base = { requestId: testId("r"), initiator: "user", previousSessionId: null, clientZone: "America/Chicago", visitId: null };
+  it("accepts call, typed and absence; absence reads as call", () => {
+    for (const surface of ["call", "typed"] as const) {
+      const r = validate(OpenRequest, { ...base, surface });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(openSurface(r.value)).toBe(surface);
+    }
+    const old = validate(OpenRequest, base);
+    expect(old.ok).toBe(true);
+    if (old.ok) expect(openSurface(old.value)).toBe("call");
+  });
+  it("rejects any other surface, null included, at the field's path", () => {
+    for (const surface of ["chat", "", "Typed", null, 1, true]) {
+      const r = validate(OpenRequest, { ...base, surface });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.path).toBe("$.surface");
+    }
   });
 });

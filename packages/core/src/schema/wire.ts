@@ -435,13 +435,23 @@ export const ANSWER_TOOL = {
 
 const Seen = obj({ epoch: nat(), policyRev: nat(), bundleRev: nat(), rulesRev: nat() });
 
-export const OpenRequest = obj({
+const baseOpenRequest = obj({
   requestId: ID,
   initiator: oneOf(["user", "franki"]),
   previousSessionId: nullable(ID),
   clientZone: Zone,
   visitId: nullable(ID),
 });
+/**
+ * Brief 052 (contract question M-5): `surface` says which screen opens the Session, a `call` or the `typed` box with no
+ * call. Optional, and absent means `call`, so a browser on an older bundle keeps working. A typed open is never offered
+ * the first meeting's line, which nobody would hear.
+ */
+export const OPEN_SURFACES = ["call", "typed"] as const;
+export const OpenRequest = union(obj({ ...baseOpenRequest.shape, surface: oneOf(OPEN_SURFACES) }), baseOpenRequest);
+export type OpenSurface = (typeof OPEN_SURFACES)[number];
+/** The surface an open names, absent read as `call`. */
+export const openSurface = (req: Infer<typeof OpenRequest>): OpenSurface => ("surface" in req ? req.surface : "call");
 export const OpenResponse = obj({
   sessionId: ID,
   generation: nat(),

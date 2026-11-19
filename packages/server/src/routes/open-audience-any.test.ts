@@ -7,6 +7,7 @@ import { paths } from "../store/paths";
 import { decisionAnswer } from "../testing/decisions";
 import { type TestRig, callRoute, patchRecord, runScheduled, testRig } from "../testing/fakes";
 import { resetAs } from "../testing/seed";
+import { meetAlreadyHappened } from "../testing/meet";
 import { asrTurn, typedTurn } from "../testing/session-fixtures";
 import { PERSONAL_FACT } from "../testing/two-memories";
 import { UID, closeWith, doorRig, postTurn, sessionOf } from "../testing/audience-doors";
@@ -69,6 +70,8 @@ describe("finding 4: an open that inherits a narrowed audience opens with the sw
   it("a company Session's wait expired; the open naming it is unknown and says nothing, not the S1 wish", async () => {
     const rig = testRig();
     await resetAs(rig, UID, "v1", "r1", ZONE);
+    // Brief 052 (M-1): a sample visit now meets Franki first; this test is about the line after, so the meeting is over.
+    await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
     const a = await openOnClone(rig, null, "open-a");
     expect(a.body.proactive?.whisper.text).toBe("Good luck at 2 PM: Tessellate Labs final interview.");
     const ops = rig.clock.read().opsClock.now;
@@ -82,6 +85,8 @@ describe("finding 4: an open that inherits a narrowed audience opens with the sw
   it("an open naming nothing after a company Session gets the swap line, never delivery's opener", async () => {
     const rig = testRig();
     await resetAs(rig, UID, "v1", "r1", ZONE);
+    // Brief 052 (M-1): a sample visit now meets Franki first; this test is about the line after, so the meeting is over.
+    await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
     const a = await openOnClone(rig, null, "open-a");
     await patchRecord<Session>(rig.store, UID, paths.session(UID, a.body.sessionId), { status: "active", audience: "company" });
     rig.clock.advance(1_000);

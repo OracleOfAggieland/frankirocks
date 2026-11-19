@@ -20,6 +20,8 @@ import {
   type CoreRules,
   type CoreState,
   IDLE_SILENCE_MS,
+  MEET_AGAIN_LINE,
+  MEET_LINE,
   WHISPER_TEMPLATES,
   canonicalJSON,
   msFromTs,
@@ -53,6 +55,7 @@ import { decisionAnswer } from "./decisions";
 import { extractOutput } from "./extract-fixtures";
 import type { FakeSlotsScript } from "./fake-fast-slots";
 import { type TestRig, callRoute, runScheduled, settle, testRig } from "./fakes";
+import { meetAlreadyHappened } from "./meet";
 import { ScriptCall } from "./voice-call";
 
 export const SCRIPT_UID = "owner-1";
@@ -201,6 +204,9 @@ function whisperPattern(id: keyof typeof WHISPER_TEMPLATES): RegExp {
   return new RegExp(`^${parts.join(".+")}$`);
 }
 
+/** A Fixed_Line's whole words as a pattern (an open's Proactive is matched as its JSON, so not anchored). */
+const fixedLine = (line: string): RegExp => new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+
 export const TEMPLATES = {
   /** patterns/words.ts heroOfferLine. */
   "hero.offer": /You've spent \$[\d,.]+ on takeout in this window, mostly on (nights|days) with meetings after 6\./,
@@ -220,6 +226,10 @@ export const TEMPLATES = {
   "forget.gone": /^Gone(\.|, except one safety rule\. It's on your screen\.)/,
   /** Care before help on a hard disclosure (spec §15 beat 4). Persona and policy wording: brief 024. */
   "care.first": null,
+  /** Brief 052: the first meeting's line on an owner's first call (voice/lines.ts MEET_LINE). */
+  "meet.first": fixedLine(MEET_LINE),
+  /** Brief 052: the first meeting's line on the next call, while still no name (voice/lines.ts MEET_AGAIN_LINE). */
+  "meet.again": fixedLine(MEET_AGAIN_LINE),
 } as const satisfies Record<string, RegExp | null>;
 export type TemplateId = keyof typeof TEMPLATES;
 
@@ -249,7 +259,11 @@ export type LabField = "readEmails" | "privateGuesses" | "guessLinesSpoken" | "d
 // Steps.
 
 export type Action =
-  | { do: "seed"; visit: string }
+  /**
+   * Brief 052: the seed step ends the first meeting too (both meet rows `met`, `testing/meet.ts`), so a script about
+   * another line opens as it did before the meeting existed. `firstMeeting: true` leaves the meeting to happen.
+   */
+  | { do: "seed"; visit: string; firstMeeting?: true }
   | { do: "open" }
   | { do: "close" }
   | { do: "type"; text: string }
@@ -448,6 +462,7 @@ async function act(step: Step, w: World): Promise<Res> {
         w.visitId = testId(`visit-${step.visit}`);
         const state = (await rig.store.get<CoreState>(w.uid, paths.core(w.uid, "state")))!.data;
         w.friday = localDateOf(msFromTs(state.worldClock!), w.zone);
+        if (step.firstMeeting !== true) await meetAlreadyHappened(rig.store, w.uid, rig.deps.hasher, rig.clock.read().opsClock.now);
       }
       return { status: res.status, body: res.body };
     }

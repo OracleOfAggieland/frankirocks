@@ -281,7 +281,8 @@ export class TypedTurns {
     const { clock, api } = this.deps;
     const sentAt = clock.mono();
     const r = await api.call<unknown>("/api/session/open", {
-      body: { requestId: this.newId(), initiator: "user", previousSessionId: null, clientZone: clock.read().worldClock.zone, visitId: this.deps.visitId?.() ?? null },
+      // Brief 052 (M-5): a typed open names its surface, so the open offers no first-meeting line nobody would hear.
+      body: { requestId: this.newId(), initiator: "user", previousSessionId: null, clientZone: clock.read().worldClock.zone, visitId: this.deps.visitId?.() ?? null, surface: "typed" },
       timeoutMs: OPEN_TIMEOUT_MS,
     });
     if (!r.ok) return failureMessage(r, "session open");

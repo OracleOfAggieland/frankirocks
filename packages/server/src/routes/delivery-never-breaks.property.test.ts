@@ -13,6 +13,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { Reader, StorePort } from "../store/port";
 import { type TestRig, callRoute, testRig } from "../testing/fakes";
 import { resetAs } from "../testing/seed";
+import { meetAlreadyHappened } from "../testing/meet";
 import { momentsOf } from "../time/testing";
 import { openRoute } from "./open";
 import { stateRoute } from "./state";
@@ -56,6 +57,8 @@ type RouteName = "open" | "state";
 async function run(route: RouteName, fail: (n: number) => boolean) {
   const rig: TestRig = testRig();
   await resetAs(rig, UID, "v1", "r1", ZONE);
+  // Brief 052 (M-1): a sample visit now meets Franki first; this test is about the line after, so the meeting is over.
+  await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
   const inner = rig.deps.store;
   let sessionId: string;
   let res: { status: number; body: any };

@@ -9,6 +9,7 @@ import { receiptRoute } from "../routes/receipt";
 import { paths } from "../store/paths";
 import { callRoute, patchRecord, settle, testRig } from "../testing/fakes";
 import { resetAs, stateOf } from "../testing/seed";
+import { meetAlreadyHappened } from "../testing/meet";
 import { openTestSession } from "../testing/session-fixtures";
 import { reminderHeldId } from "./held-reminder";
 import { confirmReminder, offerReminder, recordPendingRendered } from "./reminder";
@@ -24,6 +25,8 @@ const LATE = "You asked me to remind you about Call the vet at 10 PM. I held it.
 async function heldReminder() {
   const rig = testRig();
   await resetAs(rig, UID, "v1", "r1", ZONE);
+  // Brief 052 (M-1): a sample visit now meets Franki first; this test is about the line after, so the meeting is over.
+  await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
   const ctx = { uid: UID, deps: rig.deps, schedule: () => undefined };
   const world = msFromTs((await stateOf(rig.store, UID)).worldClock!);
   await memoryTick(ctx);

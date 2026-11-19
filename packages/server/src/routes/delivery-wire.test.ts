@@ -24,6 +24,8 @@ const openBody = (n: number | string) => ({
 async function clone() {
   const rig = testRig();
   await resetAs(rig, UID, "v1", "r1", ZONE);
+  // Brief 052 (M-1): a sample visit now meets Franki first; this test is about the line after, so the meeting is over.
+  await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
   return rig;
 }
 

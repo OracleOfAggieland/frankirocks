@@ -1,3 +1,5 @@
+import { OpenRequest, validate } from "@franki/core";
+import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
 import { createApiClient } from "./api";
 import { createBrowserClock } from "./clock";
@@ -16,12 +18,18 @@ describe("typed open and the visit", () => {
     const typed = new TypedTurns({ api, clock, ...(visitId === undefined ? {} : { visitId }) });
     typed.setText("hello");
     await typed.submit();
-    return bodies as { visitId: string | null }[];
+    return bodies as { visitId: string | null; surface?: string }[];
   };
 
   it("sends the visit it is given, and null without one", async () => {
     expect((await opened(() => "visit-1"))[0]!.visitId).toBe("visit-1");
     expect((await opened(() => null))[0]!.visitId).toBeNull();
     expect((await opened())[0]!.visitId).toBeNull();
+  });
+
+  it("brief 052 (M-5): names its surface as typed, a body the open route's schema accepts", async () => {
+    const [body] = await opened(() => testId("visit-1"));
+    expect(body!.surface).toBe("typed");
+    expect(validate(OpenRequest, body).ok).toBe(true);
   });
 });

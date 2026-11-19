@@ -9,6 +9,7 @@ import { paths } from "../store/paths";
 import { decisionAnswer } from "../testing/decisions";
 import { runScheduled, testRig } from "../testing/fakes";
 import { resetAs } from "../testing/seed";
+import { meetAlreadyHappened } from "../testing/meet";
 import { ScriptCall } from "../testing/voice-call";
 
 const UID = "owner-1";
@@ -28,6 +29,8 @@ describe("brief 045 part S: a company call, then call again", () => {
     rig.openai.always("responses.create", ok(completed("All right.")));
     rig.openai.always("realtime.calls.hangup", ok(null));
     await resetAs(rig, UID, "v1", "r1", ZONE);
+    // Brief 052 (M-1): a sample visit now meets Franki first; this test is about the line after, so the meeting is over.
+    await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
     const first = await call(rig);
     expect(first.take().heard).toContain(WISH);
     const a = first.st.session!.sessionId;
@@ -55,6 +58,8 @@ describe("brief 045 part S: a company call, then call again", () => {
     rig.openai.always("responses.create", ok(completed("All right.")));
     rig.openai.always("realtime.calls.hangup", ok(null));
     await resetAs(rig, UID, "v1", "r1", ZONE);
+    // Brief 052 (M-1): a sample visit now meets Franki first; this test is about the line after, so the meeting is over.
+    await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
     const first = await call(rig);
     const a = first.st.session!.sessionId;
     rig.openai.script("decisions.create", ok(decisionAnswer({ company: 0.9 })));

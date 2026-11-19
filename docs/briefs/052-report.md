@@ -1,6 +1,7 @@
 # Brief 052 report: the first meeting
 
-Claude built Parts A, B and C from `052-first-meeting.md`. Kiro wrote none of it.
+Claude built Parts A, B and C from `052-first-meeting.md`, then the follow-up that resolves contract questions M-1 and
+M-5 (last section). Kiro wrote none of it.
 
 ## Part A: the name in the Head (rulings 1 to 4)
 
@@ -55,7 +56,8 @@ ref once; the drop order with the name line in `now`; fixture name beside an own
 
 **Rulings.**
 
-5. As ruled, with two departures below (the Server_Rule row, and sample visits).
+5. As ruled, with one departure below (the Server_Rule row). Sample visits were held back too, until the owner ruled on
+   M-1 (follow-up below); a typed open is now never offered the line (M-5, follow-up below).
 6. As ruled, except the `met` state (below). A said row is `decision`, `state: "complete"`, `purpose: "proactive"`,
    `acceptedRefs: [the turn it was said as, under its Session; the Permit's decision]`. A met row is the same with
    `acceptedRefs: []`. A retried `requestId` replays the stored answer (the existing request replay). "Start over"
@@ -72,9 +74,8 @@ ref once; the drop order with the name line in `now`; fixture name beside an own
   did not edit the spec.
 - **No `met` ledger state.** `Ledger.state` is closed to `pending | complete | failed | blocked`, so a `met` row is a
   `complete` row that names no turn; `meetSaidIn` tells them apart. No schema change was needed.
-- **Sample visits are not asked yet (contract question M-1, below).** `meetOffer` also needs `clockMode !== "fixture"`.
-  The product rule "a visitor on a fresh sample visit is still asked" is therefore not built. The Head part is: a
-  sample visit's Head says the owner hasn't given a name.
+- **Sample visits were not asked (contract question M-1, below).** `meetOffer` also needed `clockMode !== "fixture"`.
+  *Superseded by the owner's ruling on M-1: the condition is removed and a sample visit is asked (follow-up below).*
 
 **Existing tests changed, and why.**
 
@@ -95,12 +96,13 @@ ref once; the drop order with the name line in `now`; fixture name beside an own
   `knownNameLine("Alex")` line in `now`, not `- The owner's name is Alex.` in `know` (ruling 3). Found after Part A's
   commit; fixed in Part B's.
 
-**Not changed, because a design document pins the opposite (M-1).** With the ruling built as written, the sample
-visit's first two opens said the meet line, and these failed: `scripts/beat1-speaks-first.test.ts` (both suites),
+**Not changed in Part B, because a design document pins the opposite (M-1).** With the ruling built as written, the
+sample visit's first two opens said the meet line, and these failed: `scripts/beat1-speaks-first.test.ts` (both suites),
 `scripts/beat3-hero.test.ts` (four suites), `scripts/gate-food.test.ts` (F34, F35), `routes/delivery-wire.test.ts` (a
 seeded clone's open says the wish first; the replayed open), `routes/receipt-moments.test.ts`,
 `routes/audience-call-again.test.ts`, `routes/open-audience-any.test.ts`, `routes/delivery-never-breaks.property.test.ts`,
-`time/held-reminder.test.ts`. They are untouched and pass with the gate.
+`time/held-reminder.test.ts`. They were untouched in Part B and passed with the gate; the follow-up below changes them
+after the owner's ruling.
 
 ## Part C: the short answer (ruling 7)
 
@@ -153,7 +155,8 @@ existing extract suites (authority, lineage, backstop and the rest) pass unchang
 
 ## Contract questions
 
-- **M-1. The sample visit's first open: the meet line or the wish?** Memory spec §15 (`docs/design/memory-spec-v3.md`,
+- **M-1. The sample visit's first open: the meet line or the wish?** *Resolved by the owner (Nov 18): "Intro first, demo
+  line after." Built in the follow-up below; spec §15's beat 1 order now differs (the design docs are unchanged).* Memory spec §15 (`docs/design/memory-spec-v3.md`,
   the demo table, 0:00 to 0:20) has the sample visit's first call open with Franki speaking first by `proactive`: "Good
   luck at 2. If the gap year comes up, you had a good answer Tuesday." Product rule 3 and ruling 5 have a visitor on a
   fresh sample visit hear "Hi, I'm Franki… What should I call you?" first, which takes the wish's place on the first two
@@ -169,7 +172,9 @@ existing extract suites (authority, lineage, backstop and the rest) pass unchang
   (`meetRowId(n)`) and `rev` is 1. Nothing reads it back: the model is told to copy ids only from `open` or roster, and
   code builds `contextIds` itself.
 - **M-5. A meet line said on a typed-only open** (Part C's departure above): should the open skip the meet line when no
-  call will play it, so a typed open consumes no offer?
+  call will play it, so a typed open consumes no offer? *Resolved: `OpenRequest` gains an optional `surface`
+  (`"call" | "typed"`, absent = `"call"`), the typed client sends `"typed"`, and a typed open makes no offer. This
+  extends a contract route's request (contracts §6 `POST /api/session/open`). Built in the follow-up below.*
 
 ## What the tests cover, and what only a live call can show
 
@@ -209,3 +214,134 @@ Each run whole, one after another, on the tree that was committed:
 - `--shard=3/3`: 246 files passed, 1,835 passed, 2 expected fail, 0 failed. This whole run supersedes the Part B
   shard 3 run above.
 - The emulator suite was not run (the director runs it). No paid model call was made.
+
+## Follow-up: M-1 and M-5 resolved
+
+### M-1: a sample visit is asked, intro first, demo line after (owner's ruling, Nov 18)
+
+- `packages/server/src/meet.ts`: `MeetConditions.sampleVisit` and its check in `meetOffer` are gone; the comments say a
+  sample visit is asked like any other account and its opening Moment waits. `packages/server/src/routes/open.ts`: the
+  `sampleVisit` argument and its comment are gone.
+- **How the wish reaches the visitor after the meet line** (read from the code, then shown by test). The open's own
+  delivery (`openingProactive`, which first runs `memoryTick` inside the open's budget) runs only when the open has no
+  line of its own, so on a meet-line open the wish is neither leased nor said by the open. It is not lost:
+  1. The open's `startTick` schedules a whole tick (requeue, due jobs, then `memoryTick`), which `after()` runs once the
+     open has answered (`apps/web/src/app/api/_lib/adapter.ts`); the receipt and state routes schedule one too (once per
+     ops minute per process). That tick leases the wish for 15 minutes (`OPEN_LEASE_MS`).
+  2. The call's state poll (`idleProactive`) offers a leased Moment once the Session has been quiet for
+     `IDLE_SILENCE_MS` (8 s) since its last turn or speech start, through the Gate in `idle` mode in a private audience.
+     The wish is said there as a whisper, at the call's first quiet moment.
+  3. If the call ends first, the lease holds 15 minutes and the tick renews it until the wish closes (the interview's
+     start). The next open says `MEET_AGAIN_LINE` if no name was saved (so the wish waits for that call's first quiet
+     moment again), or, with a name saved, says the wish as its opening line. Once both offers are used, the next open
+     says it as its opening line (`meet.test.ts`, the M-1 test). A wish whose interview starts before any of these is
+     skipped at its start, as any unsaid wish is.
+
+  Shown by `scripts/beat1-speaks-first.test.ts`: on a fresh sample visit (`seed` with `firstMeeting: true`) the open
+  says `MEET_LINE` and no wish; after the `work` step (the scheduled tick) an `idle` step's state poll says the wish
+  with "2", once; the next open says `MEET_AGAIN_LINE` and no wish. The live-call suite shows the same through the real
+  voice machine: the call hears `MEET_LINE` and no wish, `callQuiet` hears the wish once, and the next call hears
+  `MEET_AGAIN_LINE` and no wish. Beat 1's two expected-fail steps (the gap-year texture, the moved card) now check the
+  idle step that says the wish; they still fail for the reasons they wait on.
+- In the runner the scheduled tick runs only on a `work` step, so beat 1 names it as a step; in production nothing
+  waits for it but the request's own `after()`.
+- **Spec §15 beat 1 now differs:** the demo table opens the sample visit with the wish (0:00 to 0:20); the build opens
+  it with `MEET_LINE` and says the wish at the first pause. `docs/design/` is unchanged (read-only).
+
+### M-5: a typed open is never offered the meet line
+
+- `packages/core/src/schema/wire.ts`: `OpenRequest` is now `union(obj({ ...base, surface: oneOf(["call", "typed"]) }),
+  base)`, the pattern `TurnRequest` and `StateRequest` already use for an optional key. `OPEN_SURFACES`, `OpenSurface`
+  and `openSurface(req)` (absent reads `"call"`) are exported. A browser on an older bundle sends no `surface` and is
+  read as a call, as before. This extends a contract route's request (`POST /api/session/open`).
+- `apps/web/src/client/typed-turns.ts`: the typed open sends `surface: "typed"`. The voice client is unchanged (its
+  machine's open body names no surface).
+- `packages/server/src/meet.ts`: `MeetConditions.surface`; `meetOffer` makes no offer unless it is `"call"`.
+  `routes/open.ts` passes `openSurface(req)`. With no offer the open's `proactive` stays null, so the opening Moment
+  path runs exactly as it did before the feature.
+- **One reading to confirm.** The prompt said a typed open "writes no meet row". A typed open writes no *said* row and
+  consumes no offer. A typed open whose Head already has the owner's name still closes the meeting (`closeMeet`, rows
+  `met`), as every open does under ruling 6; otherwise an owner who typed their name and then forgot it would be asked
+  on their first call, against "after forget my name Franki does not ask again". On a fresh account (no name) a typed
+  open writes nothing, as the test shows. Say if `closeMeet` should skip typed opens too.
+- Part C's "the Session has had a call" check stays as a second guard (an older bundle's typed open names no surface);
+  its comment in `worker/extract.ts` says so.
+
+### Tests added
+
+- `packages/core/src/schema/wire.test.ts`: `OpenRequest` accepts `surface` `"call"`, `"typed"` and absence (absence
+  reads `"call"`), and rejects `"chat"`, `""`, `"Typed"`, `null`, `1` and `true` at `$.surface`.
+- `packages/server/src/meet.test.ts`: M-1 (a sample visit's opens say `MEET_LINE`, `MEET_AGAIN_LINE`, then the wish;
+  its Head says no name is given); M-5 (a typed open on a fresh account carries no meet line, writes neither row and
+  reaches delivery's opening line; a call open after it carries `MEET_LINE`, and the next `MEET_AGAIN_LINE`); M-5 on a
+  sample visit (a typed open says the wish, as before); and the brief's missing open test, in "Start over": after the
+  reset the first open carries `MEET_LINE` again, and again after a second Start over.
+- `apps/web/src/client/typed-visit.test.ts`: the typed open's body carries `surface: "typed"` and passes `OpenRequest`.
+- `packages/server/src/testing/script-runner.ts`: templates `meet.first` and `meet.again` (the Fixed_Lines' exact
+  words, unanchored because an open's Proactive is matched as its JSON).
+
+### Existing tests changed, and why
+
+- `testing/script-runner.ts`, the `seed` step: after a successful reset it now ends the first meeting
+  (`meetAlreadyHappened`, both rows `met`) unless the step says `firstMeeting: true`. So every seeded script about
+  something else (the `beat3-hero` suites, `gate-food` F34 and F35, and the rest) opens as it did before the meeting
+  existed. No script's assertions changed.
+- `testing/meet.ts`, `meetAlreadyHappened`: reads the meet rows and writes only the missing ones, and stamps them with
+  the account's current epoch and policy revision when its core documents exist (a reset moves them), not 1 and 1.
+- `scripts/beat1-speaks-first.test.ts` (both suites): the beat itself, so it runs on a fresh sample visit
+  (`firstMeeting: true`) and pins the new order, above. Its header comment says why.
+- These seed with `resetAs` and test another line, so each now ends the meeting right after the reset
+  (`meetAlreadyHappened`), with no assertion changed: `routes/delivery-wire.test.ts` (`clone()`: the seeded clone's
+  wish, the replayed open, the idle whisper), `routes/receipt-moments.test.ts` (`setup`),
+  `routes/audience-call-again.test.ts` (both tests), `routes/open-audience-any.test.ts` (the two finding 4 tests; the
+  finding 11 STALE test opens nothing and is untouched), `routes/delivery-never-breaks.property.test.ts` (`run`, before
+  the failing store wraps the rig's), `time/held-reminder.test.ts` (`heldReminder`).
+- `meet.test.ts`: the M-1 test that pinned "a sample visit is not asked" is replaced by the ruling's test, and "Start
+  over clears both rows" now also opens after the reset (above). Its header comment names M-1 and M-5.
+
+### Part 3 checks
+
+**Decision rows with `purpose: "proactive"`, and the two meet rows.** Each consumer, read from the code:
+
+- *The daily cap on proactive lines:* `core/counters` rises only in `admitMoments` (`time/said.ts`), for the Moments a
+  receipt names. The meet line's Permit names no Moment (`momentIds: []`), so neither the said nor the `met` row
+  touches the cap. Same as the forget acknowledgment.
+- *Said rows and receipts:* the `delivery` ledger rows ("no row, no claim") are written by `recordSaid` for Moments
+  only, so the meet line gets none, as the acknowledgment gets none. The receipt route reads the acknowledgment's rows
+  only for a "gone" transcript (`ackDeliveredAs`); the meet line never says gone.
+- *The Lab:* `labView` counts every `complete` decision row as `delivered`, whatever its purpose, and in
+  `guessLinesSpoken` only when its `acceptedRefs` name a guess Memory. A said meet line adds two `delivered` decisions
+  (the Permit's and the delivery row), exactly as a forget acknowledgment does. A `met` row is also `complete`, so an
+  open that finds a name before the meeting is over adds one `delivered` per row it closes, with nothing said: a small
+  distortion that comes from M-3 (no `met` state). `delivered` is on the Lab wire and in the scripts' `lab`
+  expectation (no script asserts it); the screen's three counters are `readEmails`, `privateGuesses` and
+  `guessLinesSpoken`, which the meet rows never change. **Not fixed:** it is not clearly wrong under the contract's
+  "distinct decisions" count, and a fix (a closed-schema `met` state, or a Lab rule for rows that accepted nothing) is a
+  ruling on M-3. The seeded scripts now carry two `met` rows each, so their Lab `delivered` is two higher than before.
+- *The debug panel:* `debug-memory.ts` lists every `decision` row, showing purpose, state and turn; the meet rows show
+  as `proactive · complete`, with the turn for a said row and "none" for a `met` row, as the acknowledgment's do. Its
+  answer-only join (`purpose === "answer"`) skips both. The seam and debug tests already leave them out of their
+  decision counts (`meetRowIds`).
+- *The forget acknowledgment's delivery row* (`forget/ack.ts`): `decision`, `complete`, `purpose: "proactive"`,
+  `reasonCodes: ["ok"]`, `acceptedRefs` = its receipt, its job and the turn it was said as. The said meet row has the
+  same shape (its refs are the turn and the Permit's decision), so every consumer above treats the two alike. The `met`
+  row differs only in naming no refs, which matters only to the Lab count above.
+
+**The microphone is asked for after `/api/session/open`.** `App.tsx` `call()` calls `voice.call()`, which dispatches
+`callPressed`; the machine's `startOpen` pushes the `open` command at once (`core/src/voice/machine.ts`), and the client
+posts `/api/session/open`. Only on the open's answer does the machine send `connect`, and the client's `connect()`
+calls `getMicrophone()` (`navigator.mediaDevices.getUserMedia({ audio: true })`) before it builds the peer connection
+and the SDP offer. Nothing checks the microphone before the press. So a first call whose microphone is denied (or whose
+prompt is dismissed) has already used an offer: the open wrote the meet row, and the line is never played. Not
+changed, as asked.
+
+### Checks (final, on the follow-up tree)
+
+Each run whole, one after another, on the tree that was committed (only this report's check lines were written after):
+
+- `npm run typecheck`: 4 of 4 tasks successful.
+- `npm run lint -- --force`: 0 errors, 1 warning, the same existing one in `brass.ts` 113:107.
+- `npx vitest run --shard=1/3`: 247 files passed; 2,131 passed, 17 expected fail, 0 failed.
+- `--shard=2/3`: 247 files passed; 1,929 passed, 2 expected fail, 0 failed.
+- `--shard=3/3`: 246 files passed; 1,837 passed, 2 expected fail, 0 failed.
+- The emulator suite was not run (the director runs it). No paid model call, dev server, deploy or push.

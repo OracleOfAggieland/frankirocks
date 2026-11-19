@@ -25,6 +25,7 @@ import {
   type Infer,
   OpenRequest,
   type OpenResponse,
+  openSurface,
   idParts,
   tsFromMs,
   utf8,
@@ -243,18 +244,19 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
         if (admitted.kind === "permit" && admitted.notes.length === 1) proactive = { turnId, permit: admitted.permit, whisper: admitted.notes[0]!, cards: [] };
       }
       // Brief 052 rulings 5 and 6: the first meeting's line, after the acknowledgment and the swap line had their turn,
-      // only on a private open that inherited nothing, with no crisis or hold, no owner name and an offer left; not on a
-      // sample visit until the owner rules on contract question M-1 (spec §15 beat 1 opens the sample with the wish). Its
-      // row is written beside its Permit's decision, so an offer is consumed only when the line goes out.
+      // only on a private open that inherited nothing, with no crisis or hold, no owner name and an offer left. A sample
+      // visit is asked too (M-1, owner's ruling: "Intro first, demo line after"); its opening Moment waits. A typed open
+      // is never offered it (M-5), so its opening Moment path runs as before. Its row is written beside its Permit's
+      // decision, so an offer is consumed only when the line goes out.
       const rowCtx = { opsNow: ops, core: { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev } };
       const offer = meetOffer(meetRows, {
+        surface: openSurface(req),
         acked: ack !== null,
         inherited: inherited !== null,
         audience: created.audience,
         crisis: created.modifiers.crisis !== null,
         held: holdCarried(state, pair.worldClock.now),
         ownerName: compiled.ownerName,
-        sampleVisit: state.clockMode === "fixture",
       });
       if (proactive === null && offer !== null) {
         const turnId = meetTurnId(deps.hasher, sessionId);

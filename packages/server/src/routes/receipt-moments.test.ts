@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { paths } from "../store/paths";
 import { callRoute, testRig } from "../testing/fakes";
 import { resetAs } from "../testing/seed";
+import { meetAlreadyHappened } from "../testing/meet";
 import { memoryTick, scanMoments } from "../time/tick";
 import { deliveryEntryId } from "../time/said";
 import { renderedEntryId } from "../time/reminder";
@@ -18,6 +19,8 @@ const WISH = "Good luck at 2 PM: Tessellate Labs final interview.";
 async function setup() {
   const rig = testRig();
   await resetAs(rig, UID, "v1", "r1", ZONE);
+  // Brief 052 (M-1): a sample visit now meets Franki first; this test is about the line after, so the meeting is over.
+  await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
   const ctx = { uid: UID, deps: rig.deps, schedule: () => undefined };
   await memoryTick(ctx);
   const open = await callRoute(rig, openRoute, { requestId: testId("open1"), initiator: "user", previousSessionId: null, clientZone: ZONE, visitId: testId("visit-v1") }, { token: `token:${UID}` });

@@ -1,6 +1,12 @@
 /**
  * Beat 1 (spec §15, 0:00–0:20): Franki speaks first, by `proactive`: "Good luck at 2. If the gap year comes up, you
  * had a good answer Tuesday." The card shows it moved from yesterday. The wish is said once (Friend Test 1).
+ *
+ * Brief 052, contract question M-1 (owner's ruling, Nov 18: "Intro first, demo line after"): on a fresh sample visit
+ * the first open says the first meeting's line (MEET_LINE) in the wish's place, so spec §15's order differs here. The
+ * wish is not lost: the open's scheduled tick (`startTick`, run after the answer by `after()` in production, by the
+ * `work` step here) leases it, and the state poll says it as an idle whisper at the call's first quiet moment
+ * (`IDLE_SILENCE_MS`). It is still said exactly once.
  */
 import type { Evidence, Memory } from "@franki/core";
 import { type Script, type World, allEvidence, memoryText, scriptSuite } from "../testing/script-runner";
@@ -27,7 +33,7 @@ const BEAT1: Script = {
   name: "beat 1: Franki speaks first",
   scores: "spec §15 0:00–0:20, Friend Test 1",
   steps: [
-    { label: "load the seed for a visit", do: "seed", visit: "beat1" },
+    { label: "load the seed for a visit", do: "seed", visit: "beat1", firstMeeting: true },
     {
       label: "the interview moved from yesterday 14:00 to today 14:00",
       do: "setup",
@@ -44,15 +50,25 @@ const BEAT1: Script = {
       ],
     },
     {
-      label: "the wish for the interview at 2 is said first",
+      label: "the first meeting's line is said first, in the wish's place (M-1)",
       do: "check",
       of: "open a session",
-      expect: [{ mustSay: { template: "occasion.wish", has: ["2"], channel: "proactive" } }],
+      expect: [
+        { mustSay: { template: "meet.first", channel: "proactive", times: 1 } },
+        { mustSay: { template: "occasion.wish", channel: "proactive", times: 0 } },
+      ],
+    },
+    { label: "the meet line plays on the call", do: "play", of: "open a session" },
+    { label: "the open's scheduled tick runs", do: "work" },
+    {
+      label: "the wish for the interview at 2 is said at the first quiet moment",
+      do: "idle",
+      expect: [{ mustSay: { template: "occasion.wish", has: ["2"], channel: "proactive", times: 1 } }],
     },
     {
       label: "the wish carries the texture about the gap year",
       do: "check",
-      of: "open a session",
+      of: "the wish for the interview at 2 is said at the first quiet moment",
       waits: WISH_WAITS,
       expect: [
         { mustUse: gapYear, channel: "proactive" },
@@ -62,16 +78,19 @@ const BEAT1: Script = {
     {
       label: "the card shows the move from yesterday",
       do: "check",
-      of: "open a session",
-      waits: "brief 023 (the occasion's moment and its card) and 027 (the visit in the browser); no route returns a card on open",
+      of: "the wish for the interview at 2 is said at the first quiet moment",
+      waits: "brief 023 (the occasion's moment and its card) and 027 (the visit in the browser); no route returns a card with the wish",
       expect: [{ mustSay: { template: "occasion.moved", channel: "card" } }],
     },
-    { label: "the wish plays on the call", do: "play", of: "open a session" },
+    { label: "the wish plays on the call", do: "play", of: "the wish for the interview at 2 is said at the first quiet moment" },
     { label: "close the session", do: "close" },
     {
       label: "the next open does not wish again",
       do: "open",
-      expect: [{ mustSay: { template: "occasion.wish", channel: "proactive", times: 0 } }],
+      expect: [
+        { mustSay: { template: "occasion.wish", channel: "proactive", times: 0 } },
+        { mustSay: { template: "meet.again", channel: "proactive", times: 1 } },
+      ],
     },
   ],
 };
@@ -79,15 +98,32 @@ const BEAT1: Script = {
 /**
  * Brief 045, finding 3: beat 1 on a live call. The wish plays through the real voice machine and the real routes
  * (the `call` step) once the machine has verified its Permit; no `play` stands in for the browser. Said once.
+ * Brief 052 (M-1): the call opens with the meet line; the wish is heard at the call's first quiet moment.
  */
 const BEAT1_ON_CALL: Script = {
   name: "beat 1: Franki speaks first, on a live call",
   scores: "spec §15 0:00–0:20, Friend Test 1",
   steps: [
-    { label: "load the seed for a visit", do: "seed", visit: "beat1" },
-    { label: "call", do: "call", expect: [{ mustSay: { template: "occasion.wish", has: ["2"], channel: "heard", times: 1 } }] },
+    { label: "load the seed for a visit", do: "seed", visit: "beat1", firstMeeting: true },
+    {
+      label: "call",
+      do: "call",
+      expect: [
+        { mustSay: { template: "meet.first", channel: "heard", times: 1 } },
+        { mustSay: { template: "occasion.wish", channel: "heard", times: 0 } },
+      ],
+    },
+    { label: "the open's scheduled tick runs", do: "work" },
+    { label: "quiet", do: "callQuiet", expect: [{ mustSay: { template: "occasion.wish", has: ["2"], channel: "heard", times: 1 } }] },
     { label: "hang up", do: "hangUp" },
-    { label: "call again", do: "call", expect: [{ mustSay: { template: "occasion.wish", channel: "heard", times: 0 } }] },
+    {
+      label: "call again",
+      do: "call",
+      expect: [
+        { mustSay: { template: "occasion.wish", channel: "heard", times: 0 } },
+        { mustSay: { template: "meet.again", channel: "heard", times: 1 } },
+      ],
+    },
   ],
 };
 

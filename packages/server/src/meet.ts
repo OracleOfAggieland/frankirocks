@@ -13,7 +13,7 @@
  *
  * The rows carry IDs and states only, never words.
  */
-import { type AckText, type Hasher, type ID, type Ledger, MEET_AGAIN_LINE, MEET_LINE, type Ref, type RuleInput, tsFromMs, turnRef } from "@franki/core";
+import { type AckText, type Hasher, type ID, type Ledger, MEET_AGAIN_LINE, MEET_LINE, type OpenSurface, type Ref, type RuleInput, tsFromMs, turnRef } from "@franki/core";
 import { cFields } from "./records";
 import { paths } from "./store/paths";
 import type { Tx } from "./store/port";
@@ -44,6 +44,8 @@ export async function readMeetRows(tx: Pick<Tx, "get">, uid: string, hasher: Pic
 export const meetLineOf = (n: MeetOffer): AckText => (n === 1 ? MEET_LINE : MEET_AGAIN_LINE);
 
 export interface MeetConditions {
+  /** The open's surface (`openSurface`): a typed open is never offered the line (contract question M-5). */
+  surface: OpenSurface;
   /** A forget acknowledgment was taken on this open. */
   acked: boolean;
   /** The open inherited a Session (a narrowed audience or a swap). */
@@ -55,22 +57,18 @@ export interface MeetConditions {
   held: boolean;
   /** The Head's `ownerName`. */
   ownerName: string | null;
-  /**
-   * The account is a sample visit (`clockMode: "fixture"`). Held back from the ruling: spec §15 beat 1 (docs/design,
-   * read-only) has the sample visit's first open speak the wish, and the meet line would take its place. Contract
-   * question M-1 in the report; the owner rules.
-   */
-  sampleVisit: boolean;
 }
 
 /**
- * Ruling 5: the offer this open makes, or null. All must hold: no acknowledgment was taken; nothing was inherited and
- * the audience is private; no crisis modifier and no owner hold; no owner name in the Head; fewer than two offers made;
- * and, until the owner rules on contract question M-1, not a sample visit.
- * Offers go in order, so the first missing row is the one made.
+ * Ruling 5: the offer this open makes, or null. All must hold: the open is a call's, not the typed box's (M-5: the typed
+ * screen drops the line, so an offer would be used up unheard); no acknowledgment was taken; nothing was inherited and
+ * the audience is private; no crisis modifier and no owner hold; no owner name in the Head; fewer than two offers made.
+ * A sample visit (`clockMode: "fixture"`) is asked like any other account (contract question M-1, owner's ruling Nov 18:
+ * "Intro first, demo line after"); its scripted opening Moment waits, as any opening Moment does behind a line of the
+ * open's own. Offers go in order, so the first missing row is the one made.
  */
 export function meetOffer(rows: MeetRows, c: MeetConditions): MeetOffer | null {
-  if (c.acked || c.inherited || c.audience !== "private" || c.crisis || c.held || c.ownerName !== null || c.sampleVisit) return null;
+  if (c.surface !== "call" || c.acked || c.inherited || c.audience !== "private" || c.crisis || c.held || c.ownerName !== null) return null;
   if (rows[0] === null) return 1;
   if (rows[1] === null) return 2;
   return null;

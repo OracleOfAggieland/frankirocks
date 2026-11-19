@@ -168,7 +168,8 @@ export const MEET_ANSWER_TURNS = 2;
  * are never in `lastTurns`, so the owner's first two turns in a Session whose open asked what to call them carry that
  * question (`meetPending`, code's fixed words with the meet row's ID). Null everywhere else: a later turn, a Session
  * whose open said no meet line (the row names the Session it was said in, `meetSaidIn`), a Session that never had a
- * call (a typed Session's open carries the line, but the typed screen never shows it, so nobody asked), and any
+ * call (a second guard: a typed open names its surface and is never offered the line, M-5, but a typed Session opened
+ * by an older bundle names none, and the typed screen never shows the line, so nobody asked), and any
  * Evidence with no Turn (a seeded record). It adds no dependency and never becomes quotable: only `fields` are.
  *
  * Reads, only where they can matter: the Turn (shared with `priorTurns`); for an owner's U turn at `seq` 1 or 2, the

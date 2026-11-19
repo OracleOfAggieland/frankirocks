@@ -1,6 +1,7 @@
 // Brief 052 rulings 5 and 6: the first meeting's line on the open, offered at most twice, only while the Head has no
 // name the owner gave, after a forget acknowledgment or the company line, never on a blocked open, in a crisis or an
-// owner hold, once per request, again after "Start over", and never again once a name was known.
+// owner hold, once per request, again after "Start over", on a sample visit too (M-1), never on a typed open (M-5),
+// and never again once a name was known.
 import { serverRule, type CoreEpoch, type CoreState, FORGET_ACK_TEXTS, type Ledger, MEET_AGAIN_LINE, MEET_LINE, type Memory, NO_NAME_LINE, type Session, knownNameLine, tsFromMs } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { describe, expect, it } from "vitest";
@@ -194,7 +195,7 @@ describe("the first meeting on the open (brief 052 rulings 5 and 6)", () => {
     expect(said(await open(r, "o3"))).toBe(MEET_AGAIN_LINE);
   });
 
-  it("Start over clears both rows with the rest of the ledger", async () => {
+  it("Start over clears both rows with the rest of the ledger, and the first open after it carries MEET_LINE again", async () => {
     const r = rig();
     expect(said(await open(r, "o1"))).toBe(MEET_LINE);
     expect(said(await open(r, "o2"))).toBe(MEET_AGAIN_LINE);
@@ -202,20 +203,53 @@ describe("the first meeting on the open (brief 052 rulings 5 and 6)", () => {
     expect((await resetAs(r, UID, "v1", "r1")).status).toBe(200);
     expect(await row(r, 1)).toBeNull();
     expect(await row(r, 2)).toBeNull();
+    const fresh = await open(r, "v1-o1");
+    expect(said(fresh)).toBe(MEET_LINE);
+    expect(meetSaidIn(await row(r, 1))).toBe(fresh.sessionId);
+    // A second Start over on the visit meets Franki again too.
+    expect((await resetAs(r, UID, "v2", "r2")).status).toBe(200);
+    expect(said(await open(r, "v2-o1"))).toBe(MEET_LINE);
   });
 
-  it("contract question M-1: a sample visit is not asked for now (spec §15 beat 1 says the wish first); its Head still says no name is given", async () => {
+  it("contract question M-1, owner's ruling (intro first, demo line after): a sample visit is asked like any other account, and its opening Moment waits", async () => {
     const r = rig();
     expect((await resetAs(r, UID, "v1", "r1")).status).toBe(200);
-    for (const label of ["o1", "o2", "o3"]) {
-      const o = await open(r, label);
-      expect(o.state).toBe("connecting");
-      expect(MEET).not.toContain(said(o));
-      // The sample persona's own name is not the visitor's.
-      expect(o.deck.head.text).toContain(NO_NAME_LINE);
-    }
+    const first = await open(r, "o1");
+    expect(said(first)).toBe(MEET_LINE);
+    // The sample persona's own name is not the visitor's.
+    expect(first.deck.head.text).toContain(NO_NAME_LINE);
+    expect(said(await open(r, "o2"))).toBe(MEET_AGAIN_LINE);
+    // Offers used up: the sample's scripted opening line, the wish, opens the third.
+    const third = await open(r, "o3");
+    expect(MEET).not.toContain(said(third));
+    expect(said(third)).toMatch(/^Good luck at 2 PM: /);
+  });
+
+  it("contract question M-5: a typed open makes no offer and writes no row, its opening Moment path runs as before, and the call open after it carries MEET_LINE", async () => {
+    const r = rig();
+    const before = r.logs.length;
+    const typed = (await callRoute(r, openRoute, { requestId: testId("t1"), initiator: "user", previousSessionId: null, clientZone: "UTC", visitId: await currentVisit(r), surface: "typed" })).body;
+    expect(typed.state).toBe("connecting");
+    expect(MEET).not.toContain(said(typed));
     expect(await row(r, 1)).toBeNull();
     expect(await row(r, 2)).toBeNull();
+    // The open went on to delivery's opening line, as an open with no line of its own always has.
+    expect(r.logs.slice(before).find((l) => l.event === "open.phases")!.fields).toHaveProperty("deliveryMs");
+    // The Head is the same for both surfaces: it still says no name is given.
+    expect(typed.deck.head.text).toContain(NO_NAME_LINE);
+    // An open that names its surface `call` is asked, as one that names none is.
+    const call = (await callRoute(r, openRoute, { requestId: testId("c1"), initiator: "user", previousSessionId: typed.sessionId, clientZone: "UTC", visitId: await currentVisit(r), surface: "call" })).body;
+    expect(said(call)).toBe(MEET_LINE);
+    expect(meetSaidIn(await row(r, 1))).toBe(call.sessionId);
+    expect(said(await open(r, "o2"))).toBe(MEET_AGAIN_LINE);
+  });
+
+  it("contract question M-5 on a sample visit: a typed open leaves the wish to open its Session, as before the meeting existed", async () => {
+    const r = rig();
+    expect((await resetAs(r, UID, "v1", "r1")).status).toBe(200);
+    const typed = (await callRoute(r, openRoute, { requestId: testId("t1"), initiator: "user", previousSessionId: null, clientZone: "UTC", visitId: await currentVisit(r), surface: "typed" })).body;
+    expect(said(typed)).toMatch(/^Good luck at 2 PM: /);
+    expect(await row(r, 1)).toBeNull();
   });
 
   it("after the name is saved and then forgotten, no open carries a meet line", async () => {
