@@ -12,7 +12,7 @@ import type { ClockPair } from "./clock";
 import { HEAD_SECTIONS, type Au, type Head, type Ref, type Value } from "./schema/primitives";
 import type { CoreRules, Memory } from "./schema/records";
 import { renderedMemory } from "./memory-text";
-import { type OwnerName, headAdmits, isSelfNameRow, ownerName, restsOnlyOnFixture } from "./owner-name";
+import { type OwnerName, headAdmits, isSelfNameRow, ownerName, ownerNamed, restsOnlyOnFixture } from "./owner-name";
 import { civilDay } from "./time";
 import { renameIndex, renameLine } from "./writes/renames";
 import { fromPaste, pasteQuestion } from "./writes/paste";
@@ -98,8 +98,12 @@ export interface HeadLine {
   nameRefs?: Ref[];
 }
 
-/** `ownerName` (brief 052 ruling 3): the name the Head promoted, or null. It is not stored. */
-export type HeadResult = { ok: true; head: Head; lines: HeadLine[]; ownerName: string | null } | { ok: false; error: "budgetExceeded" };
+/**
+ * `ownerName` (brief 052 ruling 3): the name the Head promoted, or null. `ownerNamed` (review F2): the owner has given
+ * a name that passes the Head's filter, whatever its text, so also when it was not promotable. Both are for a private
+ * audience only (null and false otherwise), and neither is stored.
+ */
+export type HeadResult = { ok: true; head: Head; lines: HeadLine[]; ownerName: string | null; ownerNamed: boolean } | { ok: false; error: "budgetExceeded" };
 
 export const lineTokens = (text: string) => Math.ceil((text.length + 1) / 4);
 
@@ -156,9 +160,12 @@ export function compileHead(input: HeadInput): HeadResult {
   }
 
   // Brief 052 ruling 3: the owner's own name, private audience only. Its Memory moves to the `now` line (one ref, one
-  // line), and a self name resting only on fixture Evidence (the sample persona's) leaves the Head while it is known.
+  // line). Review F2: a name the owner gave whose text is not promotable keeps its own `know` line, and the Head then
+  // says nothing about a name. Review F3: a self name resting only on fixture Evidence (the sample persona's) never
+  // reaches the Head, in any audience, so a visitor is never called by the persona's name.
   const audience = input.audience ?? "private";
   const name = audience === "private" ? ownerName({ memories: input.memories, ec: input.ec, snapshot: input.snapshot, audience }) : null;
+  const named = audience === "private" && ownerNamed({ memories: input.memories, ec: input.ec, snapshot: input.snapshot, audience });
 
   // Candidate Memory lines: eligible and spoken-grade only (R26.2, R26.3, R28.1–R28.3). By audience (voice-control
   // R14.2, task 45): outside a private audience only S0 lines, as the admission rule lets only S0 notes through
@@ -166,7 +173,8 @@ export function compileHead(input: HeadInput): HeadResult {
   const passing: { section: "people" | "apply" | "know"; m: HeadMemory }[] = [];
   for (const hm of input.memories) {
     if (!headAdmits(hm, input.ec, input.snapshot, audience)) continue;
-    if (name !== null && (hm.id === name.ref.id || (isSelfNameRow(hm.memory) && restsOnlyOnFixture(hm.memory, input.snapshot)))) continue;
+    if (isSelfNameRow(hm.memory) && restsOnlyOnFixture(hm.memory, input.snapshot)) continue;
+    if (name !== null && hm.id === name.ref.id) continue;
     passing.push({ section: sectionOf(hm.memory, deceased), m: hm });
   }
   // Deterministic order: (section, predicate, key, id), so input order never matters (R26.12).
@@ -182,7 +190,7 @@ export function compileHead(input: HeadInput): HeadResult {
     persona: PERSONA_TEXT.split("\n").map((text) => ({ section: "persona", text, ref: null })),
     policy: POLICY_TEXT.split("\n").map((text) => ({ section: "policy", text, ref: null })),
     rules: rulesLines(rules, audience),
-    now: nowLines(clock, audience, name),
+    now: nowLines(clock, audience, name, named),
     style: [{ section: "style", text: STYLE_TEXT, ref: null }],
     people: [],
     next72: [],
@@ -231,7 +239,7 @@ export function compileHead(input: HeadInput): HeadResult {
     selectedRefs: selected(lines),
     sections: HEAD_SECTIONS.map((id) => ({ id, tokens: tokensOf(sections[id]) })),
   };
-  return { ok: true, head, lines, ownerName: name?.text ?? null };
+  return { ok: true, head, lines, ownerName: name?.text ?? null, ownerNamed: named };
 }
 
 /** Each line's ref, then the name rows renamed lines lean on, once each. */
@@ -265,13 +273,15 @@ function rulesLines(rules: CoreRules, audience: Au): HeadLine[] {
 
 /**
  * Absolute date, weekday and IANA zone from worldClock; no relative words (R26.7). Then, for a private audience only,
- * the owner's name line (brief 052 ruling 3): the known name with its Memory's ref, or the fixed "hasn't told you".
+ * the owner's name line (brief 052 ruling 3): the promoted name with its Memory's ref; nothing when the owner gave a
+ * name that is not promotable (review F2: its `know` line says it); otherwise the fixed "hasn't told you".
  */
-function nowLines(clock: ClockPair, audience: Au, name: OwnerName | null): HeadLine[] {
+function nowLines(clock: ClockPair, audience: Au, name: OwnerName | null, named: boolean): HeadLine[] {
   const { date, weekday } = civilDay(clock.worldClock.now, clock.worldClock.zone);
   const lines: HeadLine[] = [{ section: "now", text: `Now: ${weekday} ${date}, time zone ${clock.worldClock.zone}. Audience: ${audience}.`, ref: null }];
   if (audience !== "private") return lines;
-  lines.push(name === null ? { section: "now", text: NO_NAME_LINE, ref: null } : { section: "now", text: knownNameLine(name.text), ref: name.ref });
+  if (name !== null) lines.push({ section: "now", text: knownNameLine(name.text), ref: name.ref });
+  else if (!named) lines.push({ section: "now", text: NO_NAME_LINE, ref: null });
   return lines;
 }
 

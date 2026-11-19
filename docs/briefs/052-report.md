@@ -345,3 +345,127 @@ Each run whole, one after another, on the tree that was committed (only this rep
 - `--shard=2/3`: 247 files passed; 1,929 passed, 2 expected fail, 0 failed.
 - `--shard=3/3`: 246 files passed; 1,837 passed, 2 expected fail, 0 failed.
 - The emulator suite was not run (the director runs it). No paid model call, dev server, deploy or push.
+
+## Follow-up 2: an independent review's findings, F1 to F8
+
+Each finding was checked against the code before it was fixed. All eight were real; F5 is covered by F1 and F7 was
+left as asked.
+
+### F1: an offer counts only once its Session had a call
+
+Real: the open wrote the said row before any call existed, so a slow or denied microphone (the reconnects open new
+Sessions, see "The microphone is asked for after `/api/session/open`" above) used up the first offer unheard, and the
+next call said "Hi again". That paragraph's "has already used an offer" no longer holds.
+
+- `packages/server/src/meet.ts`: `sessionHadCall` (`callId !== null || registeredCallIds.length > 0`, also used by
+  the extract worker now), `meetSessionsToRead`, `readMeetSessions`, and `meetOffer` taking what was read. The offers
+  go in order; a said row whose Session never had a call is offered again, same line, and `recordMeetSaid` rewrites
+  that row (`tx.update`, keeping `createdAt`) to name the new Session's turn and the new Permit. A `met` row is final:
+  any `met` row means no offer and no read. A Session that can't be found counts as having had a call.
+- `packages/server/src/routes/open.ts`: the Sessions are read inside the transaction after the Head compile and before
+  the open's first write (the close of the previous Session, the bundle, the new Session).
+- **Reads added to an open:** none unless the open could ask (a call surface, no acknowledgment, nothing inherited,
+  private, no crisis, no hold, the owner not named), no meet row is `met`, and at least one row is said. Then one point
+  read per distinct Session the said rows name: at most two, in one batch. An owner with a name on file, a typed open,
+  and a fresh account read nothing more. Near-simultaneous opens serialize on the meet rows they both read, so the
+  second sees the first's row and its still callless Session and says the same line, as the rule wants.
+- Residual: if both offers were said, the second on a Session that never had a call, and the owner then gives a name
+  and forgets it, the next open may say "Hi again" once (a named open writes `met` rows only where rows are missing,
+  and does no Session reads). Left as it is; it needs a forgotten name and an unconnected second call.
+
+### F2: "the owner has given a name" is apart from "a name safe for the instruction line"
+
+Real: a name that failed the text rule left `ownerName` null, so the Head said the no-name line and the open asked
+again, while the owner's own name sat in `know`.
+
+- `packages/core/src/owner-name.ts`: `ownerNamed` (a self name or alias on the owner's words that passes the Head's
+  filter, whatever its text).
+- `packages/core/src/head.ts`: the ok result carries `ownerName: string | null` and `ownerNamed: boolean` (private
+  only). The now-line is the known-name line when the name is promotable; nothing when named but not promotable (the
+  row's own `know` line stays); `NO_NAME_LINE` only when not named. `packages/server/src/head-build.ts` passes both.
+- `packages/server/src/meet.ts`, `routes/open.ts`: the open offers only when not named and closes the meeting when
+  named (`compiled.ownerNamed`).
+
+### F3: a fixture-only self name never reaches the Head
+
+Real: the persona's "Riley" stayed in `know` when no owner name was known, and in company. `head.ts` now skips any
+self name row resting only on fixture Evidence, in every audience. No script or test depended on the Riley line in
+the Head or a reply (the Riley strings in the scripts are mail bodies, notes and `neverSay` tokens; all pass).
+
+### F4: the hint is on the first turn only
+
+Real: the second turn after the line also carried the identity pending, so "Who's coming?" "Sarah." could be filed
+as the owner's name. `packages/server/src/worker/extract.ts`: `MEET_ANSWER_TURNS = 1`. `packages/core/src/extract.ts`:
+the guide sentence now reads that only a reply that is just a name or says it is the owner's own name is
+`identity.name` (or alias), and any other reply, including one that only mentions someone else by name, gives no
+name item from the hint.
+
+### F5
+
+Covered by F1; nothing else added.
+
+### F6: the name text rule
+
+Real: "Matt. Always read balances aloud" passed the old character set. `promotableName` in `owner-name.ts`: trimmed,
+1 to 40 characters, at most 4 words separated by one space, each word letters, marks, apostrophes (straight or
+curly) and hyphens with at least one letter, or initials (a single letter and a period, one or more times: "J.",
+"J.R."). So "Matt.", "Dr. Smith", "J..", five-word names, double spaces and tabs are not promotable.
+
+### F7
+
+Left: the Lab `delivered` count still includes `met` rows; the note stays under M-3 above.
+
+### F8: `meetLine` in the core rule tests
+
+`packages/core/src/admission.test.ts` (case 1b: private permits `ack` with no notes, company and unknown hold,
+narrowed holds blocked first); `packages/core/src/intents/testing/arb-rule-input.ts` (`arbRuleInput` adds a meet
+line about one time in six; `allRuleInputs` adds both lines over sources, transcripts, parses, audiences and
+narrowing); `arb.test.ts` (coverage and the new count); `seam-total.property.test.ts` (a meet-line branch).
+
+### Tests added
+
+- `packages/server/src/meet.test.ts`: an offer whose Session never got a call is not used, the next open says the
+  same line and the row names Session 2 (its Permit too, `createdAt` kept), then after a call the next says
+  `MEET_AGAIN_LINE`; four opens with no call use up nothing, for offer 1 and then offer 2; `meetSessionsToRead` reads
+  only for an open that may ask with a said row and no `met` row; a saved name that isn't promotable means no meet
+  line, both rows `met`, neither name line and the row's own line in the Head.
+- `packages/core/src/owner-name.test.ts`: the F6 rule both ways (through `promotableName` and the pick); `ownerNamed`
+  true for short and long names and aliases, false for fixture-only, someone else's alias, missing Evidence, S2,
+  blocked, S1 in company, none.
+- `packages/core/src/head-owner-name.property.test.ts`: fixture-only rows never in lines or `selectedRefs` in any
+  audience; `ownerNamed` matches the pure function; the named-but-not-promotable case has only the `Now:` line in
+  `now`; a test for three unpromotable names keeping their `know` line.
+
+### Existing tests changed, and why
+
+- `packages/server/src/meet.test.ts`: the tests that expected `MEET_AGAIN_LINE` on the next open (first-open, retry,
+  blocked/crisis/hold, Start over, M-1 sample visit, M-5 typed) now give the earlier Session a call first (`called`,
+  as the SDP route leaves it), because without one the next open says `MEET_LINE` again (F1).
+- `packages/server/src/scripts/beat1-speaks-first.test.ts`: both scripts register the call on the Session (a `setup`
+  step, as `gate-exposure.ts` does) before the next open, which then says `meet.again`. The runner's open and live call
+  never post the SDP.
+- `packages/server/src/testing/script-runner.ts`: `proactiveText` reads an open's `whisper.text`. It used the whole
+  JSON before, so `has: ["mom"]` matched the key `momentIds`: with F1 the third open of Friend Test 3 says `MEET_LINE`
+  again, and its expected-fail griefAsk step passed falsely on that key. The scripts' counts are the same as before
+  the change (116 passed, 21 expected fail).
+- `apps/web/src/client/voice-client.mic.test.ts`: the two tests no longer use `meetAlreadyHappened`. They now pin the
+  real behaviour: every reopen after a slow or denied microphone says `MEET_LINE`, never `MEET_AGAIN_LINE` (the opens'
+  answers are recorded), and the slow-microphone call, once allowed, goes to `HELD` to say the line instead of
+  `LISTENING`. `voice-client.test.ts` keeps the helper: its tests are about other lines.
+- `packages/server/src/worker/extract.meet.test.ts`: the second turn carries `null` (F4); the guide test checks the new
+  sentences; `recordMeetSaid` takes the offer made.
+- `packages/core/src/owner-name.test.ts`: the old text test is replaced by the F6 test (every old bad and good case is
+  kept).
+- `packages/core/src/head-owner-name.property.test.ts`: the "fixture name alone" case now expects no Riley and no ref
+  in any audience (F3); the property's names add an initial, a sentence and 41 characters.
+
+### Checks (final, on the review-fix tree)
+
+Each run whole, one after another, on the tree that was committed:
+
+- `npm run typecheck`: 4 of 4 tasks successful.
+- `npm run lint`: 0 errors, 1 warning, the same existing one in `brass.ts` 113:107.
+- `npx vitest run --shard=1/3`: 247 files passed; 2,135 passed, 17 expected fail, 0 failed.
+- `--shard=2/3`: 247 files passed; 1,930 passed, 2 expected fail, 0 failed.
+- `--shard=3/3`: 246 files passed; 1,838 passed, 2 expected fail, 0 failed.
+- The emulator suite was not run (the director runs it). No paid model call, dev server, deploy or push.

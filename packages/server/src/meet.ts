@@ -10,10 +10,13 @@
  *     "forget my name" Franki does not ask again. The closed `decision` row has no `met` state; the two are told apart
  *     by that turn ref (see the report).
  *   - "Start over" clears the rows with the rest of the ledger; account delete removes them; a forget does not touch them.
+ *   - Review F1: an offer counts only once its Session had a call. A said row whose Session never had one (the
+ *     microphone was slow or denied, or a second open came first) is not a used offer: the next open that may ask
+ *     says the same line again and rewrites the row to name its own Session and Permit. A `met` row is final.
  *
  * The rows carry IDs and states only, never words.
  */
-import { type AckText, type Hasher, type ID, type Ledger, MEET_AGAIN_LINE, MEET_LINE, type OpenSurface, type Ref, type RuleInput, tsFromMs, turnRef } from "@franki/core";
+import { type AckText, type Hasher, type ID, type Ledger, MEET_AGAIN_LINE, MEET_LINE, type OpenSurface, type Ref, type RuleInput, type Session, tsFromMs, turnRef } from "@franki/core";
 import { cFields } from "./records";
 import { paths } from "./store/paths";
 import type { Tx } from "./store/port";
@@ -55,22 +58,67 @@ export interface MeetConditions {
   crisis: boolean;
   /** The owner's hold runs (`holdCarried`). */
   held: boolean;
-  /** The Head's `ownerName`. */
-  ownerName: string | null;
+  /** The Head's `ownerNamed` (review F2): the owner gave a name, promotable or not. */
+  named: boolean;
+}
+
+/**
+ * Whether a Session has had a call: the test Part C's worker uses too (`worker/extract.ts`). A Session the typed box
+ * opened, or one whose call never connected, has neither a call ID nor a registered one.
+ */
+export const sessionHadCall = (s: Pick<Session, "callId" | "registeredCallIds">): boolean => s.callId !== null || s.registeredCallIds.length > 0;
+
+/** A `met` row: complete and naming no turn (the meeting was closed by a known name). Final. */
+const isMet = (row: Decision | null): boolean => row !== null && meetSaidIn(row) === null;
+
+/** Whether this open could make an offer at all, the rows aside. */
+const mayAsk = (c: MeetConditions): boolean => c.surface === "call" && !c.acked && !c.inherited && c.audience === "private" && !c.crisis && !c.held && !c.named;
+
+/**
+ * Review F1: the Sessions the said rows name, to read before the open's first write, only when the open could ask
+ * (`mayAsk`, checked with every condition known by then) and no row is `met`. Empty otherwise, so an owner with a name
+ * on file, or with no said row, reads nothing more.
+ */
+export function meetSessionsToRead(rows: MeetRows, c: MeetConditions): ID[] {
+  if (!mayAsk(c) || rows.some(isMet)) return [];
+  return [...new Set(rows.map(meetSaidIn).filter((id): id is ID => id !== null))];
+}
+
+/**
+ * Whether each Session had a call, by ID, read in the open's transaction (one batch of point reads). A Session that
+ * can't be found counts as having had one, so a lost record never asks again (fails toward not pressing).
+ */
+export async function readMeetSessions(tx: Pick<Tx, "get">, uid: string, ids: readonly ID[]): Promise<ReadonlyMap<string, boolean>> {
+  const docs = await Promise.all(ids.map((id) => tx.get<Session>(paths.session(uid, id))));
+  return new Map(ids.map((id, i) => [id, docs[i] == null ? true : sessionHadCall(docs[i]!.data)]));
+}
+
+/** The offer an open makes: which line, and the unheard row it rewrites (null when the row is new). */
+export interface MeetOfferMade {
+  n: MeetOffer;
+  replaces: Decision | null;
 }
 
 /**
  * Ruling 5: the offer this open makes, or null. All must hold: the open is a call's, not the typed box's (M-5: the typed
  * screen drops the line, so an offer would be used up unheard); no acknowledgment was taken; nothing was inherited and
- * the audience is private; no crisis modifier and no owner hold; no owner name in the Head; fewer than two offers made.
- * A sample visit (`clockMode: "fixture"`) is asked like any other account (contract question M-1, owner's ruling Nov 18:
- * "Intro first, demo line after"); its scripted opening Moment waits, as any opening Moment does behind a line of the
- * open's own. Offers go in order, so the first missing row is the one made.
+ * the audience is private; no crisis modifier and no owner hold; the owner has given no name (review F2: promotable or
+ * not); no row is `met`; and an offer is left. A sample visit (`clockMode: "fixture"`) is asked like any other account
+ * (contract question M-1, owner's ruling Nov 18: "Intro first, demo line after"); its scripted opening Moment waits, as
+ * any opening Moment does behind a line of the open's own.
+ *
+ * Offers go in order. Review F1: an offer is used once its row is said in a Session that had a call (`hadCall`, from
+ * `readMeetSessions`); the first offer not used is the one made, and a said row whose Session never had a call is made
+ * again, in the same words, over that row.
  */
-export function meetOffer(rows: MeetRows, c: MeetConditions): MeetOffer | null {
-  if (c.surface !== "call" || c.acked || c.inherited || c.audience !== "private" || c.crisis || c.held || c.ownerName !== null) return null;
-  if (rows[0] === null) return 1;
-  if (rows[1] === null) return 2;
+export function meetOffer(rows: MeetRows, c: MeetConditions, hadCall: ReadonlyMap<string, boolean> = new Map()): MeetOfferMade | null {
+  if (!mayAsk(c) || rows.some(isMet)) return null;
+  for (const [i, n] of MEET_OFFERS.entries()) {
+    const row = rows[i]!;
+    if (row === null) return { n, replaces: null };
+    const sessionId = meetSaidIn(row)!;
+    if (!(hadCall.get(sessionId) ?? true)) return { n, replaces: row };
+  }
   return null;
 }
 
@@ -113,10 +161,14 @@ function meetRow(uid: string, x: RowContext, acceptedRefs: Ref[]): Decision {
 
 /**
  * Records one offer as said, in the transaction that admitted its Permit: the turn it was said as (under its
- * Session, ruling 6) and the Permit's decision.
+ * Session, ruling 6) and the Permit's decision. Review F1: an unheard row (`replaces`, read in this transaction) is
+ * rewritten to name this Session and Permit, keeping its `createdAt`.
  */
-export function recordMeetSaid(tx: Tx, uid: string, n: MeetOffer, x: RowContext & { sessionId: ID; turnId: ID; permitId: string }, hasher: Pick<Hasher, "id">): void {
-  tx.create(paths.ledger(uid, meetRowId(n, hasher)), meetRow(uid, x, [turnRef(x.turnId, x.sessionId, 1), { type: "ledger", id: x.permitId as ID, rev: 1 }]));
+export function recordMeetSaid(tx: Tx, uid: string, offer: MeetOfferMade, x: RowContext & { sessionId: ID; turnId: ID; permitId: string }, hasher: Pick<Hasher, "id">): void {
+  const path = paths.ledger(uid, meetRowId(offer.n, hasher));
+  const row = meetRow(uid, x, [turnRef(x.turnId, x.sessionId, 1), { type: "ledger", id: x.permitId as ID, rev: 1 }]);
+  if (offer.replaces === null) tx.create(path, row);
+  else tx.update(path, { ...row, createdAt: offer.replaces.createdAt });
 }
 
 /** Ruling 6, "knowing a name closes the meeting": every missing row is created `met`, naming no turn. */

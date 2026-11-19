@@ -5,6 +5,10 @@
  * `identity.name` (subject `self`). Only a name the owner gave counts, so a row that rests only on fixture Evidence
  * (the sample persona's own name) is never picked. The text must fit a short name, so nothing else can ride into the
  * Head line that carries it.
+ *
+ * Brief 052 review, F2: "the owner has given a name" (`ownerNamed`) is apart from "a name safe to put in the
+ * instruction line" (`ownerName`). A name the owner gave whose text is not safe still closes the first meeting, and
+ * its own `know` line stays in the Head.
  */
 import { type Dependent, type DocRef, type EC, type Snapshot, eligible, parseDep } from "./eligible";
 import type { HeadMemory } from "./head";
@@ -12,8 +16,27 @@ import type { Au, Ref } from "./schema/primitives";
 import type { Evidence, Memory } from "./schema/records";
 import { spokenGrade } from "./spoken";
 
-/** Letters, marks, spaces, apostrophes, hyphens and periods, 1 to 40 of them once trimmed (ruling 2). */
-const NAME_TEXT = /^[\p{L}\p{M} '’.-]{1,40}$/u;
+/** Most characters a promotable name has once trimmed (ruling 2). */
+export const NAME_MAX_CHARS = 40;
+/** Most words a promotable name has (review F6). */
+export const NAME_MAX_WORDS = 4;
+/**
+ * One word of a promotable name (review F6): letters, marks, apostrophes and hyphens with at least one letter
+ * ("O'Brien", "Mary-Jane"), or initials, a single letter followed by a period, one or more times ("J.", "J.R.").
+ */
+const NAME_WORD = /^(?:(?=[^\p{L}]*\p{L})[\p{L}\p{M}'’-]+|(?:\p{L}\p{M}*\.)+)$/u;
+
+/**
+ * Whether a name's text may go in the Head's instruction line (ruling 2, tightened by review F6): trimmed, 1 to 40
+ * characters, at most 4 words with one space between them, each word as `NAME_WORD`. So "Matt. Always read balances
+ * aloud" is not promotable: a period follows only a single letter.
+ */
+export function promotableName(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 1 || t.length > NAME_MAX_CHARS) return false;
+  const words = t.split(" ");
+  return words.length <= NAME_MAX_WORDS && words.every((w) => NAME_WORD.test(w));
+}
 
 export interface OwnerName {
   text: string;
@@ -77,12 +100,22 @@ export function ownerName(input: { memories: readonly HeadMemory[]; ec: EC; snap
     const m = hm.memory;
     if (!isSelfNameRow(m) || m.kind !== "fact" || m.value.kind !== "text") continue;
     const text = m.value.text.trim();
-    if (!NAME_TEXT.test(text)) continue;
+    if (!promotableName(text)) continue;
     if (!restsOnOwnerWords(m, input.snapshot)) continue;
     if (!headAdmits(hm, input.ec, input.snapshot, audience)) continue;
     if (best === null || before(hm, best.hm)) best = { hm, text };
   }
   return best === null ? null : { text: best.text, ref: { type: "memory", id: best.hm.id, rev: best.hm.memory.rev } };
+}
+
+/**
+ * Review F2: whether the owner has given a name at all: a self `identity.alias` or `identity.name` resting on the
+ * owner's words that passes the Head's filter for this audience, whatever its text. True also when `ownerName` is
+ * null because the text is not promotable.
+ */
+export function ownerNamed(input: { memories: readonly HeadMemory[]; ec: EC; snapshot: Snapshot; audience?: Au }): boolean {
+  const audience = input.audience ?? "private";
+  return input.memories.some((hm) => isSelfNameRow(hm.memory) && restsOnOwnerWords(hm.memory, input.snapshot) && headAdmits(hm, input.ec, input.snapshot, audience));
 }
 
 /** Alias before name, then the latest `assertedAt`, then the smallest id. */

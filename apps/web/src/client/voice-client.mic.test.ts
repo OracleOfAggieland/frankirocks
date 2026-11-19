@@ -7,14 +7,13 @@
  * Fake_OpenAI, and virtual time shared by the browser clock, the Voice_Client's timers and the server.
  * Test-only imports of server test helpers; no browser module imports the Server_Library.
  */
-import { CONNECT_LIMIT_MS, RETRY_DELAYS_MS, RETRY_UI_MS } from "@franki/core";
+import { CONNECT_LIMIT_MS, MEET_LINE, RETRY_DELAYS_MS, RETRY_UI_MS } from "@franki/core";
 import { testId } from "@franki/core/testing";
 import { type RouteSpec, closeRoute, openRoute, receiptRoute, runRoute, sdpRoute, stateRoute, toolRoute, turnRoute } from "@franki/server";
 import { describe, expect, it } from "vitest";
 import { ok } from "../../../../packages/server/src/openai/fake";
 import { paths } from "../../../../packages/server/src/store/paths";
 import { T0_MS, type TestRig, settle, testRig } from "../../../../packages/server/src/testing/fakes";
-import { meetAlreadyHappened } from "../../../../packages/server/src/testing/meet";
 import { type FetchLike, createApiClient } from "./api";
 import { createBrowserClock } from "./clock";
 import { type AudioLike, type ChannelLike, type PeerLike, type StreamLike, type TimerApi, type TrackLike, VoiceClient } from "./voice-client";
@@ -43,6 +42,8 @@ async function until(cond: () => boolean, what: string): Promise<void> {
 interface Call {
   path: string;
   body: { reason?: string } | null;
+  /** The route's answer: an open's `proactive` line is read from it (brief 052 review F1). */
+  response?: { proactive?: { whisper?: { text?: string } } | null };
 }
 
 function serverFetch(rig: TestRig): FetchLike & { calls: Call[] } {
@@ -59,6 +60,7 @@ function serverFetch(rig: TestRig): FetchLike & { calls: Call[] } {
       rig.clock,
       rig.timers,
     );
+    calls.at(-1)!.response = value.body as Call["response"];
     return Response.json(value.body, { status: value.status });
   };
   return Object.assign(f, { calls });
@@ -174,8 +176,8 @@ function promptedMic() {
 
 async function setup() {
   const rig = testRig();
-  // Brief 052: the first meeting is over, so a call connects to LISTENING with no meet line to say first.
-  await meetAlreadyHappened(rig.store, UID, rig.deps.hasher);
+  // Brief 052 review F1: no helper marks the meeting over. The first open says MEET_LINE, and since no Session the
+  // slow or denied microphone opens ever gets a call, every reopen says MEET_LINE again, never MEET_AGAIN_LINE.
   rig.openai.always("realtime.calls.create", ok({ answerSdp: "v=0 answer", location: "/v1/realtime/calls/rtc_test1" }));
   rig.openai.always("realtime.calls.hangup", ok(null));
   const fetch = serverFetch(rig);
@@ -206,13 +208,14 @@ async function setup() {
     if (phases.at(-1) !== p) phases.push(p);
   });
   const routeCalls = (path: string) => fetch.calls.filter((c) => c.path === path);
+  const openLines = () => routeCalls("/api/session/open").map((c) => c.response?.proactive?.whisper?.text ?? null);
   const sessions = () => rig.store.countUnder(paths.collection(UID, "sessions"));
-  return { rig, vc, mic, peers, timers, phases, routeCalls, sessions };
+  return { rig, vc, mic, peers, timers, phases, routeCalls, openLines, sessions };
 }
 
 describe("Voice_Client microphone at call start (today)", () => {
   it("today: mic allowed at 8 s goes through RECOVERY, and the call connects on a second Session", async () => {
-    const { vc, mic, peers, timers, phases, routeCalls, sessions } = await setup();
+    const { vc, mic, peers, timers, phases, routeCalls, openLines, sessions } = await setup();
     vc.call();
     await until(() => mic.requests === 1, "the first mic request");
     expect(vc.getSnapshot().phase).toBe("CONNECTING");
@@ -224,15 +227,18 @@ describe("Voice_Client microphone at call start (today)", () => {
     expect(vc.getSnapshot().recovery).toMatchObject({ kind: "connection", attempts: 1 });
     // The reconnect opened a second Session, whose connect asked for the mic again.
     expect(routeCalls("/api/session/open")).toHaveLength(2);
+    expect(openLines()).toEqual([MEET_LINE, MEET_LINE]);
     expect(routeCalls("/api/session/close").map((c) => c.body?.reason)).toEqual(["error"]);
     expect(mic.requests).toBe(2);
 
     mic.allow();
     await until(() => peers.at(-1)?.remote === "v=0 answer", "the SDP answer");
     peers.at(-1)!.channel.open();
-    await until(() => vc.getSnapshot().phase === "LISTENING", "LISTENING");
+    // The second Session's open carried MEET_LINE, so the call goes to HELD to say it first (the first offer again,
+    // never "Hi again").
+    await until(() => vc.getSnapshot().phase === "HELD", "HELD");
 
-    expect(phases).toEqual(["CONNECTING", "RECOVERY", "CONNECTING", "CONFIGURING", "LISTENING"]);
+    expect(phases).toEqual(["CONNECTING", "RECOVERY", "CONNECTING", "CONFIGURING", "HELD"]);
     expect(sessions()).toBe(2);
     expect(routeCalls("/api/session/sdp")).toHaveLength(1);
     // The first request's stream answered a torn-down connect and was stopped; the second one is in use.
@@ -241,7 +247,7 @@ describe("Voice_Client microphone at call start (today)", () => {
   });
 
   it("today: a rejected mic opens four Sessions and shows no mic message", async () => {
-    const { vc, mic, timers, phases, routeCalls, sessions } = await setup();
+    const { vc, mic, timers, phases, routeCalls, openLines, sessions } = await setup();
     mic.deny();
     vc.call();
     await until(() => mic.requests === 1, "the first mic request");
@@ -250,6 +256,7 @@ describe("Voice_Client microphone at call start (today)", () => {
     await timers.advance(20_000);
     expect(mic.requests).toBe(4);
     expect(routeCalls("/api/session/open")).toHaveLength(4);
+    expect(openLines()).toEqual([MEET_LINE, MEET_LINE, MEET_LINE, MEET_LINE]);
     expect(sessions()).toBe(4);
     expect(routeCalls("/api/session/close").map((c) => c.body?.reason)).toEqual(["error", "error", "error", "error"]);
     expect(routeCalls("/api/session/sdp")).toHaveLength(0);

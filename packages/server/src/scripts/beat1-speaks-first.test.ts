@@ -7,9 +7,24 @@
  * wish is not lost: the open's scheduled tick (`startTick`, run after the answer by `after()` in production, by the
  * `work` step here) leases it, and the state poll says it as an idle whisper at the call's first quiet moment
  * (`IDLE_SILENCE_MS`). It is still said exactly once.
+ *
+ * Brief 052 review F1: an offer counts only once its Session had a call. The runner's open and its live call stand in
+ * for the browser but never post the SDP, so a step registers the call on the Session as the SDP route does before
+ * the next open, which then makes the second offer.
  */
-import type { Evidence, Memory } from "@franki/core";
-import { type Script, type World, allEvidence, memoryText, scriptSuite } from "../testing/script-runner";
+import type { Evidence, Memory, Session } from "@franki/core";
+import { paths } from "../store/paths";
+import { patchRecord } from "../testing/fakes";
+import { type Script, type Step, type World, allEvidence, memoryText, scriptSuite } from "../testing/script-runner";
+
+const callRegistered: Step = {
+  label: "the call is registered on the session",
+  do: "setup",
+  what: "the session's call is registered, as the SDP route leaves it (review F1: the meet offer counts)",
+  run: async (w) => {
+    await patchRecord<Session>(w.rig.store, w.uid, paths.session(w.uid, w.sessionId!), { registeredCallIds: ["rtc_a"], callId: "rtc_a" });
+  },
+};
 
 const interview = { what: "the interview occasion", pick: (m: Memory) => m.kind === "event" && memoryText(m).includes("interview") };
 const gapYear = { what: "Tuesday's gap-year answer", pick: (m: Memory) => m.kind === "episode" && memoryText(m).includes("good answer about the gap year") };
@@ -59,6 +74,7 @@ const BEAT1: Script = {
       ],
     },
     { label: "the meet line plays on the call", do: "play", of: "open a session" },
+    callRegistered,
     { label: "the open's scheduled tick runs", do: "work" },
     {
       label: "the wish for the interview at 2 is said at the first quiet moment",
@@ -113,6 +129,7 @@ const BEAT1_ON_CALL: Script = {
         { mustSay: { template: "occasion.wish", channel: "heard", times: 0 } },
       ],
     },
+    callRegistered,
     { label: "the open's scheduled tick runs", do: "work" },
     { label: "quiet", do: "callQuiet", expect: [{ mustSay: { template: "occasion.wish", has: ["2"], channel: "heard", times: 1 } }] },
     { label: "hang up", do: "hangUp" },

@@ -13,6 +13,15 @@ import { allRuleInputs, arbRuleInput } from "./testing/arb-rule-input";
 
 function check(i: RuleInput): void {
   const o = serverRule(i);
+  // Brief 052 ruling 5 (review F8): a meet line, straight after row 1, whatever else the input says. A narrowed call
+  // still says nothing; private permits the line as an ack with no notes and no tools; any other audience holds.
+  if (i.meetLine !== undefined) {
+    if (i.narrowedHere) expect(o).toEqual({ kind: "hold", reasons: ["audience"], blocked: true, swap: "none" });
+    else if (i.audience === "private") expect(o).toEqual({ kind: "permit", permit: "postCommitControl", scope: "ack", notes: "none", line: i.meetLine, swap: "none", cut: true, reasons: [] });
+    else expect(o).toEqual({ kind: "hold", reasons: ["audience"], blocked: false, swap: "none" });
+    expect(serverRule({ ...i, regexMatch: !i.regexMatch })).toEqual(o);
+    return;
+  }
   expect(["permit", "hold"]).toContain(o.kind);
   if (o.kind === "permit") {
     expect(PERMIT_KINDS).toContain(o.permit);

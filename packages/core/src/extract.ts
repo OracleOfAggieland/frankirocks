@@ -91,7 +91,7 @@ Items
 
 Which claim (predicate, kind, value, args)
 - The owner's name: identity.name, subject self, value text. A nickname or what the owner likes to be called ("call me Lex", "I go by Lex") is identity.alias, subject self, value text = the nickname, args.entityRef "self"; it never replaces identity.name. Someone else's nickname: identity.alias with subject and args.entityRef = their mention.
-- When pending.kind is "identity", Franki had just asked what to call the owner, so a reply that gives a name ("Matt", "It's Matt.", "Matt Avila") is identity.name (identity.alias for a nickname), with the span on the name in the owner's words; a reply that gives no name gives no name item.
+- When pending.kind is "identity", Franki had just asked what to call the owner. Only a reply that is just a name ("Matt", "It's Matt.", "Matt Avila") or that says it is the owner's own name ("I'm Matt", "call me Lex") is identity.name (identity.alias for a nickname), with the span on the name in the owner's words. Any other reply gives no name item from this, including one that only mentions someone else by name.
 - A person or pet in the owner's life: person.relation, subject self, value enum code (parent, child, sibling, sister, brother, partner, spouse, friend, colleague, boss; pets and anyone else: other), args.otherRef = the mention of that person or pet, args.label = the owner's word for them ("dog", "sister", "dentist"), args.employerRef null unless said. Example: "My dog is called Pip." gives person.relation, code other, otherRef "m1" (a pet mention, observedName "Pip"), label "dog".
 - Where someone lives: place.residence, subject self or the person's mention, value entity = the place mention.
 - Work: employment.role (value text = the role, args.employerRef = organization mention) or employment.status.
@@ -354,7 +354,7 @@ export interface PacketTurn {
 
 /**
  * The question the owner is answering (contracts §5 ExtractV1 `pending`). Brief 052 ruling 7: the only one code fills
- * is the first meeting's, for the owner's first two turns in a Session whose open asked what to call them. Its words
+ * is the first meeting's, for the owner's first turn in a Session whose open asked what to call them (review F4). Its words
  * are code's fixed words, never owner data: spans never quote it and it adds no dependency.
  */
 export interface PacketPending {

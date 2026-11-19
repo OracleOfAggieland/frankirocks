@@ -705,8 +705,8 @@ function localDateOf(ms: number, zone: string): string {
 }
 
 function proactiveText(p: unknown): string {
-  const o = p as { text?: string; line?: string } | null;
-  return o?.text ?? o?.line ?? canonicalJSON(p);
+  const o = p as { text?: string; line?: string; whisper?: { text?: string } } | null;
+  return o?.text ?? o?.line ?? o?.whisper?.text ?? canonicalJSON(p);
 }
 
 function cardText(c: unknown): string {

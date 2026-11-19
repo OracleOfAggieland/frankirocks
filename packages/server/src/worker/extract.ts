@@ -6,7 +6,7 @@
  *      generation + 1).
  *   2. Packet: that Turn's Evidence as the only field; the Owner's earlier turns in the Session when this one leans
  *      on them, and related saved Memories in `open` when it says something changed or is a short reply (contract
- *      question 42). Every input is recorded in `contextIds` and `dependsOn`. The owner's first two turns after a
+ *      question 42). Every input is recorded in `contextIds` and `dependsOn`. The owner's first turn after a
  *      meet line carry its question in `pending` (brief 052 ruling 7, `meetPendingFor`), code's words, no dependency.
  *   3. Call: Responses, FRANKI_BRAIN_MODEL, effort low, store:false, tools:[], strict JSON schema, PREFIX + the
  *      ExtractV1 literal, 12,000 / 4,096 tokens, 30 s deadline (contract question 35). Invalid, refused or
@@ -83,7 +83,7 @@ import type { Env } from "../config/env";
 import { ownerClock } from "../core-docs";
 import { requireModel } from "../config/models";
 import { readAllMemories, storeReader } from "../head-build";
-import { MEET_OFFERS, meetRowId, meetSaidIn, readMeetRows } from "../meet";
+import { MEET_OFFERS, meetRowId, meetSaidIn, readMeetRows, sessionHadCall } from "../meet";
 import type { OpenAIPort } from "../openai/fake";
 import type { ResponsesResult } from "../openai/responses";
 import { DAY_MS, cFields } from "../records";
@@ -160,19 +160,22 @@ export async function currentTurn(store: StorePort, uid: string, evidence: Evide
   return store.get<Turn>(uid, paths.turn(uid, evidence.sessionId, evidence.turnId));
 }
 
-/** Brief 052 ruling 7: the owner's turns, from the Session's first (`seq` 1, `sessions.ts`), that answer a meet line. */
-export const MEET_ANSWER_TURNS = 2;
+/**
+ * Brief 052 ruling 7: the owner's turns, from the Session's first (`seq` 1, `sessions.ts`), that answer a meet line.
+ * Review F4: the first only, so a name said in answer to a later question is never read as the owner's.
+ */
+export const MEET_ANSWER_TURNS = 1;
 
 /**
  * Brief 052 ruling 7: the packet's `pending`. A bare "Matt." means nothing to ExtractV1 on its own, and Franki's lines
- * are never in `lastTurns`, so the owner's first two turns in a Session whose open asked what to call them carry that
+ * are never in `lastTurns`, so the owner's first turn in a Session whose open asked what to call them carry that
  * question (`meetPending`, code's fixed words with the meet row's ID). Null everywhere else: a later turn, a Session
  * whose open said no meet line (the row names the Session it was said in, `meetSaidIn`), a Session that never had a
  * call (a second guard: a typed open names its surface and is never offered the line, M-5, but a typed Session opened
  * by an older bundle names none, and the typed screen never shows the line, so nobody asked), and any
  * Evidence with no Turn (a seeded record). It adds no dependency and never becomes quotable: only `fields` are.
  *
- * Reads, only where they can matter: the Turn (shared with `priorTurns`); for an owner's U turn at `seq` 1 or 2, the
+ * Reads, only where they can matter: the Turn (shared with `priorTurns`); for an owner's U turn at `seq` 1, the
  * two meet rows by ID; and when one of them names this Session, the Session, for its call.
  */
 export async function meetPendingFor(store: StorePort, uid: string, evidence: Evidence, hasher: Pick<Hasher, "id">, turn: Promise<TurnDoc | null> = currentTurn(store, uid, evidence)): Promise<PacketPending | null> {
@@ -185,7 +188,7 @@ export async function meetPendingFor(store: StorePort, uid: string, evidence: Ev
   const said = MEET_OFFERS.find((_, i) => meetSaidIn(rows[i]) === sessionId);
   if (said === undefined) return null;
   const session = await store.get<Session>(uid, paths.session(uid, sessionId));
-  if (session === null || (session.data.callId === null && session.data.registeredCallIds.length === 0)) return null;
+  if (session === null || !sessionHadCall(session.data)) return null;
   return meetPending(meetRowId(said, hasher));
 }
 
@@ -353,7 +356,7 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
     needsEarlierTurns(said) ? priorTurns(deps.store, uid, evidence, turn) : Promise.resolve(NO_TURNS),
     // Every turn reads the Memories: the rename index (task C4) decides whose a name is, even with no `open` list.
     readAllMemories(storeReader(deps.store, uid), uid),
-    // Brief 052 ruling 7: the first meeting's question, for the owner's first two turns after a meet line.
+    // Brief 052 ruling 7: the first meeting's question, for the owner's first turn after a meet line (review F4).
     meetPendingFor(deps.store, uid, evidence, deps.hasher, turn),
   ]);
   const renames = workerRenames(all);

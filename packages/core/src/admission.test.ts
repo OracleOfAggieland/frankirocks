@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type RuleInput, serverRule } from "./admission";
 import type { ControlClass } from "./intents/classes";
-import { ALONE_LINE, COMPANY_LINE } from "./voice/lines";
+import { ALONE_LINE, COMPANY_LINE, MEET_AGAIN_LINE, MEET_LINE } from "./voice/lines";
 
 const base: RuleInput = {
   source: "asr",
@@ -27,6 +27,17 @@ const rule = (over: Partial<RuleInput>) => serverRule({ ...base, ...over });
 describe("serverRule, one case per design row", () => {
   it("1: a narrowed call is blocked", () => {
     expect(rule({ narrowedHere: true })).toEqual({ kind: "hold", reasons: ["audience"], blocked: true, swap: "none" });
+  });
+
+  it("1b (brief 052 ruling 5): a meet line is a postCommitControl ack with no notes in private, held in any other audience; row 1 still wins", () => {
+    for (const meetLine of [MEET_LINE, MEET_AGAIN_LINE] as const) {
+      // Whatever else the input says: the meet row comes straight after row 1.
+      for (const over of [{}, { source: "typed", judge: "typed", callLive: false, parse: { kind: "none" } }, { source: "pasted", noteSens: "S1+" }, { parse: hit("crisis") }, { transcript: "missing" }] as Partial<RuleInput>[]) {
+        expect(rule({ ...over, meetLine })).toEqual({ kind: "permit", permit: "postCommitControl", scope: "ack", notes: "none", line: meetLine, swap: "none", cut: true, reasons: [] });
+        for (const audience of ["company", "unknown"] as const) expect(rule({ ...over, meetLine, audience })).toEqual({ kind: "hold", reasons: ["audience"], blocked: false, swap: "none" });
+      }
+      expect(rule({ meetLine, narrowedHere: true })).toEqual({ kind: "hold", reasons: ["audience"], blocked: true, swap: "none" });
+    }
   });
 
   it("2: pasted text gets postCommitControl with S0 notes, and holds an S1+ note", () => {

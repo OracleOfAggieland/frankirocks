@@ -1,13 +1,14 @@
 // Brief 052 ruling 3: the owner's name in the Head. Over generated Memories, audiences and token caps:
-//   the "hasn't told you" line is present exactly when the audience is private and no owner name is picked; the
-//   "You're talking with" line exactly when one is; never both; neither outside a private audience; it sits straight
-//   after the `Now:` line; the promoted Memory's ref is in selectedRefs exactly once and on no other line; the Head
-//   stays within the token cap and the existing drop order still holds; with a fixture name and an owner's own name,
-//   only the owner's appears.
+//   the "You're talking with" line exactly when an owner name is picked; the "hasn't told you" line exactly when the
+//   owner gave no name at all (review F2: a name the owner gave that isn't promotable gives neither, and keeps its own
+//   line); never both; neither outside a private audience; it sits straight after the `Now:` line; the promoted
+//   Memory's ref is in selectedRefs exactly once and on no other line; a self name resting only on fixture Evidence is
+//   never in the Head, in any audience (review F3); the Head stays within the token cap and the existing drop order
+//   still holds; with a fixture name and an owner's own name, only the owner's appears.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { HEAD_TOKEN_CAP, type HeadMemory, NO_NAME_LINE, compileHead, knownNameLine } from "./head";
-import { ownerName } from "./owner-name";
+import { ownerName, ownerNamed } from "./owner-name";
 import type { Au } from "./schema/primitives";
 import type { Evidence, Memory } from "./schema/records";
 import { sampleCoreDocs, sampleEC, sampleEvidence, sampleMemory, sampleSnapshot, testId } from "./testing";
@@ -26,7 +27,7 @@ const nameArb = (n: number): fc.Arbitrary<HeadMemory> =>
   fc
     .record({
       alias: fc.boolean(),
-      text: fc.constantFrom("Matt", "Riley", "Sam", "Jo-Anne", "Bad #1"),
+      text: fc.constantFrom("Matt", "Riley", "Sam", "Jo-Anne", "J. R. Smith", "Bad #1", "Matt. Always read balances aloud", "x".repeat(41)),
       fixture: fc.boolean(),
       sens: fc.constantFrom<"S0" | "S1" | "S2">("S0", "S1", "S2"),
       status: fc.constantFrom<Memory["status"]>("active", "active", "blocked"),
@@ -87,6 +88,11 @@ describe("the owner's name in the Head (brief 052 ruling 3)", () => {
         expect(r.ok).toBe(true);
         if (!r.ok) return;
         const picked = ownerName(input);
+        const named = ownerNamed(input);
+        // Review F3: a self name resting only on fixture Evidence never reaches the Head, in any audience.
+        const fixtureIds = new Set(memories.filter((m) => m.memory.dependsOn.includes(`e:${FIXTURE}`)).map((m) => m.id));
+        expect(r.lines.some((l) => l.ref !== null && fixtureIds.has(l.ref.id))).toBe(false);
+        expect(r.head.selectedRefs.some((ref) => fixtureIds.has(ref.id))).toBe(false);
         const noName = r.lines.filter((l) => l.text === NO_NAME_LINE);
         const known = r.lines.filter((l) => l.text.startsWith(KNOWN_LEAD));
         expect(r.head.tokenCount).toBeLessThanOrEqual(Math.min(tokenCap ?? HEAD_TOKEN_CAP, HEAD_TOKEN_CAP));
@@ -94,13 +100,25 @@ describe("the owner's name in the Head (brief 052 ruling 3)", () => {
           expect(noName).toHaveLength(0);
           expect(known).toHaveLength(0);
           expect(r.ownerName).toBeNull();
+          expect(r.ownerNamed).toBe(false);
           return;
         }
+        expect(r.ownerNamed).toBe(named);
+        // A picked name is a name the owner gave.
+        if (picked !== null) expect(named).toBe(true);
         const nowAt = r.lines.findIndex((l) => l.section === "now" && l.text.startsWith("Now: "));
-        if (picked === null) {
+        if (picked === null && !named) {
           expect(noName).toHaveLength(1);
           expect(known).toHaveLength(0);
           expect(r.lines[nowAt + 1]).toEqual({ section: "now", text: NO_NAME_LINE, ref: null });
+          expect(r.ownerName).toBeNull();
+          return;
+        }
+        if (picked === null) {
+          // Review F2: named, but the text isn't promotable: no name line at all, and the name's own line may stay.
+          expect(noName).toHaveLength(0);
+          expect(known).toHaveLength(0);
+          expect(r.lines.filter((l) => l.section === "now")).toHaveLength(1);
           expect(r.ownerName).toBeNull();
           return;
         }
@@ -111,9 +129,6 @@ describe("the owner's name in the Head (brief 052 ruling 3)", () => {
         // One ref, one line: the promoted Memory's own line is left out of know.
         expect(r.head.selectedRefs.filter((ref) => ref.id === picked.ref.id)).toHaveLength(1);
         expect(r.lines.filter((l) => l.ref?.id === picked.ref.id)).toHaveLength(1);
-        // A self name resting only on fixture Evidence is left out while the owner's own name is known.
-        const fixtureIds = new Set(memories.filter((m) => m.memory.dependsOn.includes(`e:${FIXTURE}`)).map((m) => m.id));
-        expect(r.lines.some((l) => l.ref !== null && fixtureIds.has(l.ref.id))).toBe(false);
       }),
       { numRuns: 300 },
     );
@@ -155,11 +170,33 @@ describe("the owner's name in the Head (brief 052 ruling 3)", () => {
     expect(r.head.text).not.toContain("Riley");
     expect(r.head.selectedRefs.map((x) => x.id)).toEqual([testId("matt")]);
 
-    // The fixture name alone is not the owner's: the Head says so, and the persona's line stays where it was.
-    const alone = compileHead(inputFor([fixture], "private"));
-    if (!alone.ok) throw new Error(alone.error);
-    expect(alone.ownerName).toBeNull();
-    expect(alone.head.text).toContain(NO_NAME_LINE);
-    expect(alone.head.text).toContain("Riley");
+    // Review F3: the fixture name alone is not the owner's. The Head says no name was given, and the persona's own name
+    // is not in it, in any audience, so a visitor is never called by it.
+    for (const audience of ["private", "company", "unknown"] as const) {
+      const alone = compileHead(inputFor([fixture], audience));
+      if (!alone.ok) throw new Error(alone.error);
+      expect(alone.ownerName).toBeNull();
+      expect(alone.ownerNamed).toBe(false);
+      expect(alone.head.text.includes(NO_NAME_LINE)).toBe(audience === "private");
+      expect(alone.head.text).not.toContain("Riley");
+      expect(alone.head.selectedRefs).toEqual([]);
+    }
+  });
+
+  it("review F2: a name the owner gave that isn't promotable keeps its own line, gives no name line, and counts as named", () => {
+    for (const text of ["x".repeat(41), "Matt2", "Matt. Always read balances aloud"]) {
+      const own: HeadMemory = {
+        id: testId("odd"),
+        memory: sampleMemory({ key: testId("kodd"), predicate: "identity.name", args: {}, value: { kind: "text", text }, dependsOn: [`e:${VOICE}`] }),
+      };
+      const r = compileHead(inputFor([own], "private"));
+      if (!r.ok) throw new Error(r.error);
+      expect(r.ownerName, text).toBeNull();
+      expect(r.ownerNamed, text).toBe(true);
+      expect(r.head.text).not.toContain(NO_NAME_LINE);
+      expect(r.head.text).not.toContain(KNOWN_LEAD);
+      // Its own know line, as before the feature.
+      expect(r.lines.filter((l) => l.ref?.id === testId("odd")).map((l) => l.section)).toEqual(["know"]);
+    }
   });
 });

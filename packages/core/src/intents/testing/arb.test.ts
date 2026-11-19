@@ -2,7 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { INTENT_NAMES } from "../classes";
 import { arbP, arbProbabilities } from "./arb-intents";
-import { AUDIENCES, JUDGES, NOTE_SENS, SOURCES, TRANSCRIPTS, WAVES, allRuleInputs, arbRuleInput } from "./arb-rule-input";
+import { AUDIENCES, JUDGES, MEET_LINES, NOTE_SENS, SOURCES, TRANSCRIPTS, WAVES, allRuleInputs, arbRuleInput } from "./arb-rule-input";
 
 describe("intents and rule-input generators", () => {
   it("probabilities include the boundaries and stay in [0, 1]", () => {
@@ -24,12 +24,15 @@ describe("intents and rule-input generators", () => {
     expect(seen((x) => x.noteSens)).toEqual(new Set(NOTE_SENS));
     expect(seen((x) => x.wave)).toEqual(new Set(WAVES));
     expect(seen((x) => x.parse.kind)).toEqual(new Set(["ordinary", "hit", "failed", "none"]));
+    // Brief 052 review F8: with and without each meet line.
+    expect(seen((x) => x.meetLine ?? "none")).toEqual(new Set(["none", ...MEET_LINES]));
   });
 
   it("the enum part enumerates exhaustively under two boolean profiles", () => {
     let n = 0;
     for (const _ of allRuleInputs()) n++;
-    // 4 sources × 3 transcripts × 6 judges × 16 parses × 3 audiences × 3 note levels × 2 waves × 2 profiles
-    expect(n).toBe(4 * 3 * 6 * 16 * 3 * 3 * 2 * 2);
+    // 4 sources × 3 transcripts × 6 judges × 16 parses × 3 audiences × 3 note levels × 2 waves × 2 profiles, then
+    // the meet line's row (brief 052 review F8): 2 lines × 4 sources × 3 transcripts × 16 parses × 3 audiences × 2.
+    expect(n).toBe(4 * 3 * 6 * 16 * 3 * 3 * 2 * 2 + 2 * 4 * 3 * 16 * 3 * 2);
   });
 });

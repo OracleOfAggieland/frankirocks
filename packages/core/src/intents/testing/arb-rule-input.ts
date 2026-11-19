@@ -3,6 +3,7 @@
  */
 import fc from "fast-check";
 import type { RuleInput, RuleParse } from "../../admission";
+import { MEET_AGAIN_LINE, MEET_LINE } from "../../voice/lines";
 import { CONTROL_CLASSES, type ControlClass } from "../classes";
 import { choose } from "../parse";
 
@@ -13,6 +14,8 @@ export const AUDIENCES = ["private", "company", "unknown"] as const;
 export const NOTE_SENS = ["none", "S0", "S1+"] as const;
 export const WAVES = ["A", "B"] as const;
 export const FAIL_WHYS = ["deadline", "transport", "invalid", "oversize"] as const;
+/** Brief 052 ruling 5: the first meeting's two lines, the only values `meetLine` takes. */
+export const MEET_LINES = [MEET_LINE, MEET_AGAIN_LINE] as const;
 
 const arbCandidates: fc.Arbitrary<ControlClass[]> = fc.subarray([...CONTROL_CLASSES]);
 
@@ -27,7 +30,7 @@ export const arbRuleParse: fc.Arbitrary<RuleParse> = fc.oneof(
   fc.constant({ kind: "none" } as const),
 );
 
-export const arbRuleInput: fc.Arbitrary<RuleInput> = fc.record({
+const arbBaseRuleInput: fc.Arbitrary<RuleInput> = fc.record({
   source: fc.constantFrom(...SOURCES),
   transcript: fc.constantFrom(...TRANSCRIPTS),
   judge: fc.constantFrom(...JUDGES),
@@ -44,6 +47,11 @@ export const arbRuleInput: fc.Arbitrary<RuleInput> = fc.record({
   wave: fc.constantFrom(...WAVES),
 });
 
+/** Brief 052 review F8: about one input in six carries a meet line, so the rule properties cover its row. */
+export const arbRuleInput: fc.Arbitrary<RuleInput> = fc
+  .tuple(arbBaseRuleInput, fc.oneof({ weight: 5, arbitrary: fc.constant(null) }, { weight: 1, arbitrary: fc.constantFrom(...MEET_LINES) }))
+  .map(([i, meetLine]) => (meetLine === null ? i : { ...i, meetLine }));
+
 /**
  * Every combination of the enum parts of RuleInput (source, transcript, judge, parse shape, audience, note level,
  * wave), with 16 parse shapes (ordinary, each class the rule names alone at 0.9 plus `food` for the rest, forget and company
@@ -51,6 +59,9 @@ export const arbRuleInput: fc.Arbitrary<RuleInput> = fc.record({
  * final audio and a committed tool parse. The full product (1.7 M inputs) ran about 67 s, and 54 k inputs 5.5 s
  * under the full suite, past vitest's 5 s test timeout; the fast-check half of property 8 draws classes and
  * booleans freely.
+ *
+ * Brief 052 review F8: then the meet line's row, each line over every source, transcript, parse shape and audience,
+ * with and without a narrowed call, judge typed, note level none and wave B (a meet line's other fields never decide).
  */
 export function* allRuleInputs(): Generator<RuleInput> {
   const parses: RuleParse[] = [
@@ -76,4 +87,10 @@ export function* allRuleInputs(): Generator<RuleInput> {
           for (const audience of AUDIENCES)
             for (const noteSens of NOTE_SENS)
               for (const wave of WAVES) for (const b of profiles) yield { source, transcript, judge, parse, audience, noteSens, wave, ...b };
+  for (const meetLine of MEET_LINES)
+    for (const source of SOURCES)
+      for (const transcript of TRANSCRIPTS)
+        for (const parse of parses)
+          for (const audience of AUDIENCES)
+            for (const narrowedHere of [false, true]) yield { source, transcript, judge: "typed", parse, audience, noteSens: "none", wave: "B", ...profiles[0]!, narrowedHere, meetLine };
 }

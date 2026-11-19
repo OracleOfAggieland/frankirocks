@@ -1,6 +1,7 @@
 /**
- * Brief 052 ruling 7: a short answer to the first meeting's question is still saved. The owner's first two turns in a
- * Session whose open said a meet line carry that question as the packet's `pending`; every other turn carries null.
+ * Brief 052 ruling 7: a short answer to the first meeting's question is still saved. The owner's first turn in a
+ * Session whose open said a meet line carries that question as the packet's `pending` (review F4: the first only);
+ * every other turn carries null.
  * The hint is code's fixed words: it changes neither the span rule nor authority, and adds no dependency.
  */
 import { EXTRACT_INSTRUCTIONS, type Evidence, type Memory, MEET_AGAIN_LINE, MEET_LINE, MEET_PENDING_RENDERED, type Session, idParts, knownNameLine, meetPending } from "@franki/core";
@@ -37,7 +38,7 @@ async function session(rig: Rig, id: string, typedOnly = false): Promise<void> {
 /** Offer `n` said in Session `sessionId`, as the open writes it (`recordMeetSaid`). */
 async function meetSaid(rig: Rig, n: MeetOffer, sessionId: string): Promise<void> {
   await rig.store.transaction(UID, async (tx) =>
-    recordMeetSaid(tx, UID, n, { opsNow: rig.clock.read().opsClock.now, core: { epoch: 1, policyRev: 1 }, sessionId: sessionId as never, turnId: meetTurnId(rig.deps.hasher, sessionId), permitId: testId(`permit-${n}`) }, rig.deps.hasher),
+    recordMeetSaid(tx, UID, { n, replaces: null }, { opsNow: rig.clock.read().opsClock.now, core: { epoch: 1, policyRev: 1 }, sessionId: sessionId as never, turnId: meetTurnId(rig.deps.hasher, sessionId), permitId: testId(`permit-${n}`) }, rig.deps.hasher),
   );
 }
 
@@ -72,18 +73,21 @@ describe("Brief 052 ruling 7: the first meeting's question in the ExtractV1 pack
     expect(name).toBeGreaterThan(0);
     expect(hint).toBeGreaterThan(name);
     expect(EXTRACT_INSTRUCTIONS.slice(name, hint).split("\n").filter((l) => l.startsWith("- "))).toHaveLength(1);
-    expect(EXTRACT_INSTRUCTIONS).toContain("a reply that gives no name gives no name item.");
+    // Review F4: only a reply that is just a name, or says it is the owner's own, files a name from the hint.
+    expect(EXTRACT_INSTRUCTIONS).toContain(`Only a reply that is just a name ("Matt", "It's Matt.", "Matt Avila") or that says it is the owner's own name`);
+    expect(EXTRACT_INSTRUCTIONS).toContain("Any other reply gives no name item from this, including one that only mentions someone else by name.");
   });
 
-  it("the owner's first and second turn after MEET_LINE carry the identity pending; the third carries null", async () => {
+  it("the owner's first turn after MEET_LINE carries the identity pending; the second (review F4) and third carry null", async () => {
     const rig = testRig();
     await session(rig, SES);
     await meetSaid(rig, 1, SES);
     const pending = meetPending(meetRowId(1, rig.deps.hasher));
     const first = await ownerTurn(rig, "t1", "Matt.", 1);
     expect((await extract(rig, first)).packet.pending).toEqual(pending);
-    const second = await ownerTurn(rig, "t2", "Sorry, I said Matt.", 2);
-    expect((await extract(rig, second)).packet.pending).toEqual(pending);
+    // A name in answer to a later question ("Who's coming?" "Sarah.") is never read as the owner's.
+    const second = await ownerTurn(rig, "t2", "Sarah.", 2);
+    expect((await extract(rig, second)).packet.pending).toBeNull();
     const third = await ownerTurn(rig, "t3", "It's Matt.", 3);
     expect((await extract(rig, third)).packet.pending).toBeNull();
   });

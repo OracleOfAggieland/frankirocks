@@ -55,7 +55,7 @@ import { openingProactive } from "./delivery-wire";
 // Brief 048: the forget's acknowledgment on a fresh call.
 import { ackRule, ackTurnId, dueAcks, outsideTx, readAckCandidates, takeDueAck } from "../forget/ack";
 // Brief 052: the first meeting's line.
-import { closeMeet, meetLineOf, meetOffer, meetRule, meetTurnId, readMeetRows, recordMeetSaid } from "../meet";
+import { closeMeet, meetLineOf, meetOffer, meetRule, meetSessionsToRead, meetTurnId, readMeetRows, readMeetSessions, recordMeetSaid } from "../meet";
 
 /**
  * Server time for one open, from runRoute's first line to the answer. The browser gives the whole request 5 s
@@ -191,6 +191,12 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       if (!compiled.ok) throw configError(500, "head fixed sections exceed the token cap");
       const head = compiled.head;
       const now = tsFromMs(ops);
+      // Brief 052 review F1: an offer counts only once its Session had a call, so the Sessions the said meet rows name
+      // are read here, before this open's writes, and only when this open could ask (no name on file, a private open
+      // that inherited nothing, no hold; the acknowledgment and crisis are checked again below) and a row is said.
+      const surface = openSurface(req);
+      const meetAsk = { surface, acked: false, inherited: inherited !== null, audience: inherited?.audience ?? "private", crisis: false, held: holdCarried(state, pair.worldClock.now), named: compiled.ownerNamed };
+      const meetCalls = await readMeetSessions(tx, uid, meetSessionsToRead(meetRows, meetAsk));
 
       const priorId = core.epoch.data.activeSessionId;
       const prior = priorId !== null && priorId !== sessionId ? await beginCloseInTx(tx, uid, priorId, ops, core.epoch) : null;
@@ -244,25 +250,25 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
         if (admitted.kind === "permit" && admitted.notes.length === 1) proactive = { turnId, permit: admitted.permit, whisper: admitted.notes[0]!, cards: [] };
       }
       // Brief 052 rulings 5 and 6: the first meeting's line, after the acknowledgment and the swap line had their turn,
-      // only on a private open that inherited nothing, with no crisis or hold, no owner name and an offer left. A sample
-      // visit is asked too (M-1, owner's ruling: "Intro first, demo line after"); its opening Moment waits. A typed open
-      // is never offered it (M-5), so its opening Moment path runs as before. Its row is written beside its Permit's
-      // decision, so an offer is consumed only when the line goes out.
+      // only on a private open that inherited nothing, with no crisis or hold, no name the owner gave and an offer left.
+      // A sample visit is asked too (M-1, owner's ruling: "Intro first, demo line after"); its opening Moment waits. A
+      // typed open is never offered it (M-5), so its opening Moment path runs as before. Its row is written beside its
+      // Permit's decision; review F1: a said row whose Session never had a call is said again and rewritten.
       const rowCtx = { opsNow: ops, core: { epoch: core.epoch.data.epoch, policyRev: core.epoch.data.policyRev } };
       const offer = meetOffer(meetRows, {
-        surface: openSurface(req),
+        surface,
         acked: ack !== null,
         inherited: inherited !== null,
         audience: created.audience,
         crisis: created.modifiers.crisis !== null,
         held: holdCarried(state, pair.worldClock.now),
-        ownerName: compiled.ownerName,
-      });
+        named: compiled.ownerNamed,
+      }, meetCalls);
       if (proactive === null && offer !== null) {
         const turnId = meetTurnId(deps.hasher, sessionId);
         const admitted = admitRule(
           tx,
-          { uid, requestId: req.requestId, requestEntryId: key.keyHash, turnRef: turnRef(turnId, sessionId, 1), core: rowCtx.core, opsNow: ops, stamp: { ...stamp, turnId }, head, notes: [], turns: [], audioIds: [], toolOutput: null, rule: meetRule(meetLineOf(offer)) },
+          { uid, requestId: req.requestId, requestEntryId: key.keyHash, turnRef: turnRef(turnId, sessionId, 1), core: rowCtx.core, opsNow: ops, stamp: { ...stamp, turnId }, head, notes: [], turns: [], audioIds: [], toolOutput: null, rule: meetRule(meetLineOf(offer.n)) },
           deps,
         );
         if (admitted.kind === "permit" && admitted.notes.length === 1) {
@@ -271,7 +277,8 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
         }
       }
       // Ruling 6: knowing a name closes the meeting, so a later forget of the name never brings the question back.
-      if (compiled.ownerName !== null) closeMeet(tx, uid, meetRows, rowCtx, deps.hasher);
+      // Review F2: any name the owner gave, promotable or not.
+      if (compiled.ownerNamed) closeMeet(tx, uid, meetRows, rowCtx, deps.hasher);
       const opened: OpenRes = { sessionId, generation: 1, deck: issueDeck(stamp, head, ops), state: "connecting", ack: stateAck(stamp, ops), proactive, audience: created.audience };
       await completeRequest(tx, key, opened, ops);
       return { response: opened, prior: prior === null ? null : { id: priorId!, ...prior }, stamp, session: created, narrow: inherited !== null };

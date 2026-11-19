@@ -142,6 +142,7 @@ export async function buildHead(
 ): Promise<HeadResult> {
   const memories = await readAllMemories(reader, uid);
   const snapshot = await snapshotFor(reader, uid, memories, core.epoch, generation);
-  // Brief 052 ruling 3: the result's `ownerName` passes through; the Snapshot already holds the Evidence it reads.
+  // Brief 052 ruling 3 and review F2: the result's `ownerName` and `ownerNamed` pass through; the Snapshot already
+  // holds the Evidence they read.
   return compileHead({ memories, ec: foregroundEC(uid, core.epoch, clock, generation), snapshot, rules: core.rules, clock, ...(audience === undefined ? {} : { audience }) });
 }
