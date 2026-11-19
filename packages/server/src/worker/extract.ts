@@ -6,7 +6,8 @@
  *      generation + 1).
  *   2. Packet: that Turn's Evidence as the only field; the Owner's earlier turns in the Session when this one leans
  *      on them, and related saved Memories in `open` when it says something changed or is a short reply (contract
- *      question 42). Every input is recorded in `contextIds` and `dependsOn`.
+ *      question 42). Every input is recorded in `contextIds` and `dependsOn`. The owner's first two turns after a
+ *      meet line carry its question in `pending` (brief 052 ruling 7, `meetPendingFor`), code's words, no dependency.
  *   3. Call: Responses, FRANKI_BRAIN_MODEL, effort low, store:false, tools:[], strict JSON schema, PREFIX + the
  *      ExtractV1 literal, 12,000 / 4,096 tokens, 30 s deadline (contract question 35). Invalid, refused or
  *      incomplete output, an error or
@@ -46,7 +47,9 @@ import {
   PACKET_OPEN_CAP,
   PACKET_TURNS_CAP,
   type PacketOpen,
+  type PacketPending,
   type PacketTurn,
+  type Session,
   type PlanContext,
   type Turn,
   buildExtractPacket,
@@ -68,6 +71,7 @@ import {
   sameClaim,
   canonicalJSON,
   mentionName,
+  meetPending,
   msFromTs,
   place,
   statusTransition,
@@ -79,6 +83,7 @@ import type { Env } from "../config/env";
 import { ownerClock } from "../core-docs";
 import { requireModel } from "../config/models";
 import { readAllMemories, storeReader } from "../head-build";
+import { MEET_OFFERS, meetRowId, meetSaidIn, readMeetRows } from "../meet";
 import type { OpenAIPort } from "../openai/fake";
 import type { ResponsesResult } from "../openai/responses";
 import { DAY_MS, cFields } from "../records";
@@ -147,15 +152,51 @@ export function workerRenames(all: readonly HeadMemory[]): RenameIndex {
   return renameIndex(all, all.filter(openable));
 }
 
+type TurnDoc = { id: string; data: Turn };
+
+/** The Turn the Evidence was committed as, read once and shared by `priorTurns` and `meetPendingFor`. */
+export async function currentTurn(store: StorePort, uid: string, evidence: Evidence): Promise<TurnDoc | null> {
+  if (evidence.sessionId === null || evidence.turnId === null) return null;
+  return store.get<Turn>(uid, paths.turn(uid, evidence.sessionId, evidence.turnId));
+}
+
+/** Brief 052 ruling 7: the owner's turns, from the Session's first (`seq` 1, `sessions.ts`), that answer a meet line. */
+export const MEET_ANSWER_TURNS = 2;
+
+/**
+ * Brief 052 ruling 7: the packet's `pending`. A bare "Matt." means nothing to ExtractV1 on its own, and Franki's lines
+ * are never in `lastTurns`, so the owner's first two turns in a Session whose open asked what to call them carry that
+ * question (`meetPending`, code's fixed words with the meet row's ID). Null everywhere else: a later turn, a Session
+ * whose open said no meet line (the row names the Session it was said in, `meetSaidIn`), a Session that never had a
+ * call (a typed Session's open carries the line, but the typed screen never shows it, so nobody asked), and any
+ * Evidence with no Turn (a seeded record). It adds no dependency and never becomes quotable: only `fields` are.
+ *
+ * Reads, only where they can matter: the Turn (shared with `priorTurns`); for an owner's U turn at `seq` 1 or 2, the
+ * two meet rows by ID; and when one of them names this Session, the Session, for its call.
+ */
+export async function meetPendingFor(store: StorePort, uid: string, evidence: Evidence, hasher: Pick<Hasher, "id">, turn: Promise<TurnDoc | null> = currentTurn(store, uid, evidence)): Promise<PacketPending | null> {
+  const sessionId = evidence.sessionId;
+  if (sessionId === null) return null;
+  const current = await turn;
+  if (current === null || current.data.role !== "user" || current.data.sourceClass !== "U") return null;
+  if (current.data.seq < 1 || current.data.seq > MEET_ANSWER_TURNS) return null;
+  const rows = await readMeetRows(storeReader(store, uid), uid, hasher);
+  const said = MEET_OFFERS.find((_, i) => meetSaidIn(rows[i]) === sessionId);
+  if (said === undefined) return null;
+  const session = await store.get<Session>(uid, paths.session(uid, sessionId));
+  if (session === null || (session.data.callId === null && session.data.registeredCallIds.length === 0)) return null;
+  return meetPending(meetRowId(said, hasher));
+}
+
 /**
  * The packet's `lastTurns`: up to 4 of the Owner's own turns before this one in the same Session (user role, Source
  * Class U, retained Evidence), in R19.6 order (`turnOrder`). Franki's replies are left out: they are never the
  * Owner's word, and a short reply ("With a P.") reads against what the Owner said before it.
  */
-export async function priorTurns(store: StorePort, uid: string, evidence: Evidence): Promise<PriorTurns> {
+export async function priorTurns(store: StorePort, uid: string, evidence: Evidence, turn: Promise<TurnDoc | null> = currentTurn(store, uid, evidence)): Promise<PriorTurns> {
   if (evidence.sessionId === null || evidence.turnId === null) return NO_TURNS;
   const sessionId = evidence.sessionId;
-  const current = await store.get<Turn>(uid, paths.turn(uid, sessionId, evidence.turnId));
+  const current = await turn;
   if (current === null || current.data.seq <= 0) return NO_TURNS;
   const seq = current.data.seq;
   const rows = await store.query<Turn>(uid, {
@@ -306,10 +347,13 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
   // when it says something changed or is a short reply, and then only related Memories. Every input becomes a
   // dependency of what the packet writes.
   const said = evidenceFieldText(evidence, "text") ?? "";
-  const [earlier, all] = await Promise.all([
-    needsEarlierTurns(said) ? priorTurns(deps.store, uid, evidence) : Promise.resolve(NO_TURNS),
+  const turn = currentTurn(deps.store, uid, evidence);
+  const [earlier, all, pending] = await Promise.all([
+    needsEarlierTurns(said) ? priorTurns(deps.store, uid, evidence, turn) : Promise.resolve(NO_TURNS),
     // Every turn reads the Memories: the rename index (task C4) decides whose a name is, even with no `open` list.
     readAllMemories(storeReader(deps.store, uid), uid),
+    // Brief 052 ruling 7: the first meeting's question, for the owner's first two turns after a meet line.
+    meetPendingFor(deps.store, uid, evidence, deps.hasher, turn),
   ]);
   const renames = workerRenames(all);
   const refsBefore = new Set(handledFor(rulesBefore === null ? null : (withRulesDefaults(rulesBefore.data) as CoreRules), eid).refs);
@@ -328,6 +372,8 @@ export async function runExtractJob(uid: string, jobId: string, deps: ExtractDep
     currentZone: stateDoc?.data.currentZone ?? null,
     open: open.list,
     lastTurns: earlier.turns,
+    // Code's fixed words, not owner data: not in `context`, so no dependency (ruling 7).
+    pending,
   });
   const model = requireModel("brain", deps.env);
   const body = extractRequest(model, packet);

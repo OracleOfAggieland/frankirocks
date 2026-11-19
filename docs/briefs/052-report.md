@@ -1,7 +1,6 @@
 # Brief 052 report: the first meeting
 
-Claude built Parts A and B from `052-first-meeting.md`. Kiro wrote none of it. Part C (the short answer, ruling 7) is
-not built here; its builder adds its own section below.
+Claude built Parts A, B and C from `052-first-meeting.md`. Kiro wrote none of it.
 
 ## Part A: the name in the Head (rulings 1 to 4)
 
@@ -103,6 +102,55 @@ seeded clone's open says the wish first; the replayed open), `routes/receipt-mom
 `routes/audience-call-again.test.ts`, `routes/open-audience-any.test.ts`, `routes/delivery-never-breaks.property.test.ts`,
 `time/held-reminder.test.ts`. They are untouched and pass with the gate.
 
+## Part C: the short answer (ruling 7)
+
+**Built.**
+
+- `packages/core/src/extract.ts`: `ExtractPacket.pending` is `PacketPending | null` (the contract's
+  `{id, rev, kind: PendingKind, rendered, optionIds}`); `buildExtractPacket` takes an optional `pending` and still sends
+  null without one. `MEET_PENDING_RENDERED` ("What should I call you?", the tail of both meet lines) and
+  `meetPending(rowId)` give the one pending code fills: `{id: rowId, rev: 1, kind: "identity", rendered, optionIds: []}`.
+  `EXTRACT_GUIDE` gains one bullet straight after the owner's-name bullet: when `pending.kind` is `identity`, Franki
+  had just asked what to call the owner, so a reply that gives a name ("Matt", "It's Matt.", "Matt Avila") is
+  `identity.name` (`identity.alias` for a nickname) with the span on the name in the owner's words, and a reply that
+  gives no name gives no name item.
+- `packages/server/src/worker/extract.ts`: `meetPendingFor` fills `pending` for an owner's U user Turn at `seq` 1 or 2
+  (`MEET_ANSWER_TURNS`; a Session's `nextClientSeq` starts at 1 and the turn route compare-and-sets it, so these are the
+  owner's first two turns in it) when a meet row's `meetSaidIn` is that Session, and the Session has had a call. Null
+  everywhere else. `currentTurn` reads the Turn once; `priorTurns` now takes that read as an optional argument, so a
+  short reply does not read its Turn twice. The pending is passed to the packet only: it is not in `context`, so it is
+  in no `contextIds`, `dependsOn` or `packetEids`, and the span rule (only `fields[0].text` is quotable) and the
+  authority checks are untouched.
+
+**Reads the worker adds.** Per extract job with a Session and Turn: one point read of its Turn (before, only a short
+or pointing-back turn read it, inside `priorTurns`; now that read is shared). Only for a U user Turn at `seq` 1 or 2:
+the two meet rows by ID, one batch. Only when one of them names this Session: one point read of the Session. Seeded
+Evidence (no Session) reads nothing more. No queries are added, so no index.
+
+**Departure.** The ruling keys the pending off the meet row's Session only. The worker also needs that Session to have
+had a call (`callId` or `registeredCallIds`, as the turn route's `noCallOpen` reads it). Reading the code, a typed
+Session's open goes through the same `openRoute`, so a typed-only owner's first open can record a meet row and carry
+`MEET_LINE` as its `proactive`; the typed screen drops it (`showsOnScreen` needs `asks: false`), so nobody asked, and the
+brief's test wants a typed turn with no call to carry null. Without the check that typed Session's first two turns
+would carry the hint. **Finding for Part B (not changed here):** that typed open also consumes a meet offer the owner
+never heard, against ruling 9 ("a typed-only owner is never asked") and the "at most twice" count. Not shown by a test;
+read from `open.ts`, `typed-turns.ts` and `app-controllers.ts`.
+
+**Tests** (`packages/server/src/worker/extract.meet.test.ts`, 14; red first: with the worker passing `pending: null`, the
+7 that need the hint failed and the 7 null cases passed): the pending's fixed words and both meet lines ending in them;
+the guide bullet's place; the first and second owner turn after `MEET_LINE` carry the identity pending and the third
+null; after `MEET_AGAIN_LINE` the pending names row 2; null for no row, a row said in another Session, and rows closed
+`met`; null for a typed-only Session with a meet row; null for seeded Evidence and for a turn with no Turn record; null
+for an assistant Turn and a T Turn at `seq` 1; a scripted bare "Matt." gives `identity.name`, class U, active, its slice
+on the owner's turn, depending only on that Evidence, and the next Head's "You're talking with Matt" line; with the
+pending set and the owner saying "Sure.", a name item whose span quotes the hint, mismatches the owner's words, runs
+past the turn, or names the meet line's turn writes nothing; the extract leaves the meet rows unchanged. No existing
+test changed. The sample persona's seeded turns carry null by construction (their Evidence has no Session); the
+existing extract suites (authority, lineage, backstop and the rest) pass unchanged.
+
+**Not shown:** whether the real brain model files a bare name from the hint (no paid call was made;
+`scripts/extract-check` was not run), and how a real owner answers.
+
 ## Contract questions
 
 - **M-1. The sample visit's first open: the meet line or the wish?** Memory spec §15 (`docs/design/memory-spec-v3.md`,
@@ -116,6 +164,12 @@ seeded clone's open says the wish first; the replayed open), `routes/receipt-mom
   first open carries MEET_LINE again" can't happen while M-1 holds; the test checks that a reset clears both rows.
 - **M-2. A Server_Rule row for the meet line** (`meetLine`, after row 1), not in the voice-control design's table.
 - **M-3. `met` as a `complete` row with no turn ref**, not a new ledger state.
+- **M-4. The ExtractV1 `pending.id` is a ledger row's ID, not a `pending/` document's.** The contract's `pending` slot
+  names a pending question by `{id, rev}`; the `pending/` collection is not built, so the id is the meet row's
+  (`meetRowId(n)`) and `rev` is 1. Nothing reads it back: the model is told to copy ids only from `open` or roster, and
+  code builds `contextIds` itself.
+- **M-5. A meet line said on a typed-only open** (Part C's departure above): should the open skip the meet line when no
+  call will play it, so a typed open consumes no offer?
 
 ## What the tests cover, and what only a live call can show
 
@@ -142,3 +196,16 @@ Last runs before the Part B commit, on the Part B tree:
   which failed alone too (the meet line); fixed as above and passing alone (2 of 2). Shard 3 was not rerun whole.
 - The harness moved each shard command to the background after 180 s; each was waited on to the end before the next.
 - The emulator suite was not run (the director runs it).
+
+## Checks (final, on the Part C tree)
+
+Each run whole, one after another, on the tree that was committed:
+
+- `npm run typecheck`: 4 of 4 tasks successful.
+- `npm run lint -- --force`: 0 errors, 1 warning, the same existing one in `brass.ts` 113:107.
+- `npx vitest run --shard=1/3`: 247 files passed, 2,128 passed, 17 expected fail, 0 failed.
+- `--shard=2/3`: 247 files passed, 1,929 passed, 2 expected fail, 0 failed (it holds the new
+  `extract.meet.test.ts`, 14).
+- `--shard=3/3`: 246 files passed, 1,835 passed, 2 expected fail, 0 failed. This whole run supersedes the Part B
+  shard 3 run above.
+- The emulator suite was not run (the director runs it). No paid model call was made.

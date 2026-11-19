@@ -14,6 +14,7 @@ import {
   ID,
   MemoryKind,
   PREDICATES,
+  PendingKind,
   Pred,
   Role,
   Sens,
@@ -90,6 +91,7 @@ Items
 
 Which claim (predicate, kind, value, args)
 - The owner's name: identity.name, subject self, value text. A nickname or what the owner likes to be called ("call me Lex", "I go by Lex") is identity.alias, subject self, value text = the nickname, args.entityRef "self"; it never replaces identity.name. Someone else's nickname: identity.alias with subject and args.entityRef = their mention.
+- When pending.kind is "identity", Franki had just asked what to call the owner, so a reply that gives a name ("Matt", "It's Matt.", "Matt Avila") is identity.name (identity.alias for a nickname), with the span on the name in the owner's words; a reply that gives no name gives no name item.
 - A person or pet in the owner's life: person.relation, subject self, value enum code (parent, child, sibling, sister, brother, partner, spouse, friend, colleague, boss; pets and anyone else: other), args.otherRef = the mention of that person or pet, args.label = the owner's word for them ("dog", "sister", "dentist"), args.employerRef null unless said. Example: "My dog is called Pip." gives person.relation, code other, otherRef "m1" (a pet mention, observedName "Pip"), label "dog".
 - Where someone lives: place.residence, subject self or the person's mention, value entity = the place mention.
 - Work: employment.role (value text = the role, args.employerRef = organization mention) or employment.status.
@@ -329,7 +331,7 @@ export interface ExtractPacket {
   roster: { id: string; rev: number; type: string; label: string }[];
   open: PacketOpen[];
   lastTurns: PacketTurn[];
-  pending: null;
+  pending: PacketPending | null;
   anchors: never[];
   cursor: { fieldIndex: number; offset: number };
 }
@@ -349,6 +351,25 @@ export interface PacketTurn {
   role: "user" | "assistant";
   text: string;
 }
+
+/**
+ * The question the owner is answering (contracts §5 ExtractV1 `pending`). Brief 052 ruling 7: the only one code fills
+ * is the first meeting's, for the owner's first two turns in a Session whose open asked what to call them. Its words
+ * are code's fixed words, never owner data: spans never quote it and it adds no dependency.
+ */
+export interface PacketPending {
+  id: string;
+  rev: number;
+  kind: Infer<typeof PendingKind>;
+  rendered: string;
+  optionIds: string[];
+}
+
+/** Brief 052 ruling 7: the meet lines' question, as `pending.rendered`. */
+export const MEET_PENDING_RENDERED = "What should I call you?";
+
+/** The `pending` of a turn answering the first meeting's question; `id` is the meet row's ledger ID, not a `pending/` document's (contract question M-4, brief 052 report). */
+export const meetPending = (rowId: string): PacketPending => ({ id: rowId, rev: 1, kind: "identity", rendered: MEET_PENDING_RENDERED, optionIds: [] });
 
 export const PACKET_OPEN_CAP = 40;
 export const PACKET_OPEN_CHARS = 320;
@@ -443,6 +464,7 @@ export function openRefOf(m: Pick<Memory, "rev" | "predicate" | "kind" | "subjec
  * ("with a P", "yes, that one") and pronouns can be read. The worker sends them only when the turn needs them
  * (`wantsOpen`, `needsEarlierTurns`) and records them as dependencies. Both are context: only `fields` can be
  * quoted, and code checks every `targetMid` against `open`. The roster stays empty (no entity records yet).
+ * `pending` is null unless the worker passes the question the turn answers (brief 052 ruling 7, `meetPending`).
  */
 export function buildExtractPacket(input: {
   jobId: string;
@@ -454,6 +476,8 @@ export function buildExtractPacket(input: {
   currentZone: string | null;
   open?: readonly PacketOpen[];
   lastTurns?: readonly PacketTurn[];
+  /** Brief 052 ruling 7: the question this turn answers; null unless the worker found one. */
+  pending?: PacketPending | null;
 }): ExtractPacket {
   const text = evidenceFieldText(input.evidence, "text") ?? "";
   const slice = input.evidence.fieldSlices.find((s) => s.fieldPath === "text")!;
@@ -470,7 +494,7 @@ export function buildExtractPacket(input: {
     roster: [],
     open: (input.open ?? []).slice(0, PACKET_OPEN_CAP).map((o) => ({ ...o, rendered: o.rendered.slice(0, PACKET_OPEN_CHARS) })),
     lastTurns: (input.lastTurns ?? []).slice(-PACKET_TURNS_CAP).map((t) => ({ ...t, text: t.text.slice(0, PACKET_TURN_CHARS) })),
-    pending: null,
+    pending: input.pending ?? null,
     anchors: [],
     cursor: { fieldIndex: 0, offset: 0 },
   };
