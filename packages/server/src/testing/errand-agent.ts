@@ -79,7 +79,9 @@ export type PlannerStep =
   | { call: string; args?: unknown }
   | { outcome: "answered" | "nothing" | "failed"; lines?: { text: string; refs: string[] }[] }
   | { raw: unknown }
-  | { never: true };
+  | { never: true }
+  /** The call fails (the port throws), as a dropped connection would. */
+  | { error: true };
 
 const isPlanner = (body: unknown) => (body as { text?: { format?: { name?: unknown } } } | null)?.text?.format?.name === "ErrandResultV1";
 
@@ -96,6 +98,7 @@ export function scriptPlanner(rig: TestRig, steps: PlannerStep[], other?: (body:
     if (!isPlanner(body)) return other?.(body) ?? { kind: "error", error: new Error("unscripted responses.create") };
     const step = steps[n++] ?? { outcome: "nothing" as const };
     if ("never" in step) return { kind: "never" };
+    if ("error" in step) return { kind: "error", error: new Error("planner call failed") };
     if ("raw" in step) return ok(step.raw);
     if ("call" in step) {
       return ok(normalizeResponse({ status: "completed", output: [{ type: "function_call", status: "completed", call_id: `call_${n}`, name: step.call, arguments: JSON.stringify(step.args ?? { query: "x" }) }] } as never));

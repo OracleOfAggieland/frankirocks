@@ -7,12 +7,15 @@
  *   - a line's sensitivity is the highest over every shown read of the run (and its own refs);
  *   - a line's text is cleaned (`cleanErrandText`, review fix V3); a line empty after cleaning is dropped; a ref the
  *     planner was never shown is dropped from its line, and a line left with none is dropped;
- *   - if any shown read is class T or M and is not mail from a sender the owner has mailed, every line is card only;
- *   - otherwise, if the run has shown T or M reads (all mail from mailed senders), a line may be spoken only if
- *     EVERY ref it cites is such a read (review fix E9: a line that mixes one with an own event or own message, or
- *     cites none, is card only), attributed by code to every sender it cites, at most
- *     `ERRAND_ATTRIBUTED_SENDERS_MAX` (more: card only);
- *   - a sender the owner hasn't mailed is named by address only, never by display name (review fix T5);
+ *   - if any shown read is class T or M and is not mail with a known sender (an invitation from someone else, say),
+ *     every line is card only;
+ *   - otherwise, if the run has shown T or M reads (all mail), a line may be spoken only if EVERY ref it cites is
+ *     such a read (review fix E9: a line that mixes one with an own event or own message, or cites none, is card
+ *     only), attributed by code to every sender it cites, at most `ERRAND_ATTRIBUTED_SENDERS_MAX` (more: card only);
+ *   - owner ruling, Nov 19 (lane mail-limits): that holds whether or not the owner has mailed the sender. A sender is
+ *     named by the display name the agent kept (it keeps one only for a sender the owner mailed or whose domain
+ *     passed DMARC), else by address; a sender with neither a safe name nor a plain address can't be named, so its
+ *     line is card only;
  *   - only a run with no shown T or M read speaks its lines, as `O`.
  * With `opaque` (a read that could not be registered), every line is card only.
  * Never: reads a clock, a store or a model.
@@ -40,8 +43,11 @@ interface Effective {
   sens: Sens;
 }
 
-/** A read from someone else that the owner has mailed: the only third-party text that may be spoken. */
-const mailedThird = (r: Effective): boolean => third(r.cls) && r.read.source.kind === "mail" && r.read.sender !== null && r.read.sender.mailed;
+/**
+ * A read of someone else's mail with a known sender: the only third-party text that may be spoken. Owner ruling,
+ * Nov 19: the sender need not be one the owner has mailed.
+ */
+const sayableThird = (r: Effective): boolean => third(r.cls) && r.read.source.kind === "mail" && r.read.sender !== null;
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -71,12 +77,21 @@ export const errandAddressLabel = (address: string): string => {
   return a.length <= 254 && ADDRESS_LABEL.test(a) ? a : UNKNOWN_ADDRESS_LABEL;
 };
 
-const unmailedSender = (r: ErrandRead): boolean => r.sender !== null && !r.sender.mailed;
-const nameOf = (r: ErrandRead): string => (unmailedSender(r) ? errandAddressLabel(r.sender!.address) : safeName(r.sender?.name ?? (r.source.kind === "mail" ? r.source.from : "")));
+/**
+ * Owner ruling, Nov 19: a sender by the display name the agent kept when it passes `safeName`, else by address
+ * (review fix T5's label). The agent keeps a display name only for a sender the owner mailed or one Gmail
+ * authenticated, so a stranger's chosen name is never said for an unchecked domain.
+ */
+const nameOf = (r: ErrandRead): string => {
+  const name = safeName(r.sender?.name ?? (r.source.kind === "mail" ? r.source.from : ""));
+  if (name !== SAFE_NAME_FALLBACK || r.sender === null) return name;
+  const address = errandAddressLabel(r.sender.address);
+  return address === UNKNOWN_ADDRESS_LABEL ? SAFE_NAME_FALLBACK : address;
+};
 // Review fix V8: one address under two names is two senders, so each is named (or the line is card only).
 const keyOf = (r: ErrandRead): string => `${r.sender !== null ? r.sender.address.trim().toLowerCase() : ""}|${nameOf(r)}`;
-/** Review fix V8: a sender whose name does not pass `safeName` cannot be named, so its line is card only. */
-const nameable = (r: ErrandRead): boolean => !unmailedSender(r) && nameOf(r) !== SAFE_NAME_FALLBACK;
+/** Review fix V8: a sender with neither a safe name nor a plain address cannot be named, so its line is card only. */
+const nameable = (r: ErrandRead): boolean => nameOf(r) !== SAFE_NAME_FALLBACK;
 
 /**
  * Code's attribution for the third-party reads a line cites: "From Dana Park, Tuesday:", "From Dana Park and Pat Lee,
@@ -112,7 +127,7 @@ export function taintErrandLines(lines: readonly CheckedLine[], reads: readonly 
   const runSens = shown.reduce<Sens>((a, e) => higherSens(a, e.sens), "S0");
   const runCls = shown.reduce<Class>((a, e) => lowerTrust(a, e.cls), "U");
   // `opaque`: a tool read something it could not register, so the planner may have seen text nobody knows.
-  const untrusted = opaque || shown.some((e) => third(e.cls) && !mailedThird(e));
+  const untrusted = opaque || shown.some((e) => third(e.cls) && !sayableThird(e));
   const hasThird = shown.some((e) => third(e.cls));
 
   const out: ErrandLine[] = [];
@@ -125,11 +140,11 @@ export function taintErrandLines(lines: readonly CheckedLine[], reads: readonly 
     const citedThird = cited.filter((e) => third(e.cls));
     const attribution = errandAttributionFor(citedThird.map((e) => e.read), at.nowMs, at.zone);
     if (untrusted || hasThird) {
-      // Card only, unless every shown third-party read is mail from a mailed sender and this line cites one to
+      // Card only, unless every shown third-party read is mail with a known sender and this line cites one to
       // name, with at most two senders.
       const senders = new Set(citedThird.map((e) => keyOf(e.read)));
-      // Review fix E9: every ref the line cites must be a mailed sender's mail; a mix is card only.
-      const speak = !untrusted && citedThird.length > 0 && cited.every(mailedThird) && citedThird.every((e) => nameable(e.read)) && senders.size <= ERRAND_ATTRIBUTED_SENDERS_MAX;
+      // Review fix E9: every ref the line cites must be someone's mail; a mix is card only.
+      const speak = !untrusted && citedThird.length > 0 && cited.every(sayableThird) && citedThird.every((e) => nameable(e.read)) && senders.size <= ERRAND_ATTRIBUTED_SENDERS_MAX;
       out.push({ text, refs, cls: lowerTrust(cited.reduce<Class>((a, e) => lowerTrust(a, e.cls), l.cls), runCls), sens, attribution, speak });
       continue;
     }

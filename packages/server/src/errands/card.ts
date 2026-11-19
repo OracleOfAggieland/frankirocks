@@ -3,7 +3,7 @@
  * source behind those lines: sender, subject and date for mail; title and time for an event. No links, and no text
  * from a message other than its subject and the helper's line.
  */
-import { type Au, type Card, ERRAND_LABEL_CHARS, ERRAND_UNMAILED_MARKER, type Errand, type ErrandRead, type ErrandSource, type ID, type Ref, type Sens, aboutPhrase, cleanErrandText, errandAddressLabel, safeName } from "@franki/core";
+import { type Au, type Card, ERRAND_LABEL_CHARS, ERRAND_UNMAILED_MARKER, type Errand, type ErrandRead, type ErrandSource, type ID, type Ref, type Sens, aboutPhrase, cleanErrandText, errandAddressLabel, SAFE_NAME_FALLBACK, safeName } from "@franki/core";
 import type { LineVerdict } from "./gate";
 
 const SENS: readonly Sens[] = ["S0", "S1", "S2"];
@@ -19,21 +19,26 @@ function when(at: string, zone: string, withTime: boolean): string {
 
 /**
  * One source as a card line. Review fix V3: the subject and title are cleaned here too, however they were stored.
- * Review fix T5: a sender the owner hasn't mailed shows as their address and the date only.
+ * Owner ruling, Nov 19: every sender shows with the subject; by the display name the agent kept (only for a sender the
+ * owner mailed or one Gmail authenticated), else by address (review fix T5's label).
  */
 export function sourceLine(s: ErrandSource, zone: string, sender: ErrandRead["sender"] = null): string {
-  if (s.kind === "mail" && sender !== null && !sender.mailed) return `${errandAddressLabel(sender.address)} · ${when(s.at, zone, false)}`;
   if (s.kind === "mail") {
     const subject = cleanErrandText(s.subject).slice(0, ERRAND_LABEL_CHARS);
-    return `${safeName(s.from)} · ${subject.length === 0 ? "(no subject)" : subject} · ${when(s.at, zone, false)}`;
+    const name = safeName(s.from);
+    const who = name !== SAFE_NAME_FALLBACK || sender === null ? name : errandAddressLabel(sender.address);
+    return `${who} · ${subject.length === 0 ? "(no subject)" : subject} · ${when(s.at, zone, false)}`;
   }
   const title = cleanErrandText(s.title).slice(0, ERRAND_LABEL_CHARS);
   return `${title.length === 0 ? "(no title)" : title} · ${s.allDay ? `${when(s.startsAt, zone, false)}, all day` : when(s.startsAt, zone, true)}`;
 }
 
-/** Review fix T4: the planner was shown a third party's message or invite that isn't from a sender the owner mailed. */
+/**
+ * Review fix T4: the planner was shown a third party's invite. Owner ruling, Nov 19: anyone's mail is now shown and
+ * attributed line by line, so mail alone no longer adds the marker.
+ */
 export const readStrangers = (reads: readonly ErrandRead[]): boolean =>
-  reads.some((r) => r.shown && (r.cls === "T" || r.cls === "M") && !(r.source.kind === "mail" && r.sender !== null && r.sender.mailed));
+  reads.some((r) => r.shown && (r.cls === "T" || r.cls === "M") && !(r.source.kind === "mail" && r.sender !== null));
 
 /**
  * Whether a line's verdict puts it on the card for this audience. Review fix T9: delivery asks the same question

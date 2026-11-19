@@ -3,10 +3,12 @@
  * (`list_events`, `find_free_time`). Each executor calls the part B read functions and registers every row whose text
  * it puts in a tool output, with the row's stored class and sensitivity.
  *
- * What the planner is shown (director's rule): for a message whose sender the owner has not mailed, `search_mail`
- * answers the ref, the sender's address and the date, never the subject, and registers the read as not shown. For a
- * mailed sender (or the owner's own message), the subject cut to 120 is answered and the read is registered as shown.
- * `read_mail` answers only the reader's output (ruling 24): the planner never sees a body, and the reader has no tool.
+ * What the planner is shown. Owner ruling, Nov 19 (lane mail-limits): every message `search_mail` finds is answered
+ * with its ref, sender, date and subject cut to 120, and registered as shown, whether or not the owner has mailed the
+ * sender, so a broad ask can pick the few messages that matter and what they say may be spoken with the sender named.
+ * A sender is named by display name only when the owner has mailed them or Gmail's DMARC check passed for their
+ * domain; otherwise by address. `read_mail` answers only the reader's output (ruling 24): the planner never sees a
+ * body, and the reader has no tool. The planner's tools only read, so mail can still never make Franki do anything.
  */
 import {
   CALENDAR_DAYS_MAX,
@@ -29,7 +31,6 @@ import {
   localMinuteAt,
   resolvePast,
 } from "@franki/core";
-import { withDeadline } from "../clock/timers";
 import { requireModel } from "../config/models";
 import { ownerClock, readCoreDocs } from "../core-docs";
 import { isReadableGoogle, readGoogleDoc } from "../google/connector";
@@ -52,13 +53,13 @@ export const FREE_MINUTES_MAX = 600;
 /** The reader's closed output (ruling 23). */
 export const READER_GIST_CHARS = 240;
 export const READER_PHRASE_CHARS = 80;
-/** The reader's own deadline, inside the tool's. */
-export const READER_CALL_MS = 6_000;
 
 export { CALENDAR_AGENT_ID, MAIL_AGENT_ID };
 
-const MAIL_INSTRUCTIONS =
-  "Mail agent. search_mail finds messages by sender, words, a time phrase or unread; it answers refs, senders, dates and some subjects, never bodies. read_mail reads one message found by this errand's own search and answers a short gist. Cite refs for every line.";
+export const MAIL_INSTRUCTIONS = [
+  "Mail agent. search_mail finds messages by sender, words, a time phrase or unread; it answers refs, senders, dates and subjects (newest first, at most 8), never bodies; `bulk` marks list and promotional mail. read_mail reads one message found by this errand's own search and answers a short gist. Cite refs for every line.",
+  'For a broad ask such as "what about my email?" or "anything important in my inbox?", search once with no words and no when (that answers the 8 newest messages), pick at most the 3 newest messages that matter (people and things the owner must act on or know about, such as a delivery, a bill or a reply; skip bulk mail unless asked), read those in one step with read_mail called once for each, and answer with up to 3 lines, one per message. Don\'t read every message.',
+].join(" ");
 const CALENDAR_INSTRUCTIONS =
   "Calendar agent. list_events lists the owner's events for a time phrase (at most 14 days). find_free_time answers the free gaps of at least the given minutes for a time phrase. Code does all time arithmetic. Cite refs for every line.";
 
@@ -224,17 +225,20 @@ function mailArgs(a: unknown): { from: string | null; words: string[]; when: str
 }
 
 /**
- * What the Errand keeps of a message for its card. Review fix T2: for a sender the owner hasn't mailed, nothing the
- * stranger chose (no display name, no subject); the card names them by address only (review fix T5).
+ * Owner ruling, Nov 19: a sender may be named by display name only when the owner has mailed them or Gmail's DMARC
+ * check passed for the From domain (`authenticated`), so a forged "Amazon" from another domain is named by its
+ * address. Replaces review fixes T2 and T5 (strangers by address only, with no subject).
  */
-function mailSource(h: { sender: MailHit["sender"]; subject: string | null; at: string }, mailed: boolean): ErrandSource {
-  return mailed ? { kind: "mail", from: h.sender.name, subject: h.subject ?? "", at: h.at, mailedByOwner: true } : { kind: "mail", from: "", subject: "", at: h.at, mailedByOwner: false };
+const named = (mailed: boolean, authenticated: boolean) => mailed || authenticated;
+/** What the Errand keeps of a message for its card: the subject always, the display name when it may be said. */
+function mailSource(h: { sender: MailHit["sender"]; subject: string | null; at: string; authenticated: boolean }, mailed: boolean): ErrandSource {
+  return { kind: "mail", from: named(mailed, h.authenticated) ? h.sender.name : "", subject: h.subject ?? "", at: h.at, mailedByOwner: mailed };
 }
-const senderOf = (s: MailHit["sender"], mailed: boolean) => ({ name: mailed ? s.name : "", address: s.address ?? "", mailed });
+const senderOf = (s: MailHit["sender"], mailed: boolean, authenticated: boolean) => ({ name: named(mailed, authenticated) ? s.name : "", address: s.address ?? "", mailed });
 
 const searchMailTool: ErrandTool = {
   name: "search_mail",
-  description: "Search the owner's mail. Answers refs, senders and dates (and a subject when the owner has written to the sender). Never a body.",
+  description: "Search the owner's mail, newest first. Answers refs, senders, dates, subjects and whether each is bulk mail. Never a body.",
   parameters: {
     type: "object",
     additionalProperties: false,
@@ -268,21 +272,20 @@ const searchMailTool: ErrandTool = {
     // Review fix T11: the sent-mail checks run a few at a time, inside the tool's deadline.
     // Review fix T1: mailed only on Gmail's DMARC pass, a sent message to that exact address, and no list mail.
     const mailedOf = await mapLimit(r.value.hits, SENT_CHECKS_PARALLEL, async (h) => (ctx.signal.aborted ? h.fromSelf : senderMailed(mem.g, h)));
+    const rows = await Promise.all(r.value.hits.map((h) => rowOf(ctx.route, h.eid)));
     const messages = [];
     for (const [i, h] of r.value.hits.entries()) {
       const mailed = mailedOf[i]!;
-      const row = await rowOf(ctx.route, h.eid);
+      const row = rows[i] ?? null;
       if (row === null) continue;
-      const ref = ctx.read({ evidenceId: h.eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: mailed, sender: senderOf(h.sender, mailed), source: mailSource(h, mailed) });
+      // Owner ruling, Nov 19: every message is shown (sender, subject, date), so the read is registered as shown.
+      const ref = ctx.read({ evidenceId: h.eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: true, sender: senderOf(h.sender, mailed, h.authenticated), source: mailSource(h, mailed) });
       if (ref === null) continue;
       mem.searched.set(ref, h.eid);
-      // Review fix T2: an unmailed sender's message is a ref, a date and unread, and nothing else.
       // Review fix E5: the date is local text, rendered by code.
       const at = errandLocalTime(Date.parse(h.at), now.zone);
-      messages.push(mailed ? { ref, from: h.sender.address, name: h.sender.name, at, subject: h.subject, unread: h.unread } : { ref, at, unread: h.unread });
+      messages.push({ ref, from: h.sender.address, ...(named(mailed, h.authenticated) ? { name: h.sender.name } : {}), at, subject: h.subject, unread: h.unread, bulk: h.bulk });
     }
-    // Review fix T8: everything this search found is from people the owner hasn't written to.
-    if (r.value.hits.length > 0 && mailedOf.every((m) => !m)) ctx.flag("unmailed");
     return { messages, partial: r.value.partial };
   },
 };
@@ -308,15 +311,10 @@ const readMailTool: ErrandTool = {
     } catch {
       return failure("unavailable");
     }
-    const ms = Math.min(READER_CALL_MS, Math.max(0, ctx.deadlineAt - ctx.route.deps.clock.read().opsClock.now));
     let out: ReaderOutput | null;
     try {
-      // Review fix T11: the reader's own timeout and the run's abort signal go to the request itself.
-      if (ms <= 0) {
-        ctx.flag("partial");
-        return failure("The reader could not answer just now.");
-      }
-      out = parseReader(await withDeadline(ctx.route.deps.openai.call("responses.create", readerRequest(model, ctx.ownerWords, m.value), { timeoutMs: ms, signal: ctx.signal }), ms, ctx.route.deps.timers));
+      // Review fix T11: the run's abort signal goes to the request itself. Owner ruling, Nov 19: no deadline of its own.
+      out = parseReader(await ctx.route.deps.openai.call("responses.create", readerRequest(model, ctx.ownerWords, m.value), { signal: ctx.signal }));
     } catch {
       ctx.flag("partial");
       return failure("The reader could not answer just now.");
@@ -327,7 +325,7 @@ const readMailTool: ErrandTool = {
     }
     const mailed = await senderMailed(mem.g, m.value);
     // The gist is the message's text: shown, so the framework's taint follows the row's class.
-    const ref = ctx.read({ evidenceId: eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: true, sender: senderOf(m.value.sender, mailed), source: mailSource(m.value, mailed) });
+    const ref = ctx.read({ evidenceId: eid, rev: row.rev, cls: row.cls, sens: row.sens, shown: true, sender: senderOf(m.value.sender, mailed, m.value.authenticated), source: mailSource(m.value, mailed) });
     if (ref === null) return failure("failed");
     return { ref, bears: out.bears, gist: out.gist, when: out.when, where: out.where };
   },

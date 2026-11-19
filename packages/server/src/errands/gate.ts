@@ -7,11 +7,12 @@
  *     those words asked, so a candidate's aliases are those words' own tokens, and "asked" still needs a certain
  *     speaker (a typed turn, or judge `O`), as for a recall (contract question E-260);
  *   - a third-party line carries its senders: `mailedByOwner` only when the run's taint let it be spoken, which it
- *     does only when every shown third-party read was mail from a sender the owner mailed (review fix V1).
+ *     does only when every shown third-party read was mail with a sender code can name (review fix V1; owner ruling,
+ *     Nov 19: whether or not the owner has mailed that sender, so here `mailedByOwner` means "a sender code names").
  *
  * Then, only lowering (the Gate's modifiers only subtract, and so does this):
  *   - a result is said in full only in private: any other audience lowers a `say` to `card`;
- *   - a third-party line is said only for a sender the owner has mailed, else `card`;
+ *   - a third-party line is said only with its sender named by code, else `card`;
  *   - an S2 line is never said by a late delivery, at most `card`;
  *   - a `say` whose render is not `free` or `attributed` is `card` (its words are the helper's, not a template's).
  *
@@ -51,7 +52,8 @@ export interface ErrandGateInput {
 /**
  * The senders behind a third-party line, as the Gate's `sender`. Review fix V1: decided by the run's taint
  * (`taintErrandLines`), which named every sender the line cites and checked every shown third-party read of the run;
- * a line it left card only never counts as mailed.
+ * a line it left card only never counts as mailed. Owner ruling, Nov 19: a named sender the owner hasn't mailed
+ * counts too, so "From Amazon, today: your order shipped." can be said.
  */
 function senderOf(line: ErrandLine): GateCandidate["sender"] {
   if (line.cls !== "T" && line.cls !== "M") return null;
