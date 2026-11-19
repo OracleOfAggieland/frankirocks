@@ -70,6 +70,52 @@ describe("GoogleSheet", () => {
     expect(html).toContain(esc(COPY.google.authorizing));
   });
 
+  // Google warns on every connect until it has reviewed the app: the three taps past its page are on the sheet.
+  const stepKeys = COPY.google.guide.steps.flatMap((parts) => parts.flatMap((p) => (typeof p === "string" ? [] : [p.key])));
+
+  it("lists the taps past Google's warning wherever Connect is offered", () => {
+    for (const g of [GOOGLE_OFF, GOOGLE_MAIL_ONLY, GOOGLE_EXPIRED]) {
+      const html = draw(googleShowing(g));
+      expect(html).toContain('data-google-guide="before"');
+      expect(html).toContain(esc(COPY.google.guide.heading));
+      expect(html).toContain(esc(COPY.google.guide.why));
+      for (const k of stepKeys) expect(html).toContain(`>${k}</span>`);
+      expect(html.indexOf("data-google-guide")).toBeLessThan(html.indexOf('data-action="google-connect"'));
+    }
+    expect(stepKeys).toEqual(["Advanced", "Go to", "Select all", "Continue"]);
+  });
+
+  it("keeps the taps on the sheet while Google's page is open, and drops them once connected", () => {
+    const waiting = draw(googleSpecimens().find((x) => x.id === "authorizing")!.state);
+    expect(waiting).toContain('data-google-guide="waiting"');
+    expect(waiting).toContain(COPY.google.guide.waiting);
+    for (const k of stepKeys) expect(waiting).toContain(`>${k}</span>`);
+    expect(draw(googleShowing(GOOGLE_CONNECTED))).not.toContain("data-google-guide");
+    expect(draw(googleAfter([{ kind: "opened", at: 1 }]))).not.toContain("data-google-guide");
+  });
+
+  it("says what to tick when Google's last page was left unticked", () => {
+    const s = googleSpecimens().find((x) => x.id === "nothing-granted")!.state;
+    expect(googleStatusLine(s)).toBe(COPY.google.notes.nothingGranted);
+    expect(COPY.google.notes.nothingGranted).toContain("Select all");
+    expect(COPY.google.notes.denied).toContain("Advanced");
+  });
+
+  it("inside another app's browser, offers the link first and Connect only as a fallback", () => {
+    const html = renderToStaticMarkup(
+      <ReducedMotionOverride reduced>
+        <GoogleSheet state={googleShowing(GOOGLE_OFF)} zone={GOOGLE_ZONE} inApp="Facebook" {...actions} />
+      </ReducedMotionOverride>,
+    );
+    expect(html).toContain('data-google-in-app="Facebook"');
+    expect(html).toContain(esc(COPY.google.inApp.line("Facebook")));
+    expect(html).toContain('data-action="google-copy-link"');
+    expect(html).toContain(COPY.google.inApp.anyway);
+    expect(html).not.toContain(`>${COPY.google.connect}<`);
+    expect(html).not.toContain("data-google-guide");
+    expect(html.indexOf("google-copy-link")).toBeLessThan(html.indexOf('data-action="google-connect"'));
+  });
+
   it("draws the address as text: markup in it is escaped", () => {
     const html = draw(googleShowing({ ...GOOGLE_CONNECTED, email: "<img src=x onerror=alert(1)>@example.com" }));
     expect(html).not.toContain("<img");
@@ -99,7 +145,7 @@ describe("Specimens_Page: Google", () => {
     const shown = new Set([...html.matchAll(/data-google-phase="([a-zA-Z]+)"/g)].map((m) => m[1]));
     for (const p of PHASES) expect(shown).toContain(p);
     for (const s of googleSpecimens()) expect(html).toContain(`data-google-tile="${s.id}"`);
-    for (const t of ["way-in-unlit", "way-in-lit"]) expect(html).toContain(`data-google-tile="${t}"`);
+    for (const t of ["in-app", "way-in-unlit", "way-in-lit"]) expect(html).toContain(`data-google-tile="${t}"`);
   });
 
   it("calls no route and links to no Google page", () => {

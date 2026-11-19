@@ -3,7 +3,7 @@
 // fixture states. Nothing here calls a route or opens Google's window. Then the way in, unlit and lit.
 import { GoogleSheet } from "../../../components/google/GoogleSheet";
 import { GoogleWayIn } from "../../../components/google/GoogleWayIn";
-import { GOOGLE_CONNECTED, GOOGLE_ZONE, googleSpecimens } from "../_fixtures/google";
+import { GOOGLE_CONNECTED, GOOGLE_OFF, GOOGLE_ZONE, googleShowing, googleSpecimens } from "../_fixtures/google";
 import { Section, Tile } from "./Section";
 
 const noop = () => {};
@@ -15,9 +15,12 @@ export function GoogleSection() {
       <Section id="google" title="Google">
         {googleSpecimens().map((s) => (
           <Tile key={s.id} label={s.label} data-specimen="google" data-google-tile={s.id}>
-            <GoogleSheet state={s.state} zone={GOOGLE_ZONE} {...actions} />
+            <GoogleSheet state={s.state} zone={GOOGLE_ZONE} inApp={null} {...actions} />
           </Tile>
         ))}
+        <Tile label="Inside Facebook's browser" data-specimen="google" data-google-tile="in-app">
+          <GoogleSheet state={googleShowing(GOOGLE_OFF)} zone={GOOGLE_ZONE} inApp="Facebook" {...actions} />
+        </Tile>
       </Section>
       <Section id="google-way-in" title="Google, the way in">
         <Tile label="before any answer" data-specimen="google-way-in" data-google-tile="way-in-unlit">

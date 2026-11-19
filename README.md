@@ -64,7 +64,7 @@ The parts not yet stitched on, in build order:
 
 ## Asking about your mail and calendar
 
-Connect Google from the Google button at the foot of `/lab` (setup in [`docs/setup.md`](docs/setup.md)). Then, in a call, ask in your own words: "Did Dana write about the lease?", "What's on tomorrow?", "Am I free Thursday afternoon for 45 minutes?". Franki says one short line ("Let me look."), a helper on the server looks through your mail or calendar while you keep talking, and the answer comes at the next pause, once, with a card on screen. A look-up needs a call open; a typed line with no call open can't start one.
+Connect Google from the Gmail and Calendar button at the foot of `/lab` (setup in [`docs/setup.md`](docs/setup.md)). Then, in a call, ask in your own words: "Did Dana write about the lease?", "What's on tomorrow?", "Am I free Thursday afternoon for 45 minutes?". Franki says one short line ("Let me look."), a helper on the server looks through your mail or calendar while you keep talking, and the answer comes at the next pause, once, with a card on screen. A look-up needs a call open; a typed line with no call open can't start one.
 
 What it doesn't do:
 

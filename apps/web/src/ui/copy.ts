@@ -243,7 +243,8 @@ export const COPY = {
   },
   /** Brief 049 part B: the read-only Google connection's sheet and its callback page. */
   google: {
-    open: "Google",
+    /** Named for what it reads, so it isn't taken for signing in. */
+    open: "Gmail and Calendar",
     title: "Your Google account",
     close: "Close",
     readOnly: "I can read your Gmail and your Google Calendar. I can't send, change or delete anything.",
@@ -258,6 +259,28 @@ export const COPY = {
     none: "Not connected yet.",
     starting: "Opening Google",
     authorizing: "Google's sign-in is open. Finish there, then come back.",
+    /**
+     * Google warns on every connect until it has reviewed the app, so the sheet says what that page will ask before
+     * the press and while it is open. Each step is plain text and `{ key }` parts: the words Google's page shows.
+     * Step 2 names only the start of Google's link, which ends with Google's own words about the app.
+     */
+    guide: {
+      heading: "Google will warn you first",
+      waiting: "When Google warns you:",
+      steps: [
+        ["Tap ", { key: "Advanced" }],
+        ["Tap the link that starts ", { key: "Go to" }],
+        ["Tick ", { key: "Select all" }, " then tap ", { key: "Continue" }],
+      ] as readonly (readonly (string | { readonly key: string })[])[],
+      why: "Franki is new, so Google hasn't reviewed it yet.",
+    },
+    /** Inside another app's own browser (Facebook, Instagram and the like), where Google's sign-in often stalls. */
+    inApp: {
+      line: (app: string) => `Google often won't finish signing you in inside ${app}. Open this page in Safari or Chrome first.`,
+      copy: "Copy link",
+      copied: "Link copied",
+      anyway: "Connect here anyway",
+    },
     stopWaiting: "Stop waiting",
     disconnecting: "Disconnecting",
     /** The lamp beside the account, in words for screen readers. */
@@ -277,8 +300,8 @@ export const COPY = {
       popupBlocked: "Your browser blocked Google's pop-up. Allow pop-ups for this site, then try again.",
       startFailed: "I couldn't reach Google just now. Try again in a moment.",
       connected: "Google is connected.",
-      nothingGranted: "You didn't allow mail or calendar, so nothing was connected.",
-      denied: "Google didn't connect. Nothing was shared.",
+      nothingGranted: "Nothing was ticked on Google's last page, so nothing connected. Next time, tick Select all there.",
+      denied: "Nothing was connected or shared. Google's warning is expected: tap Advanced, then the link that starts Go to.",
       refused: "That didn't connect. You can try again.",
       connectUnknown: "I couldn't confirm that. Here's your connection as I read it now.",
       timedOut: "That took too long. Here's your connection as I read it now.",

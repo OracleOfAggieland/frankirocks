@@ -4,13 +4,17 @@
 // address, Gmail's and Calendar's states, a new sign-in when one is needed) and a disconnect that asks Yes or Not
 // now, neither pre-selected. No mail, no events, no field of its own. Everything shown is in the `GoogleState` the
 // machine holds; the sheet decides nothing.
+// Google warns on every connect until it has reviewed the app, so wherever Connect is offered, and while Google's page
+// is open, the sheet lists what that page will ask. Inside another app's own browser (Facebook, Instagram), where
+// Google's sign-in often stalls, it offers the page's link for Safari or Chrome first, and Connect only as a fallback.
 // `presentation="sheet"` is modal, as the bank sheet is: focus moves to the heading on open and back on close, stays
 // inside, and Escape closes; a drawer on the right from 1024 px, a bottom sheet below.
 import { motion, useIsPresent } from "motion/react";
-import { type KeyboardEvent, type Ref, useCallback, useEffect, useRef } from "react";
+import { type KeyboardEvent, type Ref, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { COPY } from "../../ui/copy";
 import { googleLine, googleParts } from "../../ui/google/google-format";
 import { type GoogleState, canConnectGoogle, googleBusy, googleHeld } from "../../ui/google/google-machine";
+import { inAppBrowser } from "../../ui/google/in-app-browser";
 import { useReducedMotion } from "../../ui/hooks/reduced-motion";
 import { DUR, EASE, SPRING } from "../../ui/motion";
 import { Lamp } from "../lab/Lamp";
@@ -37,6 +41,8 @@ export interface GoogleSheetProps extends GoogleActions {
   /** The zone times are shown in. */
   zone: string;
   presentation?: GooglePresentation;
+  /** The other app whose own browser this page is open in, or null. Left out, the sheet reads the browser's. */
+  inApp?: string | null;
 }
 
 const BRASS_BUTTON = `${TARGET} ${FOCUS} mat-brass inline-flex items-center justify-center rounded-control px-5 text-base font-medium transition-transform duration-(--dur-quick) active:translate-y-0.5 disabled:opacity-40`;
@@ -68,6 +74,94 @@ export function googleStatusLine(s: GoogleState): string | null {
       s.phase satisfies never;
       return null;
   }
+}
+
+/** What Google's warning page will ask, as numbered steps: before the press, and again while that page is open. */
+function GoogleGuide({ waiting }: { waiting: boolean }) {
+  const guide = COPY.google.guide;
+  return (
+    <div data-google-guide={waiting ? "waiting" : "before"} className="flex flex-col gap-2 rounded-control border border-brass/40 bg-night-1/80 p-3">
+      <p className="text-sm font-medium text-ink">{waiting ? guide.waiting : guide.heading}</p>
+      <ol className="flex flex-col gap-1.5">
+        {guide.steps.map((parts, i) => (
+          <li key={i} className="flex items-start gap-2 text-sm text-ink">
+            <span aria-hidden="true" className="inline-flex size-5 flex-none items-center justify-center rounded-full border border-brass/70 text-xs text-brass">
+              {i + 1}
+            </span>
+            <span className="pt-px">
+              {parts.map((p, j) =>
+                typeof p === "string" ? (
+                  p
+                ) : (
+                  <span key={j} data-google-key="" className="rounded-sm bg-night-2 px-1.5 py-px font-medium whitespace-nowrap text-ink">
+                    {p.key}
+                  </span>
+                ),
+              )}
+            </span>
+          </li>
+        ))}
+      </ol>
+      {waiting ? null : <p className="text-xs text-ink-dim">{guide.why}</p>}
+    </div>
+  );
+}
+
+const noSubscribe = () => () => {};
+const linkHere = () => `${window.location.origin}${window.location.pathname}`;
+const noLink = () => null;
+
+/** Puts `text` on the clipboard: the async clipboard first, then a selected text area for browsers without it. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    let done = false;
+    try {
+      done = document.execCommand("copy");
+    } catch {
+      done = false;
+    }
+    area.remove();
+    return done;
+  }
+}
+
+/** Inside another app's own browser: this page's link to open in Safari or Chrome, and Connect only as a fallback. */
+function InAppHint({ app, onConnect }: { app: string; onConnect: () => void }) {
+  const link = useSyncExternalStore(noSubscribe, linkHere, noLink);
+  const [copied, setCopied] = useState(false);
+  return (
+    <div data-google-in-app={app} className="flex flex-col gap-2">
+      <p className="text-sm text-ink">{COPY.google.inApp.line(app)}</p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          data-action="google-copy-link"
+          className={BRASS_BUTTON}
+          disabled={link === null}
+          onClick={() => {
+            if (link !== null) void copyText(link).then(setCopied);
+          }}
+        >
+          {copied ? COPY.google.inApp.copied : COPY.google.inApp.copy}
+        </button>
+        <button type="button" data-action="google-connect" className={QUIET_BUTTON} onClick={onConnect}>
+          {COPY.google.inApp.anyway}
+        </button>
+      </div>
+      {/* The link as text too, for a long press where the clipboard is refused. */}
+      {link !== null ? <p className="select-all break-all text-xs text-ink-dim">{link}</p> : null}
+    </div>
+  );
 }
 
 function Account({ state, zone, actions }: { state: GoogleState; zone: string; actions: GoogleActions }) {
@@ -124,6 +218,7 @@ function Account({ state, zone, actions }: { state: GoogleState; zone: string; a
 
 export interface GoogleSheetViewProps extends GoogleSheetProps {
   presentation: GooglePresentation;
+  inApp: string | null;
   reduced: boolean;
   headingRef?: Ref<HTMLHeadingElement>;
   panelRef?: Ref<HTMLElement>;
@@ -131,7 +226,7 @@ export interface GoogleSheetViewProps extends GoogleSheetProps {
 }
 
 /** The sheet's drawing, with no state of its own. */
-export function GoogleSheetView({ state, zone, presentation, reduced, headingRef, panelRef, onKeyDown, ...actions }: GoogleSheetViewProps) {
+export function GoogleSheetView({ state, zone, presentation, inApp, reduced, headingRef, panelRef, onKeyDown, ...actions }: GoogleSheetViewProps) {
   const sheet = presentation === "sheet";
   const line = googleStatusLine(state);
   const g = state.google;
@@ -163,11 +258,14 @@ export function GoogleSheetView({ state, zone, presentation, reduced, headingRef
         </div>
       ) : null}
       {state.phase === "authorizing" ? (
-        <div>
-          <button type="button" data-action="google-stop-waiting" className={QUIET_BUTTON} onClick={actions.onStopWaiting}>
-            {COPY.google.stopWaiting}
-          </button>
-        </div>
+        <>
+          <GoogleGuide waiting />
+          <div>
+            <button type="button" data-action="google-stop-waiting" className={QUIET_BUTTON} onClick={actions.onStopWaiting}>
+              {COPY.google.stopWaiting}
+            </button>
+          </div>
+        </>
       ) : null}
       {g !== null && googleHeld(g) ? (
         <>
@@ -176,12 +274,16 @@ export function GoogleSheetView({ state, zone, presentation, reduced, headingRef
         </>
       ) : null}
       {g !== null && !googleHeld(g) && !googleBusy(state) ? <p className="text-sm text-ink-dim">{COPY.google.none}</p> : null}
-      {canConnectGoogle(state) ? (
-        <div>
-          <button type="button" data-action="google-connect" className={BRASS_BUTTON} onClick={actions.onConnect}>
-            {g !== null && googleHeld(g) ? COPY.google.connectAgain : COPY.google.connect}
-          </button>
-        </div>
+      {canConnectGoogle(state) && inApp !== null ? <InAppHint app={inApp} onConnect={actions.onConnect} /> : null}
+      {canConnectGoogle(state) && inApp === null ? (
+        <>
+          <GoogleGuide waiting={false} />
+          <div>
+            <button type="button" data-action="google-connect" className={BRASS_BUTTON} onClick={actions.onConnect}>
+              {g !== null && googleHeld(g) ? COPY.google.connectAgain : COPY.google.connect}
+            </button>
+          </div>
+        </>
       ) : null}
     </div>
   );
@@ -286,7 +388,16 @@ function GoogleSheetLayer(props: Omit<GoogleSheetViewProps, "presentation" | "he
   );
 }
 
-export function GoogleSheet({ presentation = "inline", ...props }: GoogleSheetProps) {
+const readInApp = () => inAppBrowser(navigator.userAgent);
+const serverInApp = () => null;
+
+export function GoogleSheet({ presentation = "inline", inApp, ...props }: GoogleSheetProps) {
   const reduced = useReducedMotion();
-  return presentation === "sheet" ? <GoogleSheetLayer {...props} reduced={reduced} /> : <GoogleSheetView {...props} presentation="inline" reduced={reduced} />;
+  const detected = useSyncExternalStore(noSubscribe, readInApp, serverInApp);
+  const app = inApp === undefined ? detected : inApp;
+  return presentation === "sheet" ? (
+    <GoogleSheetLayer {...props} inApp={app} reduced={reduced} />
+  ) : (
+    <GoogleSheetView {...props} inApp={app} presentation="inline" reduced={reduced} />
+  );
 }
