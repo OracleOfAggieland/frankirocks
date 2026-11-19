@@ -39,6 +39,8 @@ import {
   tsFromMs,
 } from "@franki/core";
 import { gateAudience } from "../audience";
+import { ownerSpeakerCertain } from "../company-off";
+import type { Env } from "../config/env";
 import { ownerClock } from "../core-docs";
 import { readAllMemories } from "../head-build";
 import { writeGateDecision } from "../ledger/said";
@@ -145,8 +147,9 @@ async function candidatesOf(tx: Tx, uid: string, note: W, all: readonly { id: st
   return out.length === 0 ? null : out;
 }
 
-function contextOf(x: ToolGateInput, audience: Au, modifiers: { rushed: boolean; crisis: boolean }, notesThisReply: number): GateContext {
-  const certain = x.turn.sourceClass === "U" || x.turn.sourceClass === "C" ? x.turn.itemIds.length === 0 || x.turn.judge === "O" : false;
+function contextOf(x: ToolGateInput, audience: Au, modifiers: { rushed: boolean; crisis: boolean }, notesThisReply: number, env: Env): GateContext {
+  // Owner, Nov 19: with company mode off the owner's own final voice line is certain without judge O (company-off.ts).
+  const certain = x.turn.sourceClass === "U" || x.turn.sourceClass === "C" ? ownerSpeakerCertain(x.turn, env) : false;
   return {
     worldNow: tsFromMs(x.worldNow),
     zone: x.zone,
@@ -179,7 +182,7 @@ export async function gateRecallNotes(tx: Tx, ctx: RouteContext, x: ToolGateInpu
     if (cands === null) continue;
     let ok = true;
     for (const { c, ref } of cands) {
-      const r: GateResult = gate(c, contextOf(x, audience, modifiers, kept.length));
+      const r: GateResult = gate(c, contextOf(x, audience, modifiers, kept.length, ctx.deps.env));
       if (r.verdict === "say" && r.render === "free") continue;
       ok = false;
       await writeGateDecision(tx, ctx.deps.hasher, at, r, { candidateId: c.id, refs: [ref], noteIds: [note.noteId], momentId: null, sessionId: x.sessionId, turnId: x.turnId, audience, permitKind: null });

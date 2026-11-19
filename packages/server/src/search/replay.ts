@@ -1,4 +1,5 @@
 import { type Infer, type ToolResponse, msFromTs, payloadHash } from "@franki/core";
+import { ownerSpeakerCertain } from "../company-off";
 import { ownerWordsTurn } from "../errands/assignment";
 import { currentPhoneTurn } from "../phone/outbound";
 import type { RouteContext } from "../routes/runtime";
@@ -19,7 +20,7 @@ export async function replayWebTool(ctx: RouteContext, response: Response): Prom
   if (msFromTs(permit.expiresAt) > ctx.deps.clock.read().opsClock.now) {
     const valid = await ctx.deps.store.transaction(ctx.uid, async (tx) => {
       const current = await currentPhoneTurn(tx, ctx.uid, stamp);
-      if (!current || !ownerWordsTurn(current.turn) || (current.turn.itemIds.length > 0 && current.turn.judge !== "O")) return null;
+      if (!current || !ownerWordsTurn(current.turn) || !ownerSpeakerCertain(current.turn, ctx.deps.env)) return null;
       const result = await readWebResult(tx, ctx, stamp.sessionId, current.session, stamp.epoch, requestId);
       const hash = payloadHash({ stamp, head: response.deck?.head ?? null, turns: response.deck?.turns ?? [], notes: [], audioIds: current.turn.itemIds, toolOutput: result }, ctx.deps.hasher);
       return hash === permit.approvedPayloadHash ? result : null;

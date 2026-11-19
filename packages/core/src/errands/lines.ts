@@ -49,7 +49,7 @@ const missingWhy = (why: ErrandMissing["why"]): string => (why === "expired" ? "
  * a look-up exists and that its answer comes later. Code-worded, S0, no owner words.
  */
 export const ERRAND_HEAD_LINE =
-  "You can hand a look-up through the owner's connected mail or calendar to a helper with start_errand. Its answer comes later on its own: never guess it, and never say you can't check mail or calendar while it can.";
+  "You can hand a look-up through the owner's connected mail or calendar to a helper with start_errand. Its answer comes later on its own: never guess it, and never say you can't check mail or calendar while it can. When the owner asks whether a look-up came back, call read_errand_result before answering.";
 
 /**
  * Ruling 12: the note a later turn's reply carries while an errand of this Session runs, so the model neither starts
@@ -58,6 +58,17 @@ export const ERRAND_HEAD_LINE =
 export function errandRunningNote(about: readonly ErrandAbout[]): string {
   return `A look-up through ${aboutPhrase(about)} that you started for the owner is still running. Don't start another one for the same thing, and never guess what it will find: the answer comes when it is ready.`;
 }
+
+/**
+ * Owner, Nov 19: what `start_errand` answers when a look-up through the same place is already running in this call,
+ * in place of starting a second one.
+ */
+export function errandStillLookingNote(about: readonly ErrandAbout[]): string {
+  return `A look-up through ${aboutPhrase(about)} is already running for the owner, so no second one was started. Say in one short sentence that you're still looking, and never guess what it will find.`;
+}
+
+/** Owner, Nov 19: what `read_errand_result` answers when no look-up of this call has come back or is running. */
+export const ERRAND_NONE_READ_LINE = "No mail or calendar look-up has come back in this conversation, and none is running. Say so plainly, and never guess what one would find.";
 
 /** Said before the found lines when the result is said in full (ruling 9). */
 export const ERRAND_FOUND_LEAD = "Found it.";

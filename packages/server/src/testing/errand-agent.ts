@@ -116,8 +116,8 @@ export interface ErrandSetup {
 
 export const ASK = "Check my mail for when the plumber is coming.";
 
-export async function errandSetup(steps: PlannerStep[], opts: { agents?: boolean; judge?: "O" | "timeout"; noMail?: boolean } = {}): Promise<ErrandSetup> {
-  const rig = testRig();
+export async function errandSetup(steps: PlannerStep[], opts: { agents?: boolean; judge?: "O" | "timeout"; noMail?: boolean; env?: Record<string, string> } = {}): Promise<ErrandSetup> {
+  const rig = testRig(opts.env);
   const mail: SeededMail[] = [];
   if (opts.agents !== false) rig.deps.errandAgents = [testMailAgent(() => mail)];
   const s = await openTestSession(rig);

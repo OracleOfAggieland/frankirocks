@@ -25,6 +25,8 @@ import {
   tsFromMs,
 } from "@franki/core";
 import { gateAudience } from "../audience";
+import { ownerSpeakerCertain } from "../company-off";
+import type { Env } from "../config/env";
 import { writeGateDecision } from "../ledger/said";
 import type { Tx } from "../store/port";
 import type { RouteContext } from "../routes/runtime";
@@ -74,9 +76,10 @@ export function moneyCandidate(note: W): GateCandidate {
   };
 }
 
-export function moneyGateContext(x: MoneyGateInput, audience: GateContext["audience"], modifiers: GateContext["modifiers"], notesThisReply: number): GateContext {
-  // As for a recall: the owner's words count only when the speaker is certain (a typed line, or a judge O).
-  const certain = x.turn.sourceClass === "U" || x.turn.sourceClass === "C" ? x.turn.itemIds.length === 0 || x.turn.judge === "O" : false;
+export function moneyGateContext(x: MoneyGateInput, audience: GateContext["audience"], modifiers: GateContext["modifiers"], notesThisReply: number, env: Env): GateContext {
+  // As for a recall: the owner's words count only when the speaker is certain (a typed line, or a judge O; owner,
+  // Nov 19: with company mode off, the owner's own final voice line too, company-off.ts).
+  const certain = x.turn.sourceClass === "U" || x.turn.sourceClass === "C" ? ownerSpeakerCertain(x.turn, env) : false;
   return {
     worldNow: tsFromMs(x.worldNow),
     zone: x.zone,
@@ -107,7 +110,7 @@ export async function gateMoneyResult(tx: Tx, ctx: RouteContext, x: MoneyGateInp
       continue;
     }
     const c = moneyCandidate(note);
-    const r = gate(c, moneyGateContext(x, audience, modifiers, kept.length));
+    const r = gate(c, moneyGateContext(x, audience, modifiers, kept.length, ctx.deps.env));
     if (r.verdict === "say" && r.render === "free") {
       kept.push(note);
       continue;

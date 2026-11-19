@@ -1,5 +1,5 @@
 /** Brief 049 part A: the errand framework end to end on fakes, with the test-only agent. */
-import { delegationTool, type SpecialistCatalog, ERRAND_LEASE_MS, ERRAND_RESULT_TTL_MS, ERRAND_SILENCE_MS, type Job, errandFailedLine } from "@franki/core";
+import { delegationTool, type SpecialistCatalog, ERRAND_LEASE_MS, ERRAND_RESULT_TTL_MS, ERRAND_SILENCE_MS, type Errand, type ID, type Job, type Session, errandFailedLine, errandStillLookingNote } from "@franki/core";
 import { describe, expect, it } from "vitest";
 import { receiptRoute } from "../routes/receipt";
 import { stateRoute } from "../routes/state";
@@ -7,10 +7,11 @@ import { toolRoute } from "../routes/tool";
 import { turnRoute } from "../routes/turn";
 import { paths } from "../store/paths";
 import { ASK, ERRAND_OWNER as UID, errandOf, errandReceipt, plannerRequests, poll, seedMail, errandSetup as setup, testMailAgent, tool } from "../testing/errand-agent";
-import { callRoute, recordingSchedule, runScheduled } from "../testing/fakes";
+import { callRoute, patchRecord, recordingSchedule, runScheduled } from "../testing/fakes";
 import { claimJob } from "../worker/jobs";
 import { asrTurn } from "../testing/session-fixtures";
 import { errandIdOf } from "./records";
+import { testId } from "@franki/core/testing";
 
 describe("start_errand", () => {
   it("advertises just the connected assignments and refreshes when grants change", async () => {
@@ -136,14 +137,33 @@ describe("the run and its delivery", () => {
     expect((await errandOf(x))?.status).toBe("cardOnly");
   });
 
+  // Owner, Nov 19: a second mail look-up in the same Session now answers "still looking" (the next test), so the
+  // first one runs for another live Session of this owner here, as it would from a second tab.
   it("at most two run per owner; a third is busy", async () => {
     const x = await setup([{ never: true }, { never: true }]);
+    x.rig.deps.errandAgents = [...x.rig.deps.errandAgents!, { ...testMailAgent(() => x.mail), id: "test-calendar", about: "calendar" }];
     await callRoute(x.rig, toolRoute, tool(x));
+    const otherSession = testId("other-live-session");
+    const here = (await x.rig.store.get<Session>(UID, paths.session(UID, x.sessionId)))!.data;
+    await x.rig.store.transaction(UID, async (tx) => tx.create(paths.session(UID, otherSession), here));
+    await patchRecord<Errand>(x.rig.store, UID, paths.errand(UID, errandIdOf(x.rig.deps.hasher, x.sessionId, x.stamp.turnId)), { sessionId: otherSession as ID });
     const second = await callRoute(x.rig, turnRoute, { ...asrTurn({ ...x.stamp, generation: 1 } as never, 2, "Also check my mail for the dentist.", [{ itemId: "item2", commitSeq: 2 }], "final", 2), judge: "O" });
     const s2 = { ...x, stamp: second.body.stamp };
     expect((await callRoute(x.rig, toolRoute, tool(s2, "b"))).body.result.state).toBe("started");
-    const third = await callRoute(x.rig, turnRoute, { ...asrTurn({ ...x.stamp } as never, 3, "And the electrician.", [{ itemId: "item3", commitSeq: 3 }], "final", 3), judge: "O" });
-    expect((await callRoute(x.rig, toolRoute, tool({ ...x, stamp: third.body.stamp }, "c"))).body.result.state).toBe("busy");
+    const third = await callRoute(x.rig, turnRoute, { ...asrTurn({ ...x.stamp } as never, 3, "And my calendar for the electrician.", [{ itemId: "item3", commitSeq: 3 }], "final", 3), judge: "O" });
+    expect((await callRoute(x.rig, toolRoute, tool({ ...x, stamp: third.body.stamp }, "c", ["calendar"]))).body.result.state).toBe("busy");
+  });
+
+  it("a second ask for a look-up already running in this Session answers still looking and starts nothing (owner, Nov 19)", async () => {
+    const x = await setup([{ never: true }, { never: true }]);
+    const first = await callRoute(x.rig, toolRoute, tool(x));
+    expect(first.body.result.state).toBe("started");
+    const again = await callRoute(x.rig, turnRoute, { ...asrTurn({ ...x.stamp, generation: 1 } as never, 2, "Anything?", [{ itemId: "item2", commitSeq: 2 }], "final", 2), judge: "O" });
+    const res = await callRoute(x.rig, toolRoute, tool({ ...x, stamp: again.body.stamp }, "b"));
+    expect(res.body.result).toMatchObject({ name: "start_errand", state: "started", errandId: first.body.result.errandId });
+    expect(res.body.result.notes[0].text).toBe(errandStillLookingNote(["mail"]));
+    expect(await x.rig.store.get<Errand>(UID, paths.errand(UID, errandIdOf(x.rig.deps.hasher, x.sessionId, again.body.stamp.turnId)))).toBeNull();
+    expect(await x.rig.store.get<Job>(UID, paths.job(UID, errandIdOf(x.rig.deps.hasher, x.sessionId, again.body.stamp.turnId)))).toBeNull();
   });
 
   it("a run whose lease lapsed is picked up by the state poll and restarts from nothing", async () => {

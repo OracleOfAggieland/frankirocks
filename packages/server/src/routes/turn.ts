@@ -36,6 +36,7 @@ import {
 } from "@franki/core";
 import { admitRule, fastODecisionId, fastOTurnFields } from "../admission/seam";
 import { advancedWatermark, effectiveAudience, expireLease, failedParseEffect, hasParseGap } from "../audience";
+import { failedParseIsOrdinary } from "../company-off";
 import { decisionsPort } from "../intents/decisions-port";
 import { repairs, runParseRepair } from "../intents/repair";
 import { DECISIONS_NO_CALL_DEADLINE_MS, runSlowParse } from "../intents/slow-parse";
@@ -428,10 +429,12 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
 
           // The parse and the verdict go on the Turn (R13.2; question 57); its Slice says its Sensitivity (question 61).
           const parsed = slow !== null && slow.parse.kind !== "failed";
+          // Owner, Nov 19 (company mode off): a failed slow parse counts as an ordinary committed one (company-off.ts).
+          const failedAsOrdinary = slow !== null && slow.parse.kind === "failed" && failedParseIsOrdinary(deps.env);
           const turn: Turn = {
             ...turn0,
             rootSlices: evidence === null ? [] : evidence.record.fieldSlices.slice(0, 1),
-            parseState: parsed || cls.cls === "T" ? "committed" : "failed",
+            parseState: parsed || cls.cls === "T" || failedAsOrdinary ? "committed" : "failed",
             judge: req.judge === "O" || req.judge === "H" || req.judge === "U" ? req.judge : null,
             uncertainSpeaker: slow?.probabilities?.uncertainSpeaker ?? 0,
             ...(fastO === null ? {} : fastOTurnFields(msFromTs((fastO.data as { at: string }).at))),
@@ -456,11 +459,12 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           const leaseToken = deps.hasher.id(["lease", req.sessionId, req.turnId]);
           if (req.source === "asr" && req.transcriptState !== "final") {
             next = failedParseEffect(s, { clientSeq: req.clientSeq, token: leaseToken, why: req.transcriptState === "missing" ? "missing" : "failedTranscript" }, ops);
-          } else if (slow !== null && slow.parse.kind === "failed") {
+          } else if (slow !== null && slow.parse.kind === "failed" && !failedAsOrdinary) {
             next = failedParseEffect(s, { clientSeq: req.clientSeq, token: leaseToken, why: slow.parse.why }, ops);
           }
           // A deadline or transport failure that opened its own lease gets one Parse_Repair after the response (R15.3).
-          const repair = slow !== null && slow.parse.kind === "failed" && repairs(slow.parse.why) && next.parseLease?.token === leaseToken ? (leaseToken as ID) : null;
+          // With company mode off no lease is opened, and the repair still runs once, lease-free (intents/repair.ts).
+          const repair = slow !== null && slow.parse.kind === "failed" && repairs(slow.parse.why) && (failedAsOrdinary || next.parseLease?.token === leaseToken) ? (leaseToken as ID) : null;
           const transcriptState = req.transcriptState;
           const rule: RuleInput = {
             source: req.source === "asr" ? "asr" : cls.cls === "T" ? "pasted" : "typed",
@@ -714,7 +718,8 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
         const jobId = extractJobId(ev.eid, deps.hasher);
         tx.create(paths.job(uid, jobId), extractJobRecord(uid, ev.eid, ev.record, ops, coreVals));
 
-        const parsed = slow.parse.kind !== "failed";
+        // Owner, Nov 19 (company mode off): a failed parse counts as an ordinary committed one (company-off.ts).
+        const parsed = slow.parse.kind !== "failed" || failedParseIsOrdinary(deps.env);
         const now = tsFromMs(ops);
         tx.update(turnDoc!.path, {
           ...t0,

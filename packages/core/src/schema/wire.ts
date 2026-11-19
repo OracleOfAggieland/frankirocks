@@ -74,6 +74,13 @@ export const W = obj({
 });
 export type W = Infer<typeof W>;
 
+// Owner, Nov 19: `read_errand_result` reads this Session's finished mail or calendar look-ups when the owner asks
+// whether anything came back. No arguments; the answer is code-worded notes, gated as a delivery is.
+export const ReadErrandCall = obj({ name: literal("read_errand_result"), args: obj({}) });
+/** `found`: a result, or the line saying it can't be gone into here; `running`: only look-ups still running; `none`: neither. */
+export const READ_ERRAND_STATES = ["found", "running", "none"] as const;
+export const ReadErrandResult = obj({ name: literal("read_errand_result"), state: oneOf(READ_ERRAND_STATES), notes: arr(W, 3) });
+
 const CardFields = {
   id: ID,
   kind: oneOf(["memory", "moment", "source", "why", "receipt", "rule", "ask", "food", "overview", "lab", "strip"]),
@@ -251,7 +258,7 @@ const ReadPhoneReport = union(
   obj({ ...reportRequest, includeCompletion: literal(true) }),
   obj(reportRequest),
 );
-export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall, read_phone_result: ReadPhoneReport, suggest: SuggestCall, answer: AnswerCall, read_money: MoneyCall, start_errand: ErrandCall, search_web: StartWebSearch, read_web_result: ReadWebSearch });
+export const ToolCall = tagged("name", { recall: RecallCall, make_phone_call: PhoneCall, read_phone_result: ReadPhoneReport, suggest: SuggestCall, answer: AnswerCall, read_money: MoneyCall, start_errand: ErrandCall, search_web: StartWebSearch, read_web_result: ReadWebSearch, read_errand_result: ReadErrandCall });
 export type ToolCall = Infer<typeof ToolCall>;
 
 export const RecallResult = obj({
@@ -302,7 +309,7 @@ export const READ_PHONE_ACTIVITY_TOOL = {
 } as const;
 const WebSearchReceipt = obj({ name: literal("search_web"), requestId: ID, state: oneOf(["started", "alreadyRunning", "busy", "previousReady", "ready", "needsLocation", "needsQuestion", "unavailable"]) });
 const WebSearchResult = obj({ name: literal("read_web_result"), requestId: ID, taskId: nullable(ID), status: oneOf(WEB_SEARCH_STATES), findings: arr(WebFinding, 3) });
-export const ToolResult = tagged("name", { recall: RecallResult, make_phone_call: PhoneResult, read_phone_result: PhoneReportResult, suggest: SuggestResult, answer: AnswerResult, read_money: MoneyResult, start_errand: ErrandResult, search_web: WebSearchReceipt, read_web_result: WebSearchResult });
+export const ToolResult = tagged("name", { recall: RecallResult, make_phone_call: PhoneResult, read_phone_result: PhoneReportResult, suggest: SuggestResult, answer: AnswerResult, read_money: MoneyResult, start_errand: ErrandResult, search_web: WebSearchReceipt, read_web_result: WebSearchResult, read_errand_result: ReadErrandResult });
 export type ToolResult = Infer<typeof ToolResult>;
 
 // The server reads the destination and assignment from the owner's turn.
@@ -351,6 +358,18 @@ export const ERRAND_TOOL = {
     required: ["about"],
     properties: { about: { type: "array", items: { type: "string", enum: [...ERRAND_ABOUT] }, minItems: 1, maxItems: 2 } },
   },
+} as const;
+
+/**
+ * Owner, Nov 19: the tool that reads a finished look-up, so "Did you get anything back?" gets the real answer. Offered
+ * whenever an errand agent is ready for the owner (`voice/machine.ts`, callTools). No arguments.
+ */
+export const READ_ERRAND_TOOL = {
+  type: "function",
+  name: "read_errand_result",
+  description:
+    "Read what the mail or calendar look-ups you started in this conversation found. Call it whenever the user asks whether anything came back, what you found, or how a look-up went, before answering. Never say nothing came back without calling it. Say what it returns in short spoken words and add nothing: no detail, time or name it did not return. If it says a look-up is still running, say you're still looking.",
+  parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
 } as const;
 const EID_JSON = { type: "string", maxLength: 43 };
 

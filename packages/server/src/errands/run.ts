@@ -67,6 +67,7 @@ import { paths } from "../store/paths";
 import { type Lease, claimJob } from "../worker/jobs";
 import { ERRAND_TOOL_FLAGS, type ErrandAgent, type ErrandReadInput, type ErrandTool, type ErrandToolContext, type ErrandToolFlag, errandAgentsOf } from "./agent";
 import { assignmentWords } from "./assignment";
+import { ownerSpeakerCertain } from "../company-off";
 
 /** The developer message: fixed text, never built from data (ruling 5; OpenAI's guidance for untrusted text). */
 export const PLANNER_INSTRUCTIONS = [
@@ -564,7 +565,8 @@ export async function errandGateInputs(ctx: RouteContext, errandId: ID): Promise
   if (e === null) return null;
   const [words, turn] = await Promise.all([assignmentWords(deps.store, uid, e.sessionId, e.assignmentTurnIds), deps.store.get<Turn>(uid, paths.turn(uid, e.sessionId, e.turnId))]);
   const t = turn?.data ?? null;
-  const certain = t !== null && t.sourceClass === "U" && (t.itemIds.length === 0 || t.judge === "O");
+  // Owner, Nov 19: with company mode off the owner's own final voice line is certain without judge O (company-off.ts).
+  const certain = t !== null && t.sourceClass === "U" && ownerSpeakerCertain(t, deps.env);
   const aliases = [...new Set(words.flatMap((w) => tokenize(w)))].filter((a) => a.length > 0 && a.length <= 64).slice(0, GATE_ALIASES_MAX);
   return { certain, aliases };
 }

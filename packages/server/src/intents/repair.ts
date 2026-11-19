@@ -9,10 +9,15 @@
  *   failed    `parseState` stays `failed`, the lease clears, the audience is `unknown` until a parsed `alone`
  * After `ordinary` or `hit`, the hardRule route runs once as a proposal (`onturn/late.ts`; brief 012 G20, G39).
  * A parsed `alone` never moves the watermark past a gap (R15.8).
+ *
+ * Owner, Nov 19 (company mode off; `company-off.ts`): the failed turn already counts as an ordinary committed parse,
+ * so no lease was opened. The repair still runs once, lease-free, for its late hit and the hardRule route: on a Turn
+ * that is not dead, of a Session still open; `failed` changes nothing, and nothing stores `unknown`.
  */
 import { type CoreEpoch, type ID, type Session, type Turn, changesWhatIsSaid, msFromTs, tsFromMs } from "@franki/core";
 import { lateHitDecisionId, recordLateHit } from "../admission/seam";
 import { advancedWatermark, effectiveAudience, expireLease } from "../audience";
+import { failedParseIsOrdinary } from "../company-off";
 import { runRepairRoute } from "../onturn/late";
 import type { RouteDeps } from "../routes/runtime";
 import { isStoreError } from "../store/errors";
@@ -49,7 +54,8 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
   const { sessionId, turnId, token } = target;
   const turnPath = paths.turn(uid, sessionId, turnId);
   const stored = await deps.store.get<Turn>(uid, turnPath);
-  if (stored === null || stored.data.role !== "user" || stored.data.parseState !== "failed" || stored.data.text === null) return "skipped";
+  const leaseFree = failedParseIsOrdinary(deps.env);
+  if (stored === null || stored.data.role !== "user" || (!leaseFree && stored.data.parseState !== "failed") || stored.data.text === null) return "skipped";
   const slow = await runSlowParse({ decisions: decisionsPort(deps), env: deps.env, log: deps.log, trace: deps.trace }, { turnId, utterance: stored.data.text }, REPAIR_DEADLINE_MS);
   // Brief 035: the narrow Head a late company or quiet hit needs, compiled before the transaction as the turn does.
   const sessionGen = (await deps.store.get<Session>(uid, paths.session(uid, sessionId)))?.data.generation ?? 1;
@@ -88,12 +94,16 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
     const now = tsFromMs(ops);
     const s0 = doc.data;
     // Only the lease this repair's turn opened, and only inside its window; a lease past its window is a failed repair.
-    if (s0.parseLease === null || s0.parseLease.token !== token || msFromTs(s0.parseLease.until) <= ops) {
+    if (leaseFree) {
+      if (turn.data.state === "dead" || (s0.status !== "active" && s0.status !== "minting")) return "skipped";
+    } else if (s0.parseLease === null || s0.parseLease.token !== token || msFromTs(s0.parseLease.until) <= ops) {
       const expired = expireLease(s0, ops);
       if (expired !== s0) tx.update(doc.path, { ...expired, updatedAt: now });
       return "lostLease";
     }
-    const s = { ...s0, parseLease: null };
+    const s = leaseFree ? s0 : { ...s0, parseLease: null };
+    // Company mode off: the turn already counts as an ordinary committed parse, so a failed repair changes nothing.
+    if (slow.parse.kind === "failed" && leaseFree) return "failed";
     if (slow.parse.kind === "failed") {
       tx.update(doc.path, { ...s, audience: "unknown", updatedAt: now });
       return "failed";

@@ -65,6 +65,9 @@ import { prepareWebSearch, readWebResult, runWebSearchTask, webSearchId, type We
 // Brief 049 part A.
 import { type ErrandPlan, planErrand } from "../errands/start";
 import { runErrand } from "../errands/run";
+// Owner, Nov 19.
+import { readErrandResult } from "../errands/read";
+import { ownerSpeakerCertain } from "../company-off";
 // Brief 046 part C.
 import { limitMoneyToS0, readMoney } from "../bank/money-read";
 import { answerTool, suggestForAudience, suggestTool } from "./tool-food";
@@ -189,6 +192,7 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       : req.tool.name === "read_phone_result" ? { name: "read_phone_result", report: null }
       : req.tool.name === "search_web" ? { name: "search_web", requestId: req.requestId, state: "unavailable" }
       : req.tool.name === "read_web_result" ? { name: "read_web_result", requestId: req.requestId, taskId: null, status: "none", findings: [] }
+      : req.tool.name === "read_errand_result" ? { name: "read_errand_result", state: "none", notes: [] }
       : req.tool.name === "suggest" ? answered!.result
       : req.tool.name === "answer" ? answered!.result
       // Brief 046 part C: the money read, on the owner's own committed turn only (bank/money-read.ts).
@@ -235,7 +239,8 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
         transcript: "final",
         // A pasted (T) Turn is not the Owner's own words: its tool output is limited to S0, so it never reads as a
         // typed line here (review of wave A, item 21).
-        judge: turn.sourceClass === "T" ? "timeout" : (turn.judge ?? (turn.itemIds.length === 0 ? "typed" : "timeout")),
+        // Owner, Nov 19: with company mode off the owner's own final voice line counts as judge O here (company-off.ts).
+        judge: turn.sourceClass === "T" ? "timeout" : turn.itemIds.length > 0 && ownerSpeakerCertain(turn, deps.env) ? "O" : (turn.judge ?? (turn.itemIds.length === 0 ? "typed" : "timeout")),
         parse: { kind: "none" },
         regexMatch: false,
         audience: effectiveAudience(s, ops),
@@ -256,7 +261,7 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
       if (planned.kind === "permit" && planned.notes === "all" && (req.tool.name === "search_web" || req.tool.name === "read_web_result")) {
         const owner = await tx.get<Turn>(paths.turn(uid, req.stamp.sessionId, req.stamp.turnId));
         if (owner && s.lastClientSeq === owner.data.seq && owner.data.sourceClass === "U" && owner.data.final &&
-            owner.data.state !== "dead" && owner.data.parseState === "committed" && (owner.data.itemIds.length === 0 || owner.data.judge === "O")) {
+            owner.data.state !== "dead" && owner.data.parseState === "committed" && ownerSpeakerCertain(owner.data, deps.env)) {
           if (req.tool.name === "read_web_result") shaped = await readWebResult(tx, ctx, req.stamp.sessionId, s, current.epoch, req.requestId);
           else {
             const search = await prepareWebSearch(tx, ctx, req.stamp, s, owner.data, req.tool.args, core.state.data.currentZone, req.requestId);
@@ -266,10 +271,12 @@ export async function postTool(ctx: RouteContext, req: ToolReq): Promise<ToolRes
         }
       }
       if (shaped.name === "read_phone_result" && planned.kind === "permit" && planned.notes === "all" &&
-          s.lastClientSeq === turn.seq && turn.sourceClass === "U" && (turn.itemIds.length === 0 || turn.judge === "O")) {
+          s.lastClientSeq === turn.seq && turn.sourceClass === "U" && ownerSpeakerCertain(turn, deps.env)) {
         const phone = await readPhoneResult(tx, deps, uid, req.stamp.sessionId, s, current.epoch, dialId);
         if (phone) shaped = { ...shaped, report: phone.report, ...("includeCompletion" in req.tool ? { completion: phone.completion } : {}) };
       }
+      // Owner, Nov 19: a finished errand's result, when the owner asks whether anything came back (errands/read.ts).
+      if (shaped.name === "read_errand_result" && planned.kind === "permit") shaped = await readErrandResult(tx, ctx, { session: s, stamp: req.stamp, callId: req.callId, core, full: planned.notes === "all" });
       // Brief 030 part A: the Gate in front of the result, its rows written here.
       const gated = await gateToolOutput(tx, ctx, { session: s, turn, stamp: req.stamp, core, purpose: req.tool.name === "recall" ? req.tool.args.purpose : null }, shaped);
       // Brief 046 part C: the Server_Rule's S0 limit holds for a money read too, after the Gate has written its rows.

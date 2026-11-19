@@ -5,6 +5,8 @@ import {
 import { gateAudience } from "../audience";
 import { narrowedHere } from "../audience-swap";
 import { assignmentTurnIds, ownerWordsTurn } from "../errands/assignment";
+// Owner, Nov 19: with company mode off the owner's own final voice line is certain without judge O.
+import { ownerSpeakerCertain } from "../company-off";
 import { cFields } from "../records";
 import type { RouteContext } from "../routes/runtime";
 import { retryStale } from "../store/errors";
@@ -102,7 +104,7 @@ async function authorizedQuestion(tx: Tx, ctx: RouteContext, stamp: Stamp, curre
   // A location clarification can refer to the preceding question, and a new question can reuse the city just given.
   const ids = await assignmentTurnIds(tx, ctx.uid, stamp.sessionId, current, stamp.turnId);
   const recent = await Promise.all((ids ?? []).filter((id) => id !== stamp.turnId).map((id) => tx.get<Turn>(paths.turn(ctx.uid, stamp.sessionId, id))));
-  const earlier = recent.filter((r) => r && (r.data.itemIds.length === 0 || r.data.judge === "O")).map((r) => r!.data.text!);
+  const earlier = recent.filter((r) => r && ownerSpeakerCertain(r.data, ctx.deps.env)).map((r) => r!.data.text!);
   const clarifiedQuestion = location && contains(text, location) && earlier.find((line) => contains(line, query));
   if (!currentQuestion && !clarifiedQuestion && !groundedFollowUp(query, text, earlier)) return { error: "needsQuestion" } as const;
   if (!location && (args.local || nearby.test(text))) return { error: "needsLocation" } as const;
@@ -114,7 +116,7 @@ export async function prepareWebSearch(tx: Tx, ctx: RouteContext, stamp: Stamp, 
   const result = (state: Receipt["state"], entry: WebSearchEntry | null = null): { result: Receipt; entry: WebSearchEntry | null } =>
     ({ result: { name: "search_web", requestId, state }, entry });
   const now = ctx.deps.clock.read().opsClock.now;
-  if (!readable(s, now) || !ownerWordsTurn(turn) || turn.seq !== s.lastClientSeq || (turn.itemIds.length > 0 && turn.judge !== "O")) return result("unavailable");
+  if (!readable(s, now) || !ownerWordsTurn(turn) || turn.seq !== s.lastClientSeq || !ownerSpeakerCertain(turn, ctx.deps.env)) return result("unavailable");
   const question = await authorizedQuestion(tx, ctx, stamp, turn, args);
   if ("error" in question) return result(question.error!);
   const questionKey = ctx.deps.hasher.id(["webQuestion", ctx.uid, stamp.sessionId, words(question.query), words(question.location ?? "")]);

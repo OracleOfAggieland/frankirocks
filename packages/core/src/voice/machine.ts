@@ -42,6 +42,8 @@ import { type FastORefusal, LATE_TURN_MS, type LatencyRow, type LatencyTimes, em
 import { fastOProblem, issueFastO } from "./fast-o";
 import { sayExactly } from "./lines";
 import { ERRAND_HEAD_LINE } from "../errands/lines";
+// Owner, Nov 19: the tool that reads a finished look-up (routes/tool.ts, errands/read.ts on the server).
+import { READ_ERRAND_TOOL } from "../schema/wire";
 // Brief 040: what a call sends for each tool; re-exported here so the core barrel needs no new line.
 export { CALL_ANSWER_ARGS, CALL_TOOL_NAMES, type CallToolName, callToolArgs, isCallToolName } from "./tool-args";
 import { type CallToolName, callToolArgs, isCallToolName } from "./tool-args";
@@ -647,16 +649,19 @@ export const CALL_TOOLS = [RECALL_TOOL, PHONE_TOOL, SUGGEST_TOOL, ANSWER_TOOL, M
 
 /** Review fix R2: the tools this call offers now; `start_errand` only while an errand agent is ready for the owner. */
 type Capabilities = Pick<VoiceState, "errandsReady"> & { specialists?: SpecialistCatalog | null; webSearchStatus?: WebSearchStatus | null };
-type LiveTool = (typeof CALL_TOOLS)[number] | typeof READ_PHONE_TOOL | typeof READ_PHONE_ACTIVITY_TOOL | typeof WEB_SEARCH_TOOL | typeof READ_WEB_TOOL | NonNullable<ReturnType<typeof delegationTool>>;
+type LiveTool = (typeof CALL_TOOLS)[number] | typeof READ_PHONE_TOOL | typeof READ_PHONE_ACTIVITY_TOOL | typeof WEB_SEARCH_TOOL | typeof READ_WEB_TOOL | NonNullable<ReturnType<typeof delegationTool>> | typeof READ_ERRAND_TOOL;
 
 export function callTools(st: Capabilities): LiveTool[] {
   const search = st.webSearchStatus == null ? [] : [WEB_SEARCH_TOOL, READ_WEB_TOOL];
   if (st.specialists) {
     const delegate = delegationTool(st.specialists);
-    return [RECALL_TOOL, SUGGEST_TOOL, ANSWER_TOOL, MONEY_TOOL, st.webSearchStatus == null ? READ_PHONE_TOOL : READ_PHONE_ACTIVITY_TOOL, ...(delegate ? [delegate] : []), ...search];
+    return [RECALL_TOOL, SUGGEST_TOOL, ANSWER_TOOL, MONEY_TOOL, st.webSearchStatus == null ? READ_PHONE_TOOL : READ_PHONE_ACTIVITY_TOOL, ...(delegate ? [delegate] : []), ...search, ...(errandReadable(st) ? [READ_ERRAND_TOOL] : [])];
   }
-  return [...CALL_TOOLS.filter((t) => t !== ERRAND_TOOL || st.errandsReady), ...(st.webSearchStatus == null ? [] : [READ_PHONE_ACTIVITY_TOOL]), ...search];
+  return [...CALL_TOOLS.filter((t) => t !== ERRAND_TOOL || st.errandsReady), ...(st.webSearchStatus == null ? [] : [READ_PHONE_ACTIVITY_TOOL]), ...search, ...(errandReadable(st) ? [READ_ERRAND_TOOL] : [])];
 }
+
+/** Owner, Nov 19: `read_errand_result` is offered whenever a mail or calendar look-up can exist for this owner. */
+export const errandReadable = (st: Capabilities): boolean => (st.specialists ? st.specialists.mail === "ready" || st.specialists.calendar === "ready" : st.errandsReady);
 
 /**
  * Review fix E11: the Head as a reply reads it. While an errand agent is ready, one code-worded sentence says a look-up
@@ -665,7 +670,7 @@ export function callTools(st: Capabilities): LiveTool[] {
 export function callHead(head: string, st: Capabilities): string {
   if (st.specialists) {
     const { phone, mail, calendar } = st.specialists;
-    return `${head}\n\nSpecialists for this owner: phone (${phone}), mail (${mail}), calendar (${calendar}). Choose the specialist that fits the request. Explain any unavailable part. Use read_phone_result for findings from a previous call.`;
+    return `${head}\n\nSpecialists for this owner: phone (${phone}), mail (${mail}), calendar (${calendar}). Choose the specialist that fits the request. Explain any unavailable part. Use read_phone_result for findings from a previous call.${errandReadable(st) ? " When the owner asks whether a mail or calendar look-up came back, call read_errand_result before answering." : ""}`;
   }
   return st.errandsReady ? `${head}\n\n${ERRAND_HEAD_LINE}` : head;
 }
@@ -778,7 +783,7 @@ export function replyCreate(st: VoiceState, reply: PendingReply, eventId: string
   // Brief 049 part A, ruling 3: and after `start_errand`, so the reply words the neutral line and starts nothing more.
   const webRead = reply.permit.scope !== "ack" && reply.toolOutput?.name === "search_web" && reply.toolOutput.state === "ready";
   const tools = webRead ? { tools: [READ_WEB_TOOL], tool_choice: "required" }
-    : reply.permit.scope === "ack" || reply.toolOutput?.name === "make_phone_call" || reply.toolOutput?.name === "read_phone_result" || reply.toolOutput?.name === "read_money" || reply.toolOutput?.name === "start_errand" || reply.toolOutput?.name === "read_web_result" || reply.toolOutput?.name === "search_web"
+    : reply.permit.scope === "ack" || reply.toolOutput?.name === "make_phone_call" || reply.toolOutput?.name === "read_phone_result" || reply.toolOutput?.name === "read_money" || reply.toolOutput?.name === "start_errand" || reply.toolOutput?.name === "read_web_result" || reply.toolOutput?.name === "search_web" || reply.toolOutput?.name === "read_errand_result"
     ? { tools: [] } : { tools: callTools(st), tool_choice: "auto" };
   return tag({
     type: "response.create",
@@ -2153,7 +2158,7 @@ function parkAdmitted(s: Step, turn: VoiceTurn): void {
 function replyKnown(s: Step, a: ActiveReply): void {
   const id = a.responseId!;
   const moments = a.permit.momentIds.length > 0 ? { moments: { momentIds: [...a.permit.momentIds], noteIds: [...a.permit.noteIds] } } : {};
-  const privateResult = a.webSearchResult || (a.toolOutput?.name === "read_phone_result" && a.toolOutput.report) || (a.toolOutput?.name === "read_web_result" && a.toolOutput.findings.length > 0);
+  const privateResult = a.webSearchResult || (a.toolOutput?.name === "read_phone_result" && a.toolOutput.report) || (a.toolOutput?.name === "read_web_result" && a.toolOutput.findings.length > 0) || (a.toolOutput?.name === "read_errand_result" && a.toolOutput.state === "found");
   const recent: VoiceState["recent"] = [...s.st.recent, { responseId: id, stamp: a.permit.stamp, parts: [], done: false, ...(privateResult ? { privateToolResult: true } : {}), ...moments }];
   sendHeld(s, recent.slice(0, -MAX_RECENT_RESPONSES));
   s.set({ recent: recent.slice(-MAX_RECENT_RESPONSES), inFlight: s.st.inFlight.includes(id) ? s.st.inFlight : [...s.st.inFlight, id] });

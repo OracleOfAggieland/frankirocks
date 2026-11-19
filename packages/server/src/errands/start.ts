@@ -36,6 +36,7 @@ import {
   type Turn,
   type W,
   errandStartNote,
+  errandStillLookingNote,
   msFromTs,
   tsFromMs,
 } from "@franki/core";
@@ -43,7 +44,7 @@ import { storeReader } from "../head-build";
 import { cFields } from "../records";
 import type { RouteContext } from "../routes/runtime";
 import { paths } from "../store/paths";
-import type { Tx } from "../store/port";
+import type { Reader, Tx } from "../store/port";
 import { type ErrandAgent, agentsFor, errandAgentsOf } from "./agent";
 import { assignmentTurnIds } from "./assignment";
 import { errandIdOf, errandJob, errandLedgerId, runningErrands } from "./records";
@@ -103,6 +104,17 @@ async function liveRunning(tx: Tx, uid: string, ops: number, sessionId: string):
   return live.filter(Boolean).length;
 }
 
+/**
+ * Owner, Nov 19: the newest look-up of this Session still running through everything `about` asks for, or null. A
+ * second ask for the same thing ("Anything?") answers "still looking" from it instead of starting a duplicate.
+ */
+export async function runningHere(reader: Pick<Reader, "query">, uid: string, sessionId: string, about: readonly ErrandAbout[], ops: number): Promise<{ id: ID; errand: Errand } | null> {
+  const rows = (await runningErrands(reader, uid)).filter((r) => r.data.sessionId === sessionId && ops - msFromTs(r.data.startedAt) <= ERRAND_RUN_SPAN_MS);
+  const covered = new Set(rows.flatMap((r) => r.data.about));
+  if (rows.length === 0 || !about.every((a) => covered.has(a))) return null;
+  return { id: rows[0]!.id as ID, errand: rows[0]!.data };
+}
+
 export async function planErrand(ctx: RouteContext, x: { stamp: Stamp; turn: Turn; args: ErrandArgs; noteId: ID }): Promise<ErrandPlan> {
   const { uid, deps } = ctx;
   const answer = (state: ErrandStartState, about: readonly ErrandAbout[], errandId: ID | null, missing: readonly ErrandMissing[] = []): ErrandResult => {
@@ -121,11 +133,18 @@ export async function planErrand(ctx: RouteContext, x: { stamp: Stamp; turn: Tur
     };
     return { name: "start_errand", state, errandId, notes: [note] };
   };
+  // Owner, Nov 19: "still looking" when the same look-up is already running here; nothing new starts.
+  const stillLooking = (running: { id: ID }): ErrandResult => {
+    const a = answer("started", x.args.about, running.id);
+    return { ...a, notes: [{ ...a.notes[0]!, text: errandStillLookingNote(x.args.about) }] };
+  };
   const errandId = errandIdOf(deps.hasher, x.stamp.sessionId, x.stamp.turnId);
   // Review fix V9: a repeat on this Turn answers from the Errand it already started, never from its new arguments.
   const fromExisting = (e: Errand): ErrandResult => (e.status === "dropped" ? answer("stale", e.about, null) : answer("started", e.about, errandId));
   const existing = (await deps.store.get<Errand>(uid, paths.errand(uid, errandId)))?.data ?? null;
   if (existing !== null) return { kind: "answer", result: fromExisting(existing) };
+  const already = await runningHere(storeReader(deps.store, uid), uid, x.stamp.sessionId, x.args.about, deps.clock.read().opsClock.now);
+  if (already !== null) return { kind: "answer", result: stillLooking(already) };
   const { agents, state, missing } = await readyAgents(ctx, x.args.about);
   if (state !== null) return { kind: "answer", result: answer(state, x.args.about, null, missing) };
   const about = agents.map((a) => a.about);
@@ -138,6 +157,9 @@ export async function planErrand(ctx: RouteContext, x: { stamp: Stamp; turn: Tur
     // A concurrent start for the same Turn won: its run is scheduled by it.
     if (again !== null) return { result: fromExisting(again.data), write: null, errandId: null };
     if (c.session.status !== "active" && c.session.status !== "minting") return none("stale");
+    // Owner, Nov 19: a concurrent start for the same look-up won; this one answers "still looking".
+    const won = await runningHere(tx, uid, x.stamp.sessionId, x.args.about, c.opsNow);
+    if (won !== null) return { result: stillLooking(won), write: null, errandId: null };
     // Ruling 7: the owner's running Errands, read in this transaction so two starts can't both pass the count.
     if ((await liveRunning(tx, uid, c.opsNow, x.stamp.sessionId)) >= ERRAND_RUNNING_MAX) return none("busy");
     const now = tsFromMs(c.opsNow);
