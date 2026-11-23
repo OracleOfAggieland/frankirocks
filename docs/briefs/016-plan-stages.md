@@ -21,7 +21,7 @@ Later briefs (023 onward) cover F3 waves C and D, the server half of the audienc
 
 ## Rules for every lane
 
-**Where you work.** Only in your lane's working copy, on your lane's branch. Never edit the main checkout at `C:\Users\albeavi\Documents\Coding\frankirocks` or another lane's folder. Never open anything under `C:\Users\albeavi\Documents\Coding\franki\`. Pass both rules on to any agent you start.
+**Where you work.** Only in your lane's working copy, on your lane's branch. Never edit the main checkout or another lane's folder. Pass this rule on to any agent you start.
 
 **What you never do.** No `git push`. No deploy. No call to a paid model: nothing runs with `--live`, and every model call in a test goes through a port with a fake. No real phone call. No secret read or written, and no `.env` file touched. No Firestore emulator in a lane (its port is shared); the lead runs `npm run test:emulator` after each merge. No dev server on port 3000.
 

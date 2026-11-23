@@ -1,6 +1,6 @@
 # Brief 047: forget, part two (lane `forget-b`, F4)
 
-Read `docs/briefs/016-plan-stages.md` first. Its rules apply here, with two changes: your working copy is `C:\Users\albeavi\Documents\Coding\frankirocks-lanes\forget` on branch `lane/forget-b`, and contract questions are numbered `F-200` onward.
+Read `docs/briefs/016-plan-stages.md` first. Its rules apply here, with two changes: your working copy is its own worktree on branch `lane/forget-b`, and contract questions are numbered `F-200` onward.
 
 Brief 021 built forget's fence, resolve and install, and stopped there on purpose. The executor leaves every job `blocked` in phase `closure` with the barrier up, so no forget can complete. This brief builds the rest of the job: closure (spec §8 step 6), resume (step 7, the store half), purge (step 8), and the No Resurrection property that tests them. It is built by Claude Code agents from this brief, not from a Kiro spec, and no commit ends `Built-with: Kiro`.
 

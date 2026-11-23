@@ -48,7 +48,7 @@ Each was a confirmed review finding. The design note's §2.3 lists the new contr
 
 ### Verbatim check
 
-The team's `verbatim-diff.mjs` was run on every ported module. Logs are in `_sm/logs/avatar/vdiff/` (team notes, outside the repo).
+The team's `verbatim-diff.mjs` was run on every ported module.
 
 - **No differences:** `glsl`, `uniforms`, `materials-body`, `materials-hair-brass`, `surface`, `character`, `mouth`, `fx-world`, `fx-sparks`, `fx-lightning` and `probe`.
 - **Only the allowed edits:**
@@ -93,7 +93,7 @@ The 3D ghost shows only when WebGL 2 is there, the engine is ready, reduced moti
 
 ## Build time
 
-**Measured, in node only.** The CPU geometry steps were timed with `process.hrtime` in a temporary vitest file, which was deleted afterwards. Each step ran 6 times on this machine (AMD Ryzen 5 PRO 215). Raw numbers are in `_sm/logs/avatar/cpu-build-timing.json`.
+**Measured, in node only.** The CPU geometry steps were timed with `process.hrtime` in a temporary vitest file, which was deleted afterwards. Each step ran 6 times on this machine (AMD Ryzen 5 PRO 215).
 
 | Step | First run | Median of runs 2-6 | Worst of runs 2-6 |
 |---|---:|---:|---:|

@@ -1,6 +1,7 @@
 /**
- * Owner ruling, Nov 19: a smooth working demo comes before two fail-closed gates, while company mode is off
- * (`FRANKI_COMPANY_MODE` is not "on"; brief 053). With company mode on, both rules below are exactly as before.
+ * Owner ruling, Nov 19: while company mode is off (`FRANKI_COMPANY_MODE` is not "on"; brief 053), two fail-closed
+ * gates relax, because in live calls they kept found results from being said. With company mode on, both rules
+ * below are exactly as before.
  *
  *   1. A slow parse that failed (a refusal or another invalid answer, a missed deadline, a transport error, an
  *      oversize line, a failed Parse_Repair) counts as an ordinary committed parse with no intent hit, for the

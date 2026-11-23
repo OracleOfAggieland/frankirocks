@@ -1,6 +1,6 @@
 # Brief 001: first spoken call
 
-You are building Franki, a voice-first life assistant with a serious memory system, for Kiroween 2026. Judges score how well Kiro was used, so make the work visible: specs, steering, hooks and property tests all live in this repo.
+You are building Franki, a voice-first life assistant with a serious memory system, for Kiroween 2026. Specs, steering, hooks and property tests all live in this repo.
 
 ## Goal
 

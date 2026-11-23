@@ -50,7 +50,7 @@ These are the director's, made so the build can start. List each in the report f
 
 ## How this lane runs
 
-- The lane is `C:\Users\albeavi\Documents\Coding\frankirocks-lanes\xray` on `lane/xray`, started at `c95656e`, the tip of `build/plan-stages`. No merge and no opening run of the whole suite are needed.
+- The lane is its own worktree on `lane/xray`, started at `c95656e`, the tip of `build/plan-stages`. No merge and no opening run of the whole suite are needed.
 - Parts A, B and C run at the same time in this one folder. **Touch only your own part's files.** Another part's files will be half-written while you work: when you run `npx tsc --noEmit -p apps/web`, read only the errors in your own files, and run only your own tests (`npx vitest run <paths>`) and `npx eslint <your paths>`.
 - **No part commits.** The lead commits. No part runs `npm run build` or starts a dev server: the lead has one on port 3200, and a build would fight it for `.next`.
 - Only part C looks at the screen, in the browser pane, at `http://localhost:3200/specimens/xray/view`. If its screenshots come back blank (the pane draws no frames while it is hidden), stop looking and say so in the report; the lead looks afterwards.

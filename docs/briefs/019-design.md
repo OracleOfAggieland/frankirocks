@@ -57,7 +57,7 @@ Each line's time is `{ day, minute }`: days from the clone's Friday and a local 
 
 ## The fixture clock
 
-`ownerClock` returns `{ worldClock: { now: state.worldClock, zone: currentZone }, opsClock: live }` in fixture mode (contracts line 271). The extraction worker now takes its world time from `ownerClock` too, or a judge's "Thursday" would resolve against the real date. Moving the clock forward is brief 023's job. The seam is `setWorldClock(tx, uid, namespace, to, opsNow)` in `seed/clock-state.ts`, which only moves `state.worldClock`, refuses while a barrier is up (KS09) or when `namespace` is not the current clone, and is not yet called by any route.
+`ownerClock` returns `{ worldClock: { now: state.worldClock, zone: currentZone }, opsClock: live }` in fixture mode (contracts line 271). The extraction worker now takes its world time from `ownerClock` too, or a visitor's "Thursday" would resolve against the real date. Moving the clock forward is brief 023's job. The seam is `setWorldClock(tx, uid, namespace, to, opsNow)` in `seed/clock-state.ts`, which only moves `state.worldClock`, refuses while a barrier is up (KS09) or when `namespace` is not the current clone, and is not yet called by any route.
 
 ## The order of a reset
 

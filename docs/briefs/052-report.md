@@ -157,7 +157,7 @@ existing extract suites (authority, lineage, backstop and the rest) pass unchang
 
 - **M-1. The sample visit's first open: the meet line or the wish?** *Resolved by the owner (Nov 18): "Intro first, demo
   line after." Built in the follow-up below; spec §15's beat 1 order now differs (the design docs are unchanged).* Memory spec §15 (`docs/design/memory-spec-v3.md`,
-  the demo table, 0:00 to 0:20) has the sample visit's first call open with Franki speaking first by `proactive`: "Good
+  beat 1 of the demo table) has the sample visit's first call open with Franki speaking first by `proactive`: "Good
   luck at 2. If the gap year comes up, you had a good answer Tuesday." Product rule 3 and ruling 5 have a visitor on a
   fresh sample visit hear "Hi, I'm Franki… What should I call you?" first, which takes the wish's place on the first two
   calls (the wish would come on the third), and the hero offer's with it. The beat 1 and beat 3 scripts pin the spec.
@@ -245,7 +245,7 @@ Each run whole, one after another, on the tree that was committed:
   idle step that says the wish; they still fail for the reasons they wait on.
 - In the runner the scheduled tick runs only on a `work` step, so beat 1 names it as a step; in production nothing
   waits for it but the request's own `after()`.
-- **Spec §15 beat 1 now differs:** the demo table opens the sample visit with the wish (0:00 to 0:20); the build opens
+- **Spec §15 beat 1 now differs:** the demo table opens the sample visit with the wish (beat 1); the build opens
   it with `MEET_LINE` and says the wish at the first pause. `docs/design/` is unchanged (read-only).
 
 ### M-5: a typed open is never offered the meet line

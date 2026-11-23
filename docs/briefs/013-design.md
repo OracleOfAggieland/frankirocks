@@ -534,7 +534,7 @@ Run on the scaffold: `npm run typecheck -w apps/web`, ESLint over the new folder
 
 ### 8.2 Only in a browser
 
-Use Chrome on `localhost` for timing. The built-in pane renders in the background, so its frame rates are not trustworthy (OPEN-ITEMS).
+Use Chrome on `localhost` for timing. The built-in pane renders in the background, so its frame rates are not trustworthy.
 
 1. **Pixel parity.** A dev-only parity panel on the specimens page calls `loadEngine` and `createEngine` directly, with `still: true`, in a fixed 1280 × 900 box, with Acting literals rather than looks (the engine never reads `name`): idle = `{ pose: "idle", overlay: "none", oneShot: null, ghost: false, mic: false, voice: false, electric: false }`; thinking = idle with `pose: "thinking", electric: true`; muted = idle with `ghost: true`; celebrate = idle with `oneShot: "celebrate"`; speaking and listening = the pose with its gate open and the simulated source (D-2), whose still pre-roll (412-418) comes with the copied class. Compare with the prototype at `?still=1&state=<s>` in a window of the same size, tall enough that the dock doesn't lift the framing. Expected: identical pixels on the same machine. Any difference means a broken seam. **Speaking is the one exception on the prototype's side.** Its still mouth depends on the prototype's early frame cadence: the clock is frozen, so the mouth driver's 45 ms dominant-shape hold (2742-2743) never releases, and the shape latched on the first open frame stays. Measured in the prototype at `?still=1&state=speaking`, 1280 × 900, with a timer-driven frame callback: a 16.7 ms cadence froze `mC 0.42, mE 0.58`, a 7 ms cadence gave the settled `mO 0.027, mA 0.973` with the tongue at 1 (`__franki.params`; `audio().voice.cent` 0.23107760999910593 in both). The port's still settle pre-rolls the probes (§2.3), so it always gives the settled shape: compare speaking with a prototype load that reads `mA` near 0.97 in `__franki.params`.
 2. **The acting, side by side.** The specimens three.js section: every look, the SVG next to the three.js ghost. Speaking and Listening read the simulated source; the one-shots cycle. Judge the acting at the main screen's real size too, not only in the parity panel. Check the doze, recovery, approve and Dormant-stilling numbers with the owner.
@@ -546,9 +546,9 @@ Use Chrome on `localhost` for timing. The built-in pane renders in the backgroun
 
 ### 8.3 Review tools (team notes, not shipped)
 
-Under `C:/Users/albeavi/Documents/Coding/frankirocks-wt/_sm/avatar/tools/`, read-only over the prototype (WP1):
+In a local tools folder outside the repo, read-only over the prototype (WP1):
 
-- **`extract-goldens.mjs`** evaluates the prototype in node with the repo's `three@0.187.0` and stubs for the renderer, the document and `URLP`: config and utils (181-256), the GLSL strings (904-1034), 790-899 and 1036-2529 with a stub renderer, surface and geometry. It writes `_sm/avatar/goldens.json`: counts, checksums, P and N, `uHoles`, PRNG prefixes, and a SHA-256 for every `ShaderMaterial` vertex and fragment shader and, for every material with `onBeforeCompile`, for the sources produced by running the hook on three r187's `ShaderLib` source for that material type. Porters copy the numbers into the committed tests as literals, because the repo can't read the prototype.
+- **`extract-goldens.mjs`** evaluates the prototype in node with the repo's `three@0.187.0` and stubs for the renderer, the document and `URLP`: config and utils (181-256), the GLSL strings (904-1034), 790-899 and 1036-2529 with a stub renderer, surface and geometry. It writes `goldens.json`: counts, checksums, P and N, `uHoles`, PRNG prefixes, and a SHA-256 for every `ShaderMaterial` vertex and fragment shader and, for every material with `onBeforeCompile`, for the sources produced by running the hook on three r187's `ShaderLib` source for that material type. Porters copy the numbers into the committed tests as literals, because the repo can't read the prototype.
 - **`verbatim-diff.mjs <file.ts> <start>-<end>`** strips types with TypeScript's `transpileModule`, drops the factory wrapper and the destructuring line, normalizes whitespace and diffs against the prototype range. Every hunk left must be one of E1-E11 or a `// contract:` line of §2.3. For `loop.ts`, line 3270 must show only the §2.3 pointer hunk and no E5 hunk. The reviewer of each WP runs it and attaches the output.
 
 ---
@@ -565,7 +565,7 @@ After WP1, these run **at once**, each touching only its own files:
 
 | WP | Files | Prototype lines | Codes against | Tests |
 |---|---|---|---|---|
-| WP1 Tools and goldens | `_sm/avatar/tools/extract-goldens.mjs`, `_sm/avatar/tools/verbatim-diff.mjs`, `_sm/avatar/goldens.json` (outside the repo), `three/math.test.ts` | none ported; reads 181-2529 | none | `math.test.ts` |
+| WP1 Tools and goldens | `extract-goldens.mjs`, `verbatim-diff.mjs`, `goldens.json` (outside the repo), `three/math.test.ts` | none ported; reads 181-2529 | none | `math.test.ts` |
 | WP2 Stage and shaders | `three/stage.ts`, `three/glsl.ts` | 790-899, 904-952, 971-1034 | HostPart, ConfigPart | `glsl.test.ts` |
 | WP3 Materials | `three/uniforms.ts`, `three/materials-body.ts`, `three/materials-hair-brass.ts` | 954-969, 1036-1421 | ConfigPart, StagePart (types), glsl exports | `materials.test.ts` |
 | WP4 Body and eyes | `three/surface.ts`, `three/character.ts` | 1423-1588 | Config, Stage, Uniforms, BodyMaterials | `geometry-body.test.ts` |
@@ -628,7 +628,7 @@ After WP1, these run **at once**, each touching only its own files:
 **Contract questions:**
 - A timed event re-triggered while its look already shows is not replayed (§2.4). A replay would need the Event_Controller to publish an event counter.
 
-**Prototype oddities kept as they are** (changing them would change the look): the latent `uEyeO` bug (map A finding 1: the lids have no socket shade); the hair shadow ignores tip lag; the open visual items in OPEN-ITEMS (hair shape, brass bolts, the closed-lid outline, the mouth at rest, the orange caps, the square catch-light, the ground line). Brief rule 1 says they are not fixed here.
+**Prototype oddities kept as they are** (changing them would change the look): the latent `uEyeO` bug (map A finding 1: the lids have no socket shade); the hair shadow ignores tip lag; the prototype's open visual items (hair shape, brass bolts, the closed-lid outline, the mouth at rest, the orange caps, the square catch-light, the ground line). Brief rule 1 says they are not fixed here.
 
 **Later:**
 - **Two `requestAnimationFrame` loops.** The lab-ui design names one loop for the screen (`design.md:423`). The engine takes a `FrameScheduler`, so a later change can feed it from `FrameLoop`'s `onFrame` instead.

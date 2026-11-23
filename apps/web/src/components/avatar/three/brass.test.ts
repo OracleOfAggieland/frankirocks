@@ -1,6 +1,6 @@
 // WP5: the bolts, the staples, the merged brass mesh with its aPart ids, and the brass prepass (franki.html
 // 1590-1727, 1990-1993). The goldens are the prototype's own numbers: its brass code, config, U and surface math
-// evaluated in node with the repo's three@0.187.0 (team tool _sm/avatar/wp5/brass-goldens.mjs), copied here as
+// evaluated in node with the repo's three@0.187.0 (a team tool kept outside the repo), copied here as
 // literals because the repo cannot read the prototype. headInner is a bare Group and brassMat a bare material, as
 // in the tool; neither changes the geometry. The merged checksums also pin the ported surface math (WP4).
 import * as THREE from "three";

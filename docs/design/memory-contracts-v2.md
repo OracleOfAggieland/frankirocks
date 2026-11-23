@@ -1017,5 +1017,5 @@ F=floor, A=+200, L=later; F ships at both. Disabled paths: notBuilt in Lab; safe
 |§9|Session tick/retry/fixtures/used proofs|Role/lex/vector+forget; contention/size|Cron/live connectors/whole mail/load|
 |§10 evaluation|12 scripts, 5 poison, food/property families, forced-O, 60 audio lines|<=34 scripts, enabled acceptance|Remaining target scripts; 18 sealed stay blind until one build run|
 
-Owner chose +200, starting Nov3: about193h remain for about190h planned. 127 is fallback. Estimates/spikes remain ASSUMED; the stagger consumes 4h of the same queue, never extra capacity. Spec-v3 Section14 owns dates/order/cuts/stop; properties/hooks required, No Resurrection red before F4; target misses go to owner.
+The 200 h build was chosen Nov 2; the 127 h floor is the fallback. Estimates/spikes remain ASSUMED; the stagger consumes 4h of the same queue, never extra capacity. Spec-v3 Section14 owns dates/order/cuts/stop; properties/hooks required, No Resurrection red before F4; target misses go to owner.
 

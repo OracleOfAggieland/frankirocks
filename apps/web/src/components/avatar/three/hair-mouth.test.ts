@@ -1,6 +1,6 @@
 // WP6: the mop, the tufts, the hair prepass, the fur shells and the mouth (franki.html 1729-1988, 1995-2074). The
 // goldens are the prototype's own numbers: its hair and mouth code, config, U, hairU and surface math evaluated in
-// node with the repo's three@0.187.0 (team tool _sm/avatar/wp6/hair-mouth-goldens.mjs), copied here as literals
+// node with the repo's three@0.187.0 (a team tool kept outside the repo), copied here as literals
 // because the repo cannot read the prototype. headInner is a bare Group and hairMat a bare material, as in the tool;
 // neither changes the geometry. The tuft checksums pin the hrand draw order (HAIR_CELLS, then per fringe tuft the
 // th jitter, the width and the seed, then per small tuft the same three, then one seed per side lock and wrap);

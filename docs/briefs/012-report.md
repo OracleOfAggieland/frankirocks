@@ -90,7 +90,7 @@ CQs 130 to 155 are in the design note's section 8. 130 the turn is never cut; 13
 
 The wave A review confirmed 17 findings and listed smaller ones. Every confirmed finding is fixed in code; no committed property file was edited.
 
-**Property 4b, written red first.** P4 was weak, not wrong: its generator never made a turn where a pending rule could leave for another rule's answer. `packages/core/src/writes/hard-rule-slots.property.test.ts`, with its generator `writes/testing/arb-hard-rule-answers.ts`, was committed red in `e12c423`: a pending rule leaves only for its own slot, an answer's rule names this turn in `dependsOn`, `pendingKept` never comes with no rule and no change, and coverage holds except on a plain "My X" mention. Red seeds at `e12c423` (1,000 runs each; log `_sm/logs/f3/p4b-red.log` outside the repo):
+**Property 4b, written red first.** P4 was weak, not wrong: its generator never made a turn where a pending rule could leave for another rule's answer. `packages/core/src/writes/hard-rule-slots.property.test.ts`, with its generator `writes/testing/arb-hard-rule-answers.ts`, was committed red in `e12c423`: a pending rule leaves only for its own slot, an answer's rule names this turn in `dependsOn`, `pendingKept` never comes with no rule and no change, and coverage holds except on a plain "My X" mention. Red seeds at `e12c423` (1,000 runs each):
 
 | Seed | Failure |
 |---|---|
@@ -135,7 +135,7 @@ The re-check of the review fixes at `dc3b0c3` confirmed three more findings. Eac
 | `5cf9c01` | CQ 150 failed G3's code half on an alias anywhere in the turn, so "I'm allergic to Mondays. Can you order eggs for breakfast?" and three like it wrote the all-food filter and asked. The check is back over the RX4 sentences, and reads the whole U text only when a cue has no object of its own (`cueHasNoObject`, CQ 157). |
 | `ba2bd7d` | CQ 149's strict "my" also stopped transitions ("My job ended last week.", "My contract wasn't renewed.", "My marriage to Sam is over.") and the answer "Mine.". `hasFirstPerson` takes a closed `SelfReading`: `allergy` (strict), `answer` ("Mine." alone or after it's or that's) and `transition` ("my" before a word that names no other person or pet) (CQ 159). |
 
-**Property 4c, red first.** `packages/core/src/writes/hard-rule-off-table.property.test.ts` (1,000 runs) uses P4b's generator, which now also makes "durian", "something" and "My brother isn't allergic to X". It checks that an allergy item naming something off the table never gives a verdict carrying the asked rule's code or a denial answering it, and that an asked pending rule with a gazetteer code stays when every allergy item is such an item. Run against the old `validate.ts` (restored to `dc3b0c3`'s copy for one run, then put back; nothing of it was committed) it went red at seed `1266071246`, path `4:4:3:3:3:3:3:4:4`, shrunk to "I'm definitely allergic to durian. Yes." answering an anonymous pending peanut rule: the durian item carried `peanut`. Log: `_sm/logs/f3/f1-red.log` outside the repo. Green after `c36829c`, over 5 repeated runs alongside P1, P2, P4, P4b and P8.
+**Property 4c, red first.** `packages/core/src/writes/hard-rule-off-table.property.test.ts` (1,000 runs) uses P4b's generator, which now also makes "durian", "something" and "My brother isn't allergic to X". It checks that an allergy item naming something off the table never gives a verdict carrying the asked rule's code or a denial answering it, and that an asked pending rule with a gazetteer code stays when every allergy item is such an item. Run against the old `validate.ts` (restored to `dc3b0c3`'s copy for one run, then put back; nothing of it was committed) it went red at seed `1266071246`, path `4:4:3:3:3:3:3:4:4`, shrunk to "I'm definitely allergic to durian. Yes." answering an anonymous pending peanut rule: the durian item carried `peanut`. Green after `c36829c`, over 5 repeated runs alongside P1, P2, P4, P4b and P8.
 
 **Read differently from the finding, with the reason.** Finding 2 suggested counting an alias outside the RX4 sentences when "the cue word is its last word". That also covers "My boss is so intolerant.", one of the four lines the same finding wants as `notAllergy`, since the boss line ends on its cue. A sentence-final cue therefore counts only when it is `allerg…`, or when the next sentence starts with "to", "of" or "with" (CQ 157).
 
@@ -148,9 +148,9 @@ The re-check at `e3906e3` confirmed two more findings, both on answering turns. 
 | `c70cfc4` | "Not mine.", "It's not mine.", "That's not mine.", "No, not mine." and "It isn't mine." answering who has an anonymous peanut rule resolved no one, and row A9 read the bare denial as an answer, so the peanut filter was cleared though the speaker only said it wasn't theirs ("Not me." already gave a denial for `self`). The `answer` reading now takes "mine" when every other word is an answer word, a cue word or an alias word (`MINE_CONTEXT`), so these are a denial for `self` and the anonymous rule stays, and "Mine too.", "Definitely mine.", "That one's mine.", "The allergy is mine." and "Mine, actually." are an affirm for `self`. Row A9 also needs the denial's span to name no person (`namesSomeone`), so "My brother doesn't." or "She isn't." no longer clears it (CQ 160). |
 | `63ed59c` | `namesNothing` accepted CQ 156's 17 reference words only, so an item copied as "that stuff", "any of that", "those things", "either", "allergic", "that allergy" or "nobody" counted as another allergen: a plain no to the owner's asked peanut rule left it pending with no further question, and a plain yes wrote the all-food filter and asked `whatItem`. It now also accepts generic pointer and quantifier words and the allergy and intolerance cue words, only when the gazetteer finds nothing in the item ("any allergies" stays a global denial). Row A10 on an answering turn is now `pendingKept` for the asked rule, so a "no" to Franki's question never adds the all-food filter (CQ 161). |
 
-**Property 4d, red first.** `packages/core/src/writes/hard-rule-mine-answers.property.test.ts` (1,000 runs, generator in `writes/testing/arb-plain-answers.ts`) checks that a negated "mine" is a denial for `self` (when the item says `isSelf` or the asked rule has no subject to lend it), that "mine" among answer words is an affirm for `self` with the asked code, and that after a negated "mine" or a denial naming a person an asked anonymous rule stays. Run against `e3906e3`'s `subject.ts` and `validate.ts` (restored for one run, then put back; nothing of it was committed) it went red at seed `1805914381`, path `1:0:0:0:0:0`, shrunk to "Not mine." (empty item, no subject) answering the anonymous pending peanut rule: the verdict was a denial answering it. Log: `_sm/logs/f3/p4d-red-head.log` outside the repo.
+**Property 4d, red first.** `packages/core/src/writes/hard-rule-mine-answers.property.test.ts` (1,000 runs, generator in `writes/testing/arb-plain-answers.ts`) checks that a negated "mine" is a denial for `self` (when the item says `isSelf` or the asked rule has no subject to lend it), that "mine" among answer words is an affirm for `self` with the asked code, and that after a negated "mine" or a denial naming a person an asked anonymous rule stays. Run against `e3906e3`'s `subject.ts` and `validate.ts` (restored for one run, then put back; nothing of it was committed) it went red at seed `1805914381`, path `1:0:0:0:0:0`, shrunk to "Not mine." (empty item, no subject) answering the anonymous pending peanut rule: the verdict was a denial answering it.
 
-**Property 4e, red first.** `packages/core/src/writes/hard-rule-plain-answers.property.test.ts` (1,000 runs, same generator) checks that an item made only of pointer, generic and cue words, or an empty one, gives a verdict carrying, answering or keeping the asked rule's gazetteer code, and adds no `unresolved` rule; and that a denial on an answering turn adds no rule at all. Run after `c70cfc4` and before `63ed59c` it went red at seed `-979140169`, path `5:0:0:0:0:0:0`, shrunk to "Yes, I am allergic to that stuff." (item "that stuff", `isSelf`) answering the anonymous pending peanut rule: the verdict was `unsure`, `unresolved`, `whatItem`. Log: `_sm/logs/f3/p4e-red.log`.
+**Property 4e, red first.** `packages/core/src/writes/hard-rule-plain-answers.property.test.ts` (1,000 runs, same generator) checks that an item made only of pointer, generic and cue words, or an empty one, gives a verdict carrying, answering or keeping the asked rule's gazetteer code, and adds no `unresolved` rule; and that a denial on an answering turn adds no rule at all. Run after `c70cfc4` and before `63ed59c` it went red at seed `-979140169`, path `5:0:0:0:0:0:0`, shrunk to "Yes, I am allergic to that stuff." (item "that stuff", `isSelf`) answering the anonymous pending peanut rule: the verdict was `unsure`, `unresolved`, `whatItem`.
 
 Both are green after `63ed59c`, with P1, P2, P4, P4b, P4c and P8, over 5 repeated runs (one run hit the P1 generator error below; the other four were clean).
 
@@ -179,13 +179,13 @@ P4c's written-out word list and `namesNothing` differ (see "Disputes"); settle t
 
 ### Checks
 
-After the third review fixes (`63ed59c`), run one at a time, logs in `_sm/logs/f3/check-*.log` outside the repo: `npm test` exit 0 with 186 files and 1,726 tests; `npm run lint` exit 0, and `turbo run lint --force` (0 cached) exit 0; `npm run typecheck` exit 0; `npm run build -- --force` exit 0 (0 cached), `specimens-absent` passes; `npm run test:emulator` (Java 21, port 8080 free beforehand) exit 0 with 4 files and 42 tests.
+After the third review fixes (`63ed59c`), run one at a time: `npm test` exit 0 with 186 files and 1,726 tests; `npm run lint` exit 0, and `turbo run lint --force` (0 cached) exit 0; `npm run typecheck` exit 0; `npm run build -- --force` exit 0 (0 cached), `specimens-absent` passes; `npm run test:emulator` (Java 21, port 8080 free beforehand) exit 0 with 4 files and 42 tests.
 
-After the second review fixes (`ba2bd7d`), run one at a time, logs in `_sm/logs/f3/fix2-*.log` outside the repo: `npm test` exit 0 with 184 files and 1,716 tests; `npm run lint` exit 0 (it lints `apps/web` only, from turbo's cache); `npm run typecheck` exit 0; `npm run build` exit 0, `specimens-absent` passes; `npm run test:emulator` (Java 21) exit 0 with 4 files and 42 tests.
+After the second review fixes (`ba2bd7d`), run one at a time: `npm test` exit 0 with 184 files and 1,716 tests; `npm run lint` exit 0 (it lints `apps/web` only, from turbo's cache); `npm run typecheck` exit 0; `npm run build` exit 0, `specimens-absent` passes; `npm run test:emulator` (Java 21) exit 0 with 4 files and 42 tests.
 
-After the review fixes (`c5ca360`), run one at a time, logs in `_sm/logs/f3/fix-*.log` outside the repo: `npm test` exit 0 with 183 files and 1,709 tests; `npm run lint` exit 0; `npm run typecheck` exit 0 (packages, `scripts/judge-spike`, `scripts/extract-check`, and now `tests/`); `npm run build` exit 0, `specimens-absent` passes; `npm run test:emulator` (Java 21) exit 0 with 4 files and 42 tests.
+After the review fixes (`c5ca360`), run one at a time: `npm test` exit 0 with 183 files and 1,709 tests; `npm run lint` exit 0; `npm run typecheck` exit 0 (packages, `scripts/judge-spike`, `scripts/extract-check`, and now `tests/`); `npm run build` exit 0, `specimens-absent` passes; `npm run test:emulator` (Java 21) exit 0 with 4 files and 42 tests.
 
-Earlier, after A10b, logs in `_sm/logs/f3/a11-*.log`:
+Earlier, after A10b:
 
 | Check | Result |
 |---|---|
@@ -201,7 +201,7 @@ Earlier, after A10b, logs in `_sm/logs/f3/a11-*.log`:
 - **The extraction check's matching is a reading.** Subjects match on the owner's words with "my", "the" or "the owner's" dropped; values match on whole words, and an allergy value through `lookupAllergen`. It is tested on hand-built answers, never on real model output. A live result that looks wrong may be the matcher; that would be fixed in check.ts, never by relabelling a line.
 - Nothing of wave A is wired into `/api/turn` yet: the planners are pure and only extraction's status loop calls new code. The worker and route variants of P1, P3, P5, P6 and P8 belong to waves B to D.
 
-### Live-check steps for the owner (paid; each needs your yes first)
+### Live-check steps (real model calls, each run only with the owner's go-ahead)
 
 1. `node --env-file=apps/web/.env.development.local --env-file=apps/web/.env.local scripts/judge-spike/run.mjs harness --source owner --live --fast-slots` on your takes. The run refuses if `scripts/judge-spike/lines.json` has uncommitted changes. Read the FastSlotsV1 section of the summary: p50, p95, the largest time, the share over 900 ms, valid items per class, and the speaker-certainty line.
 2. `node --env-file=apps/web/.env.development.local --env-file=apps/web/.env.local scripts/extract-check/run.mjs --live`. It prints one line per frozen line and the pass count by class, and writes `scripts/extract-check/results/<time>-extract-check.json` (IDs, indexes and plan kinds, no words).
@@ -269,7 +269,7 @@ Built by Claude on lane `writes`. Kiro wrote none of this wave. Every task, 0 an
 
 - P4c's word list still differs from the code (CQ 161). It was left alone, as brief 018 says, and the question stays with the owner.
 
-### Live-check steps for the owner (paid; each needs your yes first)
+### Live-check steps (real model calls, each run only with the owner's go-ahead)
 
 These are unchanged from wave A, and none has been run:
 
@@ -352,6 +352,6 @@ Only through the record. The death writes `person.life = deceased` and resolves 
 
 `npx vitest run --maxWorkers=3`: 443 files, 3,901 passed, 34 expected fail. Lint (one existing web warning) and build exit 0. `npm run typecheck` fails on one line of the committed P13 file (D1's generator reads `value.code` on a `Value`). That file may not be edited under the brief's rule, so it is left for the lead.
 
-### Live-check step for the owner (paid; needs your yes first)
+### Live-check step (a real model call, run only with the owner's go-ahead)
 
 Step 8 of the design's live list, not run: say "My dad passed away last night." Expect a care reply and no "saved", and no cut and restart on a fast-path take. The Memories should show `person.life` deceased. In the next call, nothing about him should be raised unprompted.

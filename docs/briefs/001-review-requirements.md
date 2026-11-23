@@ -49,5 +49,5 @@ The requirements are already 115 KB, which is more detail than this slice needs.
 
 - Aim for under 40 KB. Reference requirement numbers and contract sections instead of restating them.
 - Cover the architecture, module layout, data flow for one voice turn and one typed turn, the state machine, error handling, the testing strategy, Contract questions, and owner actions.
-- Don't use sub-agents. Credits are limited, so read only the contract sections you need.
+- Don't use sub-agents. Read only the contract sections you need.
 - Stop after `design.md`. Don't write `tasks.md` yet, because the design gets reviewed first.

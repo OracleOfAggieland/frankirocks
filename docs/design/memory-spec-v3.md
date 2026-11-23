@@ -1,6 +1,6 @@
 # Franki memory: merged system spec, v3
 
-Nov 2, 2026. Written by Team Claude from `converge/decisions-v1.md`, `decisions-v2.md` and `decisions-v3.md`. This file holds behavior: what Franki does and why. `converge/contracts-v2.md`, written by Team Codex, holds fields, schemas, prompts, routes and indexes. If the two disagree, that's a defect to fix, not a choice to make while building. Latencies, hours and thresholds are assumed until the named spike.
+Nov 2, 2026. Merged from three rounds of design decisions made by two AI design teams, Team Claude and Team Codex, whose working notes are not in this repo. This file, written by Team Claude, holds behavior: what Franki does and why. [`memory-contracts-v2.md`](memory-contracts-v2.md), written by Team Codex, holds fields, schemas, prompts, routes and indexes. If the two disagree, that's a defect to fix, not a choice to make while building. Latencies, hours and thresholds are assumed until the named spike.
 
 ## The system in one paragraph
 
@@ -355,7 +355,7 @@ Harder scenarios from both teams are in the script suite: "allergic to Mondays",
 
 ## 13. Evaluation
 
-**Score what's said, not recall.** Injected clock. 40 scripts: the 28 above plus 12 edges, each a sequence of clock steps, utterances and limb events, with asserted says and holds (`mustSay`, `mayUse`, `neverSay`). Then Team Codex's 18 sealed cases run unseen, once, on the build. A memory-off control on every release, and a full-context control once, by hand, for the pitch. Rule checks first. An LLM judge only for tact, calibrated on 100 labels.
+**Score what's said, not recall.** Injected clock. 40 scripts: the 28 above plus 12 edges, each a sequence of clock steps, utterances and limb events, with asserted says and holds (`mustSay`, `mayUse`, `neverSay`). Then Team Codex's 18 sealed cases run unseen, once, on the build. A memory-off control on every release, and a full-context control once, by hand. Rule checks first. An LLM judge only for tact, calibrated on 100 labels.
 
 **Five property families at 1,000 traces, in memory, behind a store port, on every save:**
 1. **Lineage.** No Resurrection: under any interleaving of named phases (commit, cascade, payload, delete ack, cutover), after forget, no moment, Head, whisper or tool result contains the target or a derivative, except from a new U statement. Survivors stay usable. Written red first. This is the demo's counterexample.
@@ -386,13 +386,13 @@ If the forced-`O` row fails, `fastO` switches to `fastHead` and the row is retes
 
 **Published, not blocking:** false holds, joint misses, food named without `suggest`, p95 latencies, wrongly held (≤10%), door recall, S2 sensitivity recall, on-time whispers, over-forget rate.
 
-The floor build runs 12 scripts, 5 poison scripts and food by property, with no contention or size probes. Full acceptance at 200 h runs at most 34 scripts, because six are Later. The gates above apply to what ships, and §12 lists what doesn't. The chip path never runs the judge, so the 800 ms claim is shown on a real microphone in the video.
+The floor build runs 12 scripts, 5 poison scripts and food by property, with no contention or size probes. Full acceptance at 200 h runs at most 34 scripts, because six are Later. The gates above apply to what ships, and §12 lists what doesn't. The chip path never runs the judge, so the 800 ms claim is measured on a real microphone.
 
 **The design is failing if** it doesn't beat memory-off on over-personalization, unneeded proactive passes 10%, wrongly held passes 20%, on-time falls under 70%, or any resurrection appears after Dec 1.
 
 ## 14. Build plan
 
-Capacity is fixed: 127 h on evenings or 200 h full time through Dec 1. Video and write-up take Dec 2–4. Independent reviews repriced the plan twice: **F0–F11 as first written cost about 201 h (range 150–279), and all 28 Friend Tests plus all additions cost about 286 h.** Neither capacity holds that, so scope is cut by name, not by raising capacity. Prices assume Kiro writes the code and the owner directs it, at a blended 2.5× speedup. The first 31 h replace that guess.
+Capacity is fixed: a 127 h floor or a 200 h build through Dec 1. Independent reviews repriced the plan twice: **F0–F11 as first written cost about 201 h (range 150–279), and all 28 Friend Tests plus all additions cost about 286 h.** Neither capacity holds that, so scope is cut by name, not by raising capacity. Prices assume Kiro writes the code and the owner directs it, at a blended 2.5× speedup. The first 31 h replace that guess.
 
 **The 127 h floor: about 127.5 h planned, no reserve, range about 100–170.**
 
@@ -433,29 +433,18 @@ All six demo beats work, but beat 4 loses the walked-in tap and the recruiter li
 | 12 | Full acceptance, 34 scripts | 8.5 |
 | 13 | Stagger, only if F2 measures a miss (moves up to right after F2) | 4 |
 
-Unstarted additions stop at about 170 h, Nov 27, so that acceptance ends Nov 30. The first review put judge-visible work first. Team Claude moved memory work ahead of Denver, because this system is the foundation for everything else.
+Unstarted additions stop at about 170 h, Nov 27, so that acceptance ends Nov 30. The first review put visible demo work first. Team Claude moved memory work ahead of Denver, because this system is the foundation for everything else.
 
-**Post-submission queue, designed and not built by Dec 1:** the Connector, Denver chip and live guesses (7.5, and first in line if hours remain at 200 h); cron (3); the rest of G4: recurrence, gaps, goals, commitment closure (15); G1 real Gmail and Calendar (24); G2 real Plaid (11); G3 whole-mail reader (9); G6 nutrition expansion (7); G7 load and races (8). Friend Tests 5, 7, 19, 26, 27 wait for these. Real Gmail doesn't fit either capacity. It would displace 24 h of the items above, and no judge would see it.
+**Post-submission queue, designed and not built by Dec 1:** the Connector, Denver chip and live guesses (7.5, and first in line if hours remain at 200 h); cron (3); the rest of G4: recurrence, gaps, goals, commitment closure (15); G1 real Gmail and Calendar (24); G2 real Plaid (11); G3 whole-mail reader (9); G6 nutrition expansion (7); G7 load and races (8). Friend Tests 5, 7, 19, 26, 27 wait for these. Real Gmail doesn't fit either capacity. It would displace 24 h of the items above, and the demo runs on fixtures.
 
-**Stages.**
-
-| By | 127 h (3 h weekdays, 8 h weekends) | 200 h (7 h a day, 4 h Nov 27) |
-|---|---|---|
-| Nov 6 | 15 h: F0, first spoken call | 35 h: F0–F2, judge and hangup measured |
-| Nov 13 | 46 h: F1, F2 (judge verdict Nov 9), F8, chips, **labeled walk of the whole demo** | 84 h: lineage property, F3, F4, F8, untuned F11, chips, **labeled walk** |
-| Nov 21 | 85 h: lineage property, F3, F4 (first real forget Nov 21), part of F11 | 140 h: F5–F7, F10, items 1–3, most of item 4 |
-| Dec 1 | 127 h: F11, F6 by Nov 24; F7, F5, F10 by Nov 29; F9 by Dec 1 | 200 h: additions stop Nov 27; F9 and acceptance by Nov 30; the rest is reserve |
-
-Thanksgiving (Nov 26) counts as zero. At 127 h, Nov 28–29 carry 16 h and acceptance finishes on the last two evenings, so that weekend must be protected. Placeholder labels on the walk can't survive to submission.
-
-**The owner chose 200 h on Nov 2.** The table counts Nov 2 in full, but work starts Nov 3, so about 193 h remain against about 190 h planned: 3 h of reserve, or 1 h over if the stagger runs. At 7 h a day that gives 28 h by Nov 6, the judge verdict Nov 7, 77 h by Nov 13 with the labeled walk, 133 h by Nov 21, additions stopping Nov 28, and acceptance ending Dec 1. Seven extra hours before Nov 25 restore the table's dates and the 10 h reserve. If the pace can't hold, the 127 h column is the fallback.
+**Stages.** The 200 h build was chosen on Nov 2, with the 127 h floor as the fallback. Checkpoints: F0–F2 and the judge verdict by Nov 7; the lineage property, F3, F4, F8, an untuned F11, chips and a labeled walk of the whole demo by Nov 13; F5–F7, F10 and additions 1–3 by Nov 21; additions stop Nov 28; acceptance ends Dec 1. Placeholder labels on the walk can't survive to submission.
 
 **Most likely to blow up, with the early sign.**
 1. **F2, the judge.** No verdict on real audio after 3 h, sequential p50 over 850 ms on 15 probes, or control recall under 90%.
 2. **F4, install.** Lineage property red after 6 h, spans failing on over 5% of real lines, or 3 of 10 swaps past 5 s.
 3. **F11, persona on live voice.** After 2 h, more than 1 in 5 whispers adds a fact or recaps, or food turns skip `suggest`.
 
-**Kiro.** Four specs: `canonical-contracts`, `voice-control`, `sources-time`, `judge-loop`. Every task names its dependencies, estimate, actual hours, scenario variants and test witness. Property tasks are required, because Run all Tasks skips optional ones. Save hooks run fast in-memory invariants. A guard hook blocks `Date.now()` outside the clock port and blocks property edits. Task completion runs witnesses. Emulator, index and audio checks are separate acceptance jobs. One writer on schema and session-control files. The No Resurrection property is written red first and its real shrunk counterexample goes in the video.
+**Kiro.** Four specs: `canonical-contracts`, `voice-control`, `sources-time`, `judge-loop`. Every task names its dependencies, estimate, actual hours, scenario variants and test witness. Property tasks are required, because Run all Tasks skips optional ones. Save hooks run fast in-memory invariants. A guard hook blocks `Date.now()` outside the clock port and blocks property edits. Task completion runs witnesses. Emulator, index and audio checks are separate acceptance jobs. One writer on schema and session-control files. The No Resurrection property is written red first and its real shrunk counterexample is kept.
 
 **Never cut:** clock port, blocks, lineage, hard rules, source on every field, required end, permits, slow gate, spoken-grade test, ledger, reset, fresh-call forget, Lab counts, hero.
 
@@ -463,28 +452,20 @@ Thanksgiving (Nov 26) counts as zero. At 127 h, Nov 28–29 carry 16 h and accep
 
 Each visit clones a seeded persona, keyed to a stored visit ID, with dates relative to now, a per-user clock and an isolated reset. The clone's clock starts on a Friday at 08:40, which keeps "Thursday" clear and "Tuesday" true. The session is user-started, so the audience is private. Lab numbers are real. No microphone needed: chips drive it, and chip text counts as the user's words. Jumps are labeled simulated.
 
-| Time | Beat |
+| Beat | What happens |
 |---|---|
-| 0:00–0:20 | Franki speaks first, by `proactive`: "Good luck at 2. If the gap year comes up, you had a good answer Tuesday." The card shows it moved from yesterday |
-| 0:20–0:50 | The judge types "Biscuit has surgery Thursday." Franki replies, and extraction runs behind it. When it's done, a labeled bolt jumps to Thursday at 18:00: "How'd Biscuit do?" It's about their own words |
-| 0:50–1:30 | "$186 on takeout…", sources on the card. Its moment is due after the bolt, so it can't play first. "Yes." The comparison rows are written at that moment. Three weeks on, Franki speaks first: "$71, down from $186 over the same three weeks." The strip fills: Noticed, Connected, Suggested, You said yes, $115 less |
-| 1:30–1:50 | "I might leave my job." Warm first. Next turn, at 200 h: "Jordan's email still has no reply from you. Want a reminder Thursday?" The Lab: *Read {n} emails. Guessed 3 private things. Said none.* At 200 h, tap "Someone walked in": same question, narrower answer |
-| 1:50–2:25 | Earlier in one breath: "I'm allergic to shellfish, and my brother's in trouble again." Franki answers both. Now: "Forget what I said about my brother." "Gone." The shellfish rule from that same sentence stays. The receipt separates blocked from cleaned, and lists what it touched. The seed holds no other brother fact, so the cue isn't vague |
-| 2:25–3:00 | Kiro: the spec, the No Resurrection property, the actual shrunk counterexample, the fix |
+| 1 | Franki speaks first, by `proactive`: "Good luck at 2. If the gap year comes up, you had a good answer Tuesday." The card shows it moved from yesterday |
+| 2 | The visitor types "Biscuit has surgery Thursday." Franki replies, and extraction runs behind it. When it's done, a labeled bolt jumps to Thursday at 18:00: "How'd Biscuit do?" It's about their own words |
+| 3 | "$186 on takeout…", sources on the card. Its moment is due after the bolt, so it can't play first. "Yes." The comparison rows are written at that moment. Three weeks on, Franki speaks first: "$71, down from $186 over the same three weeks." The strip fills: Noticed, Connected, Suggested, You said yes, $115 less |
+| 4 | "I might leave my job." Warm first. Next turn, at 200 h: "Jordan's email still has no reply from you. Want a reminder Thursday?" The Lab: *Read {n} emails. Guessed 3 private things. Said none.* At 200 h, tap "Someone walked in": same question, narrower answer |
+| 5 | Earlier in one breath: "I'm allergic to shellfish, and my brother's in trouble again." Franki answers both. Now: "Forget what I said about my brother." "Gone." The shellfish rule from that same sentence stays. The receipt separates blocked from cleaned, and lists what it touched. The seed holds no other brother fact, so the cue isn't vague |
+| 6 | Kiro: the spec, the No Resurrection property, the actual shrunk counterexample, the fix |
 
-Chips for judges who stay: "What do you know about me?", which reads `snapshot()` and adds two recent told lines. At 200 h, also "Why didn't you suggest Osteria?", and move the interview to watch the wish slide (a second-round interview at clock +2 days, because a judge may press it three weeks on). Denver and Ana, and the deck promise, are Later; they stay out of the demo until real handlers exist.
-
-| Criterion | What a judge recalls in month two |
-|---|---|
-| Potential Impact | A habit visibly $115 lower, and an assistant safe to give everything to |
-| Technological Implementation | A judge before every sentence under 800 ms, a pure gate, provable selective forget in a live session |
-| Design | Strip, jar, Lab and receipt as one Frankenstein's lab, with almost no screen text |
-| Innovation | Knows everything, says little, shows what it held back, and turns new personal evidence into timely action |
-| Presentation | "It asked about my dog." One forget links the product and Kiro |
+Chips for visitors who stay: "What do you know about me?", which reads `snapshot()` and adds two recent told lines. At 200 h, also "Why didn't you suggest Osteria?", and move the interview to watch the wish slide (a second-round interview at clock +2 days, because a visitor may press it three weeks on). Denver and Ana, and the deck promise, are Later; they stay out of the demo until real handlers exist.
 
 ## 16. Cost
 
-Team Codex's shared no-cache workload: 40 exchanges in ten minutes, a judge on every turn, and full changed-mail and nightly reading. About $1.41 per active day and $0.49 per three-minute judge day. **Forecast $815 through Jan 29, reserve $1,600, no access cap.** Voice is most of the bill, so background model choice should follow quality. Math: `codex/round3/09-cost.md`. Two years of heavy use: about 5–6 GiB and under $1/month of Firestore.
+Team Codex's shared no-cache workload: 40 exchanges in ten minutes, a judge on every turn, and full changed-mail and nightly reading. About $1.41 per active day and $0.49 for a three-minute visit, with no access cap. Voice is most of the bill, so background model choice should follow quality. Two years of heavy use: about 5–6 GiB and under $1/month of Firestore.
 
 ## 17. Spikes and what would change our minds
 
@@ -503,15 +484,15 @@ Team Codex's shared no-cache workload: 40 exchanges in ten minutes, a judge on e
 
 **We'd change our minds if** a full-context control beats this on `neverSay` and over-personalization, a judge can't reach useful recall at any latency, or vague recall stays under 70%.
 
-## 18. Changes to `research/11`
+## 18. Changes to the [architecture decision](architecture-decision.md)
 
 | Row | Was | Now |
 |---|---|---|
 | Realtime client | `RealtimeSession` in `@openai/agents` | A thin app-owned `RTCPeerConnection` and `oai-events` adapter, with app-owned tools, responses and playback. The pinned SDK can't use our server-side SDP proxy |
 | Session setup | Browser mints directly | Server proxies SDP and holds the call ID; media stays direct |
 | Transcription | `gpt-transcribe` assumed | `gpt-4o-mini-transcribe` baseline, removal Feb 26, 2027; others are spikes |
-| Firestore indexes | Empty file | The query registry in `contracts-v2.md` |
-| Warm instance | `minInstances:0` | Warm on page entry; one min instance during judging, about $0.43/day at 1 GiB, price unchecked |
+| Firestore indexes | Empty file | The query registry in `memory-contracts-v2.md` |
+| Warm instance | `minInstances:0` | Warm on page entry; one min instance while the demo is open |
 | App Check | Required | Firebase ID token plus origin and CSRF checks until after submission |
 
 ## 19. Where it came from
@@ -522,6 +503,6 @@ Team Codex's shared no-cache workload: 40 exchanges in ten minutes, a judge on e
 
 ## 20. Owner decisions
 
-1. **Hours: decided Nov 2, 200 h.** Dates and reserve are in §14. §12's 127 h column stays as the fallback.
+1. **Hours: decided Nov 2, the 200 h build.** Dates are in §14. The 127 h floor stays as the fallback.
 2. **Real accounts.** Whether internal testers use real accounts, given official rules line 93 ("authorized to use them in accordance with any terms and conditions or licensing requirements of the tool"), and how they connect once `O8` reports. Judges use fixtures either way, and neither build has real Gmail by Dec 1, so this is mostly post-submission.
-3. **A judge miss,** only if it happens. If F2 or acceptance misses ≥99% recognition or 800 ms, you choose, with the numbers. Our recommendation: ship the judge at its measured rate with both nets and the visible control, and publish the rates.
+3. **A judge miss,** only if it happens. If F2 or acceptance misses ≥99% recognition or 800 ms, the owner chooses, with the numbers. Our recommendation: ship the judge at its measured rate with both nets and the visible control, and publish the rates.

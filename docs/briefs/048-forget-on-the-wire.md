@@ -1,6 +1,6 @@
 # Brief 048: forget on the wire (lane `forget-b`, F4)
 
-Read `docs/briefs/016-plan-stages.md` first, with the same two changes as the forget brief numbered 047 (`047-forget-part-two.md`; the radio's brief shares that number): your working copy is `C:\Users\albeavi\Documents\Coding\frankirocks-lanes\forget` on branch `lane/forget-b`, and contract questions continue from `F-204`. Then read `047-forget-part-two.md` and `047-report.md`.
+Read `docs/briefs/016-plan-stages.md` first, with the same two changes as the forget brief numbered 047 (`047-forget-part-two.md`; the radio's brief shares that number): your working copy is its own worktree on branch `lane/forget-b`, and contract questions continue from `F-204`. Then read `047-forget-part-two.md` and `047-report.md`.
 
 After that brief the forget job runs from the fence to `done` on the store, one step per `advanceForget` call, with a fake for the resolve model and a fake `CallClosePort`. Resume leaves the acknowledgment as data on the job (`ack`: `gone`, `goneExceptRule`, `offerRetell` or `ask`, with `askAllergies`) and names the turns a fresh call carries (`carryTurnIds`). No route calls any of it, and admission rule 11 still answers "I can't forget things yet."
 
