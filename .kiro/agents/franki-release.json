@@ -1,0 +1,173 @@
+{
+  "name": "franki-release",
+  "description": "Ships a reviewed commit: checks the working copy, fast-forwards main on GitHub, and can change the repository's visibility. Cannot write files, force-push, delete branches or repositories, read secrets, deploy or change cloud settings.",
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "read",
+    "grep",
+    "glob",
+    "list",
+    "ls",
+    "search",
+    "shell",
+    "execute_bash",
+    "execute_cmd",
+    "run_command"
+  ],
+  "toolsSettings": {
+    "shell": {
+      "deniedCommands": [
+        ".*git push.*--force.*",
+        ".*git push.* -f.*",
+        ".*git push.*\\+.*",
+        ".*git push.*--delete.*",
+        ".*git push.* -d .*",
+        ".*git push.*--mirror.*",
+        ".*git push.*--all.*",
+        ".*git push.*--prune.*",
+        ".*git push.*:refs/tags.*",
+        ".*git remote.*",
+        ".*git config.*",
+        ".*git reset.*",
+        ".*git clean.*",
+        ".*git merge .*",
+        ".*git rebase.*",
+        ".*git commit.*",
+        ".*git tag.*",
+        ".*git branch -D.*",
+        ".*git filter.*",
+        ".*gh repo delete.*",
+        ".*gh repo rename.*",
+        ".*gh repo archive.*",
+        ".*gh repo transfer.*",
+        ".*gh repo fork.*",
+        ".*gh repo create.*",
+        ".*--default-branch.*",
+        ".*gh api.*",
+        ".*gh secret.*",
+        ".*gh variable.*",
+        ".*gh auth.*",
+        ".*gh pr .*",
+        ".*gh release.*",
+        ".*firebase .*",
+        ".*firebase-tools.*",
+        ".*npm run deploy.*",
+        ".*npm run smoke.*",
+        ".*npm publish.*",
+        ".*gcloud .*",
+        ".*curl .*",
+        ".*wget .*",
+        ".*Invoke-WebRequest.*",
+        ".*Invoke-RestMethod.*",
+        ".*iwr .*",
+        ".*irm .*",
+        ".*\\.env.*",
+        ".*printenv.*",
+        ".*env:.*",
+        ".*setx .*",
+        ".*Set-Content.*",
+        ".*Out-File.*",
+        ".*Remove-Item.*",
+        ".*rm .*",
+        ".*del .*"
+      ]
+    },
+    "fs_read": {
+      "deniedPaths": [
+        "**/.env*"
+      ]
+    },
+    "read": {
+      "deniedPaths": [
+        "**/.env*"
+      ]
+    }
+  },
+  "permissions": {
+    "rules": [
+      {
+        "capability": "shell",
+        "match": [
+          "*git push*--force*",
+          "*git push* -f*",
+          "*git push*+*",
+          "*git push*--delete*",
+          "*git push* -d *",
+          "*git push*--mirror*",
+          "*git push*--all*",
+          "*git push*--prune*",
+          "*git push*:refs/tags*",
+          "*git remote*",
+          "*git config*",
+          "*git reset*",
+          "*git clean*",
+          "*git merge *",
+          "*git rebase*",
+          "*git commit*",
+          "*git tag*",
+          "*git branch -D*",
+          "*git filter*",
+          "*gh repo delete*",
+          "*gh repo rename*",
+          "*gh repo archive*",
+          "*gh repo transfer*",
+          "*gh repo fork*",
+          "*gh repo create*",
+          "*--default-branch*",
+          "*gh api*",
+          "*gh secret*",
+          "*gh variable*",
+          "*gh auth*",
+          "*gh pr *",
+          "*gh release*",
+          "*firebase *",
+          "*firebase-tools*",
+          "*npm run deploy*",
+          "*npm run smoke*",
+          "*npm publish*",
+          "*gcloud *",
+          "*curl *",
+          "*wget *",
+          "*Invoke-WebRequest*",
+          "*Invoke-RestMethod*",
+          "*iwr *",
+          "*irm *",
+          "*.env*",
+          "*printenv*",
+          "*env:*",
+          "*setx *",
+          "*Set-Content*",
+          "*Out-File*",
+          "*Remove-Item*",
+          "*rm *",
+          "*del *"
+        ],
+        "effect": "deny"
+      },
+      {
+        "capability": "fs_read",
+        "match": [
+          "**/.env*",
+          "**/.env*/**"
+        ],
+        "effect": "deny"
+      },
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      },
+      {
+        "capability": "shell",
+        "effect": "allow"
+      }
+    ]
+  },
+  "kiroUpgrade": {
+    "revision": 2,
+    "fingerprint": "sha256:874eac5667cc713e0ef05563b845fd90cf03a0827ede41f9494ccdcf9554693c",
+    "source": "sha256:4eb0708e1ebaf27f11458681b4c8e13c25c62d83fdd4224975c4418386c3f0a6"
+  }
+}
