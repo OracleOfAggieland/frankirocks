@@ -44,7 +44,7 @@ export interface ControllerDeps {
   fixtureId?: string;
   /**
    * Brief 054: a demo visit (an anonymous user), for what the screen offers only; the server decides from the token.
-   * Wave 2 (part D2) passes it to the Voice_Client as `phoneOff`, so the call offers no phone tool.
+   * Passed to the Voice_Client as `phoneOff` (part D2), so the call offers no phone tool.
    */
   demo?: boolean;
 }
@@ -130,6 +130,8 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
           },
           // Brief 049 part A: the errands' word and cards.
           onErrands: (stamp, view) => errands.onState(stamp, view),
+          // Brief 054 part D2: a demo visit's call offers no phone tool.
+          ...(deps.demo === true ? { phoneOff: true } : {}),
         });
   const phone = new PhoneWatch({ api, now: () => clock.mono() });
   const memory = new MemoryModel({ api });

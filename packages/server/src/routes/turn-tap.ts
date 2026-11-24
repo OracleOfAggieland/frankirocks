@@ -32,11 +32,13 @@ import { effectiveAudience, expireLease, hasParseGap } from "../audience";
 import { audienceEffect, narrowedHere, precompileAudienceHead, withNarrowHead } from "../audience-swap";
 import { ensureCoreDocs, ownerClock, readCoreDocs } from "../core-docs";
 import { currentStamp, issueDeck } from "../deck";
+import { isDemoVisit } from "../demo/visit";
 import type { SlowParse } from "../intents/slow-parse";
 import { completeRequest } from "../ledger/request";
 import { afterClosed } from "../sessions";
 import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
+import { readSnapshot } from "../store/port";
 import { driveHangupJob, ensureHangupJob } from "../worker/hangup";
 import { barrierError, parseError, staleError } from "./errors";
 import { Unrecorded, mutation } from "./mutation";
@@ -88,6 +90,8 @@ export async function postTap(ctx: RouteContext, req: TurnReq): Promise<TurnRes>
   return mutation<TurnRes>(ctx, "turn", req.requestId, req, async (key) => {
     // The Head the tap moves to, compiled before the transaction as a company or alone line's is.
     const audienceHead = await precompileAudienceHead(ctx, slow, req.generation);
+    // Kiroween Demo (contract question 97): the verified token, else the connectors; read before the transaction.
+    const demo = ctx.anonymous !== undefined ? ctx.anonymous : await readSnapshot(deps.store, uid, (reader) => isDemoVisit({ uid, env: deps.env, hasher: deps.hasher }, reader));
     for (let attempt = 1; ; attempt++) {
       try {
         const outcome = await deps.store.transaction(uid, async (tx) => {
@@ -145,7 +149,7 @@ export async function postTap(ctx: RouteContext, req: TurnReq): Promise<TurnRes>
             bundleWritten: false,
             hasher: deps.hasher,
           });
-          const aud = await withNarrowHead(tx, uid, aud0, { epoch: core.epoch.data, rules, bundle: core.bundle.data, clock: pair, generation: s0.generation, opsNow: ops, hasher: deps.hasher, bundleWritten: false });
+          const aud = await withNarrowHead(tx, uid, aud0, { epoch: core.epoch.data, rules, bundle: core.bundle.data, clock: pair, generation: s0.generation, opsNow: ops, hasher: deps.hasher, bundleWritten: false, ...(demo ? { playsOwner: true } : {}) });
           if (aud !== null) {
             tx.update(paths.core(uid, "epoch"), aud.epoch);
             if (aud.bundle !== null) tx.update(paths.core(uid, "bundle"), aud.bundle);

@@ -18,11 +18,12 @@ import { type CoreEpoch, type ID, type Session, type Turn, changesWhatIsSaid, ms
 import { lateHitDecisionId, recordLateHit } from "../admission/seam";
 import { advancedWatermark, effectiveAudience, expireLease } from "../audience";
 import { failedParseIsOrdinary } from "../company-off";
+import { isDemoVisit } from "../demo/visit";
 import { runRepairRoute } from "../onturn/late";
 import type { RouteDeps } from "../routes/runtime";
 import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
-import type { Tx } from "../store/port";
+import { type Tx, readSnapshot } from "../store/port";
 import { decisionsPort } from "./decisions-port";
 import { runSlowParse } from "./slow-parse";
 // Brief 035 (finding 1): a late company or quiet hit narrows, as it would on the turn.
@@ -60,6 +61,9 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
   // Brief 035: the narrow Head a late company or quiet hit needs, compiled before the transaction as the turn does.
   const sessionGen = (await deps.store.get<Session>(uid, paths.session(uid, sessionId)))?.data.generation ?? 1;
   const audienceHead = await precompileAudienceHead({ uid, deps }, slow, sessionGen);
+  // Kiroween Demo (contract question 97): a repair runs after the response, with no token, so the connectors say
+  // whether this is a demo visit. Read before the transaction, so its reads add nothing to it.
+  const demo = await readSnapshot(deps.store, uid, (reader) => isDemoVisit({ uid, env: deps.env, hasher: deps.hasher }, reader));
   let hangupJob: ID | null = null;
 
   // A concurrent write (a receipt, the next turn) loses this compare-and-set: run the transaction again, as the
@@ -82,7 +86,7 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
     });
   }
   // Brief 012 G20 (task B9): with the parse committed, the hardRule route runs once, outside the lease, as a proposal.
-  if (result === "ordinary" || result === "hit") await runRepairRoute({ uid, deps }, { sessionId, turnId }, slow);
+  if (result === "ordinary" || result === "hit") await runRepairRoute({ uid, deps }, { sessionId, turnId }, slow, demo);
   return result;
 
   async function repairTx(tx: Tx): Promise<RepairResult> {
@@ -138,6 +142,7 @@ export async function runParseRepair(uid: string, deps: RouteDeps, target: Repai
             generation: s0.generation,
             opsNow: ops,
             hasher: deps.hasher,
+            ...(demo ? { playsOwner: true } : {}),
           });
     tx.update(doc.path, { ...s, ...(narrowing?.session ?? {}), committedParseSeq, updatedAt: now });
     if (narrowing?.bundle) tx.update(paths.core(uid, "bundle"), narrowing.bundle);

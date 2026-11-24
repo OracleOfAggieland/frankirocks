@@ -17,11 +17,12 @@
 import { type CoreBundle, type CoreEpoch, type CoreRules, type CoreState, type Evidence, HANDLED_RING_MAX, PROPOSAL_INSTALL_MAX, type Session, type Turn, UNRESOLVED, tsFromMs } from "@franki/core";
 import { effectiveAudience } from "../audience";
 import { ownerClock } from "../core-docs";
+import { isDemoVisit } from "../demo/visit";
 import type { SlowParse } from "../intents/slow-parse";
 import type { RouteContext } from "../routes/runtime";
 import { isStoreError } from "../store/errors";
 import { paths } from "../store/paths";
-import type { Tx } from "../store/port";
+import { type Tx, readSnapshot } from "../store/port";
 import { turnEvidenceId } from "../turns";
 import { withBackstop } from "./backstop";
 import { proposalDecision, writeRuleRows } from "./rule-rows";
@@ -83,8 +84,11 @@ export function repairProposal(run: HardRuleRun): CoreRules | null {
 /**
  * After a repair has committed the parse (`ordinary` or `hit`): the hardRule route, once, as a proposal. Its own
  * transaction re-checks `handled`, so two late runs propose once.
+ * Kiroween Demo (contract question 97): `demo` is the caller's answer when it has one; else the verified token, else
+ * the connectors (a repair runs after the response, with no token). The plan compiles a Head as the turn's does, so it
+ * plays the persona on a demo visit; the proposal keeps only rules, so what is written is the same either way.
  */
-export async function runRepairRoute(ctx: Pick<RouteContext, "uid" | "deps">, target: { sessionId: string; turnId: string }, slow: SlowParse): Promise<"proposed" | "none"> {
+export async function runRepairRoute(ctx: Pick<RouteContext, "uid" | "deps" | "anonymous">, target: { sessionId: string; turnId: string }, slow: SlowParse, demo?: boolean): Promise<"proposed" | "none"> {
   const { uid, deps } = ctx;
   const turnDoc = await deps.store.get<Turn>(uid, paths.turn(uid, target.sessionId, target.turnId));
   const t = turnDoc?.data;
@@ -94,6 +98,7 @@ export async function runRepairRoute(ctx: Pick<RouteContext, "uid" | "deps">, ta
   const typed = t.itemIds.length === 0;
   const late = await lateSlots(ctx, { turnId: target.turnId, text: t.text, cls: t.sourceClass, typed, slow, generation: session.data.generation });
   if (late === null) return "none";
+  const playsOwner = demo ?? (ctx.anonymous !== undefined ? ctx.anonymous : await readSnapshot(deps.store, uid, (reader) => isDemoVisit({ uid, env: deps.env, hasher: deps.hasher }, reader)));
   const evidenceId = t.evidenceId;
   for (let attempt = 1; ; attempt++) {
     try {
@@ -134,6 +139,7 @@ export async function runRepairRoute(ctx: Pick<RouteContext, "uid" | "deps">, ta
       clock,
       audience: effectiveAudience(s.data, ops),
       hasher: deps.hasher,
+      ...(playsOwner ? { playsOwner: true } : {}),
     });
     if (next === null) return "none";
     tx.update(rules.path, next);
