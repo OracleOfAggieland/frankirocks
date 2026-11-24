@@ -1,0 +1,105 @@
+{
+  "name": "franki-reviewer",
+  "description": "Reviews a seeded persona against the bible, the taste rules and the persona check. Read-only apart from its own verdict file. Cannot push, deploy, read secrets or edit code.",
+  "prompt": "You review; you do not fix. The only file you may write is the verdict file your step names.\nLoad the persona-author skill and the persona-taste steering file, and judge against them and against the bible.\nRun the persona check the skill ships and read its output. A failing check is always a finding.\nReport findings as a list, most serious first. Each finding names a file, the line or the id it is about, what is wrong, and what would fix it. Say nothing about style that the rules do not cover.\nThe verdict is APPROVED only when the check passes and no finding is left; otherwise CHANGES.",
+  "tools": [
+    "*"
+  ],
+  "resources": [
+    "file://.kiro/steering/**/*.md",
+    "skill://.kiro/skills/*/SKILL.md"
+  ],
+  "permissions": {
+    "rules": [
+      {
+        "capability": "shell",
+        "match": [
+          "*git push*",
+          "*git remote*",
+          "*git config*",
+          "*git reset --hard*",
+          "*git clean*",
+          "*git merge*",
+          "*git rebase*",
+          "*gh pr *",
+          "*gh api*",
+          "*gh repo*",
+          "*gh secret*",
+          "*firebase deploy*",
+          "*firebase-tools*deploy*",
+          "*npm run deploy*",
+          "*npm run smoke*",
+          "*firebase apphosting*",
+          "*firebase auth*",
+          "*firebase firestore*",
+          "*firebase functions*",
+          "*firebase login*",
+          "*firebase use*",
+          "*gcloud *",
+          "*curl *",
+          "*wget *",
+          "*Invoke-WebRequest*",
+          "*Invoke-RestMethod*",
+          "*iwr *",
+          "*irm *",
+          "*.env.local*",
+          "*printenv*",
+          "*env:OPENAI*",
+          "*env:FRANKI_ID*",
+          "*-ChildItem env:*",
+          "*gci env:*",
+          "*dir env:*",
+          "*ls env:*",
+          "*setx *",
+          "*winget *",
+          "*choco *",
+          "*npm i -g*",
+          "*npm install -g*",
+          "*npm publish*",
+          "*Remove-Item*-Recurse*",
+          "*rm -rf*"
+        ],
+        "effect": "deny"
+      },
+      {
+        "capability": "fs_read",
+        "match": [
+          "**/.env*",
+          "**/.env*/**"
+        ],
+        "effect": "deny"
+      },
+      {
+        "capability": "fs_write",
+        "match": [
+          "**/.env*",
+          ".kiro/agents/**",
+          ".kiro/hooks/**",
+          ".kiro/workflows/**",
+          ".kiro/settings/**"
+        ],
+        "effect": "deny"
+      },
+      {
+        "capability": "fs_read",
+        "effect": "allow"
+      },
+      {
+        "capability": "fs_write",
+        "match": [
+          ".kiro/specs/kiroween-demo/persona-verdict.json",
+          "**/.kiro/specs/kiroween-demo/persona-verdict.json"
+        ],
+        "effect": "allow"
+      },
+      {
+        "capability": "shell",
+        "effect": "allow"
+      },
+      {
+        "capability": "skill",
+        "effect": "allow"
+      }
+    ]
+  }
+}
