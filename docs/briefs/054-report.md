@@ -136,6 +136,13 @@ found no path from a demo token to Plaid, Google or Twilio. It made two findings
   project), and the failure line showed under the button. The specimens section "Kiroween Demo" was seen at 1280 px:
   the button states, the account menu, the line a signed-in user gets at `/lab#demo`, and both simulated sheets.
 
+## Shipping order
+
+Deploy this build before the Anonymous provider is enabled in Firebase Authentication, never after. A build from
+before this change has no notion of an anonymous token: it would accept one as an ordinary signed-in user, with the
+phone, Plaid Link and Google's sign-in all offered. This build refuses every anonymous token while `FRANKI_DEMO` is
+off, and pairs one with the demo persona, with those three refused, while it is on.
+
 ## Not tried
 
 - **A real demo visit in a browser.** It needs the Anonymous provider enabled in Firebase Authentication. Until then
