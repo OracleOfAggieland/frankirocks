@@ -136,6 +136,47 @@ found no path from a demo token to Plaid, Google or Twilio. It made two findings
   project), and the failure line showed under the button. The specimens section "Kiroween Demo" was seen at 1280 px:
   the button states, the account menu, the line a signed-in user gets at `/lab#demo`, and both simulated sheets.
 
+## The first real visits (Nov 24, after the build shipped with the switch off)
+
+The build was deployed with `FRANKI_DEMO` off, the Anonymous provider was then enabled in Firebase Authentication, and
+three demo visits were walked on a dev server with the switch forced on (`http://localhost:3000`, against the real
+Firebase project). No model was called and no call was opened.
+
+Seen:
+
+- **The way in.** The button on the landing and the one on the Lab's signed-out panel both start a visit with no
+  popup and no form; the marker leaves the address.
+- **The Lab as Jeffrey.** The account menu reads "Jeffrey Kisses" and "Demo"; the visit bar reads "Simulated: Fri
+  8:40 AM" with its four bolts; the Lab counts 33 read emails; the "Built with Kiro" footer shows.
+- **The sheets.** Bank: "This bank is simulated. No real bank is connected.", Brassmoor Savings and Trust, three
+  accounts (Everyday Checking, Rainy Day Savings, Launch Operations), no Connect and no Disconnect. Gmail and
+  Calendar: "This mail and calendar are simulated. No real Google account is connected.", both connected.
+- **What I know.** Jeffrey's memories, each with its source.
+- **A bolt.** "Today, 6 PM" moved the clock to Fri 6:00 PM and the bolts changed; a reload kept it.
+- **Start over.** The confirmation, a new month, still Jeffrey.
+- **Sign out.** `POST /api/account/delete` answered 200, the signed-out panel came back, and afterwards the
+  Firebase user and the tenant's core documents were both gone (checked with the admin API).
+- **The deployed site with the switch off.** A demo visitor's real token was sent to `https://frankirocks.com`: four
+  reads and a reset all answered 401 with the same body as a request with no token, and `GET /api/demo` answered
+  `{"enabled":false}`.
+
+Found and fixed:
+
+1. **The first load of a visit failed** with "Your month didn't load." The browser gave up on the reset at 8 s; the
+   server finished it in 7.8 s. The deployed site's logs show the sample visit's reset taking 6.1 s and 7.9 s, so the
+   limit was already too close for every visit. The browser now waits 20 s.
+2. **The first press of a bolt failed** with "The clock didn't move." The browser gave up at 4 s; the server took
+   3.1 s plus the dev server's first compile. No bolt has been pressed on the deployed site, so its real time is
+   unknown. The browser now waits 10 s.
+3. **One memory read badly:** "The owner works as runs a small rocket company at Kisses Launch Works." The role's
+   value is now "the founder of a small rocket company".
+4. **Each visit left one entry in the browser's storage** (the visit kept under a user that no longer exists).
+   Leaving a demo visit now drops it.
+
+Also found, and left alone: from an origin the guard does not list (a dev server on another port), the press makes
+an anonymous user and then every write is refused, so the Lab never loads and the user stays in Firebase with no
+data. The three listed origins are not affected.
+
 ## Shipping order
 
 Deploy this build before the Anonymous provider is enabled in Firebase Authentication, never after. A build from
@@ -145,9 +186,13 @@ off, and pairs one with the demo persona, with those three refused, while it is 
 
 ## Not tried
 
-- **A real demo visit in a browser.** It needs the Anonymous provider enabled in Firebase Authentication. Until then
-  nobody has seen the lab as Jeffrey: the account menu, the sheets with his accounts, Start over, or sign-out.
 - **Any real model.** The persona's lines, the hero offer, the errands' planner and the name line have run against
-  scripted model answers only. How the voice model plays to "Jeffrey" is unknown.
+  scripted model answers only. How the voice model plays to "Jeffrey" is unknown. The asks in task 10.3 (rocket fuel,
+  mail from mission control, the calendar, the hero offer, "What do you know about me?", a stranger's mail) were not
+  made: each is a paid model call, and mail and calendar also need a call with a microphone.
 - **A live call on a demo visit,** and the phone refusal as the model would meet it.
-- **The switch off on a deployed build.**
+- **Arriving at `/lab#demo` signed in with Google** in a real browser. Its one line and one button were seen on the
+  specimens page only.
+- **A demo visit on the deployed site.** The switch is still off there.
+- **The whole suite and the build after the four fixes above.** The demo, seed, client and App tests, the web
+  typecheck and lint were run.
