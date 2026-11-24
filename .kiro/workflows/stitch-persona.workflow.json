@@ -1,7 +1,9 @@
 {
   "name": "stitch-persona",
   "description": "Stitches the Kisses persona limb by limb: one bible, then bank, calendar, mail and turns written in parallel from it, then the index, then a review loop that ends when the persona check passes and the reviewer approves.",
-  "inputs": { "task": "prompt" },
+  "inputs": {
+    "task": "prompt"
+  },
   "modelId": "claude-sonnet-5.5",
   "steps": [
     {
@@ -9,8 +11,10 @@
       "id": "bible",
       "agent": "franki-persona-writer",
       "modelId": "claude-opus-5.5",
-      "artifacts": { "bible": "docs/briefs/054-persona-bible.md" },
-      "prompt": "Load the persona-author skill and pull in the persona-taste steering file. Read docs/briefs/054-kiroween-demo.md, the fixture changes in .kiro/specs/kiroween-demo/design.md, and the first persona in packages/server/src/seed/persona/ as the worked example. Then write docs/briefs/054-persona-bible.md: the single plan for Jeffrey Kisses. Four writers will each build one limb from it without talking to each other, so it must fix everything two limbs share, exactly. It holds: who Jeffrey is, in five lines; the people and senders (name, address, mailed or stranger, DMARC pass or not); the bank's name and its accounts; a day-by-day table of day offsets for the whole window, with the meetings at or after 18:00, the takeout rows and the decoys, laid out so TAKEOUT_LATE_V1 yields an offer on the clone's Friday; every bank row (id, day, time, merchant, cents, category); every calendar event (id, title, revisions); every mail line (id, sender, subject, one-line gist, bulk or not, thread); every turn Jeffrey has said to Franki and the Memory it makes, including his name, one allergy in his own words, his preferences and his goals; and the jokes, each tied to the row that carries it. Do not write any limb file. Note from the person who started this run: {{task}}"
+      "artifacts": {
+        "bible": "docs/briefs/054-persona-bible.md"
+      },
+      "prompt": "Load the persona-author skill and pull in the kisses-taste steering file. Read docs/briefs/054-kiroween-demo.md, the fixture changes in .kiro/specs/kiroween-demo/design.md, and the first persona in packages/server/src/seed/persona/ as the worked example. Then write docs/briefs/054-persona-bible.md: the single plan for Jeffrey Kisses. Four writers will each build one limb from it without talking to each other, so it must fix everything two limbs share, exactly. It holds: who Jeffrey is, in five lines; the people and senders (name, address, mailed or stranger, DMARC pass or not); the demo profile the design calls for (the display name, the bank's name and its accounts, the mail address); a day-by-day table of day offsets for the whole window, with the meetings at or after 18:00, the takeout rows and the decoys, laid out so TAKEOUT_LATE_V1 yields an offer on the clone's Friday; every bank row (id, day, time, merchant, cents, category); every calendar event (id, title, revisions); every mail line (id, sender, subject, one-line gist, bulk or not, thread); every turn Jeffrey has said to Franki and the Memory it makes, including his name, one allergy in his own words, his preferences and his goals; and the jokes, each tied to the row that carries it. Do not write any limb file. Note from the person who started this run: {{task}}"
     },
     {
       "type": "parallel",
@@ -47,20 +51,26 @@
       "type": "step",
       "id": "stitch",
       "agent": "franki-persona-writer",
-      "prompt": "Load the persona-author skill. The four limbs of the Kisses persona are written in packages/server/src/seed/kisses/. Write packages/server/src/seed/kisses/index.ts, which stitches them into one SeedFixture the way packages/server/src/seed/persona/index.ts does, with whatever the design in .kiro/specs/kiroween-demo/design.md adds for this persona. Then write packages/server/src/seed/kisses/kisses.test.ts, which loads the fixture through the real seed build the way packages/server/src/seed/persona.test.ts does and asserts what the bible promises: the hero arithmetic, the Memories, the mailed sender and the stranger. Run the persona check the skill ships. Fix only stitching mistakes; leave limb content to the review loop."
+      "prompt": "Load the persona-author skill. The four limbs of the Kisses persona are written in packages/server/src/seed/kisses/. Write packages/server/src/seed/kisses/profile.ts (the demo profile, exactly as docs/briefs/054-persona-bible.md fixes it and in the shape .kiro/specs/kiroween-demo/design.md gives), and fill the line arrays and the profile in packages/server/src/seed/kisses/index.ts, keeping the fixture ID and every export that file already has. Then write packages/server/src/seed/kisses/kisses.test.ts as the design's Testing strategy describes it (\"The persona loads\"), in the manner of packages/server/src/seed/persona.test.ts. Run the persona check the skill ships. Fix only stitching mistakes; leave limb content to the review loop."
     },
     {
       "type": "step",
       "id": "first-review",
       "agent": "franki-reviewer",
-      "prompt": "Review the Kisses persona in packages/server/src/seed/kisses/ against docs/briefs/054-persona-bible.md, the persona-taste steering file and the persona-author skill. Run the persona check the skill ships and read the witness log at .kiro/specs/kiroween-demo/persona-check.log if it exists. Write .kiro/specs/kiroween-demo/persona-verdict.json as {\"verdict\": \"APPROVED\" or \"CHANGES\", \"findings\": [{\"file\", \"where\", \"problem\", \"fix\"}]}."
+      "prompt": "Review the Kisses persona in packages/server/src/seed/kisses/ against docs/briefs/054-persona-bible.md, the kisses-taste steering file and the persona-author skill. Run the persona check the skill ships and read the witness log at .kiro/specs/kiroween-demo/persona-check.log if it exists. Write .kiro/specs/kiroween-demo/persona-verdict.json as {\"verdict\": \"APPROVED\" or \"CHANGES\", \"findings\": [{\"file\", \"where\", \"problem\", \"fix\"}]}."
     },
     {
       "type": "repeat",
       "id": "review-loop",
       "maxIterations": 3,
       "onMaxIterations": "continue",
-      "stopCondition": { "fileCheck": { "path": ".kiro/specs/kiroween-demo/persona-verdict.json", "jsonPath": "verdict", "value": "APPROVED" } },
+      "stopCondition": {
+        "fileCheck": {
+          "path": ".kiro/specs/kiroween-demo/persona-verdict.json",
+          "jsonPath": "verdict",
+          "value": "APPROVED"
+        }
+      },
       "steps": [
         {
           "type": "step",
@@ -72,7 +82,7 @@
           "type": "step",
           "id": "review",
           "agent": "franki-reviewer",
-          "prompt": "Review the Kisses persona in packages/server/src/seed/kisses/ again, from scratch, against docs/briefs/054-persona-bible.md, the persona-taste steering file and the persona-author skill. Run the persona check the skill ships. Overwrite .kiro/specs/kiroween-demo/persona-verdict.json as {\"verdict\": \"APPROVED\" or \"CHANGES\", \"findings\": [{\"file\", \"where\", \"problem\", \"fix\"}]}."
+          "prompt": "Review the Kisses persona in packages/server/src/seed/kisses/ again, from scratch, against docs/briefs/054-persona-bible.md, the kisses-taste steering file and the persona-author skill. Run the persona check the skill ships. Overwrite .kiro/specs/kiroween-demo/persona-verdict.json as {\"verdict\": \"APPROVED\" or \"CHANGES\", \"findings\": [{\"file\", \"where\", \"problem\", \"fix\"}]}."
         }
       ]
     },

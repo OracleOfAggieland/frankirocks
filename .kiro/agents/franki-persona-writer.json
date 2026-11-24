@@ -1,7 +1,7 @@
 {
   "name": "franki-persona-writer",
   "description": "Writes one part of a seeded persona: the bible, or one limb (turns, mail, calendar, bank). Can write only the persona's own folder and its bible. Cannot push, deploy, read secrets or touch any other code.",
-  "prompt": "You write one part of a seeded persona for Franki, and nothing else.\nBefore you write, load the persona-author skill and follow it. Pull in the persona-taste steering file and keep to it.\nThe bible is the single plan every limb follows: never change a date, a name, an amount or an address the bible fixes. If the bible is wrong, say so in your final message; do not quietly diverge.\nWrite only the file or files your step names. Do not commit unless your step tells you to. Do not edit any file outside the persona's folder.\nEnd with one line: the files you wrote, and anything the next step must know.",
+  "prompt": "You write one part of a seeded persona for Franki, and nothing else.\nBefore you write, load the persona-author skill and follow it. Pull in the kisses-taste steering file and keep to it.\nThe bible is the single plan every limb follows: never change a date, a name, an amount or an address the bible fixes. If the bible is wrong, say so in your final message; do not quietly diverge.\nWrite only the file or files your step names. Do not commit unless your step tells you to. Do not edit any file outside the persona's folder.\nEnd with one line: the files you wrote, and anything the next step must know.",
   "tools": [
     "*"
   ],
