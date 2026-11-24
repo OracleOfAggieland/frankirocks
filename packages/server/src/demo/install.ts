@@ -12,6 +12,7 @@
 import { type Connector, type Hasher, tsFromMs } from "@franki/core";
 import { UNKNOWN_COVERAGE } from "../bank/connector";
 import { sealToken } from "../bank/seal";
+import type { Env } from "../config/env";
 import { type GoogleProvider, googleAccountKey, googleConnectorId, newGoogleConnector } from "../google/connector";
 import { cFields } from "../records";
 import { type SealKeys, seal } from "../sealed";
@@ -19,7 +20,7 @@ import type { SeedFixture } from "../seed/fixture";
 import { paths } from "../store/paths";
 import type { Tx } from "../store/port";
 import { simToken } from "./token";
-import { demoBankConnectorId } from "./visit";
+import { connectorSimulated, demoBankConnectorId } from "./visit";
 
 export interface DemoInstallInput {
   uid: string;
@@ -114,4 +115,28 @@ export async function writeDemoConnectors(tx: Tx, uid: string, docs: DemoConnect
     if (p === null || p === undefined) tx.create(path, d.data);
     else tx.update(path, { ...d.data, createdAt: p.data.createdAt, activeGeneration: p.data.activeGeneration });
   });
+}
+
+/**
+ * A tenant that is not a demo visit keeps no simulated connector. A demo visitor can link a real sign-in to the
+ * anonymous user by hand: the uid stays, every later token is a signed-in one, and pairing gives the next Start over
+ * the sample fixture. That reset calls this in its last transaction, so the sample visit never answers from the
+ * persona's bank, Gmail or Calendar.
+ *
+ * Only the three fixed documents are read, and only one whose sealed token is a simulator token is deleted, so a real
+ * Google connection under the same document ID is left alone. Returns the deleted paths: the caller keeps its other
+ * writes off them, since a path may not be both written and deleted in one transaction.
+ */
+export async function dropSimulatedConnectors(tx: Tx, uid: string, env: Env, hasher: Hasher): Promise<Set<string>> {
+  const ids = [demoBankConnectorId(hasher, uid), googleConnectorId(hasher, uid, "gmail"), googleConnectorId(hasher, uid, "calendar")];
+  const docs = await Promise.all(ids.map((id) => tx.get<Connector>(paths.connector(uid, id))));
+  const dropped = new Set<string>();
+  docs.forEach((doc, i) => {
+    const id = ids[i]!;
+    if (doc === null || !connectorSimulated(env, uid, { id, data: doc.data })) return;
+    const path = paths.connector(uid, id);
+    tx.delete(path);
+    dropped.add(path);
+  });
+  return dropped;
 }

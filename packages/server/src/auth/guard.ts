@@ -76,8 +76,9 @@ function errorCode(error: unknown): string {
 export type GuardLog = (event: string, fields: Record<string, string>) => void;
 
 /**
- * Returns the verified uid, or throws a RouteError with the guard's status. The demo switch counts as on here, so
- * every caller from before brief 054 behaves as it did; `runRoute` uses `guardRequestFull` with the real switch.
+ * Returns the verified uid, or throws a RouteError with the guard's status. The demo switch counts as off here, so
+ * an anonymous token is refused: a caller that wants demo visitors uses `guardRequestFull` with the real switch, as
+ * `runRoute` does, and gets the anonymous flag with it. A signed-in token is answered as it was before brief 054.
  */
 export async function guardRequest(
   input: GuardInput,
@@ -85,7 +86,7 @@ export async function guardRequest(
   origins: readonly string[] = ALLOWED_ORIGINS,
   log?: GuardLog,
 ): Promise<string> {
-  return (await guardRequestFull(input, verifier, origins, log, { demoOn: true })).uid;
+  return (await guardRequestFull(input, verifier, origins, log, { demoOn: false })).uid;
 }
 
 /** The guard's steps in order, returning the uid and the anonymous flag, or throwing a RouteError. */

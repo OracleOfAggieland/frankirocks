@@ -81,13 +81,14 @@ export function bankView(id: string, c: Connector): BankView {
 /**
  * Ruling 9, inside the reset's last transaction: every bank connection stays, with its cursor null, its coverage
  * unknown and any pull's lease dropped, so the next pull imports again and a pull that began before the reset can't
- * advance the cursor over rows the reset cleared. The token is kept.
+ * advance the cursor over rows the reset cleared. The token is kept. `skip` names paths this transaction deletes
+ * (brief 054: a simulated connector left on a tenant that is no longer a demo visit), which may not also be written.
  */
-export async function resetBankCursors(tx: Tx, uid: string, opsNow: number): Promise<number> {
+export async function resetBankCursors(tx: Tx, uid: string, opsNow: number, skip: ReadonlySet<string> = new Set()): Promise<number> {
   const all = await listConnectors(tx, uid);
   let n = 0;
   for (const c of all) {
-    if (c.data.provider !== "plaid" || c.data.bank === null) continue;
+    if (c.data.provider !== "plaid" || c.data.bank === null || skip.has(c.path)) continue;
     const now = tsFromMs(opsNow);
     tx.update(c.path, {
       ...c.data,

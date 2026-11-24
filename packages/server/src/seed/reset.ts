@@ -20,7 +20,7 @@
 import { type CoreDocs, type ID, type Infer, type ResetRequest, type SeedResetResponse, type Session, msFromTs, tsFromMs } from "@franki/core";
 import { BANK_ENV_VARS } from "../bank/config";
 import { resetBankCursors } from "../bank/connector";
-import { buildDemoConnectors, writeDemoConnectors } from "../demo/install";
+import { buildDemoConnectors, dropSimulatedConnectors, writeDemoConnectors } from "../demo/install";
 import { readCoreDocs } from "../core-docs";
 import { type RequestKey, completeRequest } from "../ledger/request";
 import { barrierError, configError, dependencyError, staleError } from "../routes/errors";
@@ -172,7 +172,8 @@ export async function resetVisit(ctx: RouteContext, req: ResetReq, key: RequestK
     for (const id of ["epoch", "state", "counters", "rules", "bundle"] as const) tx.update(paths.core(uid, id), { ...docs[id], updatedAt: tsFromMs(deps.clock.read().opsClock.now) });
     // Brief 046 ruling 9: a connected bank stays; its rows were cleared, so the next pull imports again. A demo visit's
     // three connectors are written again instead (contract question 102), in this same transaction (R11.8).
-    if (demoDocs === null) await resetBankCursors(tx, uid, deps.clock.read().opsClock.now);
+    // A tenant that was a demo visit and no longer is (its user linked a real sign-in) keeps no simulated connector.
+    if (demoDocs === null) await resetBankCursors(tx, uid, deps.clock.read().opsClock.now, await dropSimulatedConnectors(tx, uid, deps.env, deps.hasher));
     else await writeDemoConnectors(tx, uid, demoDocs);
     await completeRequest(tx, key, res, deps.clock.read().opsClock.now);
   });
