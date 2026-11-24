@@ -3,6 +3,7 @@ import { narrowedHere } from "../audience-swap";
 import { ConfigError } from "../config/env";
 import { readCoreDocs } from "../core-docs";
 import { currentStamp, sameStamp } from "../deck";
+import { DEMO_PHONE_LINE } from "../demo/guards";
 import { cFields } from "../records";
 import { inFlightError } from "../routes/errors";
 import type { RouteContext } from "../routes/runtime";
@@ -66,6 +67,10 @@ export async function currentPhoneTurn(tx: Tx, uid: string, stamp: Stamp) {
 
 /** Claim once per committed user turn. Never retry an ambiguous outbound POST. */
 export async function placePhoneCall(ctx: RouteContext, stamp: Stamp): Promise<string> {
+  // Kiroween Demo (R14.2): a demo visitor never dials. First, before the settings, the claim and any ledger row, so no
+  // `phoneCall` row and no `deps.dial` call can follow, whatever tool list the browser was offered. Both callers
+  // (`routes/tool.ts`, `phone/typed.ts`) come through here.
+  if (ctx.anonymous === true) return DEMO_PHONE_LINE;
   const { uid, deps } = ctx;
   const { env, store } = deps;
   let config: ReturnType<typeof dialConfig>;

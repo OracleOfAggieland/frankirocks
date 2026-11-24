@@ -101,6 +101,9 @@ stateDiagram-v2
 | `lastSessionId` | the new Session | the Session that ended | the Session that ended |
 | `proactive` | the answer's | cleared | cleared |
 | `narrowedFrom`, `swappedFrom` | kept | kept | cleared |
+| `phoneOff` | kept | kept | kept |
+
+`phoneOff` (Kiroween Demo, R14.1) is set once, by `initialVoiceState(config, zone, { phoneOff: true })` on a demo visit, and no exit or press resets it. While it is true `callTools` offers no `make_phone_call`, no `read_phone_result` (either variant) and no phone specialist, so the first `session.update` already has no phone tool, before any state poll; `callHead` names no phone tool. Absent, the lists are exactly as before. The server refuses a dial on a demo visit whatever the list said (`placePhoneCall`).
 
 `startOpen` (a press of Call, and every reconnect) sets `error: null`, and keeps `recovery`, `retryVisible` and `micMuted` only when it is a reconnect; a press of Call sets `micMuted: false`. So only `mutePressed` or the end of the call changes the mute, and the Voice_Client's `connect` applies it to the new microphone track. When CONFIGURING reaches LISTENING, `onState` sets `recovery` to null and `retryVisible` to false, and disarms `ack`, `connect`, `retryUi` and `reconnect`.
 

@@ -55,14 +55,31 @@ export async function ownerSafeTurns(reader: Pick<Tx, "get">, uid: string, sessi
   return turns.map((t, i) => (t.role !== "user" || rows[i]?.data.sourceClass === "U" ? t : { ...t, text: PASTED_STAND_IN }));
 }
 
+/**
+ * Kiroween Demo (R14.1): which tools a typed reply may offer. A demo visit's typed turn keeps the money read and
+ * loses the phone. `true` means both and `false` neither, so every caller from before the split is unchanged.
+ */
+export interface TypedTools {
+  phone: boolean;
+  money: boolean;
+}
+
+const toolsOf = (allow: boolean | TypedTools): TypedTools => (typeof allow === "boolean" ? { phone: allow, money: allow } : allow);
+
 /** The Responses request for a typed reply. */
-export function typedReplyRequest(model: string, instructions: string, turns: readonly SafeTurn[], text: string, allowPhone: boolean) {
+export function typedReplyRequest(model: string, instructions: string, turns: readonly SafeTurn[], text: string, allow: boolean | TypedTools) {
+  const { phone, money } = toolsOf(allow);
   return {
     model,
     reasoning: { effort: "low" },
     store: false,
-    // Brief 046 part C: the money read is offered beside the phone, to the owner's own typed line only.
-    tools: allowPhone ? [{ ...PHONE_TOOL, strict: true }, { ...MONEY_TOOL, strict: true }, { ...READ_PHONE_TOOL, strict: true }] : [],
+    // Brief 046 part C: the money read is offered beside the phone, to the owner's own typed line only. Today's order
+    // whichever flags are on.
+    tools: [
+      ...(phone ? [{ ...PHONE_TOOL, strict: true }] : []),
+      ...(money ? [{ ...MONEY_TOOL, strict: true }] : []),
+      ...(phone ? [{ ...READ_PHONE_TOOL, strict: true }] : []),
+    ],
     instructions,
     input: [...turns.map((t) => ({ role: t.role, content: t.text })), { role: "user", content: text }],
     max_output_tokens: 512,
@@ -85,10 +102,10 @@ export async function typedReplyNote(
   req: TurnRequest,
   text: string,
   safeTurns: (reader: Reader) => Promise<SafeTurn[]>,
-  allowPhone: boolean,
+  allow: boolean | TypedTools,
   phoneLine: Promise<string | null> = Promise.resolve(null),
 ): Promise<W | "make_phone_call" | null> {
-  const out = await typedReplyOutcome(ctx, req, text, safeTurns, allowPhone, phoneLine);
+  const out = await typedReplyOutcome(ctx, req, text, safeTurns, allow, phoneLine);
   return out === "read_phone_result" || (out !== null && typeof out === "object" && "readMoney" in out) ? null : out;
 }
 
@@ -98,10 +115,11 @@ export async function typedReplyOutcome(
   req: TurnRequest,
   text: string,
   safeTurns: (reader: Reader) => Promise<SafeTurn[]>,
-  allowPhone: boolean,
+  allow: boolean | TypedTools,
   phoneLine: Promise<string | null> = Promise.resolve(null),
 ): Promise<W | "make_phone_call" | "read_phone_result" | MoneyAsk | null> {
   const { uid, deps } = ctx;
+  const { phone: allowPhone, money: allowMoney } = toolsOf(allow);
   if (req.source === "asr") return null;
   const session = await deps.store.get<Session>(uid, paths.session(uid, req.sessionId));
   if (session === null || session.data.callId !== null || session.data.nextClientSeq !== req.clientSeq) return null;
@@ -121,7 +139,8 @@ export async function typedReplyOutcome(
 
 Notes:
 - ${line}`;
-    const body = typedReplyRequest(requireModel("brain", deps.env), instructions, turns, said, allowPhone && said === text);
+    const own = said === text;
+    const body = typedReplyRequest(requireModel("brain", deps.env), instructions, turns, said, { phone: allowPhone && own, money: allowMoney && own });
     result = (await withDeadline(deps.openai.call("responses.create", body), TYPED_REPLY_DEADLINE_MS, deps.timers)) as ResponsesResult;
   } catch {
     return null;
@@ -130,7 +149,7 @@ Notes:
       result.functionCalls?.some((c) => c.name === "read_phone_result" && /^\s*\{\s*\}\s*$/.test(c.arguments))) return "read_phone_result";
   if (allowPhone && result.phoneCallRequested && result.status === "completed" && result.refusal === null) return "make_phone_call";
   // Brief 046 part C: a money read asked for by the brain model, with arguments that parse as the closed shape.
-  if (allowPhone && said === text && result.moneyCallArguments !== undefined && result.status === "completed" && result.refusal === null) {
+  if (allowMoney && said === text && result.moneyCallArguments !== undefined && result.status === "completed" && result.refusal === null) {
     const args = moneyArgsOf(result.moneyCallArguments);
     return args === null ? null : { readMoney: args };
   }

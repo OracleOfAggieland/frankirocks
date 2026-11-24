@@ -32,6 +32,7 @@ import {
 } from "@franki/core";
 import { raceLimit } from "../clock/timers";
 import { ensureCoreDocs, ownerClock, readCoreDocs } from "../core-docs";
+import { isDemoVisit } from "../demo/visit";
 import { currentStamp, issueDeck } from "../deck";
 import { buildHead } from "../head-build";
 import { applyProposals } from "../onturn/proposals";
@@ -161,6 +162,10 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
     if (!won) ctx.schedule(() => drain);
     times.lap("drainMs");
 
+    // Kiroween Demo (R7, contract question 97): a demo visit, from the verified token, else the connectors; read before
+    // the transaction so its reads add nothing to it. The visitor plays the persona: the persona's name may reach the
+    // Head, and the first meeting is never offered.
+    const demo = ctx.anonymous !== undefined ? ctx.anonymous : await readSnapshot(deps.store, uid, (reader) => isDemoVisit({ uid, env: deps.env, hasher: deps.hasher }, reader));
     const sessionId = deps.hasher.id(idParts.session(uid, req.requestId));
     const { response, prior, stamp, session, narrow } = await deps.store.transaction(uid, async (tx) => {
       // The request entry is read with the core documents, in the same round trip: `completeRequest` reads it again
@@ -188,7 +193,7 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       // Brief 048: whether each acknowledgment was already said is read beside the Sessions, in the same round trip.
       const [candidates, due] = await Promise.all([inheritCandidates(tx, uid, { named: req.previousSessionId, active: core.epoch.data.activeSessionId, sessionId }), dueAcks(tx, uid, ackCandidates, deps.hasher)]);
       const inherited = narrowestInherited(candidates, ops, companyModeOn(deps.env));
-      const compiled = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: core.epoch.data, rules }, pair, 1, inherited?.audience));
+      const compiled = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: core.epoch.data, rules }, pair, 1, inherited?.audience, demo));
       if (!compiled.ok) throw configError(500, "head fixed sections exceed the token cap");
       const head = compiled.head;
       const now = tsFromMs(ops);
@@ -196,7 +201,7 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
       // are read here, before this open's writes, and only when this open could ask (no name on file, a private open
       // that inherited nothing, no hold; the acknowledgment and crisis are checked again below) and a row is said.
       const surface = openSurface(req);
-      const meetAsk = { surface, acked: false, inherited: inherited !== null, audience: inherited?.audience ?? "private", crisis: false, held: holdCarried(state, pair.worldClock.now), named: compiled.ownerNamed };
+      const meetAsk = { surface, acked: false, inherited: inherited !== null, audience: inherited?.audience ?? "private", crisis: false, held: holdCarried(state, pair.worldClock.now), named: compiled.ownerNamed, ...(demo ? { demo: true } : {}) };
       const meetCalls = await readMeetSessions(tx, uid, meetSessionsToRead(meetRows, meetAsk));
 
       const priorId = core.epoch.data.activeSessionId;
@@ -264,6 +269,7 @@ async function openInMutation(ctx: RouteContext, req: OpenReq, times: OpenTimes)
         crisis: created.modifiers.crisis !== null,
         held: holdCarried(state, pair.worldClock.now),
         named: compiled.ownerNamed,
+        ...(demo ? { demo: true } : {}),
       }, meetCalls);
       if (proactive === null && offer !== null) {
         const turnId = meetTurnId(deps.hasher, sessionId);

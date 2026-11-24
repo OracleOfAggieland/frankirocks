@@ -85,6 +85,12 @@ export interface HeadInput {
   clock: ClockPair;
   /** Who may hear the reply (brief 012 design 2.8); private when absent. */
   audience?: Au;
+  /**
+   * Kiroween Demo (contract question 97): the visitor plays the persona, so a self name resting on fixture Evidence is
+   * theirs and may reach a private Head's name line. Set only by the server from the verified token or the connector,
+   * never from the browser. Absent or false: exactly today's compile.
+   */
+  playsOwner?: boolean;
   /** contracts §7 `compileHead(..., tokenCap:3500)`; tests pass a smaller cap to exercise the drop order. */
   tokenCap?: number;
 }
@@ -162,10 +168,14 @@ export function compileHead(input: HeadInput): HeadResult {
   // Brief 052 ruling 3: the owner's own name, private audience only. Its Memory moves to the `now` line (one ref, one
   // line). Review F2: a name the owner gave whose text is not promotable keeps its own `know` line, and the Head then
   // says nothing about a name. Review F3: a self name resting only on fixture Evidence (the sample persona's) never
-  // reaches the Head, in any audience, so a visitor is never called by the persona's name.
+  // reaches the Head, in any audience, so a visitor is never called by the persona's name. On a demo visit
+  // (`playsOwner`) the visitor plays the persona, so in a private audience the persona's name is theirs; a company or
+  // unknown Head is exactly as for any visit (R7.8).
   const audience = input.audience ?? "private";
-  const name = audience === "private" ? ownerName({ memories: input.memories, ec: input.ec, snapshot: input.snapshot, audience }) : null;
-  const named = audience === "private" && ownerNamed({ memories: input.memories, ec: input.ec, snapshot: input.snapshot, audience });
+  const playsOwner = input.playsOwner === true && audience === "private";
+  const nameInput = { memories: input.memories, ec: input.ec, snapshot: input.snapshot, audience, ...(playsOwner ? { playsOwner: true } : {}) };
+  const name = audience === "private" ? ownerName(nameInput) : null;
+  const named = audience === "private" && ownerNamed(nameInput);
 
   // Candidate Memory lines: eligible and spoken-grade only (R26.2, R26.3, R28.1–R28.3). By audience (voice-control
   // R14.2, task 45): outside a private audience only S0 lines, as the admission rule lets only S0 notes through
@@ -173,7 +183,7 @@ export function compileHead(input: HeadInput): HeadResult {
   const passing: { section: "people" | "apply" | "know"; m: HeadMemory }[] = [];
   for (const hm of input.memories) {
     if (!headAdmits(hm, input.ec, input.snapshot, audience)) continue;
-    if (isSelfNameRow(hm.memory) && restsOnlyOnFixture(hm.memory, input.snapshot)) continue;
+    if (isSelfNameRow(hm.memory) && restsOnlyOnFixture(hm.memory, input.snapshot) && !playsOwner) continue;
     if (name !== null && hm.id === name.ref.id) continue;
     passing.push({ section: sectionOf(hm.memory, deceased), m: hm });
   }

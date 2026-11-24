@@ -71,6 +71,8 @@ import {
   withForgetJobDefaults,
 } from "@franki/core";
 import { ownerClock } from "../core-docs";
+import type { Env } from "../config/env";
+import { isDemoVisit } from "../demo/visit";
 import { buildHead } from "../head-build";
 import { cFields } from "../records";
 import { DECK_TTL_MS } from "../sessions";
@@ -99,6 +101,13 @@ export interface ForgetDeps {
   resolver: ForgetResolvePort;
   /** Hangs up the registered calls (ruling 7). Absent: no call is ever confirmed closed, so nothing completes. */
   closer?: CallClosePort;
+  /**
+   * Kiroween Demo (contract question 97): so the Head compiled for the cleared epoch keeps a demo visitor's persona
+   * name. `anonymous` is the driving request's verified token; absent (a job with no token), the tenant's connectors
+   * answer, read with the key in `env`. Both absent: not a demo visit, exactly as before.
+   */
+  env?: Env;
+  anonymous?: boolean;
 }
 
 export type AdvanceResult =
@@ -773,7 +782,10 @@ async function compileCleared(deps: ForgetDeps, uid: string, epoch: CoreEpoch, o
   } catch {
     return null;
   }
-  const out = await readSnapshot(deps.store, uid, (reader) => buildHead(reader, uid, { epoch: r.epoch, rules }, pair, 1));
+  const out = await readSnapshot(deps.store, uid, async (reader) => {
+    const demo = deps.anonymous !== undefined ? deps.anonymous : deps.env !== undefined && (await isDemoVisit({ uid, env: deps.env, hasher: deps.hasher }, reader));
+    return buildHead(reader, uid, { epoch: r.epoch, rules }, pair, 1, undefined, demo);
+  });
   return out.ok ? { head: out.head, rulesRev: rules.rulesRev } : null;
 }
 

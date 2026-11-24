@@ -139,10 +139,23 @@ export async function buildHead(
   generation: number,
   /** Who may hear the call (task 45); private when absent, which compiles exactly as before. */
   audience?: Au,
+  /**
+   * Kiroween Demo (contract question 97): a demo visit, from `isDemoVisit` (the verified token, else the connectors),
+   * so the persona's name may reach a private Head. Absent or false compiles exactly as before.
+   */
+  playsOwner?: boolean,
 ): Promise<HeadResult> {
   const memories = await readAllMemories(reader, uid);
   const snapshot = await snapshotFor(reader, uid, memories, core.epoch, generation);
   // Brief 052 ruling 3 and review F2: the result's `ownerName` and `ownerNamed` pass through; the Snapshot already
   // holds the Evidence they read.
-  return compileHead({ memories, ec: foregroundEC(uid, core.epoch, clock, generation), snapshot, rules: core.rules, clock, ...(audience === undefined ? {} : { audience }) });
+  return compileHead({
+    memories,
+    ec: foregroundEC(uid, core.epoch, clock, generation),
+    snapshot,
+    rules: core.rules,
+    clock,
+    ...(audience === undefined ? {} : { audience }),
+    ...(playsOwner === true ? { playsOwner: true } : {}),
+  });
 }

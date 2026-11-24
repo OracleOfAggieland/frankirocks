@@ -60,6 +60,12 @@ export interface MeetConditions {
   held: boolean;
   /** The Head's `ownerNamed` (review F2): the owner gave a name, promotable or not. */
   named: boolean;
+  /**
+   * Kiroween Demo (R7.2, contract question 97): a demo visit, from the verified token or the connector. The visitor
+   * plays the persona, whose name is already theirs, so the line is never offered. Absent on every other visit, so
+   * M-1 holds for a sample visit.
+   */
+  demo?: boolean;
 }
 
 /**
@@ -72,7 +78,7 @@ export const sessionHadCall = (s: Pick<Session, "callId" | "registeredCallIds">)
 const isMet = (row: Decision | null): boolean => row !== null && meetSaidIn(row) === null;
 
 /** Whether this open could make an offer at all, the rows aside. */
-const mayAsk = (c: MeetConditions): boolean => c.surface === "call" && !c.acked && !c.inherited && c.audience === "private" && !c.crisis && !c.held && !c.named;
+const mayAsk = (c: MeetConditions): boolean => c.surface === "call" && !c.acked && !c.inherited && c.audience === "private" && !c.crisis && !c.held && !c.named && c.demo !== true;
 
 /**
  * Review F1: the Sessions the said rows name, to read before the open's first write, only when the open could ask
