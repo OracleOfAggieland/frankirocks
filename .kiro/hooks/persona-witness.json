@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Persona witness",
+      "trigger": "Stop",
+      "description": "When an agent turn ends with uncommitted changes in the Kisses persona folder, runs the persona check the persona-author skill ships and appends one line (time, PASS or FAIL, counts) to the spec's witness log. Costs no credits and never blocks.",
+      "action": {
+        "type": "command",
+        "command": "node .kiro/skills/persona-author/scripts/check.mjs --witness",
+        "timeout": 180
+      }
+    }
+  ]
+}
