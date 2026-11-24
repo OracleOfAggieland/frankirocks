@@ -12,6 +12,7 @@ import { dialConfig } from "../phone/twilio";
 import type { Class, ErrandAbout, ErrandSender, ErrandSource, ID, Sens } from "@franki/core";
 import type { RouteContext } from "../routes/runtime";
 import { googleConfigured } from "../google/config";
+import { demoEnabled } from "../demo/switch";
 import { liveGoogleAgents } from "./google-registry";
 
 /**
@@ -97,9 +98,13 @@ export const PRODUCTION_ERRAND_AGENTS: readonly ErrandAgent[] = [];
 /**
  * Brief 049 part C: live (deps unset), the Google mail and calendar agents are registered only when Google is
  * configured; each is still offered only while that owner's connector for it is readable (`available`).
+ *
+ * Brief 054: also when the demo may serve this request (the switch on, and not a verified real user), so a demo visit
+ * on a deployment with no Google settings still reads its simulated mail and calendar. A real user's registry is
+ * unchanged.
  */
 export const errandAgentsOf = (ctx: RouteContext): readonly ErrandAgent[] =>
-  ctx.deps.errandAgents ?? (googleConfigured(ctx.deps.env) ? liveGoogleAgents() : PRODUCTION_ERRAND_AGENTS);
+  ctx.deps.errandAgents ?? (googleConfigured(ctx.deps.env) || (demoEnabled(ctx.deps.env) && ctx.anonymous !== false) ? liveGoogleAgents() : PRODUCTION_ERRAND_AGENTS);
 
 /**
  * Review fix R2: whether any agent is ready for this owner, so the call offers `start_errand`. False with an empty
@@ -113,10 +118,13 @@ export async function errandsReady(ctx: RouteContext): Promise<boolean> {
 
 export async function specialistCatalog(ctx: RouteContext): Promise<SpecialistCatalog> {
   const catalog: SpecialistCatalog = { phone: "unavailable", mail: "unavailable", calendar: "unavailable" };
-  try {
-    dialConfig(ctx.deps.env, ctx.origin);
-    catalog.phone = "ready";
-  } catch { /* Calling is unavailable until the dial and answering legs are configured. */ }
+  // Brief 054 (R14.1): a demo visit is never offered the phone, whatever the deployment's settings.
+  if (ctx.anonymous !== true) {
+    try {
+      dialConfig(ctx.deps.env, ctx.origin);
+      catalog.phone = "ready";
+    } catch { /* Calling is unavailable until the dial and answering legs are configured. */ }
+  }
   await Promise.all(agentsFor(errandAgentsOf(ctx), ERRAND_ABOUT).map(async (agent) => {
     catalog[agent.about] = await agent.available(ctx).catch(() => "unavailable" as const);
   }));

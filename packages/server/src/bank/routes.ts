@@ -29,7 +29,11 @@ import {
   msFromTs,
   tsFromMs,
 } from "@franki/core";
-import { ConfigError } from "../config/env";
+import { type Env, ConfigError } from "../config/env";
+import { demoBankConfig } from "../demo/config";
+import { refuseDemo } from "../demo/guards";
+import { refusingBank, routingBank } from "../demo/routing";
+import { demoEnabled } from "../demo/switch";
 import { completeRequest, LEASE_MS, type RequestKey } from "../ledger/request";
 import { cFields } from "../records";
 import { RouteError, barrierError, dependencyError, inFlightError, parseError, scopeError, staleError } from "../routes/errors";
@@ -37,7 +41,7 @@ import { mutation } from "../routes/mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "../routes/runtime";
 import { paths } from "../store/paths";
 import type { StoredDoc, Tx } from "../store/port";
-import { BANK_ENV_VARS, bankConfig } from "./config";
+import { BANK_ENV_VARS, type BankConfig, bankConfig } from "./config";
 import { UNKNOWN_COVERAGE, bankView, canConnectMore, clientUserIdFor, connectorIdFor, getConnector, isActiveBank, listConnectors } from "./connector";
 import { BankCallError, type BankPort, livePlaid } from "./plaid";
 import { type BankRuntime, mergeAccounts, pullBank } from "./pull";
@@ -50,9 +54,32 @@ export const bankLimitError = () => new RouteError("LIMIT", 409, 0, "bankLimit")
 /** Plaid's answers to `/item/remove` that count as removed (ruling 9). */
 export const REMOVED_CODES = ["ITEM_NOT_FOUND", "INVALID_ACCESS_TOKEN"] as const;
 
-/** The bank port and settings for one request. A missing or malformed setting is a ConfigError (CONFIG). */
+/**
+ * The bank port and settings for one request. A missing or malformed setting is a ConfigError (CONFIG).
+ *
+ * Brief 054 (R10): the port routes by token, so a demo visit's simulator token reaches the simulated bank and any
+ * other token reaches Plaid. A deployment with the demo on and no Plaid settings serves demo visits from the token
+ * key alone, with a live half that refuses everything. A `deps.bank` override replaces the whole port, routing
+ * included, so tests that script a port are unchanged.
+ */
 export function bankRuntime(ctx: RouteContext): BankRuntime {
-  return { port: ctx.deps.bank ?? livePlaid, config: bankConfig(ctx.deps.env) };
+  const { config, liveConfigured } = bankConfigFor(ctx);
+  return { port: ctx.deps.bank ?? routingBank(liveConfigured ? livePlaid : refusingBank), config };
+}
+
+/**
+ * Plaid's settings, or the demo's when Plaid has none. The demo's are taken only when the switch is on and the
+ * request is not known to be a real user's: a verified non-anonymous token (`anonymous: false`) answers CONFIG
+ * exactly as before, so no real account ever runs on placeholders. Tokenless work (the errand endpoint, an
+ * account delete's disconnects) may take them; its calls still route by token, and the live half refuses.
+ */
+function bankConfigFor(ctx: Pick<RouteContext, "anonymous"> & { deps: { env: Env } }): { config: BankConfig; liveConfigured: boolean } {
+  try {
+    return { config: bankConfig(ctx.deps.env), liveConfigured: true };
+  } catch (error) {
+    if (error instanceof ConfigError && demoEnabled(ctx.deps.env) && ctx.anonymous !== false) return { config: demoBankConfig(ctx.deps.env), liveConfigured: false };
+    throw error;
+  }
 }
 
 const clip = (s: string | null, n: number) => (s === null ? null : s.length > n ? s.slice(0, n) : s);
@@ -267,9 +294,11 @@ export function parseConnect(body: unknown): BankConnectRequest {
 // GET /api/bank/status: Firestore only, never Plaid, writes nothing.
 
 export async function bankStatus(ctx: RouteContext): Promise<BankStatusResponse> {
-  bankConfig(ctx.deps.env);
+  bankConfigFor(ctx);
   const all = await listConnectors({ query: (spec) => ctx.deps.store.query(ctx.uid, spec) }, ctx.uid);
   const banks = all.filter((c) => isActiveBank(c.data)).map((c) => bankView(c.id, c.data));
+  // Brief 054 (R17): a demo visit's sheet offers no Connect and says the bank is simulated.
+  if (ctx.anonymous === true) return { banks, canConnect: false, simulated: true };
   return { banks, canConnect: canConnectMore(all) };
 }
 
@@ -369,13 +398,20 @@ export async function readableBankIds(ctx: RouteContext): Promise<Set<string>> {
 export const bankLinkTokenRoute: RouteSpec<Record<string, never>> = {
   name: "bankLinkToken",
   parse: ({ body }) => parseWith(BankLinkTokenRequest, body) as Record<string, never>,
-  run: (ctx) => bankLinkToken(ctx),
+  // Brief 054 (R14.3): a demo visit never reaches Plaid Link; the port method carries no token to route by.
+  run: (ctx) => {
+    refuseDemo(ctx);
+    return bankLinkToken(ctx);
+  },
 };
 
 export const bankConnectRoute: RouteSpec<BankConnectRequest> = {
   name: "bankConnect",
   parse: ({ body }) => parseConnect(body),
-  run: (ctx, req) => connectBank(ctx, req),
+  run: (ctx, req) => {
+    refuseDemo(ctx);
+    return connectBank(ctx, req);
+  },
 };
 
 export const bankStatusRoute: RouteSpec<null> = {
@@ -396,7 +432,11 @@ export const bankSyncRoute: RouteSpec<BankSyncRequest> = {
 export const bankDisconnectRoute: RouteSpec<BankDisconnectRequest> = {
   name: "bankDisconnect",
   parse: ({ body }) => parseWith(BankDisconnectRequest, body),
-  run: (ctx, req) => disconnectBank(ctx, req),
+  // R14.8: the visitor can't disconnect the simulated bank; account delete calls `disconnectBank` itself, unguarded.
+  run: (ctx, req) => {
+    refuseDemo(ctx);
+    return disconnectBank(ctx, req);
+  },
 };
 
 export type { BankPort };

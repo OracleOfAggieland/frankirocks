@@ -35,6 +35,8 @@ import { requireModel } from "../config/models";
 import { ownerClock, readCoreDocs } from "../core-docs";
 import { isReadableGoogle, readGoogleDoc } from "../google/connector";
 import { googleConfigured } from "../google/config";
+import { demoEnabled } from "../demo/switch";
+import { isDemoVisit, readNow } from "../demo/visit";
 import { type GoogleRead, type GoogleReadContext, type GoogleReadFailure, type MailHit, type ReaderText, freeTime, googleReadContext, listEvents, readableMessage, searchMail, senderMailed } from "../google/read";
 import { storeReader } from "../head-build";
 import type { ResponsesResult } from "../openai/responses";
@@ -176,13 +178,19 @@ async function rowOf(ctx: RouteContext, eid: string): Promise<{ cls: Class; sens
 // Dates: every `when` goes through a pure resolver.
 
 /**
- * Review fix E3: a real Google account is read against the ops clock, never the sample visit's world clock (as
+ * Review fix E3: a live Google account is read against the ops clock, never the sample visit's world clock (as
  * `bank/money-read.ts` does), in the owner's zone. The calendar tools then move to the calendar's own zone (E5).
+ *
+ * Brief 054 (R28, contract question 96): a demo visit's simulated mail and calendar are dated from the visit's world
+ * start, so "today" there is the world clock's. A verified token decides; inside the errand run endpoint there is
+ * none, and the Gmail and Calendar connectors answer (`isDemoVisit`).
  */
 async function googleNow(ctx: RouteContext): Promise<{ nowMs: number; zone: string }> {
-  const core = await readCoreDocs({ get: (p) => ctx.deps.store.get(ctx.uid, p) }, ctx.uid);
+  const reader = { get: <T>(p: string) => ctx.deps.store.get<T>(ctx.uid, p) };
+  const core = await readCoreDocs(reader, ctx.uid);
   const pair = ownerClock(core.state.data, ctx.deps.clock);
-  return { nowMs: pair.opsClock.now, zone: core.state.data.currentZone };
+  const demo = await isDemoVisit({ uid: ctx.uid, anonymous: ctx.anonymous, env: ctx.deps.env, hasher: ctx.deps.hasher }, reader);
+  return { nowMs: readNow(pair, demo), zone: core.state.data.currentZone };
 }
 
 const UNRESOLVED = { unresolved: true, say: "I need a day for that." };
@@ -495,7 +503,8 @@ function timeView(e: Evidence): { cls: Class; sens: Sens } | null {
  * answers `expired`, so the call is told it needs connecting again.
  */
 async function readiness(ctx: RouteContext, provider: "gmail" | "calendar"): Promise<ErrandAvailability> {
-  if (!googleConfigured(ctx.deps.env)) return "unavailable";
+  // Brief 054: the demo serves a demo visit's reads when Google has no settings; a real user still reads unavailable.
+  if (!googleConfigured(ctx.deps.env) && !(demoEnabled(ctx.deps.env) && ctx.anonymous !== false)) return "unavailable";
   const doc = (await readGoogleDoc(storeReader(ctx.deps.store, ctx.uid), ctx.uid, ctx.deps.hasher, provider))?.data ?? null;
   if (isReadableGoogle(doc)) return "ready";
   return doc !== null && doc.google !== null && doc.google.granted && doc.state === "expired" ? "expired" : "notConnected";
