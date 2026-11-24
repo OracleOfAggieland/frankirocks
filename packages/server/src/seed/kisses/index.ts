@@ -3,34 +3,21 @@
  * Kiroween Demo. Its `demo` profile is what pairs it with an anonymous tenant and what the simulated bank and Google
  * answer from.
  *
- * This is the stub that lands with the fixture types (part C0): no lines yet, and a placeholder profile that passes
- * the builder's demo checks. The persona's own lines and profile are written later (part E) in `turns.ts`,
- * `mail.ts`, `bulk.ts`, `calendar.ts`, `bank.ts` and `profile.ts`, as `seed/persona/` is laid out.
+ * The persona's own lines live in `turns.ts`, `mail.ts`, `bulk.ts`, `calendar.ts` and `bank.ts`, and its profile in
+ * `profile.ts`, as `seed/persona/` is laid out. The plan they all follow is `docs/briefs/054-persona-bible.md`.
  *
  * This folder imports only `../fixture`, so it never forms a cycle with `seed/persona/`, which registers it.
  */
-import type { BankLine, CalendarLine, DemoProfile, MailLine, SeedFixture, TurnLine } from "../fixture";
+import type { SeedFixture } from "../fixture";
+import { BANK } from "./bank";
+import { BULK } from "./bulk";
+import { CALENDAR } from "./calendar";
+import { MAIL } from "./mail";
+import { PROFILE } from "./profile";
+import { TURNS } from "./turns";
 
 /** The route's `fixtureId` for this persona: a fixed 43-character ID shape the browser can send (23 + 20). */
 export const KISSES_FIXTURE_ID = "seed-persona-kisses-v1-00000000000000000000";
-
-const TURNS: TurnLine[] = [];
-const MAIL: MailLine[] = [];
-const BULK: MailLine[] = [];
-const CALENDAR: CalendarLine[] = [];
-const BANK: BankLine[] = [];
-
-/** Placeholder until part E: invented values that pass the builder's demo checks. */
-const PROFILE: DemoProfile = {
-  displayName: "Jeffrey Kisses",
-  bank: {
-    itemId: "sim-item-kisses-0001",
-    institutionId: "sim-ins-0001",
-    institutionName: "Placeholder Savings",
-    accounts: [{ accountId: "sim-acct-checking-0001", name: "Everyday Checking", mask: "0001", type: "depository", subtype: "checking" }],
-  },
-  google: { email: "jeffrey@kisses.example" },
-};
 
 export const KISSES: SeedFixture = {
   id: KISSES_FIXTURE_ID,
