@@ -32,14 +32,23 @@ export const TEST_ENV = {
   NODE_ENV: "test",
   // Brief 053: off in the app unless set; on here, so the company machinery stays under test.
   FRANKI_COMPANY_MODE: "on",
+  // Brief 054: on here, so an `anon:<uid>` token reaches its route. It changes nothing for any other token (R15.5);
+  // a test of the switch itself sets its own value.
+  FRANKI_DEMO: "on",
 };
 
-/** Accepts tokens of the form `token:<uid>`; anything else (including `revoked:<uid>`) is rejected. */
+/**
+ * Accepts tokens of the form `token:<uid>`, and `anon:<uid>` for a Firebase anonymous sign-in (brief 054), which it
+ * reports as `{ uid, anonymous: true }`. Anything else (including `revoked:<uid>`) is rejected. A `token:` answer
+ * carries no `anonymous` at all, as the verifiers of older tests do.
+ */
 export function fakeTokenVerifier(): TokenVerifier & { calls: number } {
   const v = {
     calls: 0,
     async verify(token: string) {
       v.calls++;
+      const anon = /^anon:(.+)$/.exec(token);
+      if (anon !== null) return { uid: anon[1]!, anonymous: true };
       const m = /^token:(.+)$/.exec(token);
       if (m === null) {
         // Shaped like the Admin SDK's FirebaseAuthError for a bad token.

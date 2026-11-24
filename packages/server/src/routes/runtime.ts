@@ -7,7 +7,7 @@
 import type { AccountPort } from "../account/live";
 import type { ClockPort, Hasher, Schema } from "@franki/core";
 import { validate } from "@franki/core";
-import { BODY_CAP_BYTES, type TokenVerifier, guardRequest } from "../auth/guard";
+import { BODY_CAP_BYTES, type TokenVerifier, guardRequestFull } from "../auth/guard";
 import type { Timers } from "../clock/timers";
 import type { Env } from "../config/env";
 import type { FastSlotsPort } from "../onturn/fast-slots-port";
@@ -19,6 +19,7 @@ import type { GooglePort } from "../google/port";
 import type { ForgetResolvePort } from "../forget/resolve-port";
 import type { ErrandAgent } from "../errands/agent";
 import type { StorePort } from "../store/port";
+import { demoEnabled } from "../demo/switch";
 import { type RouteError, dependencyLogFields, parseError, toRouteError } from "./errors";
 
 /**
@@ -111,12 +112,15 @@ export async function runRoute<Req>(spec: RouteSpec<Req>, http: HttpInput, deps:
   let guarded: string | undefined;
   try {
     const bodyText = http.method.toUpperCase() === "GET" ? "" : await http.text();
-    const uid = await guardRequest(
+    // Brief 054: the guard reads the demo switch here, so an anonymous token is refused before any route logic.
+    const g = await guardRequestFull(
       { method: http.method, header: (n) => http.header(n), bodyText, bodyCap: spec.bodyCap ?? BODY_CAP_BYTES },
       deps.tokens,
       undefined,
       deps.log,
+      { demoOn: demoEnabled(deps.env) },
     );
+    const uid = g.uid;
     guarded = uid;
     let body: unknown = null;
     if (bodyText !== "") {
@@ -128,7 +132,7 @@ export async function runRoute<Req>(spec: RouteSpec<Req>, http: HttpInput, deps:
     }
     const req = spec.parse({ body, query: new URL(http.url).searchParams });
     const origin = http.method.toUpperCase() === "GET" ? null : http.header("origin");
-    const result = await spec.run({ uid, deps, schedule, startedOpsAt, origin }, req);
+    const result = await spec.run({ uid, deps, schedule, startedOpsAt, origin, anonymous: g.anonymous }, req);
     traceRouteDone(deps, spec.name, http.method, startedOpsAt, guarded, 200, null);
     return { status: 200, body: result };
   } catch (error) {
