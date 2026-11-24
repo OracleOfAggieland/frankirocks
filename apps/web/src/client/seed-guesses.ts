@@ -20,8 +20,13 @@ export const PERSONA_FIXTURE_ID = "seed-persona-riley-v1-000000000000000000000";
  */
 export const VISIT_STORAGE_PREFIX = "franki.visit.";
 
-/** The reset's budget is 5 s plus progress (contracts §6); the client waits a little longer. */
-export const RESET_TIMEOUT_MS = 8_000;
+/**
+ * The reset's budget is 5 s plus progress (contracts §6), but real resets take 6 to 8 s: the deployed site's logs
+ * show 6.1 s and 7.9 s (Nov 19 and 21), and a local one took 7.8 s (Nov 24). At 8 s the browser gave up on a reset
+ * the server went on to finish, and the first load of a visit failed. The browser now waits well past the slowest
+ * seen; "Setting up your month" shows meanwhile.
+ */
+export const RESET_TIMEOUT_MS = 20_000;
 /** The advance's budget is 2 s (contracts §6); the client waits a little longer. */
 export const ADVANCE_TIMEOUT_MS = 4_000;
 
