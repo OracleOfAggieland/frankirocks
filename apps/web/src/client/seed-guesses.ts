@@ -27,8 +27,12 @@ export const VISIT_STORAGE_PREFIX = "franki.visit.";
  * seen; "Setting up your month" shows meanwhile.
  */
 export const RESET_TIMEOUT_MS = 20_000;
-/** The advance's budget is 2 s (contracts §6); the client waits a little longer. */
-export const ADVANCE_TIMEOUT_MS = 4_000;
+/**
+ * The advance's budget is 2 s (contracts §6), but a local one took 3.1 s of server time (Nov 24), and at 4 s the
+ * browser gave up on the first press of a bolt: "The clock didn't move." No bolt has been pressed on the deployed
+ * site, so its real time is unknown; a cold instance adds to it. The browser now waits well past what was seen.
+ */
+export const ADVANCE_TIMEOUT_MS = 10_000;
 
 /** The barrier answer: HTTP 423 (contracts §6, "barrier423"), or the ErrorCode BARRIER on another status. */
 export const BARRIER_STATUS = 423;
