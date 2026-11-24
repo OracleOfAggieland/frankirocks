@@ -23,7 +23,7 @@ This is a working build, not a mock-up. What runs today:
 - **Connect a bank, read-only, and ask what you spent.** Plaid takes the sign-in, and every amount traces to a transaction.
 - **Say "Franki, you rock"** and the wooden radio at his feet turns on, Franki celebrates, and a globe of 70 radio stations opens, tuned to rock. Spin the globe and press a city's light to hear it. One press on the radio does the same.
 - **Press the X-ray machine** at Franki's other side and a big X-ray screen opens on your camera. Your picture shows as old film, with a skull that turns and talks with you and the bones of your hands drawn over it. On a phone, flip to the back camera and point it at a friend. It's not a medical scan, and the picture never leaves your device.
-- **5,976 tests pass in the full suite,** and a full-history secret scan runs on every push.
+- **6,106 tests pass in the full suite,** and a full-history secret scan runs on every push.
 
 What comes next is listed plainly under [Still on the slab](#still-on-the-slab).
 
@@ -33,36 +33,39 @@ Kiro is the lab Franki was assembled in. Every body part below is a Kiro feature
 
 | Body part | Kiro feature | How we used it | Why it mattered | Evidence |
 |---|---|---|---|---|
-| Skeleton | **Specs** | Three specs, each with requirements, design and tasks: 80 requirements and 108 tasks, 106 of them done | Franki's voice path has dozens of ways to go wrong. The specs named each one before any code existed, so the first live call worked | [`.kiro/specs/`](.kiro/specs/) |
-| Brain | **Steering** | Eight steering files: four always on, four loaded only for the files they govern | Kiro kept the memory rules, the clock rule and the product's hard rules in mind on every task without being told twice | [`.kiro/steering/`](.kiro/steering/) |
-| Reflexes | **Hooks** | Three hooks: one blocks a write that reads the wall clock, one blocks an edit to a committed property test, one runs the invariant tests on save | A property can never be quietly edited to make it pass, and time stays testable | [`.kiro/hooks/`](.kiro/hooks/) |
-| Immune system | **Property-based tests** | 40 spec tasks are properties, such as "every wait ends" and "a held reply never resumes". 249 property test files in all, 24 of them added by Kiro | Properties catch the sequence nobody thought to write a test for. Kiro's "an admitted turn is always posted" failed about 1 run in 30 until the real bug it caught was fixed; then 0 of 30 failed | [`voice-control/tasks.md`](.kiro/specs/voice-control/tasks.md), [`admitted-turn-posted.property.test.ts`](packages/core/src/voice/admitted-turn-posted.property.test.ts), [`017-report.md`](docs/briefs/017-report.md) |
-| Muscle | **Custom agents** | Two. `franki-builder` builds spec tasks headless from the Kiro CLI: it can edit, test and commit, and cannot read secrets, push or deploy. `franki-release` can only read and run commands, and refuses force pushes, deletes, resets, commits, secrets and deploys. Kiro ran it to push the last reviewed commit and make this repo public | Long builds ran unattended, and the release step can't rewrite history | [`.kiro/agents/`](.kiro/agents/) |
-| Lab notes | **Briefs** | 98 files of assignments, reviews and reports. Kiro read briefs 001 to 011 before its runs and wrote their reports | Every run has a paper trail: what was asked, what was built, what was seen | [`docs/briefs/`](docs/briefs/) |
+| Skeleton | **Specs** | Four specs, each with requirements, design and tasks: 108 requirements and 118 tasks, 115 of them done | Franki's voice path has dozens of ways to go wrong. The specs named each one before any code existed, so the first live call worked | [`.kiro/specs/`](.kiro/specs/) |
+| Brain | **Steering** | Nine steering files: four always on, four loaded only for the files they govern, and one pulled in by hand when a persona is written | Kiro kept the memory rules, the clock rule and the product's hard rules in mind on every task without being told twice | [`.kiro/steering/`](.kiro/steering/) |
+| Reflexes | **Hooks** | Four hooks: one blocks a write that reads the wall clock, one blocks an edit to a committed property test, one runs the invariant tests on save, and one runs the persona check each time an agent stops | A property can never be quietly edited to make it pass, and time stays testable | [`.kiro/hooks/`](.kiro/hooks/) |
+| Immune system | **Property-based tests** | 62 spec tasks are properties, such as "every wait ends" and "a held reply never resumes". 272 property test files in all, 24 of them added by Kiro | Properties catch the sequence nobody thought to write a test for. Kiro's "an admitted turn is always posted" failed about 1 run in 30 until the real bug it caught was fixed; then 0 of 30 failed | [`voice-control/tasks.md`](.kiro/specs/voice-control/tasks.md), [`admitted-turn-posted.property.test.ts`](packages/core/src/voice/admitted-turn-posted.property.test.ts), [`017-report.md`](docs/briefs/017-report.md) |
+| Muscle | **Custom agents** | Four. `franki-builder` builds spec tasks headless from the Kiro CLI: it can edit, test and commit, and cannot read secrets, push or deploy. `franki-release` can only read and run commands, and refuses force pushes, deletes, resets, commits, secrets and deploys. Kiro ran it to push the last reviewed commit and make this repo public. `franki-persona-writer` and `franki-reviewer` run as workflow steps: the writer can write only the persona's folder, and the reviewer only its verdict file | Long builds ran unattended, the release step can't rewrite history, and a reviewer can't quietly fix what it reviews | [`.kiro/agents/`](.kiro/agents/) |
+| Stitches | **Workflows** | One, `stitch-persona`. It writes a persona's plan, then its spoken lines, mail, calendar and bank rows as four steps side by side, stitches them into one fixture, and loops between a fix step and a review step until a verdict file says approved. Kiro ran it headless and wrote the whole demo persona through it | Four writers kept to one plan, so the dates, names and amounts agree across a month of mail, meetings and purchases | [`.kiro/workflows/`](.kiro/workflows/) |
+| Muscle memory | **Skills** | One, `persona-author`, written by Kiro: how a seeded persona is laid out, what the loader checks, the trust rules for mail, and a check script that scans for real names and runs the persona's tests | Every workflow step loaded the same know-how, and the check gave each step the same pass or fail | [`.kiro/skills/`](.kiro/skills/) |
+| Lab notes | **Briefs** | 101 files of assignments, reviews and reports. Kiro read briefs 001 to 011 before its runs and wrote their reports | Every run has a paper trail: what was asked, what was built, what was seen | [`docs/briefs/`](docs/briefs/) |
 
 ### The winning numbers
 
-As of Nov 23, 2026:
+As of Nov 24, 2026:
 
 | | |
 |---|---|
-| Commits by Kiro | **249 of 1,056**, each ending `Built-with: Kiro` |
-| Spec requirements | **80** |
-| Spec tasks done | **106 of 108** |
-| Property test files | **249** |
-| Tests passing | **5,976** |
+| Commits by Kiro | **255 of 1,085**, each ending `Built-with: Kiro` |
+| Spec requirements | **108** |
+| Spec tasks done | **115 of 118** |
+| Property test files | **272** |
+| Tests passing | **6,106** |
 | State machines mapped | **20 pages** in [`docs/machines/`](docs/machines/) |
 
 ### Who built what
 
-Kiro wrote all three specs and built most of their tasks: Franki's foundation, the first spoken call, the lab UI foundation, the judge spike, and the judge in the call. Kiro also made this repo public. Kiro's commits end `Built-with: Kiro`.
+Kiro wrote the first three specs and built most of their tasks: Franki's foundation, the first spoken call, the lab UI foundation, the judge spike, and the judge in the call. Kiro also made this repo public. For the Kiroween Demo, Kiro wrote the fourth spec, the `persona-author` skill, the list of real names a persona may not use, and all of the demo persona's lines through the `stitch-persona` workflow. Kiro's commits end `Built-with: Kiro`.
 
-From Nov 10 on, the feature code was built outside Kiro, mostly by Claude Code from the briefs: the 3D avatar, memory writes, forget, the sample month and its takeout pattern, check-ins, the state machine safety net, the UI build-out, the first meeting, phone calls, the radio and its globe, the X-ray machine, and the read-only bank and Google connections with their errands. Those commits carry their own trailer. The split is in the history, commit by commit.
+From Nov 10 on, the feature code was built outside Kiro, mostly by Claude Code from the briefs: the 3D avatar, memory writes, forget, the sample month and its takeout pattern, check-ins, the state machine safety net, the UI build-out, the first meeting, phone calls, the radio and its globe, the X-ray machine, the read-only bank and Google connections with their errands, and the Kiroween Demo's code. The demo's workflow, agent and hook files were also written by hand, because Kiro run headless can't write those folders. Those commits carry their own trailer. The split is in the history, commit by commit.
 
 ## Still on the slab
 
 The parts not yet stitched on, said plainly:
 
+- **The Kiroween Demo is built and switched off.** A visit with no sign-in, as an invented persona with a simulated bank, mailbox and calendar. The button stays hidden until anonymous sign-in is turned on for the project and a real visit has been walked. The spec is [`.kiro/specs/kiroween-demo/`](.kiro/specs/kiroween-demo/) and the report is [`docs/briefs/054-report.md`](docs/briefs/054-report.md).
 - **Reminders.** One-shot reminders are planned and tested, but no route offers one yet, and nothing recurs.
 - **Goals.** Franki saves a goal you mention, but nothing acts on it yet.
 - **An approval card before a phone call.** A call dials as soon as you ask, so your own "call this number" is the confirmation, and the call's log row is the audit entry. A forget doesn't end a call already in progress.
