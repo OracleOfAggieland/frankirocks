@@ -81,10 +81,18 @@ export function restsOnlyOnFixture(m: Memory, snapshot: Snapshot): boolean {
   return deps.length > 0 && deps.every((id) => evidenceIn(snapshot, id)?.source === "fixture");
 }
 
-/** Whether every Evidence the Memory names is in the Snapshot and at least one of them is not fixture Evidence. */
-function restsOnOwnerWords(m: Memory, snapshot: Snapshot): boolean {
+/**
+ * Whether every Evidence the Memory names is in the Snapshot and at least one of them is not fixture Evidence.
+ *
+ * `playsOwner` (Kiroween Demo, contract question 97): on a demo visit the visitor plays the persona, so the persona's
+ * fixture words are the owner's words and the source no longer matters. Every Evidence must still be in the Snapshot,
+ * so a missing one still fails closed. The caller passes it only from the verified token or the connector, never from
+ * the browser.
+ */
+function restsOnOwnerWords(m: Memory, snapshot: Snapshot, playsOwner = false): boolean {
   const found = evidenceDeps(m).map((id) => evidenceIn(snapshot, id));
-  return found.length > 0 && found.every((e) => e !== undefined) && found.some((e) => e!.source !== "fixture");
+  if (found.length === 0 || !found.every((e) => e !== undefined)) return false;
+  return playsOwner || found.some((e) => e!.source !== "fixture");
 }
 
 /**
@@ -93,15 +101,16 @@ function restsOnOwnerWords(m: Memory, snapshot: Snapshot): boolean {
  * only), whose trimmed text is a short name. Alias before name, then the latest `assertedAt`, then the smallest id,
  * so input order never matters.
  */
-export function ownerName(input: { memories: readonly HeadMemory[]; ec: EC; snapshot: Snapshot; audience?: Au }): OwnerName | null {
+export function ownerName(input: { memories: readonly HeadMemory[]; ec: EC; snapshot: Snapshot; audience?: Au; playsOwner?: boolean }): OwnerName | null {
   const audience = input.audience ?? "private";
+  const plays = input.playsOwner === true;
   let best: { hm: HeadMemory; text: string } | null = null;
   for (const hm of input.memories) {
     const m = hm.memory;
     if (!isSelfNameRow(m) || m.kind !== "fact" || m.value.kind !== "text") continue;
     const text = m.value.text.trim();
     if (!promotableName(text)) continue;
-    if (!restsOnOwnerWords(m, input.snapshot)) continue;
+    if (!restsOnOwnerWords(m, input.snapshot, plays)) continue;
     if (!headAdmits(hm, input.ec, input.snapshot, audience)) continue;
     if (best === null || before(hm, best.hm)) best = { hm, text };
   }
@@ -113,9 +122,10 @@ export function ownerName(input: { memories: readonly HeadMemory[]; ec: EC; snap
  * owner's words that passes the Head's filter for this audience, whatever its text. True also when `ownerName` is
  * null because the text is not promotable.
  */
-export function ownerNamed(input: { memories: readonly HeadMemory[]; ec: EC; snapshot: Snapshot; audience?: Au }): boolean {
+export function ownerNamed(input: { memories: readonly HeadMemory[]; ec: EC; snapshot: Snapshot; audience?: Au; playsOwner?: boolean }): boolean {
   const audience = input.audience ?? "private";
-  return input.memories.some((hm) => isSelfNameRow(hm.memory) && restsOnOwnerWords(hm.memory, input.snapshot) && headAdmits(hm, input.ec, input.snapshot, audience));
+  const plays = input.playsOwner === true;
+  return input.memories.some((hm) => isSelfNameRow(hm.memory) && restsOnOwnerWords(hm.memory, input.snapshot, plays) && headAdmits(hm, input.ec, input.snapshot, audience));
 }
 
 /** Alias before name, then the latest `assertedAt`, then the smallest id. */

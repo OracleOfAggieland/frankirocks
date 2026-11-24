@@ -25,6 +25,9 @@ export function forgetDeps(ctx: RouteContext): ForgetDeps {
     hasher: deps.hasher,
     resolver: deps.forgetResolve ?? liveForgetResolve(deps),
     closer: hangupClosePort(ctx.uid, deps, (id) => afterClosed(ctx, id)),
+    // Kiroween Demo: the Head compiled once the barrier clears keeps a demo visitor's persona name.
+    env: deps.env,
+    ...(ctx.anonymous === undefined ? {} : { anonymous: ctx.anonymous }),
   };
 }
 

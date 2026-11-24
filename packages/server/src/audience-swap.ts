@@ -38,6 +38,7 @@ import {
 } from "@franki/core";
 import { effectiveAudience, expireLease } from "./audience";
 import { ownerClock } from "./core-docs";
+import { isDemoVisit } from "./demo/visit";
 import { buildHead } from "./head-build";
 import { DECK_TTL_MS } from "./sessions";
 import type { SlowParse } from "./intents/slow-parse";
@@ -84,18 +85,20 @@ export interface AudienceHead {
 }
 
 /** Compiles the target audience's Head from a lock-free snapshot, as open does (design "Alone"). */
-export async function precompileAudienceHead(ctx: Pick<RouteContext, "uid" | "deps">, slow: SlowParse | null, generation: number): Promise<AudienceHead | null> {
+export async function precompileAudienceHead(ctx: Pick<RouteContext, "uid" | "deps" | "anonymous">, slow: SlowParse | null, generation: number): Promise<AudienceHead | null> {
   const audience = audienceTarget(slow);
   if (audience === null) return null;
   const { uid, deps } = ctx;
   return readSnapshot(deps.store, uid, async (reader) => {
-    const [epoch, rules, state] = await Promise.all([
+    const [epoch, rules, state, demo] = await Promise.all([
       reader.get<CoreEpoch>(paths.core(uid, "epoch")),
       reader.get<CoreRules>(paths.core(uid, "rules")),
       reader.get<CoreState>(paths.core(uid, "state")),
+      // Kiroween Demo: an `alone` line widens back to private, where a demo visitor's name is the persona's.
+      isDemoVisit({ uid, anonymous: ctx.anonymous, env: deps.env, hasher: deps.hasher }, reader),
     ]);
     if (epoch === null || rules === null || state === null) return null;
-    const compiled = await buildHead(reader, uid, { epoch: epoch.data, rules: rules.data }, ownerClock(state.data, deps.clock), generation, audience);
+    const compiled = await buildHead(reader, uid, { epoch: epoch.data, rules: rules.data }, ownerClock(state.data, deps.clock), generation, audience, demo);
     return compiled.ok ? { audience, head: compiled.head, rulesRev: rules.data.rulesRev, epoch: epoch.data.epoch } : null;
   });
 }
@@ -388,10 +391,11 @@ export async function withNarrowHead(
   tx: Pick<Tx, "get" | "query">,
   uid: string,
   eff: AudienceEffect | null,
-  x: { epoch: CoreEpoch; rules: CoreRules; bundle: CoreBundle; clock: ClockPair; generation: number; opsNow: number; hasher: Pick<Hasher, "sha256">; bundleWritten?: boolean },
+  /** `playsOwner`: a demo visit (Kiroween Demo), from the route's `isDemoVisit`; absent compiles as before. */
+  x: { epoch: CoreEpoch; rules: CoreRules; bundle: CoreBundle; clock: ClockPair; generation: number; opsNow: number; hasher: Pick<Hasher, "sha256">; bundleWritten?: boolean; playsOwner?: boolean },
 ): Promise<AudienceEffect | null> {
   if (eff === null || eff.bundle !== null || (eff.wantsHead ?? null) === null || x.bundleWritten === true) return eff;
-  const compiled = await buildHead(tx, uid, { epoch: x.epoch, rules: x.rules }, x.clock, x.generation, eff.wantsHead!);
+  const compiled = await buildHead(tx, uid, { epoch: x.epoch, rules: x.rules }, x.clock, x.generation, eff.wantsHead!, x.playsOwner);
   return compiled.ok ? { ...eff, bundle: headBundle(x.bundle, compiled.head, x.rules.rulesRev, x.opsNow, x.hasher) } : eff;
 }
 

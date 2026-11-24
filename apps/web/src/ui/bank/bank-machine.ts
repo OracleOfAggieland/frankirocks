@@ -11,8 +11,9 @@
  *         sent again with the same public token: the next try starts a new Link session. Disconnect asks first,
  *         and only an explicit Yes sends it. While a bank is importing, a sync goes out every BANK_POLL_MS, one
  *         round at a time, and stops when none is importing, after BANK_SYNC_FAILURE_LIMIT failed rounds, or after
- *         BANK_POLL_MAX_MS.
- * Never:  read a clock, the network or the DOM; hold a bank password (Plaid's own window takes the sign-in); show
+ *         BANK_POLL_MAX_MS. While the last status answer said `simulated` (brief 054), neither Connect nor
+ *         Disconnect starts.
+ * Never: read a clock, the network or the DOM; hold a bank password (Plaid's own window takes the sign-in); show
  *         Plaid's error text; throw.
  */
 import type { BankView } from "@franki/core";
@@ -89,6 +90,12 @@ export interface BankState {
   pollSince: number | null;
   /** Failed sync rounds in a row. */
   syncFailures: number;
+  /**
+   * Brief 054 (R17.3, R17.4): the server's last status answer said these banks are simulated (a demo visit). Present
+   * only when true, and absent in `INITIAL_BANK`, so a sample visit's states are as they were. While set, the sheet
+   * offers neither Connect nor Disconnect. A later answer without it clears it.
+   */
+  simulated?: true;
 }
 
 export const INITIAL_BANK: Readonly<BankState> = Object.freeze({
@@ -127,7 +134,7 @@ export interface BankLinkSuccess {
   institutionName: string | null;
 }
 
-export type BankStatusAnswer = { ok: true; banks: readonly BankView[]; canConnect: boolean } | { ok: false };
+export type BankStatusAnswer = { ok: true; banks: readonly BankView[]; canConnect: boolean; simulated?: true } | { ok: false };
 export type BankTokenAnswer = { ok: true; linkToken: string } | { ok: false; why: "limit" | "failed" };
 export type BankConnectAnswer = { ok: true; bank: BankView; existing: boolean } | { ok: false; why: "limit" | "refused" | "unknown" };
 export type BankSyncAnswer = { ok: true; bank: BankView } | { ok: false };
@@ -185,9 +192,18 @@ export function bankBusy(s: BankState): boolean {
   return s.phase === "preparing" || s.phase === "linking" || s.phase === "connecting" || s.phase === "disconnecting";
 }
 
-/** Whether "Connect a bank" is offered: the server said one more fits, and nothing else is out. */
+/** Whether "Connect a bank" is offered: the server said one more fits, nothing else is out, and it is not simulated. */
 export function canStartLink(s: BankState): boolean {
-  return s.phase === "idle" && s.banks !== null && s.canConnect;
+  return s.phase === "idle" && s.banks !== null && s.canConnect && s.simulated !== true;
+}
+
+/** Brief 054: the state with the server's `simulated` mark as the answer gave it, absent when it did not. */
+function markSimulated(s: BankState, simulated: boolean): BankState {
+  if (simulated) return s.simulated === true ? s : { ...s, simulated: true };
+  if (s.simulated === undefined) return s;
+  const next = { ...s };
+  delete next.simulated;
+  return next;
 }
 
 /** The banks a sync round would pull: connected or syncing, and still importing. */
@@ -265,15 +281,19 @@ function onStatus(s: BankState, e: Extract<BankEvent, { kind: "statusAnswered" }
     if (s.banks !== null) return none({ ...s, statusAsk: null });
     return none({ ...s, statusAsk: null, phase: s.phase === "reading" ? "readFailed" : s.phase });
   }
-  const state: BankState = {
-    ...s,
-    statusAsk: null,
-    banks: e.answer.banks,
-    canConnect: e.answer.canConnect,
-    phase: s.phase === "reading" || s.phase === "readFailed" ? "idle" : s.phase,
-  };
-  // A bank asked about may have gone in the meantime: the ask goes with it.
-  const asked = state.phase === "confirming" && !state.banks!.some((b) => b.connectorId === state.confirmId);
+  const state: BankState = markSimulated(
+    {
+      ...s,
+      statusAsk: null,
+      banks: e.answer.banks,
+      canConnect: e.answer.canConnect,
+      phase: s.phase === "reading" || s.phase === "readFailed" ? "idle" : s.phase,
+    },
+    e.answer.simulated === true,
+  );
+  // A bank asked about may have gone in the meantime: the ask goes with it. A simulated bank is never disconnected,
+  // so an ask open when that answer lands goes too.
+  const asked = state.phase === "confirming" && (state.simulated === true || !state.banks!.some((b) => b.connectorId === state.confirmId));
   return schedulePoll(asked ? { ...state, phase: "idle", confirmId: null } : state, e.at);
 }
 
@@ -354,7 +374,8 @@ export function bankStep(s: BankState, e: BankEvent): BankStep {
       return roundDone(state, roundFailed, e.at);
     }
     case "disconnectPressed":
-      if (s.phase !== "idle" || !(s.banks ?? []).some((b) => b.connectorId === e.connectorId)) return none(s);
+      // Brief 054 (R17.3): a simulated bank is never offered a disconnect, and the server refuses one.
+      if (s.phase !== "idle" || s.simulated === true || !(s.banks ?? []).some((b) => b.connectorId === e.connectorId)) return none(s);
       return none({ ...s, phase: "confirming", confirmId: e.connectorId, note: null });
     case "disconnectNotNow":
       if (s.phase !== "confirming") return none(s);

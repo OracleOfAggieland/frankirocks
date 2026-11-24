@@ -1,9 +1,12 @@
 /**
- * Sign-in (R9.1, R9.2, R9.6, R9.7). Google is the only provider. Firebase keeps the user in browser storage, so a
- * reload restores the signed-in state without a prompt; until Firebase reports, the state is `loading`.
+ * Sign-in (R9.1, R9.2, R9.6, R9.7). Google is the only provider for an owner. Firebase keeps the user in browser
+ * storage, so a reload restores the signed-in state without a prompt; until Firebase reports, the state is `loading`.
+ * Brief 054: the Kiroween Demo signs in anonymously, with no popup and no form; each press is a Firebase user of its
+ * own. `anonymous` is for what the screen shows and offers only; the server reads it from the verified token.
  */
 import { type FirebaseApp, getApps, initializeApp } from "firebase/app";
-import { type Auth, GoogleAuthProvider, type User, getAuth, onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
+import { type Auth, GoogleAuthProvider, type User, getAuth, onAuthStateChanged, signInAnonymously, signInWithPopup, signOut } from "firebase/auth";
+import { COPY } from "../ui/copy";
 import type { FirebaseWebConfig } from "./firebase-config";
 
 /** Which of the three R9.6 causes made a sign-in attempt fail. */
@@ -31,13 +34,19 @@ export function providerDetail(code: unknown): string | null {
 export type AuthState =
   | { kind: "loading" }
   | { kind: "signedOut"; error: { cause: SignInFailure; message: string } | null }
-  | { kind: "signedIn"; email: string; uid: string };
+  /** `anonymous`: a demo visit (brief 054); `email` then holds the persona's name, never "(no email)". */
+  | { kind: "signedIn"; email: string; uid: string; anonymous?: true };
+
+/** Brief 054: the plain line when the demo's anonymous sign-in fails. */
+export const DEMO_SIGN_IN_FAILED = COPY.demo.signInFailed;
 
 export interface AuthClient {
   /** Calls `listener` with each Firebase user change; returns the unsubscribe function. */
   subscribe(listener: (user: User | null) => void): () => void;
   /** Opens the Google popup. Resolves with null on success, or the R9.6 failure. */
   signIn(): Promise<{ cause: SignInFailure; message: string } | null>;
+  /** Brief 054: signs in as a new anonymous user. Resolves with null on success, or a provider error in plain words. */
+  signInAnonymously(): Promise<{ cause: SignInFailure; message: string } | null>;
   signOut(): Promise<void>;
   /** The current user's ID token, or null while signed out. */
   idToken(): Promise<string | null>;
@@ -60,6 +69,16 @@ export function createAuthClient(config: FirebaseWebConfig): AuthClient {
         const cause = signInFailure(code);
         const detail = cause === "providerError" ? providerDetail(code) : null;
         return { cause, message: detail === null ? SIGN_IN_MESSAGES[cause] : `${SIGN_IN_MESSAGES[cause]} ${detail}` };
+      }
+    },
+    async signInAnonymously() {
+      try {
+        await signInAnonymously(auth);
+        return null;
+      } catch (err) {
+        // Only the error code is shown, never a token or a config value (R2.4).
+        const detail = providerDetail((err as { code?: unknown } | null)?.code);
+        return { cause: "providerError" as const, message: detail === null ? DEMO_SIGN_IN_FAILED : `${DEMO_SIGN_IN_FAILED} ${detail}` };
       }
     },
     signOut: () => signOut(auth),

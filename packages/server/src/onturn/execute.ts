@@ -78,6 +78,8 @@ export interface HardRuleRun {
   fastO?: boolean;
   /** The correct and transition routes' plan, made in the transaction by `executeOnTurn`. */
   memory?: MemoryOutcome;
+  /** Kiroween Demo (contract question 97): a demo visit, so a recompiled Head keeps the persona's name; absent compiles as before. */
+  playsOwner?: boolean;
 }
 
 export interface HardRuleResult {
@@ -98,12 +100,20 @@ const RULE_KEYS_MAX = 32;
 /** `handled` holds at most this many entries per turn, one per route (`HandledEntry.entries: arr(OnTurnHandledRecord, 3)`). */
 const HANDLED_ENTRIES_MAX = 3;
 
-type CompileRun = Pick<HardRuleRun, "uid" | "epoch" | "bundle" | "context" | "clock" | "audience" | "generation" | "hasher">;
+type CompileRun = Pick<HardRuleRun, "uid" | "epoch" | "bundle" | "context" | "clock" | "audience" | "generation" | "hasher" | "playsOwner">;
 
 /** The bundle after a rules change: the Head compiled from the context plus the new rules (G16), else `dirty`. */
 function recompiled(run: CompileRun, rules: CoreRules, laid: { memories: HeadMemory[]; snapshot: Snapshot } | null = null): CoreBundle {
   const ec = foregroundEC(run.uid, run.epoch, run.clock, run.generation);
-  const compiled = compileHead({ memories: laid?.memories ?? run.context.memories, ec, snapshot: laid?.snapshot ?? run.context.snapshot, rules, audience: run.audience, clock: run.clock });
+  const compiled = compileHead({
+    memories: laid?.memories ?? run.context.memories,
+    ec,
+    snapshot: laid?.snapshot ?? run.context.snapshot,
+    rules,
+    audience: run.audience,
+    clock: run.clock,
+    ...(run.playsOwner === true ? { playsOwner: true } : {}),
+  });
   const at = tsFromMs(run.clock.opsClock.now);
   if (!compiled.ok) return { ...run.bundle, state: "dirty", rulesRev: rules.rulesRev, updatedAt: at };
   const head = compiled.head;

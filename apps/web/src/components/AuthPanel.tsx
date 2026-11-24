@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { AuthState } from "../client/auth";
 import { COPY } from "../ui/copy";
 import { AccountMenu } from "./AccountMenu";
+import { DemoButton } from "./DemoButton";
 import { FOCUS, TARGET } from "./surfaces/classes";
 
 /** The large brass sign-in button: something you can touch, pressed 2 px on press. */
@@ -29,6 +30,13 @@ export interface AuthPanelProps {
   onSignOut: () => void;
   /** Deletes everything stored for the user and their sign-in; true once done. */
   onDeleteAccount: () => Promise<boolean>;
+  /**
+   * Brief 054: the demo switch's answer (null until it has answered). With `onDemo`, a Kiroween Demo button shows
+   * beside the sign-in button while signed out and the switch is on. Absent: the panel is as it was.
+   */
+  demoEnabled?: boolean | null;
+  /** Brief 054: the Kiroween Demo press: an anonymous sign-in, with no popup and no form. */
+  onDemo?: () => void;
 }
 
 /**
@@ -36,10 +44,11 @@ export interface AuthPanelProps {
  * R13.4, R13.5, R14.9). Signed out: one brass "Sign in to wake Franki" button for the same Google
  * sign-in, disabled until Firebase reports and while a popup is open, with any error inline, and under it a
  * quiet link to the front door. Signed in: the account menu (the email in mono 12; Sign out and Delete my data),
- * for the header rail.
+ * for the header rail. Brief 054: beside the sign-in button, the Kiroween Demo button once the switch says on; on a
+ * demo visit the menu shows the persona's name and a Demo mark.
  * Presentational only.
  */
-export function AuthPanel({ state, busy, configMissing, onSignIn, onSignOut, onDeleteAccount }: AuthPanelProps) {
+export function AuthPanel({ state, busy, configMissing, onSignIn, onSignOut, onDeleteAccount, demoEnabled = null, onDemo }: AuthPanelProps) {
   if (configMissing !== null) {
     return (
       <section aria-label="Sign-in" className="flex flex-col items-center gap-2">
@@ -55,17 +64,20 @@ export function AuthPanel({ state, busy, configMissing, onSignIn, onSignOut, onD
   if (state.kind === "signedIn") {
     return (
       <section aria-label="Signed in" className="flex min-w-0 items-center gap-3">
-        <AccountMenu email={state.email} onSignOut={onSignOut} onDeleteAccount={onDeleteAccount} />
+        <AccountMenu email={state.email} {...(state.anonymous === true ? { demo: true } : {})} onSignOut={onSignOut} onDeleteAccount={onDeleteAccount} />
       </section>
     );
   }
   const error = state.kind === "signedOut" ? state.error : null;
   return (
     <section aria-label="Sign-in" className="flex flex-col items-center gap-2">
-      <button type="button" onClick={onSignIn} disabled={state.kind === "loading" || busy} className={SIGN_IN}>
-        <BoltGlyph />
-        {COPY.auth.signIn}
-      </button>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <button type="button" onClick={onSignIn} disabled={state.kind === "loading" || busy} className={SIGN_IN}>
+          <BoltGlyph />
+          {COPY.auth.signIn}
+        </button>
+        {onDemo === undefined ? null : <DemoButton enabled={demoEnabled} disabled={state.kind === "loading" || busy} onPress={onDemo} />}
+      </div>
       {state.kind === "loading" ? <p className="text-xs text-ink-dim">Checking sign-in…</p> : null}
       {error !== null ? (
         <p role="alert" data-cause={error.cause} className="max-w-[343px] text-sm text-ember">

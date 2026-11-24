@@ -249,7 +249,8 @@ export async function readBankStatus(api: ApiClient): Promise<BankStatusAnswer> 
   const parsed = validate(BankStatusResponse, r.body);
   if (!parsed.ok) return { ok: false };
   const v = parsed.value as BankStatusResponse;
-  return { ok: true, banks: v.banks, canConnect: v.canConnect };
+  // Brief 054 (R17.4): the sheet says "simulated" only when the server did, so the mark is carried only when present.
+  return "simulated" in v && v.simulated === true ? { ok: true, banks: v.banks, canConnect: v.canConnect, simulated: true } : { ok: true, banks: v.banks, canConnect: v.canConnect };
 }
 
 /** POST /api/bank/link-token. */

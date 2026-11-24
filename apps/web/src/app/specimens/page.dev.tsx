@@ -7,6 +7,7 @@ import { AvatarSection } from "./_sections/AvatarSection";
 import { BankSection } from "./_sections/BankSection";
 import { CallScreenSection } from "./_sections/CallScreenSection";
 import { CardExtrasSection } from "./_sections/CardExtrasSection";
+import { DemoSection } from "./_sections/DemoSection";
 import { ControlsSection } from "./_sections/ControlsSection";
 import { GoogleSection } from "./_sections/GoogleSection";
 import { ErrandSection } from "./_sections/ErrandSection";
@@ -39,6 +40,7 @@ export default function SpecimensPage() {
       <XraySection full={false} />
       <BankSection />
       <GoogleSection />
+      <DemoSection />
       <ErrandSection />
       <MaterialsSection />
       <SurfaceSections />

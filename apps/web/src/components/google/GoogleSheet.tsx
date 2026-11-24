@@ -9,6 +9,8 @@
 // Google's sign-in often stalls, it offers the page's link for Safari or Chrome first, and Connect only as a fallback.
 // `presentation="sheet"` is modal, as the bank sheet is: focus moves to the heading on open and back on close, stays
 // inside, and Escape closes; a drawer on the right from 1024 px, a bottom sheet below.
+// Brief 054: when the server's answer says the mail and calendar are simulated (a demo visit), the sheet says so
+// plainly and offers neither Connect nor Disconnect, so neither Google's warning steps nor the in-app hint show.
 import { motion, useIsPresent } from "motion/react";
 import { type KeyboardEvent, type Ref, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { COPY } from "../../ui/copy";
@@ -205,7 +207,7 @@ function Account({ state, zone, actions }: { state: GoogleState; zone: string; a
             </button>
           </div>
         </div>
-      ) : (
+      ) : state.simulated === true ? null : (
         <div>
           <button type="button" data-action="google-disconnect" className={SMALL_QUIET} disabled={state.phase !== "idle"} onClick={actions.onDisconnect}>
             {COPY.google.disconnect}
@@ -244,7 +246,13 @@ export function GoogleSheetView({ state, zone, presentation, inApp, reduced, hea
     <div data-sheet-body="" className={`flex flex-col gap-4 ${sheet ? "min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]" : ""}`}>
       <div className="flex flex-col gap-1.5">
         <p className="text-base text-ink">{COPY.google.readOnly}</p>
-        <p className="text-sm text-ink-dim">{COPY.google.signIn}</p>
+        {state.simulated === true ? (
+          <p data-google-simulated="" className="text-sm text-ink">
+            {COPY.google.simulated}
+          </p>
+        ) : (
+          <p className="text-sm text-ink-dim">{COPY.google.signIn}</p>
+        )}
         <p className="text-sm text-ink-dim">{COPY.google.onRead}</p>
       </div>
       <p role="status" data-google-status="" className={line === null ? "sr-only" : "text-sm text-ink"}>

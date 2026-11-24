@@ -81,6 +81,12 @@ env:
     value: https://frankirocks.com
     availability: [RUNTIME]
 
+  # Not a secret. The Kiroween Demo switch (brief 054): exactly "on" lets visitors in with anonymous sign-in as the demo
+  # persona; any other value, or none, hides the button and refuses every anonymous token.
+  - variable: FRANKI_DEMO
+    value: "on"
+    availability: [RUNTIME]
+
   # Keep account identifiers and the calling number in the deployment environment.
   - variable: TWILIO_ACCOUNT_SID
     secret: TWILIO_ACCOUNT_SID

@@ -142,6 +142,11 @@ export interface VoiceClientDeps {
    * behavior.
    */
   onErrands?: (stamp: SS, errands: ErrandsView | undefined) => void;
+  /**
+   * Brief 054 (R14.1): a demo visit, so the call offers no phone tool from its first `session.update`, before any
+   * state poll. Absent or false: today's tools. The server refuses a dial on a demo visit whatever this says.
+   */
+  phoneOff?: boolean;
 }
 
 /**
@@ -189,7 +194,7 @@ export class VoiceClient {
   private observer: VoiceObserver | null = null;
 
   constructor(private readonly deps: VoiceClientDeps) {
-    this.state = initialVoiceState({ transcribeModel: deps.transcribeModel }, deps.clock.read().worldClock.zone);
+    this.state = initialVoiceState({ transcribeModel: deps.transcribeModel }, deps.clock.read().worldClock.zone, deps.phoneOff === true ? { phoneOff: true } : {});
     this.newId = deps.newId ?? (() => randomId());
     this.timers = deps.timers ?? liveTimers;
     this.hash = deps.hash ?? permitPayloadHash;

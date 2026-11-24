@@ -39,6 +39,17 @@ export const BANK_EXPIRED: BankView = {
 
 export const BANK_DISCONNECTED: BankView = { ...BANK_READ, state: "disconnected", importing: false };
 
+/** Brief 054: a demo visit's bank, as the simulated bank answers it. Made-up names. */
+export const BANK_SIMULATED: BankView = {
+  ...BANK_READ,
+  connectorId: "bankDEMOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  institutionName: "Moonlit Trust of Kisses",
+  accounts: [
+    { name: "Everyday checking", mask: "0001", type: "depository", subtype: "checking" },
+    { name: "Launch reserve", mask: "0002", type: "depository", subtype: "savings" },
+  ],
+};
+
 /** The machine's state after `events`, from the start. */
 export function bankAfter(events: BankEvent[], from: BankState = INITIAL_BANK): BankState {
   let s = from;
@@ -53,6 +64,14 @@ export function bankShowing(banks: BankView[], canConnect = true): BankState {
   return bankAfter([
     { kind: "opened", at },
     { kind: "statusAnswered", seq: 1, answer: { ok: true, banks, canConnect }, at },
+  ]);
+}
+
+/** Brief 054: opened on a demo visit: the server answered one simulated bank, and no Connect. */
+export function bankSimulated(): BankState {
+  return bankAfter([
+    { kind: "opened", at },
+    { kind: "statusAnswered", seq: 1, answer: { ok: true, banks: [BANK_SIMULATED], canConnect: false, simulated: true }, at },
   ]);
 }
 
@@ -95,5 +114,6 @@ export function bankSpecimens(): { id: string; label: string; state: BankState }
     { id: "disconnected", label: "idle: disconnected", state: { ...none, note: "disconnected" } },
     { id: "limit", label: "idle: at the limit", state: bankShowing([BANK_READ, { ...BANK_READ, connectorId: "c2AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }], false) },
     { id: "connect-refused", label: "idle: connect refused", state: { ...none, note: "connectRefused" } },
+    { id: "simulated", label: "idle: simulated (demo visit)", state: bankSimulated() },
   ];
 }

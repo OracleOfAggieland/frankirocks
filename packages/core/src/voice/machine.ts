@@ -473,6 +473,12 @@ export interface VoiceState {
    * 045, finding 3). Never reset by an exit. Absent reads as null.
    */
   lastSpeechAt?: number | null;
+  /**
+   * Kiroween Demo (R14.1): a demo visit's call offers no phone tool, from the first `session.update`, before any
+   * state poll. Set once at construction (`initialVoiceState`), only when true; read by `callTools` and `callHead`
+   * only; never reset by an exit. The server refuses a dial on a demo visit whatever this says. Absent reads false.
+   */
+  phoneOff?: boolean;
   /** The last state answer's `proactive` that was not played, and why (brief 045, finding 3). Never reset. */
   proactiveDropped?: { turnId: string; reason: ProactiveDrop } | null;
 }
@@ -486,7 +492,7 @@ export interface VoiceState {
  */
 export type ProactiveDrop = "session" | "generation" | "phase" | "busy" | "speech" | "kind";
 
-export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState {
+export function initialVoiceState(config: VoiceConfig, zone = "UTC", opts: { phoneOff?: boolean } = {}): VoiceState {
   return {
     phase: "CLOSED",
     config,
@@ -536,6 +542,8 @@ export function initialVoiceState(config: VoiceConfig, zone = "UTC"): VoiceState
     lastLoudAt: null,
     latency: { current: null, rows: [] },
     eventSeq: 0,
+    // Only when true, so every other visit's state is exactly today's.
+    ...(opts.phoneOff === true ? { phoneOff: true } : {}),
   };
 }
 
@@ -648,10 +656,21 @@ export const TRANSCRIBE_PROMPT = "A friendly conversation in English with Franki
 export const CALL_TOOLS = [RECALL_TOOL, PHONE_TOOL, SUGGEST_TOOL, ANSWER_TOOL, MONEY_TOOL, ERRAND_TOOL] as const;
 
 /** Review fix R2: the tools this call offers now; `start_errand` only while an errand agent is ready for the owner. */
-type Capabilities = Pick<VoiceState, "errandsReady"> & { specialists?: SpecialistCatalog | null; webSearchStatus?: WebSearchStatus | null };
+type Capabilities = Pick<VoiceState, "errandsReady"> & { specialists?: SpecialistCatalog | null; webSearchStatus?: WebSearchStatus | null; phoneOff?: boolean };
 type LiveTool = (typeof CALL_TOOLS)[number] | typeof READ_PHONE_TOOL | typeof READ_PHONE_ACTIVITY_TOOL | typeof WEB_SEARCH_TOOL | typeof READ_WEB_TOOL | NonNullable<ReturnType<typeof delegationTool>> | typeof READ_ERRAND_TOOL;
 
+/**
+ * Kiroween Demo (R14.1): with `phoneOff`, the list without `make_phone_call`, `read_phone_result` (both variants) and
+ * the phone specialist, so a demo call never offers the phone, before or after a state poll. Otherwise today's list.
+ */
 export function callTools(st: Capabilities): LiveTool[] {
+  if (st.phoneOff !== true) return everyTool(st);
+  const specialists = st.specialists ? { ...st.specialists, phone: "unavailable" as const } : st.specialists;
+  return everyTool({ ...st, specialists }).filter((t) => t.name !== PHONE_TOOL.name && t.name !== READ_PHONE_TOOL.name);
+}
+
+/** Today's list: what a call offers when the phone is not turned off. */
+function everyTool(st: Capabilities): LiveTool[] {
   const search = st.webSearchStatus == null ? [] : [WEB_SEARCH_TOOL, READ_WEB_TOOL];
   if (st.specialists) {
     const delegate = delegationTool(st.specialists);
@@ -669,8 +688,11 @@ export const errandReadable = (st: Capabilities): boolean => (st.specialists ? s
  */
 export function callHead(head: string, st: Capabilities): string {
   if (st.specialists) {
-    const { phone, mail, calendar } = st.specialists;
-    return `${head}\n\nSpecialists for this owner: phone (${phone}), mail (${mail}), calendar (${calendar}). Choose the specialist that fits the request. Explain any unavailable part. Use read_phone_result for findings from a previous call.${errandReadable(st) ? " When the owner asks whether a mail or calendar look-up came back, call read_errand_result before answering." : ""}`;
+    const { mail, calendar } = st.specialists;
+    // Kiroween Demo: with the phone off the Head names no phone tool the call doesn't offer.
+    const off = st.phoneOff === true;
+    const phone = off ? "unavailable" : st.specialists.phone;
+    return `${head}\n\nSpecialists for this owner: phone (${phone}), mail (${mail}), calendar (${calendar}). Choose the specialist that fits the request. Explain any unavailable part.${off ? "" : " Use read_phone_result for findings from a previous call."}${errandReadable(st) ? " When the owner asks whether a mail or calendar look-up came back, call read_errand_result before answering." : ""}`;
   }
   return st.errandsReady ? `${head}\n\n${ERRAND_HEAD_LINE}` : head;
 }
@@ -1338,7 +1360,7 @@ function openFailed(s: Step): void {
  *                             done; openFailed: keep
  *   zone                      -                         -                              -               the press's
  * Never reset by any exit: config, lastTurnResponseAt, ackDroppedStale, lastLoudAt, latency, eventSeq, strayAudio,
- * realtimeErrors, visitId, goneVisitId, lastSpeechAt, proactiveDropped.
+ * realtimeErrors, visitId, goneVisitId, lastSpeechAt, proactiveDropped, phoneOff (set once by initialVoiceState).
  * A sixth exit, visitGone (STALE to an open naming the tab's visit; brief 044, item 2), resets as `closed` does,
  * with awaitingOpen and staleOpen false, error "visit", hangingUp kept, recent flushed and marked done, and
  * goneVisitId set to that visit. In CLOSED with no open awaited it sets only goneVisitId.

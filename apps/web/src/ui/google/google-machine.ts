@@ -11,6 +11,7 @@
  *         sheet learns how it went from the callback's one word or from a status read, and reads the status again
  *         either way. While Google's window is out, a status read goes out every GOOGLE_AUTH_POLL_MS, one at a
  *         time, and the wait ends at GOOGLE_AUTH_MAX_MS. Disconnect asks first, and only an explicit Yes sends it.
+ *         While the last status answer said `simulated` (brief 054), neither Connect nor Disconnect starts.
  * Never:  read a clock, the network or the DOM; hold a code, a state or a token; show Google's error text; throw.
  */
 import type { GoogleView } from "@franki/core";
@@ -73,6 +74,12 @@ export interface GoogleState {
   authUntil: number | null;
   /** While `authorizing`: the next backup status read is due at this time. */
   pollAt: number | null;
+  /**
+   * Brief 054 (R17.3, R17.4): the server's last status answer said this mail and calendar are simulated (a demo
+   * visit). Present only when true, and absent in `INITIAL_GOOGLE`, so a sample visit's states are as they were.
+   * While set, the sheet offers neither Connect nor Disconnect. A later answer without it clears it.
+   */
+  simulated?: true;
 }
 
 export const INITIAL_GOOGLE: Readonly<GoogleState> = Object.freeze({
@@ -93,7 +100,7 @@ export const GOOGLE_AUTH_POLL_MS = 4_000;
 /** The wait for Google's window ends here: the server's pending authorization lasts ten minutes. */
 export const GOOGLE_AUTH_MAX_MS = 10 * 60_000;
 
-export type GoogleStatusAnswer = { ok: true; google: GoogleView } | { ok: false; why: "notConfigured" | "failed" };
+export type GoogleStatusAnswer = { ok: true; google: GoogleView; simulated?: true } | { ok: false; why: "notConfigured" | "failed" };
 /** `url` is Google's authorization page, already checked by the shell to be on Google's host. */
 export type GoogleStartAnswer = { ok: true; url: string } | { ok: false; why: "notConfigured" | "failed" };
 /** `failed`: the server answered that it did not disconnect. `unknown`: no answer reached the browser. */
@@ -157,9 +164,18 @@ export function googleHeld(g: GoogleView): boolean {
   return g.mail !== "off" || g.calendar !== "off";
 }
 
-/** Whether "Connect Google" (or "Connect again") is offered. */
+/** Whether "Connect Google" (or "Connect again") is offered. Never for a simulated connection (brief 054). */
 export function canConnectGoogle(s: GoogleState): boolean {
-  return s.phase === "idle" && s.google !== null && googleIncomplete(s.google);
+  return s.phase === "idle" && s.google !== null && googleIncomplete(s.google) && s.simulated !== true;
+}
+
+/** Brief 054: the state with the server's `simulated` mark as the answer gave it, absent when it did not. */
+function markSimulated(s: GoogleState, simulated: boolean): GoogleState {
+  if (simulated) return s.simulated === true ? s : { ...s, simulated: true };
+  if (s.simulated === undefined) return s;
+  const next = { ...s };
+  delete next.simulated;
+  return next;
 }
 
 function readStatus(s: GoogleState): GoogleStep {
@@ -202,15 +218,18 @@ function onStatus(s: GoogleState, e: Extract<GoogleEvent, { kind: "statusAnswere
     if (s.google !== null) return none({ ...s, statusAsk: null });
     return none({ ...s, statusAsk: null, phase: s.phase === "reading" ? "readFailed" : s.phase });
   }
-  const state: GoogleState = {
-    ...s,
-    statusAsk: null,
-    google: a.google,
-    phase: s.phase === "reading" || s.phase === "readFailed" || s.phase === "notConfigured" ? "idle" : s.phase,
-  };
+  const state: GoogleState = markSimulated(
+    {
+      ...s,
+      statusAsk: null,
+      google: a.google,
+      phase: s.phase === "reading" || s.phase === "readFailed" || s.phase === "notConfigured" ? "idle" : s.phase,
+    },
+    a.simulated === true,
+  );
   if (state.phase === "authorizing" && landed(s, a.google)) return endAuth(state, "connected");
-  // Nothing left to disconnect: the ask goes.
-  if (state.phase === "confirming" && !googleHeld(a.google)) return none({ ...state, phase: "idle" });
+  // Nothing left to disconnect, or a simulated connection, which is never disconnected: the ask goes.
+  if (state.phase === "confirming" && (state.simulated === true || !googleHeld(a.google))) return none({ ...state, phase: "idle" });
   return none(state);
 }
 
@@ -265,7 +284,8 @@ export function googleStep(s: GoogleState, e: GoogleEvent): GoogleStep {
       if (s.phase !== "authorizing") return none(s);
       return endAuth(s, "stopped");
     case "disconnectPressed":
-      if (s.phase !== "idle" || s.google === null || !googleHeld(s.google)) return none(s);
+      // Brief 054 (R17.3): a simulated connection is never offered a disconnect, and the server refuses one.
+      if (s.phase !== "idle" || s.simulated === true || s.google === null || !googleHeld(s.google)) return none(s);
       return none({ ...s, phase: "confirming", note: null });
     case "disconnectNotNow":
       if (s.phase !== "confirming") return none(s);

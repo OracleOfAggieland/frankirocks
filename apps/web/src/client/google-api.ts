@@ -55,7 +55,10 @@ export async function readGoogleStatus(api: ApiClient): Promise<GoogleStatusAnsw
   const r = await api.call<unknown>(GOOGLE_STATUS_PATH, { method: "GET", timeoutMs: GOOGLE_STATUS_TIMEOUT_MS });
   if (!r.ok) return { ok: false, why: isConfig(r) ? "notConfigured" : "failed" };
   const parsed = validate(GoogleStatusResponse, r.body);
-  return parsed.ok ? { ok: true, google: (parsed.value as GoogleStatusResponse).google } : { ok: false, why: "failed" };
+  if (!parsed.ok) return { ok: false, why: "failed" };
+  const v = parsed.value as GoogleStatusResponse;
+  // Brief 054 (R17.4): the sheet says "simulated" only when the server did, so the mark is carried only when present.
+  return "simulated" in v && v.simulated === true ? { ok: true, google: v.google, simulated: true } : { ok: true, google: v.google };
 }
 
 /** POST /api/google/start. An answer whose URL is not on Google's authorization host is a failure. */

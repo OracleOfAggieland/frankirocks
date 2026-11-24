@@ -90,6 +90,17 @@ export const COPY = {
   captions: { toggle: "Captions" },
   sound: { toggle: "Sound effects" },
   auth: { signIn: "Sign in to wake Franki", signOut: "Sign out", about: "About Franki" },
+  /** Brief 054: the Kiroween Demo. The button's label is the event's name, so it keeps its capitals. */
+  demo: {
+    button: "Kiroween Demo",
+    /** Beside the persona's name in the account menu, so the visit reads as a demo. */
+    mark: "Demo",
+    /** A real user arrived at the demo's link: their session stays until they press the one button. */
+    switchLine: "You're signed in as yourself, and the demo is a separate visit.",
+    switchButton: "Sign out and open the demo",
+    signInFailed: "The demo didn't start. Try again in a moment.",
+    starting: "Opening the demo",
+  },
   account: {
     menu: "Account",
     delete: "Delete my data",
@@ -203,6 +214,8 @@ export const COPY = {
     close: "Close",
     readOnly: "I can read your bank's transactions. I can't move money.",
     plaid: "You sign in to your bank with Plaid, so I never see your bank password.",
+    /** Brief 054: a demo visit's bank, shown only when the server's answer says so. */
+    simulated: "This bank is simulated. No real bank is connected.",
     connect: "Connect a bank",
     reading: "Reading your banks",
     readFailed: "I couldn't read your banks just now.",
@@ -250,6 +263,8 @@ export const COPY = {
     readOnly: "I can read your Gmail and your Google Calendar. I can't send, change or delete anything.",
     signIn: "You sign in on Google's own page, so I never see your Google password.",
     onRead: "I keep only what I read to answer you, not your whole mailbox.",
+    /** Brief 054: a demo visit's mail and calendar, shown only when the server's answer says so. */
+    simulated: "This mail and calendar are simulated. No real Google account is connected.",
     connect: "Connect Google",
     connectAgain: "Connect again",
     reading: "Reading your Google connection",

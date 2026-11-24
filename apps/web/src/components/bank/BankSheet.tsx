@@ -3,7 +3,8 @@
 // in Plaid's own window, one button that opens it, then the connected banks as the server answered them (name,
 // accounts by name and last four, importing or when last read, a new sign-in when one is needed) and a disconnect
 // that asks Yes or Not now, neither pre-selected. No amounts, no balances, no field of its own. Everything shown is
-// in the `BankState` the machine holds; the sheet decides nothing.
+// in the `BankState` the machine holds; the sheet decides nothing. Brief 054: when the server's answer says the banks
+// are simulated (a demo visit), the sheet says so plainly and offers neither Connect nor Disconnect.
 // `presentation="sheet"` is modal, as the What I know sheet is: focus moves to the heading on open and back on
 // close, stays inside, and Escape closes; a drawer on the right from 1024 px (at most 420 px), a bottom sheet below
 // (at most 80svh, scrolling inside). Enter and leave it inside an AnimatePresence so it can rise in and sink out.
@@ -109,7 +110,7 @@ function BankRow({ bank, state, zone, actions }: { bank: BankView; state: BankSt
             </button>
           </div>
         </div>
-      ) : (
+      ) : state.simulated === true ? null : (
         <div>
           <button type="button" data-action="bank-disconnect" className={SMALL_QUIET} disabled={state.phase !== "idle"} onClick={() => actions.onDisconnect(bank.connectorId)}>
             {COPY.bank.disconnect}
@@ -147,7 +148,13 @@ export function BankSheetView({ state, zone, presentation, reduced, headingRef, 
     <div data-sheet-body="" className={`flex flex-col gap-4 ${sheet ? "min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]" : ""}`}>
       <div className="flex flex-col gap-1.5">
         <p className="text-base text-ink">{COPY.bank.readOnly}</p>
-        <p className="text-sm text-ink-dim">{COPY.bank.plaid}</p>
+        {state.simulated === true ? (
+          <p data-bank-simulated="" className="text-sm text-ink">
+            {COPY.bank.simulated}
+          </p>
+        ) : (
+          <p className="text-sm text-ink-dim">{COPY.bank.plaid}</p>
+        )}
       </div>
       <p role="status" data-bank-status="" className={line === null ? "sr-only" : "text-sm text-ink"}>
         {line ?? ""}
@@ -177,7 +184,7 @@ export function BankSheetView({ state, zone, presentation, reduced, headingRef, 
           </button>
         </div>
       ) : null}
-      {banks !== null && !state.canConnect && state.note !== "limit" ? <p className="text-sm text-ink-dim">{COPY.bank.limit(BANK_LIMIT)}</p> : null}
+      {banks !== null && !state.canConnect && state.note !== "limit" && state.simulated !== true ? <p className="text-sm text-ink-dim">{COPY.bank.limit(BANK_LIMIT)}</p> : null}
     </div>
   );
   if (!sheet) {

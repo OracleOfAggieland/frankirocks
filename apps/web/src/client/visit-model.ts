@@ -29,6 +29,11 @@ export interface VisitModelDeps {
   storage: StorageLike | null;
   newId: () => string;
   call: CallLike | null;
+  /**
+   * Brief 054: the fixture every reset of this visit asks for. A demo visit (an anonymous user) sends the demo
+   * persona's; absent, the first persona's, as before. It is fixed for the user, so a reload and Start over keep it.
+   */
+  fixtureId?: string;
   /** Brief 038 finding 3: the browser's zone, sent with every reset so the clone is laid out in it. */
   zone: () => string;
   /** The Session a reset should close: the call's, else the typed one's, else null. */
@@ -180,7 +185,7 @@ export class VisitModel {
   }
 
   private async reset(seq: number, visitId: string): Promise<void> {
-    const r = await resetVisit(this.deps.api, { requestId: this.deps.newId(), sessionId: this.deps.sessionId(), fixtureId: PERSONA_FIXTURE_ID, visitId, clientZone: this.deps.zone() });
+    const r = await resetVisit(this.deps.api, { requestId: this.deps.newId(), sessionId: this.deps.sessionId(), fixtureId: this.deps.fixtureId ?? PERSONA_FIXTURE_ID, visitId, clientZone: this.deps.zone() });
     if (r.ok) this.dispatch({ kind: "resetAnswered", seq, fixtureNamespace: r.body.fixtureNamespace, worldMs: msFromTs(r.body.worldClock) });
     else if (r.why === "stale") this.reloadVisit(seq);
     else this.dispatch({ kind: "resetFailed", seq, why: r.why });

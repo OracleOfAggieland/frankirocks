@@ -53,7 +53,8 @@ import { extractJobId, extractJobRecord } from "../worker/extract-jobs";
 import { barrierError, parseError, scopeError, staleError } from "./errors";
 import { missingSessionError } from "./open-visit";
 import { Unrecorded, mutation } from "./mutation";
-import { typedReplyOutcome } from "./typed-reply";
+import { type TypedTools, typedReplyOutcome } from "./typed-reply";
+import { isDemoVisit } from "../demo/visit";
 import { type HardRuleResult, type HardRuleRun, applyOpenProposals, applyPastedAllergy, executeHardRule, executeOnTurn, refreshDirtyTurn, ruleRowAt } from "../onturn/execute";
 import { writeRuleRows } from "../onturn/rule-rows";
 import { readOnTurnContext } from "../onturn/context";
@@ -96,6 +97,19 @@ export const HOLD_RETRY_MS = 250;
 export const FORGET_ROUTE_MAX_STEPS = 32;
 /** Compare-and-set attempts before the route answers STALE and the browser retries. */
 const MAX_CAS_ATTEMPTS = 8;
+
+/**
+ * Kiroween Demo (R14.1): the tools a typed reply may offer. The owner's own typed line gets the money read on every
+ * visit and the phone everywhere but a demo visit, which the verified token decides. `typed` false offers neither.
+ */
+export const typedTools = (ctx: Pick<RouteContext, "anonymous">, typed: boolean): TypedTools => ({ phone: typed && ctx.anonymous !== true, money: typed });
+
+/** Kiroween Demo (contract question 97): whether this turn is a demo visit's: the verified token, else the connectors. */
+const turnDemo = (ctx: RouteContext): Promise<boolean> =>
+  // A verified token already answers, so no snapshot is opened for it.
+  ctx.anonymous !== undefined
+    ? Promise.resolve(ctx.anonymous)
+    : readSnapshot(ctx.deps.store, ctx.uid, (reader) => isDemoVisit({ uid: ctx.uid, env: ctx.deps.env, hasher: ctx.deps.hasher }, reader));
 
 /** Request checks beyond the closed schema (R18.1, R18.8, R20.8). */
 export function checkTurnRequest(req: TurnReq): TurnReq {
@@ -194,6 +208,10 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
   const phoneLineP = !("hasTaskActivity" in req) && req.supersedesRequestId === null && req.transcriptState === "final" && cls.cls === "U"
     ? phoneCallLineSafe(ctx, req.sessionId, req.epoch) : Promise.resolve(null);
   const errandLineP = req.supersedesRequestId === null && req.transcriptState === "final" && cls.cls === "U" ? errandRunningLineSafe(ctx, req.sessionId) : Promise.resolve(null);
+  // Kiroween Demo (contract question 97): a demo visit, from the verified token, else the connectors, so a Head this
+  // turn recompiles keeps the persona's name. Read beside the parse, outside every transaction.
+  const demoP = turnDemo(ctx);
+  demoP.catch(() => {});
   await ensureCoreDocs(uid, deps);
   // Brief 046 part C: the model's money question, kept for the step after the commit (a replay has none).
   let moneyArgs: MoneyArgs | null = null;
@@ -210,7 +228,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
     const replyP =
       typedNoCall && (regex || anyMemoryRoute(memoryRegexOpens(arrival)) || askedAtArrival !== null)
         ? Promise.resolve(null)
-        : typedReplyOutcome(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx), cls.cls === "U" && req.source === "typed", phoneLineP);
+        : typedReplyOutcome(ctx, req, typedText, (reader) => earlierSafeTurns(reader, uid, req.sessionId, req.clientSeq, ctx), typedTools(ctx, cls.cls === "U" && req.source === "typed"), phoneLineP);
     replyP.catch(() => {});
     const eid = turnEvidenceId(req.turnId as ID, deps.hasher);
     const routeP =
@@ -224,6 +242,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
     const reply = route === null ? await replyP : null;
     const phoneLine = await phoneLineP;
     const errandLine = await errandLineP;
+    const demo = await demoP;
     // Brief 026: a parse that may narrow or widen the audience compiles that Head before the transaction (design "Alone").
     const audienceHead = await precompileAudienceHead(ctx, slow, req.generation);
     const routeSource = req.source === "asr" ? ("asr" as const) : ("typed" as const);
@@ -242,6 +261,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
       context: route!.context,
       audience,
       hasher: deps.hasher,
+      ...(demo ? { playsOwner: true } : {}),
     });
     let typedPlan: TypedPlan | null = null;
     if (route !== null && typedNoCall && pre !== null) {
@@ -409,7 +429,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
           }
           let proposed: { rules: CoreRules; rulesChanged: boolean; bundle: typeof core.bundle.data | null } | null = null;
           if (hr === null && proposalContext !== null) {
-            const installed = applyOpenProposals({ uid, rules: core.rules.data as CoreRules, epoch: core.epoch.data, bundle: core.bundle.data, context: proposalContext, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher });
+            const installed = applyOpenProposals({ uid, rules: core.rules.data as CoreRules, epoch: core.epoch.data, bundle: core.bundle.data, context: proposalContext, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher, ...(demo ? { playsOwner: true } : {}) });
             proposed = installed;
             if (installed !== null) {
               tx.update(paths.core(uid, "rules"), installed.rules);
@@ -420,9 +440,9 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
               if (installed.rulesChanged) write = { kind: "committed", routes: ["hardRule"], note: null, deckRaised: true };
             }
           }
-          if (hr === null && evidence !== null && cls.cls === "T") proposed = (await applyPastedAllergy(tx, { uid, rules: (proposed?.rules ?? core.rules.data) as CoreRules, epoch: core.epoch.data, bundle: proposed?.bundle ?? core.bundle.data, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher, evidence, sessionId: req.sessionId, seq: req.clientSeq })) ?? proposed;
+          if (hr === null && evidence !== null && cls.cls === "T") proposed = (await applyPastedAllergy(tx, { uid, rules: (proposed?.rules ?? core.rules.data) as CoreRules, epoch: core.epoch.data, bundle: proposed?.bundle ?? core.bundle.data, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher, evidence, sessionId: req.sessionId, seq: req.clientSeq, ...(demo ? { playsOwner: true } : {}) })) ?? proposed;
           // Brief 043, finding 9: a Head a fastO life change left dirty is recompiled here, and the Deck rises.
-          if (hr === null && proposed === null) proposed = await refreshDirtyTurn(tx, { uid, epoch: core.epoch.data, bundle: core.bundle.data, rules: core.rules.data as CoreRules, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher, fastO: fastO !== null });
+          if (hr === null && proposed === null) proposed = await refreshDirtyTurn(tx, { uid, epoch: core.epoch.data, bundle: core.bundle.data, rules: core.rules.data as CoreRules, clock: pair, audience: audienceNow, generation: req.generation, hasher: deps.hasher, fastO: fastO !== null, ...(demo ? { playsOwner: true } : {}) });
           const changed = hr ?? proposed;
           const stampOut = changed?.rulesChanged ? { ...currentStamp(req.sessionId, s0.generation, { epoch: core.epoch.data, rules: changed.rules, bundle: changed.bundle ?? core.bundle.data }), turnId: req.turnId } : stamp;
           const headOut = changed?.bundle?.head ?? head;
@@ -501,7 +521,7 @@ export async function postTurn(ctx: RouteContext, req: TurnReq): Promise<TurnRes
             hasher: deps.hasher,
           });
           // Brief 035: a narrowing whose Head no longer fits compiles it here; without it, no Deck goes out.
-          const aud = await withNarrowHead(tx, uid, aud0, { epoch: core.epoch.data, rules: changed?.rules ?? (core.rules.data as CoreRules), bundle: changed?.bundle ?? core.bundle.data, clock: pair, generation: s0.generation, opsNow: ops, hasher: deps.hasher, bundleWritten: (changed?.bundle ?? null) !== null });
+          const aud = await withNarrowHead(tx, uid, aud0, { epoch: core.epoch.data, rules: changed?.rules ?? (core.rules.data as CoreRules), bundle: changed?.bundle ?? core.bundle.data, clock: pair, generation: s0.generation, opsNow: ops, hasher: deps.hasher, bundleWritten: (changed?.bundle ?? null) !== null, ...(demo ? { playsOwner: true } : {}) });
           const headless = (aud?.wantsHead ?? null) !== null && aud!.bundle === null && (changed?.bundle ?? null) === null;
           if (aud !== null) {
             tx.update(paths.core(uid, "epoch"), aud.epoch);
@@ -626,6 +646,8 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
   const late = await lateSlots(ctx, { turnId: req.turnId, text, cls: cls.cls, typed: false, slow, generation: req.generation });
   // Brief 035 (finding 2): a late company or quiet hit narrows; its Head is compiled before the transaction.
   const audienceHead = await precompileAudienceHead(ctx, slow, req.generation);
+  // Kiroween Demo: a Head this post recompiles keeps a demo visitor's persona name.
+  const demo = await turnDemo(ctx);
   for (let attempt = 1; ; attempt++) {
     try {
       const outcome = await deps.store.transaction(uid, async (tx) => {
@@ -670,7 +692,7 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
         const fastO = await tx.get(paths.ledger(uid, fastODecisionId(deps.hasher, req.sessionId, req.turnId)));
         const judge = fastO !== null ? "O" : req.judge;
         // Brief 035 (finding 2): a company or quiet hit narrows here as it would on the turn (lateNarrowing).
-        const narrowing = await withNarrowHead(tx, uid, lateNarrowing({ sessionId: req.sessionId, session: s0, parse: slow.parse, judge, epoch: core.epoch.data, bundle: core.bundle.data, rules: core.rules.data as CoreRules, opsNow: ops, head: audienceHead, hasher: deps.hasher }), { epoch: core.epoch.data, rules: core.rules.data as CoreRules, bundle: core.bundle.data, clock: pair, generation: s0.generation, opsNow: ops, hasher: deps.hasher });
+        const narrowing = await withNarrowHead(tx, uid, lateNarrowing({ sessionId: req.sessionId, session: s0, parse: slow.parse, judge, epoch: core.epoch.data, bundle: core.bundle.data, rules: core.rules.data as CoreRules, opsNow: ops, head: audienceHead, hasher: deps.hasher }), { epoch: core.epoch.data, rules: core.rules.data as CoreRules, bundle: core.bundle.data, clock: pair, generation: s0.generation, opsNow: ops, hasher: deps.hasher, ...(demo ? { playsOwner: true } : {}) });
         const hit = narrowing === null && slow.parse.kind === "hit" && changesWhatIsSaid(slow.parse, judge, "A");
         const epoch: CoreEpoch = narrowing?.epoch ?? (hit ? { ...core.epoch.data, policyRev: core.epoch.data.policyRev + 1, updatedAt: tsFromMs(ops) } : core.epoch.data);
         if (hit || narrowing !== null) tx.update(paths.core(uid, "epoch"), epoch);
@@ -698,6 +720,7 @@ async function postSupersede(ctx: RouteContext, req: TurnReq, supersedes: string
           clock: pair,
           audience: effectiveAudience(s0, ops),
           hasher: deps.hasher,
+          ...(demo ? { playsOwner: true } : {}),
         });
         if (lateHr !== null) {
           tx.update(paths.core(uid, "rules"), lateHr.rules);

@@ -40,6 +40,13 @@ export interface ControllerDeps {
   /** Brief 027: the signed-in user, whose visit is kept in `storage` across reloads. */
   uid?: string;
   storage?: StorageLike | null;
+  /** Brief 054: the fixture this user's visit resets to. Absent: the first persona's (a signed-in sample visit). */
+  fixtureId?: string;
+  /**
+   * Brief 054: a demo visit (an anonymous user), for what the screen offers only; the server decides from the token.
+   * Passed to the Voice_Client as `phoneOff` (part D2), so the call offers no phone tool.
+   */
+  demo?: boolean;
 }
 
 export interface SignedInControllers {
@@ -123,6 +130,8 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
           },
           // Brief 049 part A: the errands' word and cards.
           onErrands: (stamp, view) => errands.onState(stamp, view),
+          // Brief 054 part D2: a demo visit's call offers no phone tool.
+          ...(deps.demo === true ? { phoneOff: true } : {}),
         });
   const phone = new PhoneWatch({ api, now: () => clock.mono() });
   const memory = new MemoryModel({ api });
@@ -169,6 +178,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     api,
     uid: deps.uid ?? "",
     storage: deps.storage ?? null,
+    ...(deps.fixtureId === undefined ? {} : { fixtureId: deps.fixtureId }),
     newId: () => randomId(),
     call: voice === null ? null : { inCall: () => voice.getSnapshot().phase !== "CLOSED", hangUp: () => voice.hangUp(), subscribe: voice.subscribe },
     zone: () => clock.read().worldClock.zone,
