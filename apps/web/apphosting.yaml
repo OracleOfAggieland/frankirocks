@@ -82,10 +82,12 @@ env:
     availability: [RUNTIME]
 
   # Not a secret. The Kiroween Demo switch (brief 054): exactly "on" lets visitors in with anonymous sign-in as the demo
-  # persona; any other value, or none, hides the button and refuses every anonymous token. It ships "off": this build
-  # goes out first, the Anonymous sign-in provider is enabled after it, and only then is this set to "on".
+  # persona; any other value, or none, hides the button and refuses every anonymous token. It went out "off" first
+  # (Nov 24); the Anonymous sign-in provider was enabled after that build was live, and only then was this set to "on".
+  # Never roll back to a build from before brief 054 while that provider is enabled: such a build treats an anonymous
+  # token as an ordinary signed-in user.
   - variable: FRANKI_DEMO
-    value: "off"
+    value: "on"
     availability: [RUNTIME]
 
   # Keep account identifiers and the calling number in the deployment environment.

@@ -6,7 +6,7 @@ Franki is a friendly Frankenstein ghost you talk to: a very good friend who is a
 
 Franki is a Kiroween 2026 entry in the Frankenstein category, and it is built with [Kiro](https://kiro.dev). The name says so: FRAN**KIRO**CKS.
 
-**It's live at [frankirocks.com](https://frankirocks.com).** Press Wake Franki, sign in with Google, then press the power button and talk.
+**It's live at [frankirocks.com](https://frankirocks.com).** Press Wake Franki, sign in with Google, then press the power button and talk. Or press **Kiroween Demo** and skip the sign-in: the lab opens as Jeffrey Kisses, an invented rocket-company founder.
 
 ## It's alive
 
@@ -23,6 +23,7 @@ This is a working build, not a mock-up. What runs today:
 - **Connect a bank, read-only, and ask what you spent.** Plaid takes the sign-in, and every amount traces to a transaction.
 - **Say "Franki, you rock"** and the wooden radio at his feet turns on, Franki celebrates, and a globe of 70 radio stations opens, tuned to rock. Spin the globe and press a city's light to hear it. One press on the radio does the same.
 - **Press the X-ray machine** at Franki's other side and a big X-ray screen opens on your camera. Your picture shows as old film, with a skull that turns and talks with you and the bones of your hands drawn over it. On a phone, flip to the back camera and point it at a friend. It's not a medical scan, and the picture never leaves your device.
+- **The Kiroween Demo needs no sign-in.** One press opens the lab as Jeffrey Kisses, with his memories, a simulated bank, mailbox and calendar, and a sample month to walk. Nothing real is connected, and both sheets say so. Signing out deletes the visit. The spec is [`.kiro/specs/kiroween-demo/`](.kiro/specs/kiroween-demo/) and the report is [`docs/briefs/054-report.md`](docs/briefs/054-report.md).
 - **6,106 tests pass in the full suite,** and a full-history secret scan runs on every push.
 
 What comes next is listed plainly under [Still on the slab](#still-on-the-slab).
@@ -48,7 +49,7 @@ As of Nov 24, 2026:
 
 | | |
 |---|---|
-| Commits by Kiro | **255 of 1,085**, each ending `Built-with: Kiro` |
+| Commits by Kiro | **255 of 1,091**, each ending `Built-with: Kiro` |
 | Spec requirements | **108** |
 | Spec tasks done | **115 of 118** |
 | Property test files | **272** |
@@ -59,7 +60,7 @@ As of Nov 24, 2026:
 
 The parts not yet stitched on, said plainly:
 
-- **The Kiroween Demo is built and switched off.** A visit with no sign-in, as an invented persona with a simulated bank, mailbox and calendar. The button stays hidden until anonymous sign-in is turned on for the project and a real visit has been walked. The spec is [`.kiro/specs/kiroween-demo/`](.kiro/specs/kiroween-demo/) and the report is [`docs/briefs/054-report.md`](docs/briefs/054-report.md).
+- **Nobody has talked to Franki on a Kiroween Demo visit yet.** The visit was walked on screen: the lab, both sheets, the memories, the clock, Start over and sign-out. Its spoken path runs in tests on scripted model answers only. A demo visit can't place a phone call, and it has no account balance to read.
 - **Reminders.** One-shot reminders are planned and tested, but no route offers one yet, and nothing recurs.
 - **Goals.** Franki saves a goal you mention, but nothing acts on it yet.
 - **An approval card before a phone call.** A call dials as soon as you ask, so your own "call this number" is the confirmation, and the call's log row is the audit entry. A forget doesn't end a call already in progress.
