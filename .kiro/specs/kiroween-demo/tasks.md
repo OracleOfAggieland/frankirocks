@@ -19,8 +19,8 @@ Rules for every task:
 
 ## Tasks
 
-- [ ] 1. Wave 0, part C0: types first (builder: Claude; one builder; lands before everything else)
-  - [ ] 1.1 Write `BankStatusResponse` and `GoogleStatusResponse` as unions in `packages/core/src/schema/wire.ts`
+- [x] 1. Wave 0, part C0: types first (builder: Claude; one builder; lands before everything else)
+  - [x] 1.1 Write `BankStatusResponse` and `GoogleStatusResponse` as unions in `packages/core/src/schema/wire.ts`
     - Builder: Claude.
     - `BankStatusResponse = union(obj({ banks, canConnect, simulated: literal(true) }), obj({ banks, canConnect }))` and `GoogleStatusResponse = union(obj({ google, simulated: literal(true) }), obj({ google }))`, as in design "Wire fields". No other schema changes.
     - Test in `packages/core/src/schema/wire.status.test.ts` (new): the old shapes validate; the new shapes validate; `simulated: false` and any other extra key do not.
@@ -28,13 +28,13 @@ Rules for every task:
     - Depends on: none.
     - Witness: `npx vitest run packages/core/src/schema/wire.status.test.ts`; `npx vitest run apps/web/src/client/api.bank.test.ts` (unchanged and green).
     - _Requirements: 17.4_
-  - [ ] 1.2 Write the new optional fixture fields and helpers in `packages/server/src/seed/fixture.ts`
+  - [x] 1.2 Write the new optional fixture fields and helpers in `packages/server/src/seed/fixture.ts`
     - Builder: Claude.
     - `DemoAccount`, `DemoProfile`, `SeedFixture.demo`, `BankLine.code` and `account`, `MailLine.dmarc` and `unread`, `DEFAULT_BANK_CODE`, `bankCodeOf`, `senderAuthOfLine`, exactly as in design "Fixture types and the builder". Also `simEventId` (the design places it in `sim-google.ts`, which re-exports it): the builder's uniqueness check in 1.3 needs it before C2 exists. Types and pure helpers only.
     - Depends on: none.
     - Witness: `npm run typecheck`.
     - _Requirements: 6.4, 8.11, 13.1, 13.2_
-  - [ ] 1.3 Write the builder changes and the five checks in `packages/server/src/seed/build.ts`
+  - [x] 1.3 Write the builder changes and the five checks in `packages/server/src/seed/build.ts`
     - Builder: Claude.
     - `buildMail`: `senderAuth: senderAuthOfLine(line)`. `buildBank`: `accountKey: ids.key("account", line.account ?? "checking")`. New `FIXTURE_ADDRESS` (the pattern of `ADDRESS` in `google/read.ts`, copied, since that constant is private).
     - Five checks, each `fail("packetInvalid", line.id, …)`: bank amount is an integer with `Math.abs(amountCents) <= BANK_CENTS_MAX` (every fixture); `code` matches `BANK_CATEGORY_CODE` and `bankCategoryOf(code) === category`; `account` is in `demo.bank.accounts`; the demo profile is valid (1 to 32 accounts with unique IDs, `google.email` passes `FIXTURE_ADDRESS`, every `fromSelf` line's `from.address` equals it, `displayName` passes `promotableName`); simulated event IDs (`simEventId` from `fixture.ts`) and thread names are unique.
@@ -43,7 +43,7 @@ Rules for every task:
     - Depends on: 1.2.
     - Witness: `npx vitest run packages/server/src/seed` (all existing seed tests unchanged and green).
     - _Requirements: 6.2, 6.3, 6.4, 8.9, 8.11, 12.1, 13.2, 25.8_
-  - [ ] 1.4 Write the stub `seed/kisses/index.ts`, register it, and export its ID
+  - [x] 1.4 Write the stub `seed/kisses/index.ts`, register it, and export its ID
     - Builder: Claude.
     - `KISSES_FIXTURE_ID = "seed-persona-kisses-v1-00000000000000000000"` (43 characters), `KISSES` with `origin: "authored"`, `windowDays: 21`, empty `TURNS`, `MAIL`, `BULK`, `CALENDAR`, `BANK` arrays in their own files (`turns.ts`, `mail.ts`, `bulk.ts`, `calendar.ts`, `bank.ts`, `profile.ts`), and a placeholder profile that passes the profile check. `seed/kisses/` imports only `../fixture`.
     - `packages/server/src/seed/persona/index.ts`: `FIXTURES` gains `[KISSES.id, KISSES]`. `packages/server/src/index.ts`: export `KISSES_FIXTURE_ID`.
@@ -51,26 +51,26 @@ Rules for every task:
     - Depends on: 1.3.
     - Witness: `npx vitest run packages/server/src/seed` and `npm run typecheck`; the stub loads through `loadSeed` with no `SeedLoadError`; `scripts/import-boundaries.mjs` has no new finding.
     - _Requirements: 6.1, 6.2, 6.3, 6.5, 6.6, 6.8, 6.9_
-  - [ ] 1.5 **[property]** P9, the scanner is sound: `packages/server/src/demo/taste-scanner.property.test.ts`
+  - [x] 1.5 **[property]** P9, the scanner is sound: `packages/server/src/demo/taste-scanner.property.test.ts`
     - Builder: Claude.
     - For any Denied_List word, any string and any insertion point, the scanner flags the string with the word inserted at a word boundary, and flags no string that holds none of the words. The module does not exist yet, so the file fails to import.
     - Depends on: 2.1 (the Denied_List data file).
     - Witness: the file is committed and red (failing import).
     - _Requirements: 25.2, 27.2_
-  - [ ] 1.6 Write the scanner module `packages/server/src/demo/taste-scan.ts`
+  - [x] 1.6 Write the scanner module `packages/server/src/demo/taste-scan.ts`
     - Builder: Claude.
     - `foldForScan(s)` (NFKC, case fold, every run of non-letter, non-digit characters as one space), `scanTaste(text, words = DENIED_WORDS): TasteHit[]` (whole-word and whole-phrase matches on the folded text, `{ word, index }`), and `fixtureStrings(f: SeedFixture): { where: string; text: string }[]` (every string field of every line and of the demo profile, including mail names, addresses, subjects, bodies, thread names, calendar titles, bank merchants, turn text and spans' quotes). Pure. Imports `DENIED_WORDS` from `../testing/denied-words`.
     - Files: `packages/server/src/demo/taste-scan.ts`, `packages/server/src/demo/taste-scan.test.ts`.
     - Depends on: 1.5, 2.3.
     - Witness: `npx vitest run packages/server/src/demo/taste-scanner.property.test.ts packages/server/src/demo/taste-scan.test.ts`.
     - _Requirements: 25.2_
-  - [ ] 1.7 **[property]** P8, Taste: `packages/server/src/demo/taste.property.test.ts`
+  - [x] 1.7 **[property]** P8, Taste: `packages/server/src/demo/taste.property.test.ts`
     - Builder: Claude.
     - For any string field of the Kisses fixture, no word of the Denied_List appears. Over the stub it passes; it guards part E and every later edit to the persona.
     - Depends on: 1.4, 1.6.
     - Witness: `npx vitest run packages/server/src/demo/taste.property.test.ts`.
     - _Requirements: 25.1, 25.2_
-  - [ ] 1.8 Write `demo/token.ts`, `demo/visit.ts`, `demo/switch.ts`, the `RouteContext.anonymous` field and the barrel exports
+  - [x] 1.8 Write `demo/token.ts`, `demo/visit.ts`, `demo/switch.ts`, the `RouteContext.anonymous` field and the barrel exports
     - Builder: Claude.
     - `token.ts`: `SIM_PREFIX`, `SIM_KINDS`, `SimToken`, `simToken`, `readSimToken` (grammar and `isZone` check as in design). `visit.ts`: `VisitKey`, `demoBankConnectorId`, `connectorSimulated`, `isDemoVisit`, `readNow`. `switch.ts`: `DEMO_ENV_VAR`, `demoEnabled` (exactly `"on"`), `demoStatus`.
     - `packages/server/src/routes/runtime.ts`: `anonymous?: boolean` on `RouteContext`, type only. `packages/server/src/index.ts`: export `demoEnabled` and `demoStatus`.
@@ -79,13 +79,13 @@ Rules for every task:
     - Depends on: 1.4.
     - Witness: `npx vitest run packages/server/src/demo`; `npm run typecheck`; `npx vitest run scripts/import-boundaries.test.ts`.
     - _Requirements: 4.4, 4.7, 4.8, 10.4, 10.5, 15.1, 28.3_
-  - [ ] 1.9 Checkpoint: wave 0
+  - [x] 1.9 Checkpoint: wave 0
     - Builder: Claude.
     - `npm test`, `npm run lint`, `npm run typecheck` pass. The Kisses stub is registered and loads; nothing else behaves differently. Tell the owner part C0 has landed, so part E can write against the types.
     - Depends on: 1.1 to 1.8.
 
-- [ ] 2. Part B: the persona-author skill, the check, the Denied_List and the taste steering (builder: Kiro; beside wave 0)
-  - [ ] 2.1 Write the skill, its check script, the Denied_List and the taste steering file
+- [x] 2. Part B: the persona-author skill, the check, the Denied_List and the taste steering (builder: Kiro; beside wave 0)
+  - [x] 2.1 Write the skill, its check script, the Denied_List and the taste steering file
     - Builder: Kiro. One commit.
     - `.kiro/skills/persona-author/SKILL.md` and `references/fixture-format.md`, `skeleton.md`, `loader-checks.md`, `trust.md`.
     - `.kiro/skills/persona-author/scripts/check.mjs`: scans the persona folder for Denied_List words (file:line), runs the folder's `*.test.ts` through vitest, `--witness` appends one line to `.kiro/specs/kiroween-demo/persona-check.log` only when the folder changed. It works before any of part C exists.
@@ -96,8 +96,8 @@ Rules for every task:
     - Witness: `node .kiro/skills/persona-author/scripts/check.mjs` on a missing folder exits 0; with `--witness` it prints nothing and exits 0; `node .kiro/skills/persona-author/scripts/check.mjs <a folder holding one denied word>` exits 1 and prints file:line.
     - _Requirements: 25.1, 25.2, 25.3, 25.4, 25.5, 25.6, 25.7, 26.5_
 
-- [ ] 3. Part E: the persona (builder: Kiro; through the `stitch-persona` workflow)
-  - [ ] 3.1 Run `.kiro/workflows/stitch-persona.workflow.json` and commit the persona
+- [x] 3. Part E: the persona (builder: Kiro; through the `stitch-persona` workflow)
+  - [x] 3.1 Run `.kiro/workflows/stitch-persona.workflow.json` and commit the persona
     - Builder: Kiro. The workflow's last step makes the one commit.
     - Writes only under `packages/server/src/seed/kisses/` (`turns.ts`, `mail.ts`, `bulk.ts`, `calendar.ts`, `bank.ts`, `profile.ts`, the arrays in `index.ts`, and `kisses.test.ts`), plus `docs/briefs/054-persona-bible.md`, `.kiro/specs/kiroween-demo/persona-verdict.json` and `.kiro/specs/kiroween-demo/persona-check.log`. Runs in parallel with waves 1 and 2 and needs none of their code.
     - The persona holds, as the design's Build order fixes: one `identity.name` item for `self` (a promotable text fact resting on a turn line); exactly one allergy in Jeffrey's words; every `fromSelf` mail line from `demo.google.email`; at least one mailed sender and one stranger whose body gives an instruction; "mission control" as an invented sender; bulk lines with `bulk: true`; an event on the clone's Friday and late meetings; rocket-fuel rows in the last days of the window; a bank `code` on every `other` line; every amount under `BANK_CENTS_MAX`; no word of the Denied_List.
@@ -105,53 +105,53 @@ Rules for every task:
     - Depends on: 1.9, 2.1.
     - Witness: `node .kiro/skills/persona-author/scripts/check.mjs` exits 0; `npx vitest run packages/server/src/seed/kisses packages/server/src/demo/taste.property.test.ts`.
     - _Requirements: 6.3, 7.6, 7.7, 20.1, 20.2, 20.5, 21.1, 21.2, 22.1, 25.1, 25.2, 25.3, 25.4, 25.5, 25.6, 25.7, 25.8, 26.1, 26.2, 26.3, 26.4, 26.5, 27.1_
-  - [ ] 3.2 Checkpoint: part E
+  - [x] 3.2 Checkpoint: part E
     - Builder: Kiro.
     - Read `persona-verdict.json` (APPROVED) and the last line of `persona-check.log` (PASS). Run `npm test`. No commit unless a finding needs a fix.
     - Depends on: 3.1.
 
-- [ ] 4. Wave 1, part C1: guard, flag and switch (builder: Claude)
-  - [ ] 4.1 Write the anonymous fake token in `packages/server/src/testing/fakes.ts`
+- [x] 4. Wave 1, part C1: guard, flag and switch (builder: Claude)
+  - [x] 4.1 Write the anonymous fake token in `packages/server/src/testing/fakes.ts`
     - Builder: Claude.
     - `fakeTokenVerifier` also accepts `anon:<uid>` and answers `{ uid, anonymous: true }`; `token:<uid>` stays `{ uid }`. Test in `packages/server/src/testing/fakes.test.ts` is not edited; add `fakes.anon.test.ts` (new).
     - Files: `packages/server/src/testing/fakes.ts`, `packages/server/src/testing/fakes.anon.test.ts`.
     - Depends on: 1.8.
     - Witness: `npx vitest run packages/server/src/testing`.
     - _Requirements: 4.6_
-  - [ ] 4.2 **[property]** P10, the flag comes from the token: `packages/server/src/auth/anonymous-flag.property.test.ts`
+  - [x] 4.2 **[property]** P10, the flag comes from the token: `packages/server/src/auth/anonymous-flag.property.test.ts`
     - Builder: Claude.
     - For any verified claim set (`firebase.sign_in_provider` any string or absent) and any request body, query and headers, the `anonymous` the guard reports is true exactly when the provider is `"anonymous"`, and it does not change when the body, query or other headers change. Fails today: `guardRequestFull` does not exist.
     - Depends on: 4.1.
     - Witness: the file is committed and red.
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
-  - [ ] 4.3 **[property]** P11, the switch fails closed: `packages/server/src/demo/switch.property.test.ts`
+  - [x] 4.3 **[property]** P11, the switch fails closed: `packages/server/src/demo/switch.property.test.ts`
     - Builder: Claude.
     - For any value of `FRANKI_DEMO`, `demoEnabled` is true exactly when it is `"on"`; for any request with an anonymous token while it is not `"on"`, `runRoute` answers 401 `AUTH` and the store records no read and no write; a non-anonymous token is unaffected.
     - Depends on: 4.1.
     - Witness: the file is committed; the `demoEnabled` half passes and the `runRoute` half is red until 4.5.
     - _Requirements: 15.1, 15.3, 15.4, 15.5_
-  - [ ] 4.4 Write `guardRequestFull` and the verifier claim
+  - [x] 4.4 Write `guardRequestFull` and the verifier claim
     - Builder: Claude.
     - `packages/server/src/auth/guard.ts`: `TokenVerifier.verify` may return `anonymous?: boolean`; `GuardResult`; `guardRequestFull(input, verifier, origins?, log?, opts?: { demoOn?: boolean })` with the refusal step straight after verification and before the origin check and body cap; `guardRequest` keeps its signature and calls it with `demoOn: true`. `packages/server/src/auth/admin-verifier.ts`: `anonymous: decoded.firebase?.sign_in_provider === "anonymous"`.
     - Files: `packages/server/src/auth/guard.ts`, `packages/server/src/auth/admin-verifier.ts`.
     - Depends on: 4.2.
     - Witness: `npx vitest run packages/server/src/auth` (existing guard tests unchanged and green; P10 green).
     - _Requirements: 4.1, 4.2, 4.5, 15.3, 15.4_
-  - [ ] 4.5 Write the `runRoute` body change
+  - [x] 4.5 Write the `runRoute` body change
     - Builder: Claude.
     - `packages/server/src/routes/runtime.ts`: call `guardRequestFull(..., { demoOn: demoEnabled(deps.env) })` and build the context with `anonymous: g.anonymous`.
     - Files: `packages/server/src/routes/runtime.ts`.
     - Depends on: 4.3, 4.4.
     - Witness: `npx vitest run packages/server/src/demo/switch.property.test.ts packages/server/src/routes`.
     - _Requirements: 4.3, 15.3, 15.4, 15.5_
-  - [ ] 4.6 Write `packages/server/src/demo/guards.ts`
+  - [x] 4.6 Write `packages/server/src/demo/guards.ts`
     - Builder: Claude.
     - `refuseDemo(ctx)` (throws `scopeError()` when `ctx.anonymous === true`) and `DEMO_PHONE_LINE`. Unit test `guards.test.ts`.
     - Files: `packages/server/src/demo/guards.ts`, `packages/server/src/demo/guards.test.ts`.
     - Depends on: 1.8.
     - Witness: `npx vitest run packages/server/src/demo/guards.test.ts`.
     - _Requirements: 14.3, 14.4, 14.5, 14.8_
-  - [ ] 4.7 Write `GET /api/demo` and the `FRANKI_DEMO` value
+  - [x] 4.7 Write `GET /api/demo` and the `FRANKI_DEMO` value
     - Builder: Claude.
     - `apps/web/src/app/api/demo/route.ts` as in the design (no `adapt`, `force-dynamic`, `cache-control: no-store`, `{ enabled }` only). `apps/web/apphosting.yaml`: `- variable: FRANKI_DEMO`, `value: "on"`, `availability: [RUNTIME]`. Read the Next.js route handler guide first. `/api/health` is not touched. Test `apps/web/src/app/api/demo/route.test.ts` (new).
     - Files: `apps/web/src/app/api/demo/route.ts`, `apps/web/src/app/api/demo/route.test.ts`, `apps/web/apphosting.yaml`.
@@ -159,73 +159,73 @@ Rules for every task:
     - Witness: `npx vitest run apps/web/src/app/api/demo`; `npx vitest run scripts/sync-local-env.test.ts`; `npm run build`.
     - _Requirements: 15.6, 15.7, 15.8_
 
-- [ ] 5. Wave 1, part C2: simulators and routing (builder: Claude)
-  - [ ] 5.1 Write the arbitrary demo fixture generator `packages/server/src/testing/arb-demo-fixture.ts`
+- [x] 5. Wave 1, part C2: simulators and routing (builder: Claude)
+  - [x] 5.1 Write the arbitrary demo fixture generator `packages/server/src/testing/arb-demo-fixture.ts`
     - Builder: Claude.
     - `arbDemoFixture`: a `SeedFixture` with a valid `demo` profile and arbitrary bank, mail (own, inbound, bulk, every `dmarc`) and calendar lines (several revisions, every status and response), which passes the builder's checks; `arbSimToken`, `arbLiveToken` (Plaid and Google shaped) and `arbMalformedToken`. The properties below draw from it, so they need no persona.
     - Files: `packages/server/src/testing/arb-demo-fixture.ts`, `packages/server/src/testing/arb-demo-fixture.test.ts`.
     - Depends on: 1.8.
     - Witness: `npx vitest run packages/server/src/testing/arb-demo-fixture.test.ts` (every generated fixture builds through `buildSeed`).
     - _Requirements: 27.2_
-  - [ ] 5.2 **[property]** P4, token shape: `packages/server/src/demo/token.property.test.ts`
+  - [x] 5.2 **[property]** P4, token shape: `packages/server/src/demo/token.property.test.ts`
     - Builder: Claude.
     - For any `SimToken`, `readSimToken(simToken(t))` equals `t`; any string without the prefix reads null; any string with the prefix that is not a `simToken` output reads `"malformed"`; no `simToken` output matches a Plaid or Google token shape. It pins `token.ts`, which wave 0 landed, so it starts green.
     - Depends on: 5.1.
     - Witness: `npx vitest run packages/server/src/demo/token.property.test.ts`.
     - _Requirements: 10.4, 10.5_
-  - [ ] 5.3 **[property]** P1, Agreement, bank: `packages/server/src/demo/agreement-bank.property.test.ts`
+  - [x] 5.3 **[property]** P1, Agreement, bank: `packages/server/src/demo/agreement-bank.property.test.ts`
     - Builder: Claude.
     - For any fixture bank line set, zone, period, group and merchant, the total `moneyAnswer` gives over the rows `bankRowContent` builds from every page of `simulatedBank().sync` equals the sum of `amountCents` of the lines that are posted, ordinary (`codeKind`), dated in the period, in the group (`groupMatches`) and, when a merchant is asked, named that merchant; and `centsOf(simAmount(c)) === c` for every integer `|c| <= BANK_CENTS_MAX`.
     - Depends on: 5.1.
     - Witness: the file is committed and red (failing import).
     - _Requirements: 8.3, 8.9, 12.2, 12.6_
-  - [ ] 5.4 **[property]** P2, Agreement, mail and calendar: `packages/server/src/demo/agreement-google.property.test.ts`
+  - [x] 5.4 **[property]** P2, Agreement, mail and calendar: `packages/server/src/demo/agreement-google.property.test.ts`
     - Builder: Claude.
     - For any mail or calendar line and any world start and zone, the message or event the simulator answers, read by `mailContent` or `eventContent`, has the same sender, address, subject, body, instant, recipients, title, start, length, status, response and transparency as the Evidence `buildMail` or `buildCalendar` builds (a calendar line's last revision).
     - Depends on: 5.1.
     - Witness: the file is committed and red.
     - _Requirements: 9.4, 9.5, 12.3, 12.4_
-  - [ ] 5.5 **[property]** P3, No crossing: `packages/server/src/demo/no-crossing.property.test.ts`
+  - [x] 5.5 **[property]** P3, No crossing: `packages/server/src/demo/no-crossing.property.test.ts`
     - Builder: Claude.
     - For any sequence of calls to `routingBank` or `routingGoogle` with simulator tokens of every kind, live-shaped tokens and malformed marker strings: a simulator token reaches only the simulator, a token with no marker reaches only the live port, a malformed one reaches neither and throws a definite refusal.
     - Depends on: 5.1.
     - Witness: the file is committed and red.
     - _Requirements: 10.2, 10.3, 10.5, 10.6, 10.9_
-  - [ ] 5.6 **[property]** P16, the simulator reads the queries the product writes: `packages/server/src/demo/gmail-query.property.test.ts`
+  - [x] 5.6 **[property]** P16, the simulator reads the queries the product writes: `packages/server/src/demo/gmail-query.property.test.ts`
     - Builder: Claude.
     - For any `MailQuery` and any fixture, `listMessages` over `gmailQuery(q)` returns exactly the messages an oracle selects (From substring; words in subject, body or From; `after` and `before` in epoch seconds; `is:unread`; the four exclusions), newest first and cut to `max`; and `in:sent to:<a>` returns exactly the sent lines whose recipients hold `a`.
     - Depends on: 5.1.
     - Witness: the file is committed and red.
     - _Requirements: 9.3, 13.3_
-  - [ ] 5.7 Write `demo/config.ts` and `demo/layout.ts`
+  - [x] 5.7 Write `demo/config.ts` and `demo/layout.ts`
     - Builder: Claude.
     - `demoBankConfig(env)` and `demoGoogleConfig(env)` (placeholders plus `sealKeysFrom(env, "FRANKI_BANK_TOKEN_KEY")`; a missing key is a `ConfigError`). `SimLayout` and `layoutOf(token, fixtures?)` (`friday = localDate(worldStart, zone)`, `at = relInstant(friday, rel, zone)`). Unit tests.
     - Files: `packages/server/src/demo/config.ts`, `demo/layout.ts` and their tests.
     - Depends on: 1.8.
     - Witness: `npx vitest run packages/server/src/demo/config.test.ts packages/server/src/demo/layout.test.ts`.
     - _Requirements: 10.11, 12.7_
-  - [ ] 5.8 Write `demo/sim-bank.ts`
+  - [x] 5.8 Write `demo/sim-bank.ts`
     - Builder: Claude.
     - `simulatedBank`, `simTransactions`, `simAmount`, `SIM_SYNC_PAGE`, with the method table and the field table of the design. No network, no environment read.
     - Files: `packages/server/src/demo/sim-bank.ts`, `packages/server/src/demo/sim-bank.test.ts`.
     - Depends on: 5.3, 5.7.
     - Witness: `npx vitest run packages/server/src/demo/sim-bank.test.ts packages/server/src/demo/agreement-bank.property.test.ts`.
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 8.9, 8.10, 12.1, 12.2, 12.6, 12.7_
-  - [ ] 5.9 Write `demo/gmail-query.ts`
+  - [x] 5.9 Write `demo/gmail-query.ts`
     - Builder: Claude.
     - `QueryTerm`, `parseGmailQuery` (null for any unknown shape), `matchesQuery`, over the forms table of the design.
     - Files: `packages/server/src/demo/gmail-query.ts`, `packages/server/src/demo/gmail-query.test.ts`.
     - Depends on: 5.6, 5.7.
     - Witness: `npx vitest run packages/server/src/demo/gmail-query.test.ts packages/server/src/demo/gmail-query.property.test.ts`.
     - _Requirements: 9.3, 9.7_
-  - [ ] 5.10 Write `demo/sim-google.ts`
+  - [x] 5.10 Write `demo/sim-google.ts`
     - Builder: Claude.
     - `simulatedGoogle`, `simMessages`, `simEvents`, and `simEventId` (re-exported from `seed/fixture.ts`, see 1.2), with the method table, the message table and the event shape of the design. Messages carry the `Authentication-Results` header from `dmarc`, the `SENT` label for own mail and the `List-Id` header for bulk. No network.
     - Files: `packages/server/src/demo/sim-google.ts`, `packages/server/src/demo/sim-google.test.ts`.
     - Depends on: 5.4, 5.9.
     - Witness: `npx vitest run packages/server/src/demo/sim-google.test.ts packages/server/src/demo/agreement-google.property.test.ts packages/server/src/demo/gmail-query.property.test.ts`.
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 9.9, 12.3, 12.4, 13.2_
-  - [ ] 5.11 Write `demo/routing.ts`
+  - [x] 5.11 Write `demo/routing.ts`
     - Builder: Claude.
     - `routingBank`, `routingGoogle`, `refusingBank`, `refusingGoogle`, per the per-method token argument in the design.
     - Files: `packages/server/src/demo/routing.ts`, `packages/server/src/demo/routing.test.ts`.
@@ -233,60 +233,60 @@ Rules for every task:
     - Witness: `npx vitest run packages/server/src/demo/routing.test.ts packages/server/src/demo/no-crossing.property.test.ts`; `npx vitest run packages/server/src/google/port-read-only.property.test.ts` (unchanged and green).
     - _Requirements: 10.1, 10.2, 10.3, 10.6, 10.7, 10.8, 10.9, 10.10_
 
-- [ ] 6. Wave 1, part C4: the Head, the first meeting and the tools (builder: Claude)
-  - [ ] 6.1 **[property]** P13, plays owner changes nothing else: `packages/core/src/plays-owner.property.test.ts`
+- [x] 6. Wave 1, part C4: the Head, the first meeting and the tools (builder: Claude)
+  - [x] 6.1 **[property]** P13, plays owner changes nothing else: `packages/core/src/plays-owner.property.test.ts`
     - Builder: Claude.
     - For any `HeadInput`, `compileHead` with `playsOwner` absent or false equals today's result; with it true, the name line appears exactly when a self name Memory of a promotable text passes the Head's filter for a private audience, whatever its Evidence source; no company or unknown audience Head holds a name. The `playsOwner` half is red today (`it.fails`).
     - Depends on: 1.9.
     - Witness: the file is committed.
     - _Requirements: 7.1, 7.3, 7.4, 7.8_
-  - [ ] 6.2 **[property]** P14, no first meeting for Jeffrey: `packages/server/src/demo/first-meeting.property.test.ts`
+  - [x] 6.2 **[property]** P14, no first meeting for Jeffrey: `packages/server/src/demo/first-meeting.property.test.ts`
     - Builder: Claude.
     - For any `MeetConditions` and any delivery rows, `meetOffer` returns null when `demo` is true, and returns what it returns today when `demo` is absent or false.
     - Depends on: 1.9.
     - Witness: the file is committed (`it.fails` on the `demo` half).
     - _Requirements: 7.2, 7.3, 7.9_
-  - [ ] 6.3 **[property]** P17, typed tools split: `packages/server/src/routes/typed-tools.property.test.ts`
+  - [x] 6.3 **[property]** P17, typed tools split: `packages/server/src/routes/typed-tools.property.test.ts`
     - Builder: Claude.
     - For any `{ phone, money }` and any boolean, `typedReplyRequest(...).tools` holds `make_phone_call` and `read_phone_result` exactly when phone is allowed and `read_money` exactly when money is allowed, in today's order, and `true` gives today's list.
     - Depends on: 1.9.
     - Witness: the file is committed (`it.fails` on the object half).
     - _Requirements: 14.1_
-  - [ ] 6.4 **[property]** P18, the phone is not offered on a call: `packages/core/src/voice/phone-off.property.test.ts`
+  - [x] 6.4 **[property]** P18, the phone is not offered on a call: `packages/core/src/voice/phone-off.property.test.ts`
     - Builder: Claude.
     - For any `VoiceState` with `phoneOff` true, `callTools` returns no `make_phone_call`, no `read_phone_result` and no activity variant, whatever `specialists`, `errandsReady` and `webSearchStatus` are; with `phoneOff` absent it returns today's list. Add the transition test `CLOSED + connect -> CONNECTING (phoneOff kept)` in `phone-off.transitions.test.ts`.
     - Depends on: 1.9.
     - Witness: the file is committed (`it.fails` on the `phoneOff` half).
     - _Requirements: 14.1_
-  - [ ] 6.5 Write `playsOwner` in `owner-name.ts` and `head.ts`
+  - [x] 6.5 Write `playsOwner` in `owner-name.ts` and `head.ts`
     - Builder: Claude.
     - `restsOnOwnerWords(m, snapshot, playsOwner = false)`, `ownerName` and `ownerNamed` take `playsOwner?: boolean`; `HeadInput.playsOwner?: boolean`; the skip at the fixture-only self name is bypassed when it is true. Audience rules untouched.
     - Files: `packages/core/src/owner-name.ts`, `packages/core/src/head.ts`.
     - Depends on: 6.1.
     - Witness: `npx vitest run packages/core/src/plays-owner.property.test.ts packages/core/src/head packages/core/src/owner-name` (all existing tests unchanged and green; remove `.fails`).
     - _Requirements: 7.1, 7.3, 7.4, 7.7, 7.8_
-  - [ ] 6.6 Pass `playsOwner` through `buildHead` and its five call sites
+  - [x] 6.6 Pass `playsOwner` through `buildHead` and its five call sites
     - Builder: Claude.
     - `head-build.ts`: `buildHead(..., audience?, playsOwner?)`. `routes/open.ts` (compute `demo` before the transaction), `audience-swap.ts` (`precompileAudienceHead` takes `anonymous`; `withNarrowHead`'s `x` gains `playsOwner`), `onturn/execute.ts` (`HardRuleRun.playsOwner`, in `CompileRun`; every `HardRuleRun` built in `routes/turn.ts` sets it), `forget/executor.ts` and `forget/drive.ts` (`ForgetDeps` gains `env?` and `anonymous?`; `compileCleared` calls `isDemoVisit`).
     - Files: `packages/server/src/head-build.ts`, `routes/open.ts`, `audience-swap.ts`, `onturn/execute.ts`, `routes/turn.ts`, `forget/executor.ts`, `forget/drive.ts`.
     - Depends on: 6.5.
     - Witness: `npx vitest run packages/server/src/routes packages/server/src/forget packages/server/src/onturn packages/server/src/audience-swap` (unchanged and green); a new `packages/server/src/demo/head-demo.test.ts` shows Jeffrey's name in the Head on open, after a typed turn and after a forget job.
     - _Requirements: 7.1, 7.4, 7.5, 7.6, 7.9_
-  - [ ] 6.7 Write the first-meeting exception in `meet.ts` and `open.ts`
+  - [x] 6.7 Write the first-meeting exception in `meet.ts` and `open.ts`
     - Builder: Claude.
     - `MeetConditions.demo?: boolean`; `mayAsk` gains `&& c.demo !== true`; `routes/open.ts` sets `demo` in both objects it builds. `routes/open.ts` is edited after 6.6.
     - Files: `packages/server/src/meet.ts`, `packages/server/src/routes/open.ts`.
     - Depends on: 6.2, 6.6.
     - Witness: `npx vitest run packages/server/src/demo/first-meeting.property.test.ts packages/server/src/meet`; the Sample_Visit's meet tests unchanged and green.
     - _Requirements: 7.2, 7.3, 7.9, 7.10_
-  - [ ] 6.8 Write `phoneOff` in the voice reducer
+  - [x] 6.8 Write `phoneOff` in the voice reducer
     - Builder: Claude.
     - `packages/core/src/voice/machine.ts`: `VoiceState.phoneOff?`, `initialVoiceState(config, zone, opts)`, `Capabilities.phoneOff`, the filter in `callTools`. `docs/machines/voice-call.md` gains the field in its reset table (never reset by an exit).
     - Files: `packages/core/src/voice/machine.ts`, `docs/machines/voice-call.md`.
     - Depends on: 6.4.
     - Witness: `npx vitest run packages/core/src/voice`; `npx vitest run scripts/machines-index.test.ts`; all existing voice tests unchanged and green; P18 green (`.fails` removed).
     - _Requirements: 14.1_
-  - [ ] 6.9 Write the typed-tool split and the phone refusal
+  - [x] 6.9 Write the typed-tool split and the phone refusal
     - Builder: Claude.
     - `routes/typed-reply.ts`: `allow: boolean | TypedTools` on `typedReplyRequest` and `typedReplyOutcome`; `routes/turn.ts` passes `{ phone: typed && ctx.anonymous !== true, money: typed }`. `phone/outbound.ts`: `placePhoneCall` begins `if (ctx.anonymous === true) return DEMO_PHONE_LINE;`.
     - Files: `packages/server/src/routes/typed-reply.ts`, `packages/server/src/routes/turn.ts`, `packages/server/src/phone/outbound.ts`.
@@ -294,96 +294,96 @@ Rules for every task:
     - Witness: `npx vitest run packages/server/src/routes packages/server/src/phone` (unchanged and green; P17 green, `.fails` removed); a new `packages/server/src/phone/outbound.demo.test.ts` shows no claim, no ledger row and no dial for an anonymous context.
     - _Requirements: 14.1, 14.2, 14.7_
 
-- [ ] 7. Wave 1, part D1: the browser (builder: Claude)
-  - [ ] 7.1 **[property]** P20, the marker never replaces a real user: `apps/web/src/ui/demo/marker.property.test.ts`
+- [x] 7. Wave 1, part D1: the browser (builder: Claude)
+  - [x] 7.1 **[property]** P20, the marker never replaces a real user: `apps/web/src/ui/demo/marker.property.test.ts`
     - Builder: Claude.
     - For any hash, auth state and switch answer, `markerAction` is `signInAnonymously` only when the hash is `#demo`, the user is signed out and the switch is on; `offerSwitch` only when a non-anonymous user is signed in; `none` or `clear` otherwise.
     - Depends on: 1.9.
     - Witness: the file is committed and red (failing import).
     - _Requirements: 2.6, 2.7, 2.8_
-  - [ ] 7.2 **[property]** P21, a simulated bank sheet offers no way out: `apps/web/src/ui/bank/simulated.property.test.ts`
+  - [x] 7.2 **[property]** P21, a simulated bank sheet offers no way out: `apps/web/src/ui/bank/simulated.property.test.ts`
     - Builder: Claude.
     - For any sequence of bank status answers, once an answer carries `simulated`, `canStartLink` is false, and a later answer without `simulated` clears the mark.
     - Depends on: 1.1.
     - Witness: the file is committed (`it.fails`).
     - _Requirements: 17.3, 17.4_
-  - [ ] 7.3 **[property]** P21, a simulated Google sheet offers no way out: `apps/web/src/ui/google/simulated.property.test.ts`
+  - [x] 7.3 **[property]** P21, a simulated Google sheet offers no way out: `apps/web/src/ui/google/simulated.property.test.ts`
     - Builder: Claude.
     - The same for Google status answers and `canConnectGoogle`.
     - Depends on: 1.1.
     - Witness: the file is committed (`it.fails`).
     - _Requirements: 17.3, 17.4_
-  - [ ] 7.4 Write `client/demo.ts` and the fixture ID pin
+  - [x] 7.4 Write `client/demo.ts` and the fixture ID pin
     - Builder: Claude.
     - `KISSES_FIXTURE_ID`, `DEMO_NAME`, `DEMO_HASH`, `DEMO_HREF`, `DEMO_PATH`, `hasDemoMarker`, `fetchDemoEnabled`. `scripts/kisses-fixture-id.test.ts` (new) fails when the ID or `KISSES.demo.displayName` differs from the server's.
     - Files: `apps/web/src/client/demo.ts`, `apps/web/src/client/demo.test.ts`, `scripts/kisses-fixture-id.test.ts`.
     - Depends on: 1.4.
     - Witness: `npx vitest run apps/web/src/client/demo.test.ts scripts/kisses-fixture-id.test.ts scripts/persona-fixture-id.test.ts`.
     - _Requirements: 3.3, 6.7, 15.8_
-  - [ ] 7.5 Write `ui/demo/marker.ts`
+  - [x] 7.5 Write `ui/demo/marker.ts`
     - Builder: Claude.
     - `MarkerAction`, `markerAction`, over the design's table. Pure; header says what always holds. No new machine row: the file name and exports do not match the machines index patterns.
     - Files: `apps/web/src/ui/demo/marker.ts`.
     - Depends on: 7.1.
     - Witness: `npx vitest run apps/web/src/ui/demo scripts/machines-index.test.ts`.
     - _Requirements: 2.6, 2.7, 2.8_
-  - [ ] 7.6 Write anonymous sign-in in `client/auth.ts`
+  - [x] 7.6 Write anonymous sign-in in `client/auth.ts`
     - Builder: Claude.
     - `AuthState` signed-in gains `anonymous?: true`; `AuthClient.signInAnonymously()`; failure maps to `providerError` with `DEMO_SIGN_IN_FAILED` and `providerDetail(code)`. Existing `auth.test` unchanged.
     - Files: `apps/web/src/client/auth.ts`, `apps/web/src/client/auth.demo.test.ts`.
     - Depends on: 7.4.
     - Witness: `npx vitest run apps/web/src/client/auth`.
     - _Requirements: 2.1, 2.3, 2.4_
-  - [ ] 7.7 Write the copy
+  - [x] 7.7 Write the copy
     - Builder: Claude.
     - `ui/copy.ts`: `COPY.demo` (`button`, `mark`, `switchLine`, `switchButton`), `COPY.bank.simulated`, `COPY.google.simulated`; `ui/copy-landing.ts`: `LANDING.hero.demo`. Sentence case, no Banned_Cause_Words.
     - Files: `apps/web/src/ui/copy.ts`, `apps/web/src/ui/copy-landing.ts`.
     - Depends on: none.
     - Witness: `node scripts/copy-check.mjs`; `npx vitest run scripts/copy-check.test.ts`.
     - _Requirements: 1.5, 17.5_
-  - [ ] 7.8 Write the landing button
+  - [x] 7.8 Write the landing button
     - Builder: Claude.
     - `components/landing/DemoLink.tsx` (client component; renders nothing until `fetchDemoEnabled` answers true; then `<a href={DEMO_HREF}>` in the hero's brass target and focus classes) and `landing/Hero.tsx` renders it. `TopBar.tsx` unchanged. Read the Next.js guide first.
     - Files: `apps/web/src/components/landing/DemoLink.tsx`, `apps/web/src/components/landing/Hero.tsx`, `apps/web/src/components/landing/DemoLink.test.tsx`, `docs/machines/landing.md`.
     - Depends on: 7.4, 7.7.
     - Witness: `npx vitest run apps/web/src/components/landing`; `node scripts/token-check.mjs`; `node scripts/ui-boundaries.mjs`.
     - _Requirements: 1.1, 1.3, 1.4, 1.5, 1.6_
-  - [ ] 7.9 Write the Lab's button and the switch line
+  - [x] 7.9 Write the Lab's button and the switch line
     - Builder: Claude.
     - `components/DemoButton.tsx`, `components/DemoSwitchLine.tsx`, and `AuthPanel.tsx` with optional `demoEnabled` and `onDemo`. The Lab imports nothing from `components/landing/`.
     - Files: `apps/web/src/components/DemoButton.tsx`, `DemoSwitchLine.tsx`, `AuthPanel.tsx`, and tests `DemoButton.test.tsx`, `DemoSwitchLine.test.tsx`.
     - Depends on: 7.7.
     - Witness: `npx vitest run apps/web/src/components/AuthPanel apps/web/src/components/Footer.test.tsx apps/web/src/components/DemoButton.test.tsx apps/web/src/components/DemoSwitchLine.test.tsx`; `node scripts/ui-boundaries.mjs`.
     - _Requirements: 1.2, 1.4, 1.5, 1.6, 2.7_
-  - [ ] 7.10 Write the account menu
+  - [x] 7.10 Write the account menu
     - Builder: Claude.
     - `components/AccountMenu.tsx`: optional `demo` prop shows `COPY.demo.mark`. `AuthPanel` passes `demo={state.anonymous === true}`.
     - Files: `apps/web/src/components/AccountMenu.tsx`, `apps/web/src/components/AccountMenu.demo.test.tsx`.
     - Depends on: 7.7, 7.9.
     - Witness: `npx vitest run apps/web/src/components/AccountMenu apps/web/src/components/Footer.test.tsx`.
     - _Requirements: 3.1, 3.2, 3.4, 3.5_
-  - [ ] 7.11 Write the visit's fixture and the controllers' demo flag
+  - [x] 7.11 Write the visit's fixture and the controllers' demo flag
     - Builder: Claude.
     - `client/visit-model.ts`: `VisitModelDeps.fixtureId?` used in `reset()` (default `PERSONA_FIXTURE_ID`). `components/app-controllers.ts`: `ControllerDeps.fixtureId?` and `demo?`, passed to `VisitModel`; the `VoiceClient` line waits for task 9.1. `docs/machines/visit.md` updated.
     - Files: `apps/web/src/client/visit-model.ts`, `apps/web/src/components/app-controllers.ts`, `docs/machines/visit.md`, and a new `apps/web/src/client/visit-model.demo.test.ts`.
     - Depends on: 7.4.
     - Witness: `npx vitest run apps/web/src/client/visit-model apps/web/src/components/app-controllers`; `npx vitest run scripts/machines-index.test.ts`.
     - _Requirements: 2.2, 5.7_
-  - [ ] 7.12 Write the sheets' `simulated` handling
+  - [x] 7.12 Write the sheets' `simulated` handling
     - Builder: Claude.
     - `client/api.ts` and `client/google-api.ts` return `simulated: true` when the validated body carries it. `ui/bank/bank-machine.ts` and `ui/google/google-machine.ts`: answer and state gain `simulated?: true` (absent in `INITIAL_*`); `canStartLink` and `canConnectGoogle` are false when set. `components/bank/BankSheet.tsx` and `components/google/GoogleSheet.tsx` show the simulated line and omit Disconnect (and, for Google, the in-app hint and scope list). `docs/machines/bank.md` and `google.md` updated.
     - Files: `apps/web/src/client/api.ts`, `apps/web/src/client/google-api.ts`, `apps/web/src/ui/bank/bank-machine.ts`, `apps/web/src/ui/google/google-machine.ts`, `apps/web/src/components/bank/BankSheet.tsx`, `apps/web/src/components/google/GoogleSheet.tsx`, `docs/machines/bank.md`, `docs/machines/google.md`, and new tests beside each.
     - Depends on: 7.2, 7.3, 7.7.
     - Witness: `npx vitest run apps/web/src/ui/bank apps/web/src/ui/google apps/web/src/components/bank apps/web/src/components/google apps/web/src/client/api.bank.test.ts` (existing tests unchanged and green; the two P21 files pass, `.fails` removed); `npx vitest run scripts/machines-index.test.ts`.
     - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.5, 17.6_
-  - [ ] 7.13 Write the marker handling, the anonymous user and the sign-out in `App.tsx`
+  - [x] 7.13 Write the marker handling, the anonymous user and the sign-out in `App.tsx`
     - Builder: Claude.
     - `fetchDemoEnabled` once; `markerAction` in an effect, acted on once (a ref); `signInAnonymously` then `history.replaceState` removes the marker; `offerSwitch` renders `DemoSwitchLine` whose press runs `signOut()` then `signInAnonymously()`. `subscribe` maps an anonymous user to `{ kind: "signedIn", email: DEMO_NAME, uid, anonymous: true }`; `tokens` carries `anonymous`; the controllers get `fixtureId: KISSES_FIXTURE_ID` and `demo: true`. `signOut()` on an anonymous user deletes the account (bounded by `SIGN_OUT_LIMIT_MS`) before `auth.signOut()`. `AuthPanel` gets `demoEnabled` and `onDemo`.
     - Files: `apps/web/src/components/App.tsx`, `apps/web/src/components/App.demo.test.tsx` (new).
     - Depends on: 7.5, 7.6, 7.9, 7.10, 7.11.
     - Witness: `npx vitest run apps/web/src/components`; the specimens and `App` tests unchanged and green.
     - _Requirements: 2.1, 2.2, 2.3, 2.5, 2.6, 2.7, 2.8, 2.9, 3.1, 3.2, 16.1, 16.4, 16.5, 23.1_
-  - [ ] 7.14 Write the specimens tiles
+  - [x] 7.14 Write the specimens tiles
     - Builder: Claude.
     - One tile each in the development-only specimens page for the demo button states (switch on, off, not answered), the switch line, the account menu with `demo`, and both sheets with `simulated`.
     - Files: `apps/web/src/app/specimens/_sections/DemoSection.tsx`, `apps/web/src/app/specimens/page.dev.tsx`.
@@ -391,99 +391,99 @@ Rules for every task:
     - Witness: `npx vitest run apps/web/src/app/specimens`; `npm run build` (the post-build specimens check passes).
     - _Requirements: 23.4, 27.4_
 
-- [ ] 8. Wave 2, part C3: wiring and the seed (builder: Claude)
-  - [ ] 8.1 **[property]** P5, Pairing: `packages/server/src/seed/pairing.property.test.ts`
+- [x] 8. Wave 2, part C3: wiring and the seed (builder: Claude)
+  - [x] 8.1 **[property]** P5, Pairing: `packages/server/src/seed/pairing.property.test.ts`
     - Builder: Claude.
     - For any reset request (any fixture ID drawn from `FIXTURES` and unknown IDs, `anonymous` true, false or absent), `pairedFixture` returns a demo fixture exactly when `anonymous` is true and the fixture has `demo`, a non-demo fixture exactly when `anonymous` is not true, and otherwise throws `scopeError`; through `seedResetRoute` an anonymous tenant ends with the Kisses fixture or nothing written, and a non-anonymous tenant never holds a row of the Kisses fixture.
     - Depends on: 4.1, 4.5.
     - Witness: the file is committed and red.
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
-  - [ ] 8.2 **[property]** P12, the world clock decides by token, then by connector: `packages/server/src/demo/world-clock.property.test.ts`
+  - [x] 8.2 **[property]** P12, the world clock decides by token, then by connector: `packages/server/src/demo/world-clock.property.test.ts`
     - Builder: Claude.
     - For any `anonymous` of true, false or absent and any set of the three connector documents, `isDemoVisit` is `anonymous` when defined, opens no connector when it is false, and otherwise is true exactly when some document unseals to a simulator token; `readNow` is the world clock exactly then; and `readMoney` and the calendar window resolve "now" from it.
     - Depends on: 1.8.
     - Witness: the file is committed; the `isDemoVisit` half passes, the money and calendar half is red until 8.10 and 8.11.
     - _Requirements: 4.8, 28.1, 28.2, 28.3, 28.5_
-  - [ ] 8.3 **[property]** P15, Start over reinstalls: `packages/server/src/demo/reinstall.property.test.ts`
+  - [x] 8.3 **[property]** P15, Start over reinstalls: `packages/server/src/demo/reinstall.property.test.ts`
     - Builder: Claude.
     - For any sequence of Kisses resets with any world starts and zones, after each reset the three connector documents are connected, each unseals to a simulator token whose `worldStart` and `zone` equal that reset's, their `createdAt` is the first reset's, and the bank rows the next pull imports carry the dates of the seeded rows laid out from that reset's world start.
     - Depends on: 5.11.
     - Witness: the file is committed and red.
     - _Requirements: 11.1, 11.5, 11.7, 11.8_
-  - [ ] 8.4 **[property]** P6, No way out: `packages/server/src/demo/no-way-out.property.test.ts`
+  - [x] 8.4 **[property]** P6, No way out: `packages/server/src/demo/no-way-out.property.test.ts`
     - Builder: Claude.
     - For any sequence of tool calls (`make_phone_call`, `read_money` with any `MoneyArgs`, `start_errand` with any `about`, `read_phone_result`, `search_web`) and route calls (`bank/link-token`, `bank/connect`, `bank/disconnect`, `google/start`, `google/connect`, `google/disconnect`) made as an anonymous tenant over a rig whose `dial` and live ports are recorders, the recorders hold no call and no `phoneCall` row is written.
     - Depends on: 4.5, 5.11, 6.9.
     - Witness: the file is committed and red.
     - _Requirements: 14.2, 14.3, 14.4, 14.7, 14.8, 16.3_
-  - [ ] 8.5 **[property]** P7, Trust: `packages/server/src/demo/trust.property.test.ts`
+  - [x] 8.5 **[property]** P7, Trust: `packages/server/src/demo/trust.property.test.ts`
     - Builder: Claude.
     - For any mail line `L` (drawn from `arbDemoFixture` and from the Kisses fixture), the sender the mail agent registers for `L` over the simulator is mailed exactly when `L.fromSelf`, or `L.dmarc` is not `"fail"` or `"none"`, `L` is not bulk, and some line with `fromSelf` has `L.from.address` in its `to`; and the Gate's decision to speak or card a line citing `L` equals what the taint rule (`errands/gate.ts`) gives for that sender. Reuse the attack shapes of `packages/server/src/scripts/gate-poison.ts` for the stranger case.
     - Depends on: 5.11, 3.1.
     - Witness: the file is committed and red.
     - _Requirements: 13.3, 13.5, 13.6, 22.2_
-  - [ ] 8.6 **[property]** P19, delete leaves nothing and calls nothing live: `packages/server/src/demo/delete.property.test.ts`
+  - [x] 8.6 **[property]** P19, delete leaves nothing and calls nothing live: `packages/server/src/demo/delete.property.test.ts`
     - Builder: Claude.
     - For any Kisses tenant state (with or without imported rows, one or several resets), `POST /api/account/delete` makes no call to a live port, leaves no document under the tenant, deletes the user once, and a second call is harmless.
     - Depends on: 5.11.
     - Witness: the file is committed and red.
     - _Requirements: 16.2, 16.3_
-  - [ ] 8.7 Write `seed/pairing.ts` and call it from the reset
+  - [x] 8.7 Write `seed/pairing.ts` and call it from the reset
     - Builder: Claude.
     - `pairedFixture(anonymous, fixtureId, fixtures?)`. `routes/seed-reset.ts`: first line of `seedReset`, before `ensureCoreDocs`. `seed/reset.ts`: `resetVisit` uses it in place of `FIXTURES.get`.
     - Files: `packages/server/src/seed/pairing.ts`, `packages/server/src/routes/seed-reset.ts`, `packages/server/src/seed/reset.ts`.
     - Depends on: 8.1.
     - Witness: `npx vitest run packages/server/src/seed packages/server/src/routes` (reset tests unchanged and green; P5 green).
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.8_
-  - [ ] 8.8 Write `demo/install.ts` and the connector install in the reset
+  - [x] 8.8 Write `demo/install.ts` and the connector install in the reset
     - Builder: Claude.
     - `DemoInstallInput`, `DemoConnectors`, `buildDemoConnectors`, `writeDemoConnectors`. `seed/reset.ts`: read the key before the fence (`sealKeysFrom`), build after `worldStart` is known, and replace `resetBankCursors` by `writeDemoConnectors` in the last transaction when the fixture has `demo`. The Riley path is unchanged.
     - Files: `packages/server/src/demo/install.ts`, `packages/server/src/seed/reset.ts`.
     - Depends on: 8.3, 8.7.
     - Witness: `npx vitest run packages/server/src/demo/reinstall.property.test.ts packages/server/src/seed`.
     - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7, 11.8_
-  - [ ] 8.9 Write the bank runtime, status and guards in `bank/routes.ts`
+  - [x] 8.9 Write the bank runtime, status and guards in `bank/routes.ts`
     - Builder: Claude.
     - `bankConfigFor`, `bankRuntime` composing `routingBank(liveConfigured ? livePlaid : refusingBank)` (a `deps.bank` override replaces the whole port), `bankStatus` (`canConnect: false`, `simulated: true` for an anonymous context, using `bankConfigFor`), and `refuseDemo(ctx)` in the `run` of `bankLinkTokenRoute`, `bankConnectRoute` and `bankDisconnectRoute`.
     - Files: `packages/server/src/bank/routes.ts`.
     - Depends on: 4.6, 5.11.
     - Witness: `npx vitest run packages/server/src/bank` (unchanged and green); a new `packages/server/src/bank/routes.demo.test.ts` (guards, status, composition with no Plaid settings).
     - _Requirements: 10.1, 10.11, 14.3, 14.8, 17.4_
-  - [ ] 8.10 Write the Google runtime, status and guards in `google/routes.ts`
+  - [x] 8.10 Write the Google runtime, status and guards in `google/routes.ts`
     - Builder: Claude.
     - `googleConfigFor`, `googleRuntime` composing `routingGoogle(liveConfigured ? liveGoogle : refusingGoogle)`, `googleStatus` (`simulated: true` for an anonymous context), `refuseDemo(ctx)` in `googleStartRoute`, `googleConnectRoute` and `googleDisconnectRoute`.
     - Files: `packages/server/src/google/routes.ts`.
     - Depends on: 4.6, 5.11.
     - Witness: `npx vitest run packages/server/src/google` (unchanged and green); a new `packages/server/src/google/routes.demo.test.ts`.
     - _Requirements: 10.1, 10.11, 14.4, 14.8, 17.4_
-  - [ ] 8.11 Write the errand registry, readiness, catalog and the calendar clock
+  - [x] 8.11 Write the errand registry, readiness, catalog and the calendar clock
     - Builder: Claude.
     - `errands/agent.ts`: `errandAgentsOf` registers the Google agents when `googleConfigured(env) || demoEnabled(env)`; `specialistCatalog` leaves `phone` unavailable for an anonymous context. `errands/google-agents.ts`: `readiness` returns `"unavailable"` only when neither is true; `googleNow` uses `isDemoVisit` and `readNow`; the comment on review fix E3 is updated.
     - Files: `packages/server/src/errands/agent.ts`, `packages/server/src/errands/google-agents.ts`.
     - Depends on: 8.2, 8.10.
     - Witness: `npx vitest run packages/server/src/errands` (unchanged and green); a new `packages/server/src/errands/demo.test.ts` (catalog on a demo visit; "today" follows the world clock inside the errand run endpoint with no token).
     - _Requirements: 14.1, 19.2, 19.3, 28.2, 28.3_
-  - [ ] 8.12 Write the money read's clock
+  - [x] 8.12 Write the money read's clock
     - Builder: Claude.
     - `bank/money-read.ts`: `const now = readNow(pair, demo)` for `moneyPeriod` and `moneyAnswer`; `freshnessLine(oldest, pair.opsClock.now)` stays on the ops clock.
     - Files: `packages/server/src/bank/money-read.ts`.
     - Depends on: 8.2, 8.9.
     - Witness: `npx vitest run packages/server/src/bank packages/server/src/demo/world-clock.property.test.ts`.
     - _Requirements: 18.1, 28.1, 28.4, 28.5, 28.6_
-  - [ ] 8.13 Write the end-to-end demo test
+  - [x] 8.13 Write the end-to-end demo test
     - Builder: Claude.
     - `packages/server/src/demo/e2e.test.ts` (new): over `testRig` with an `anon:` token, reset to Kisses; `read_money` for rocket fuel this month answers from the simulated rows with the fixture's sum; the mail errand finds "mission control" and the calendar errand lists the Friday's events with the fake planner; the hero offer arrives; "What do you know about me?" recalls Jeffrey's lines; the stranger's instruction is never said as an order; Start over keeps all of it; account delete leaves nothing. Needs the persona.
     - Files: `packages/server/src/demo/e2e.test.ts`.
     - Depends on: 3.1, 8.8, 8.9, 8.10, 8.11, 8.12.
     - Witness: `npx vitest run packages/server/src/demo`.
     - _Requirements: 18.1, 18.2, 19.1, 19.2, 19.4, 20.3, 21.1, 21.2, 22.2, 22.3, 22.4, 23.1_
-  - [ ] 8.14 Checkpoint: the server
+  - [x] 8.14 Checkpoint: the server
     - Builder: Claude.
     - `npm test`, `npm run lint`, `npm run typecheck` pass; P1 to P19 green; `scripts/import-boundaries.test.ts`, `scripts/clock-guard.test.ts` and `scripts/machines-index.test.ts` green.
     - Depends on: 8.1 to 8.13.
 
-- [ ] 9. Wave 2, part D2: the voice client's phone flag (builder: Claude)
-  - [ ] 9.1 Pass `phoneOff` into the voice client
+- [x] 9. Wave 2, part D2: the voice client's phone flag (builder: Claude)
+  - [x] 9.1 Pass `phoneOff` into the voice client
     - Builder: Claude.
     - `apps/web/src/client/voice-client.ts`: `VoiceClientDeps.phoneOff?` passed as the third argument of `initialVoiceState`. `apps/web/src/components/app-controllers.ts`: `phoneOff: deps.demo`. New `apps/web/src/client/voice-client.demo.test.ts`: a demo client's first `session.update` holds no phone tool.
     - Files: `apps/web/src/client/voice-client.ts`, `apps/web/src/components/app-controllers.ts`, `apps/web/src/client/voice-client.demo.test.ts`.
@@ -492,11 +492,11 @@ Rules for every task:
     - _Requirements: 14.1_
 
 - [ ] 10. Wave 3, part F: review, the suite and the browser (builder: Claude)
-  - [ ] 10.1 Review the whole lane
+  - [x] 10.1 Review the whole lane
     - Builder: Claude.
     - Read the diff against `requirements.md` and `design.md`; run the semantic review; check each requirement has a test or a witness; list contract questions found while building under the design's "Contract questions", numbered on from 103.
     - Depends on: 8.14, 9.1, 7.14, 3.2.
-  - [ ] 10.2 Run the whole suite and the gates
+  - [x] 10.2 Run the whole suite and the gates
     - Builder: Claude.
     - `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`; `npm run test:emulator` is CI-only. No existing test edited: `git diff --stat` over the lane's commits shows no changed `*.test.*` file that existed before the lane.
     - Depends on: 10.1.
@@ -506,7 +506,7 @@ Rules for every task:
     - On the landing page: the button shows with the switch on and not with it off. Press it; no popup or form; the menu says Jeffrey Kisses and Demo; no "What should I call you?"; open both sheets (simulated, no Connect or Disconnect). Ask: rocket fuel this month; mail from mission control; calendar today; the hero offer; "What do you know about me?"; a stranger's mail. Use typed turns, the visit bar, a bolt, Start over, the Lab and the jar. Sign out and check the tenant and the Firebase user are gone. Arrive at `/lab#demo` signed in with Google: one line, one button, no silent replacement. Record what was seen, and what could not be tried.
     - Depends on: 10.2.
     - _Requirements: 1.1, 1.2, 2.1, 2.7, 3.1, 7.6, 14.1, 16.1, 17.1, 17.2, 18.1, 19.1, 19.2, 20.3, 21.1, 22.2, 23.1, 23.4, 27.4_
-  - [ ] 10.4 Write `docs/briefs/054-report.md`
+  - [x] 10.4 Write `docs/briefs/054-report.md`
     - Builder: Claude.
     - What was built, by whom, what was checked and how, contract questions (96 to 103 and any found), and what was not tried.
     - Depends on: 10.3.
