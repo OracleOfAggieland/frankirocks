@@ -20,6 +20,7 @@ import { turnRoute } from "../routes/turn";
 import { localDate, relInstant } from "../seed/clock";
 import { type BankLine, type CalendarLine, type MailLine, type SeedFixture, bankCodeOf } from "../seed/fixture";
 import { paths } from "../store/paths";
+import { KISSES_FIXTURE_ID } from "../seed/kisses";
 import { ANON, DEMO_FIXTURES, VISITOR, demoRig, resetDemo } from "../testing/demo-fixture";
 import { scriptPlanner } from "../testing/errand-agent";
 import { callRoute, runScheduled, settle } from "../testing/fakes";
@@ -114,6 +115,24 @@ describe.each(DEMO_FIXTURES.map((f) => [f.id, f] as const))("a demo visit end to
       if (out.facts?.kind !== "answered") return;
       expect(out.facts.parts.reduce((s, p) => s + p.spent.cents, 0)).toBe(want.spent);
       expect(out.facts.parts.reduce((s, p) => s + p.moneyBack.cents, 0)).toBe(want.back);
+    }
+    expect(live.calls).toEqual([]);
+  });
+
+  // The brief's own sentence, as a visitor would say it: the model may pass the merchant words or the spending group.
+  it.skipIf(f.id !== KISSES_FIXTURE_ID)("answers \"How much did I spend on rocket fuel this month?\" by merchant words and by group", async () => {
+    const { rig, live, worldStart } = await demoVisit(f);
+    const words = "How much did I spend on rocket fuel this month?";
+    const core = await readCoreDocs({ get: (p) => rig.store.get(VISITOR, p) }, VISITOR);
+    const want = oracle(f, worldStart, ownerClock(core.state.data, rig.deps.clock).worldClock.now, "rocket fuel");
+    expect(want.spent).toBeGreaterThan(0);
+    for (const args of [{ period: "this_month", group: null, merchant: "rocket fuel" }, { period: "this_month", group: "transportation", merchant: null }]) {
+      const ctx = { uid: VISITOR, deps: rig.deps, schedule: rig.sched.schedule, anonymous: true };
+      const work = readMoney(ctx, { turn: ownerTurnRecord(words), args: args as never, generation: 1, deadlineAt: rig.clock.read().opsClock.now + 4_200, noteId: (n) => testId(`e2e-say-${n}`) as never });
+      const out = (await settle(work, rig.clock, rig.timers)).value;
+      expect(out.facts?.kind).toBe("answered");
+      if (out.facts?.kind !== "answered") return;
+      expect(out.facts.parts.reduce((s, p) => s + p.spent.cents, 0)).toBe(want.spent);
     }
     expect(live.calls).toEqual([]);
   });
