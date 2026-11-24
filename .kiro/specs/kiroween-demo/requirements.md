@@ -4,12 +4,12 @@
 
 This spec covers Brief 054, the Kiroween Demo (`docs/briefs/054-kiroween-demo.md`, lane `kiroween-demo`). A visitor presses one button, with no sign-in form, and is in the lab as **Jeffrey Kisses**, an invented and absurdly rich man Franki already knows well. The mail, calendar and bank are simulated at the port. Everything above the port is the real product.
 
-This is part A of the brief, requirements phase only. `design.md` (with the six correctness properties) and `tasks.md` follow in later runs. Behavior and contracts still come from `docs/design/memory-spec-v3.md` and `docs/design/memory-contracts-v2.md`. `docs/design/` is read-only. Where this spec, the brief and the code disagree, or a ruling is ambiguous, the item is in the final section "Open questions", with a recommended answer. The requirements below keep the brief's rulings as given. A criterion that depends on an open question says so.
+This is part A of the brief. `requirements.md` (this file) and `design.md` (with the correctness properties) are written; `tasks.md` follows in a later run. Behavior and contracts still come from `docs/design/memory-spec-v3.md` and `docs/design/memory-contracts-v2.md`. `docs/design/` is read-only. The requirements below keep the brief's rulings as given. The questions the first draft raised were answered by the owner; the answers are folded into the requirements they touch and listed under "Resolved questions" at the end.
 
 ### Prerequisites outside the code
 
 1. The Anonymous sign-in provider is enabled for the Firebase project, and `localhost` and the deployed origins are authorized domains. The owner does this in the Firebase console. Nothing in this spec can.
-2. The simulators seal their tokens under the key the bank and Google connectors already use (`FRANKI_BANK_TOKEN_KEY`). Open question 8 asks whether the demo may also depend on the Plaid and Google client settings.
+2. The simulators seal their tokens under the key the bank and Google connectors already use (`FRANKI_BANK_TOKEN_KEY`). A Demo_Visit needs that key and the model settings, and nothing else (Requirement 10 criterion 11).
 
 ### Who builds what (brief 054, "Parts")
 
@@ -56,7 +56,9 @@ Part C lands the fixture type changes first, so part E has types to write agains
 - **Demo_Button**: The button labelled "Kiroween Demo".
 - **Mailed_Sender**: A sender the trust rule counts as mailed (`senderMailed` in `packages/server/src/google/read.ts`).
 - **Stranger**: A sender who is not a Mailed_Sender.
-- **Denied_List**: The list of words (real names and brands) no line of the persona may hold. Open question 12 says where it lives.
+- **Denied_List**: The list of words no line of the persona may hold: real names and brands, kept broad (large companies and well-known public figures in general), so it reads as a general rule and not as a list about one person. A data file under `packages/server/src/testing/`, written by part B.
+- **Demo_Marker**: The address fragment `#demo` on `/lab`. It carries the press of the Demo_Button from the Landing_Page to the Lab.
+- **World_Clock_Read**: A read over a simulated connector that takes "now" from the visit's world clock (`ownerClock(...).worldClock`) and not from the ops clock (Requirement 28).
 - **Hero_Offer**: The proactive offer built by `TAKEOUT_LATE_V1` (`packages/core/src/patterns/takeout.ts`): takeout on nights with late meetings.
 - **Lab**: The page at `/lab`. **Landing_Page**: the front door at `/`.
 
@@ -68,12 +70,13 @@ Part C lands the fixture type changes first, so part E has types to write agains
 
 #### Acceptance Criteria
 
-1. WHILE the Demo_Switch is on, THE Landing_Page SHALL show the Demo_Button in the hero (open question 10 asks about the top bar).
+1. WHILE the Demo_Switch is on, THE Landing_Page SHALL show the Demo_Button in the hero, and nowhere else on the page. The top bar keeps its "Wake Franki" link unchanged.
 2. WHILE the Demo_Switch is on AND the visitor is signed out, THE Lab's signed-out panel SHALL show the Demo_Button beside the existing Google sign-in, which stays.
-3. WHILE the Demo_Switch is off, THE Landing_Page and THE Lab's signed-out panel SHALL show no Demo_Button, no placeholder and no explanation.
+3. WHILE the Demo_Switch is off, THE Landing_Page and THE Lab's signed-out panel SHALL show no Demo_Button, no placeholder and no explanation. UNTIL the browser has the switch's answer (Requirement 15 criterion 8), they SHALL show nothing for it either.
 4. THE Demo_Button SHALL read "Kiroween Demo", SHALL be reachable and operable by keyboard, and SHALL have a target of at least 44 px.
 5. THE Demo_Button's label SHALL live in the copy files (`apps/web/src/ui/copy.ts` for the Lab, `apps/web/src/ui/copy-landing.ts` for the Landing_Page) and SHALL follow the copy rules (sentence case where it applies, no Banned_Cause_Words).
 6. THE Lab SHALL NOT import anything from `components/landing/` or `ui/landing/` to show its Demo_Button.
+7. THE Landing_Page's Demo_Button SHALL be a link to `/lab#demo`. It SHALL NOT start a sign-in itself, so the Landing_Page needs no Firebase code.
 
 ### Requirement 2: One press opens the lab
 
@@ -86,9 +89,10 @@ Part C lands the fixture type changes first, so part E has types to write agains
 3. EACH anonymous sign-in SHALL create its own Firebase user, and so its own tenant. THE system SHALL NOT use a shared account for any visitor.
 4. IF the anonymous sign-in fails, THEN THE Lab SHALL stay signed out and SHALL show the cause in plain words, without a token or a config value.
 5. WHEN the page is reloaded during a Demo_Visit, THE Browser_Client SHALL restore the same anonymous user and resume the same visit, as a signed-in visit does.
-6. WHEN a signed-out visitor reaches the Lab by the landing's Demo_Button, THE Lab SHALL NOT ask a second time (open question 2 asks how the press crosses the two pages).
-7. IF a signed-in non-anonymous user presses a Demo_Button, THEN the Browser_Client SHALL NOT replace that user's session (open question 3).
-8. THE Browser_Client MAY read Firebase's `isAnonymous` to decide what to display. It SHALL NOT use it to authorize or to choose what the server does.
+6. WHEN the Lab loads at `/lab#demo` AND no user is signed in, THE Browser_Client SHALL sign in anonymously, once, and SHALL then remove the Demo_Marker from the address, so a reload does not repeat the press. THE Lab SHALL NOT ask the visitor a second time.
+7. WHEN the Lab loads at `/lab#demo` AND a signed-in, non-anonymous user is present, THE Browser_Client SHALL NOT replace that user's session. THE Lab SHALL open as that user and SHALL show one line with one button, "Sign out and open the demo". ONLY that button's press SHALL sign the user out (closing their calls and Sessions as a sign-out does) and start the demo.
+8. WHEN the Lab loads at `/lab#demo` AND an anonymous user is already signed in, THE Browser_Client SHALL remove the Demo_Marker and change nothing else.
+9. THE Browser_Client MAY read Firebase's `isAnonymous` to decide what to display and what to offer. It SHALL NOT use it to authorize or to choose what the server does.
 
 ### Requirement 3: The account menu
 
@@ -98,7 +102,7 @@ Part C lands the fixture type changes first, so part E has types to write agains
 
 1. WHILE the visit is a Demo_Visit, THE account menu's trigger SHALL show "Jeffrey Kisses" and SHALL mark the visit as a demo.
 2. THE account menu SHALL NOT show "(no email)" on a Demo_Visit, and `App.tsx` SHALL NOT fall back to that string for an anonymous user.
-3. THE persona's display name in the browser SHALL equal the Kisses_Fixture's own name for Jeffrey, and a test SHALL fail if the two differ, as `scripts/persona-fixture-id.test.ts` does for the fixture ID (open question 11).
+3. THE persona's display name in the browser SHALL equal the Kisses_Fixture's own name for Jeffrey. THE browser SHALL hold it as a constant beside the fixture ID, and a test SHALL fail if the two differ, as `scripts/persona-fixture-id.test.ts` does for the fixture ID.
 4. THE account menu SHALL keep Sign out and Delete my data. Their behavior on a Demo_Visit is Requirement 16.
 5. A signed-in visitor's menu SHALL be unchanged.
 
@@ -114,7 +118,8 @@ Part C lands the fixture type changes first, so part E has types to write agains
 4. THE Anonymous_Flag SHALL be read from the verified token on every request. THE system SHALL NOT read it from a request body, a query string, a header other than the bearer token, a stored field or a browser-held value.
 5. IF the token carries no sign-in provider, or any provider other than `anonymous`, THEN THE Anonymous_Flag SHALL be false.
 6. THE Token_Verifier fakes used by existing tests SHALL keep working without change and SHALL report false.
-7. A server decision that depends on a Demo_Visit (Requirements 5, 7, 10, 14, 15, 16) SHALL take the Anonymous_Flag as an argument. Pure code in `packages/core` SHALL receive it as an argument and SHALL NOT read it from anywhere else. Open question 9 covers work that has no request.
+7. A server decision that depends on a Demo_Visit (Requirements 5, 7, 10, 14, 15, 16) SHALL take the Anonymous_Flag as an argument. Pure code in `packages/core` SHALL receive it as an argument and SHALL NOT read it from anywhere else.
+8. WHERE a request has no verified token (the errand run endpoint, background work), THE Anonymous_Flag SHALL be absent and a decision that needs to know SHALL take it from the connector (Requirement 28). THE system SHALL store no demo flag anywhere.
 
 ### Requirement 5: Anonymous and Jeffrey go together
 
@@ -124,7 +129,7 @@ Part C lands the fixture type changes first, so part E has types to write agains
 
 1. WHEN the Reset_Route receives a request from an Anonymous_Tenant naming the Kisses_Fixture's ID, THE Reset_Route SHALL clone the Kisses_Fixture into that tenant.
 2. WHEN the Reset_Route receives a request from a tenant that is not anonymous naming the Kisses_Fixture's ID, THE Reset_Route SHALL refuse it with the same closed answer as an unknown fixture ID (`scopeError`).
-3. WHEN an Anonymous_Tenant names any fixture other than the Kisses_Fixture, THE Reset_Route SHALL give it nothing (open question 4 asks whether it refuses or substitutes).
+3. WHEN an Anonymous_Tenant names any fixture other than the Kisses_Fixture, THE Reset_Route SHALL refuse it with the same `scopeError`, and SHALL NOT substitute the Kisses_Fixture.
 4. WHEN the Reset_Route refuses a request under criteria 2 or 3, THE Reset_Route SHALL refuse before the fence: no barrier raised, no epoch raised, nothing cleared, no row written.
 5. FOR any reset request, an anonymous tenant SHALL end with the Kisses_Fixture or a refusal, and a non-anonymous tenant SHALL NEVER end with the Kisses_Fixture.
 6. THE Sample_Visit's reset, its fixture ID, its answers and its tests SHALL be unchanged.
@@ -162,7 +167,7 @@ Part C lands the fixture type changes first, so part E has types to write agains
 7. THE name SHALL still pass `promotableName` (at most 40 characters and four words, letters and the allowed marks).
 8. IN a company or unknown audience, THE name SHALL still never reach the Head (existing rule, unchanged).
 9. WHEN Jeffrey says "forget my name" on a Demo_Visit, THE name SHALL be gone from the next thought as for any forget, and Franki SHALL still not offer the first-meeting line.
-10. Brief 054 differs from the owner's ruling M-1 (Nov 18) recorded in `packages/server/src/meet.ts`. Open question 13 covers it.
+10. THE first-meeting exception SHALL be for a Demo_Visit only. Owner ruling M-1 (Nov 18, `packages/server/src/meet.ts`: a Sample_Visit is asked for its name like any other account) stays true for every other visit.
 
 ### Requirement 8: A simulated bank at the port
 
@@ -180,7 +185,7 @@ Part C lands the fixture type changes first, so part E has types to write agains
 8. THE Simulated_Bank SHALL offer no balance. Large deposits are rows.
 9. EACH bank row's amount SHALL be at most `BANK_CENTS_MAX` ($100 billion) in absolute value.
 10. EVERYTHING above the port SHALL be the real product: the pull, the import (`source: "plaid"`), `read_money`, the Gate, the errand runner, the planner, the reader and the trust rule.
-11. Open question 5 covers how fixture bank lines carry a category code and an account.
+11. THE category code and the account of a fixture bank line SHALL come from two new optional fields on `BankLine`: a detailed category code and an account reference. A line that omits the code SHALL take a default from `category` through the existing mapping (`takeout` is `FOOD_AND_DRINK_FAST_FOOD`, `groceries` is `FOOD_AND_DRINK_GROCERIES`, `restaurant` is `FOOD_AND_DRINK_RESTAURANT`), and a line that omits the account SHALL take the fixture's first account. A line that gives a code whose `bankCategoryOf` differs from its `category` SHALL fail the load. The Riley_Fixture SHALL build the same rows as today.
 
 ### Requirement 9: A simulated Google at the port
 
@@ -214,6 +219,7 @@ Part C lands the fixture type changes first, so part E has types to write agains
 8. THE Routing_Port's methods that carry no token (`linkToken`, `exchange`, `exchangeCode`) SHALL go to the live provider, and Requirement 14 keeps a Demo_Visit away from them.
 9. FOR any sequence of calls, a Simulator_Token SHALL never reach a live provider, and a non-simulator token SHALL never reach a simulator.
 10. THE simulators SHALL NOT be reachable from a request body, a query string or a browser-held value.
+11. A Demo_Visit SHALL need only `FRANKI_BANK_TOKEN_KEY` and the model settings every visit needs. WHEN the Plaid or Google client settings are missing, a Demo_Visit SHALL still read the simulated bank, mail and calendar, the Google errand agents SHALL still register for it, and the live half of each Routing_Port SHALL refuse every call. A deployment that is not demo-enabled SHALL behave as today when those settings are missing.
 
 ### Requirement 11: The seed installs the connectors
 
@@ -225,7 +231,7 @@ Part C lands the fixture type changes first, so part E has types to write agains
 2. THE sealed tokens SHALL use the same seal functions and key as a real connection, bound to the tenant and the connector ID, so the existing unseal path reads them.
 3. THE connectors SHALL be the existing connector records. Requirement 6 criterion 5 applies.
 4. THE Gmail and Calendar connectors SHALL show the scopes a real grant would, and SHALL be readable (`isReadableGoogle`).
-5. WHEN a Demo_Visit presses Start over, THE connectors SHALL be connected again after the reset, and the tokens' world start and zone SHALL equal the new visit's (open question 7).
+5. WHEN a Demo_Visit presses Start over, THE reset SHALL install the three connectors again with fresh Simulator_Tokens carrying the new visit's world start and zone, so no token from the earlier visit stays.
 6. WHEN the reset clones the Riley_Fixture, THE connectors SHALL be left as they are today (a connected bank stays; brief 046 ruling 9).
 7. THE bank rows SHALL arrive through the real pull. A reset SHALL clear the bank cursors as it does today, so the next pull imports again.
 8. THE install SHALL be part of the reset's own writes, so a crashed reset is retried or taken over as any other reset is.
@@ -242,7 +248,7 @@ Part C lands the fixture type changes first, so part E has types to write agains
 4. THE Kisses_Fixture's calendar lines SHALL be seeded as fixture Evidence (all revisions) and served by the Simulated_Google (the latest revision) with the same title, start, length, status and response.
 5. THE hero SHALL read only the seeded fixture rows. `read_money` and the errands SHALL read only the connected rows. No total SHALL mix the two (existing rules `isConnectedBankRow` and `isConnectedGoogleRow`, unchanged).
 6. A pending fixture bank line SHALL be served as pending, and SHALL stay out of totals as it does for imported rows.
-7. Open question 6 covers which clock "this month" and "today" use against these rows.
+7. THE simulators SHALL date every row from the visit's world start, so a fixture line and its simulated twin fall on the same civil date and instant. Which "now" a read measures a period or a day from is Requirement 28.
 
 ### Requirement 13: Mail trust comes from the fixture
 
@@ -250,9 +256,9 @@ Part C lands the fixture type changes first, so part E has types to write agains
 
 #### Acceptance Criteria
 
-1. A fixture mail line SHALL be able to say whether its sender passes DMARC, as a new optional field on the line type.
-2. THE Simulated_Google SHALL turn that field into the `Authentication-Results` header that `senderAuthOf` reads (`aligned`, `failed` or `unknown`).
-3. A sender SHALL count as mailed only if Jeffrey's own sent mail to that address is in the fixture and the rest of the rule in `senderMailed` holds (open question 14 covers the brief's wording).
+1. A fixture mail line SHALL be able to say whether its sender passes DMARC, as a new optional field on the line type. A line that omits it SHALL read as a pass, as every seeded message does today.
+2. THE Simulated_Google SHALL turn that field into the `Authentication-Results` header that `senderAuthOf` reads (`aligned`, `failed` or `unknown`), and the seeded row's `senderAuth` SHALL follow the same field, so the two readers agree.
+3. A sender SHALL count as mailed by the rule in `senderMailed` and by no other: Gmail's DMARC verdict passed for the From domain, Jeffrey's own sent mail to that exact address is in the fixture, and the message is not bulk or list mail. THE simulator SHALL supply the DMARC verdict, the sent mail and the bulk markers from the fixture, and `senderMailed` SHALL run unchanged.
 4. THE fixture SHALL NOT carry a field that says "mailed". The answer SHALL come from the trust rule.
 5. THE Kisses_Fixture SHALL have at least one Mailed_Sender and at least one Stranger.
 6. FOR any fixture mail line, the decision to speak it or show it as a card SHALL equal what the trust rule gives for that line's sender.
@@ -263,14 +269,14 @@ Part C lands the fixture type changes first, so part E has types to write agains
 
 #### Acceptance Criteria
 
-1. WHILE the visit is a Demo_Visit, THE phone SHALL NOT be offered: the specialist catalog SHALL report `phone` as unavailable, the call's tool list SHALL NOT hold `make_phone_call`, and a typed reply SHALL NOT offer it. `read_money` SHALL stay offered on a typed turn (open question 9b).
+1. WHILE the visit is a Demo_Visit, THE phone SHALL NOT be offered: the specialist catalog SHALL report `phone` as unavailable, the call's tool list SHALL NOT hold `make_phone_call` or the phone-report tools at any time, including before the first state answer, and a typed reply SHALL NOT offer them. `read_money` SHALL stay offered on a typed turn: the typed turn's single tool flag is split into a phone flag and a money flag.
 2. IF a Demo_Visit's tool route or turn route is asked to place a phone call, THEN THE server SHALL refuse, SHALL place no dial and SHALL write no `phoneCall` row.
 3. IF a Demo_Visit asks for a Plaid Link token or a bank connect, THEN THE server SHALL refuse it before any call to Plaid.
 4. IF a Demo_Visit asks to start a Google sign-in or complete a Google connect, THEN THE server SHALL refuse it before any call to Google.
 5. THE refusals SHALL be closed route errors with no detail in the body, as the existing routes give.
 6. WHILE the visit is a Demo_Visit, web search SHALL stay available as for any visit.
 7. FOR any tool call on a Demo_Visit, no phone dial SHALL be placed and no live Plaid or Google call SHALL be made.
-8. Open question 15 covers the disconnect routes.
+8. IF a Demo_Visit asks to disconnect the bank or Google, THEN THE server SHALL refuse it with the same closed answer. THE disconnects that account delete runs are not routes and SHALL be unaffected. THE guards for Plaid Link and Google sign-in SHALL sit at the routes, because the port methods they would reach carry no token to route by.
 
 ### Requirement 15: A switch
 
@@ -278,14 +284,14 @@ Part C lands the fixture type changes first, so part E has types to write agains
 
 #### Acceptance Criteria
 
-1. THE system SHALL have one environment value, the Demo_Switch, and no other setting SHALL turn the demo on or off (name, default and polarity: open question 1).
+1. THE system SHALL have one environment value, the Demo_Switch, named `FRANKI_DEMO`. THE demo SHALL be on only when its value equals `on`. Absent, empty or any other value SHALL be off. No other setting SHALL turn the demo on or off.
 2. WHILE the Demo_Switch is off, THE Landing_Page and THE Lab SHALL hide the Demo_Button (Requirement 1 criterion 3).
 3. WHILE the Demo_Switch is off, THE Route_Guard SHALL refuse every request whose verified token is anonymous, with the same closed authentication answer as a rejected token, before any route logic and before any store call.
 4. WHILE the Demo_Switch is off, a refused anonymous request SHALL create, read and change nothing.
 5. THE Demo_Switch SHALL NOT change anything for a signed-in non-anonymous user.
 6. THE Demo_Switch SHALL be a named value in `apps/web/apphosting.yaml` and SHALL pass the env sync check.
 7. `/api/health` output SHALL stay unchanged.
-8. THE browser SHALL learn whether the switch is on by a route that is not tied to a tenant, never by guessing (open question 1).
+8. THE browser SHALL learn whether the switch is on from one unauthenticated `GET` route that answers `{ "enabled": true }` or `{ "enabled": false }` and nothing else. THE route SHALL read no tenant, SHALL be separate from `/api/health`, and SHALL answer with `cache-control: no-store`.
 
 ### Requirement 16: Leaving cleans up
 
@@ -297,7 +303,7 @@ Part C lands the fixture type changes first, so part E has types to write agains
 2. THE account delete SHALL remove the tenant and the anonymous Firebase user, as Delete my data does, including the bank and Google disconnects, which SHALL go to the simulators.
 3. A Demo_Visit's delete SHALL NOT call Plaid or Google.
 4. WHEN a Demo_Visit uses Delete my data, THE result SHALL be the same as a sign-out.
-5. IF the delete does not finish, THEN the behavior is open question 16.
+5. IF the delete does not finish within the sign-out limit (`SIGN_OUT_LIMIT_MS`, the one a sign-out already waits), THEN THE Browser_Client SHALL sign out locally anyway, so a visitor who chose to leave is never stuck. A tenant left behind is the walked-away case of criterion 6.
 6. THE system SHALL NOT add a cleanup job for demo tenants a visitor walks away from.
 
 ### Requirement 17: The Bank sheet and the Gmail and Calendar sheet
@@ -308,8 +314,8 @@ Part C lands the fixture type changes first, so part E has types to write agains
 
 1. WHILE the visit is a Demo_Visit, THE Bank sheet SHALL show one connected bank, named for the persona, with its accounts, and SHALL say plainly that it is simulated.
 2. WHILE the visit is a Demo_Visit, THE Gmail and Calendar sheet SHALL show Jeffrey's mail and calendar as connected, and SHALL say plainly that they are simulated.
-3. NEITHER sheet SHALL offer Connect or Disconnect on a Demo_Visit, and the way-in entries that start Plaid Link or Google sign-in SHALL NOT show.
-4. THE sheets SHALL show only what the server answered, with no field of their own, and no amounts, as they do today. Open question 11 covers where "simulated" comes from.
+3. NEITHER sheet SHALL offer Connect or Disconnect on a Demo_Visit. The way-in buttons that open the sheets stay.
+4. THE sheets SHALL show only what the server answered, with no field of their own, and no amounts, as they do today. THE bank and Google status answers SHALL carry one new closed boolean `simulated`, set by the server from the Anonymous_Flag and present only when true, and a sheet SHALL say "simulated" only when the server says so. THE bank status answer SHALL report `canConnect` false on a Demo_Visit.
 5. THE sheets' copy SHALL live in `apps/web/src/ui/copy.ts` and follow the copy rules.
 6. A Sample_Visit's sheets and a real connection's sheets SHALL be unchanged.
 
@@ -324,7 +330,7 @@ Part C lands the fixture type changes first, so part E has types to write agains
 3. THE model SHALL give only the question's shape (period, group, merchant) and SHALL NOT give an amount, a total or a date.
 4. THE answer SHALL say how fresh the read is, as `read_money` does today.
 5. THE answer SHALL NOT give advice and SHALL NOT call a pattern a cause.
-6. THE Kisses_Fixture SHALL hold rocket-fuel rows that make this question answerable (open question 6 covers "this month").
+6. THE Kisses_Fixture SHALL hold rocket-fuel rows in the last days of its window, so this question has rows to answer from (Requirement 28 says which "now" it is read against).
 7. THE question SHALL work on a call and on a typed turn.
 
 ### Requirement 19: Mail and calendar questions
@@ -334,11 +340,11 @@ Part C lands the fixture type changes first, so part E has types to write agains
 #### Acceptance Criteria
 
 1. WHEN the visitor says "Check my mail for anything from mission control", THE system SHALL answer through the mail errand over the Simulated_Google.
-2. WHEN the visitor says "What's on my calendar today?", THE system SHALL answer through the calendar errand over the Simulated_Google (open question 6 covers "today").
+2. WHEN the visitor says "What's on my calendar today?", THE system SHALL answer through the calendar errand over the Simulated_Google, with "today" read against the visit's world clock (Requirement 28).
 3. THE specialist catalog SHALL report `mail` and `calendar` as ready on a Demo_Visit, so `start_errand` is offered.
 4. THE answers SHALL pass through the real errand runner, planner, reader and Gate, so a third-party line is spoken or carded by the trust rule.
 5. THE Kisses_Fixture SHALL hold mail from a sender the question can find ("mission control" is an invented sender) and at least one event today.
-6. THE questions SHALL work on a call. Open question 9b covers typed turns.
+6. THE questions SHALL work on a call, which is the only path that offers errands to any account. Typed turns SHALL NOT offer them, on a Demo_Visit as on every visit.
 
 ### Requirement 20: The hero offer
 
@@ -350,7 +356,7 @@ Part C lands the fixture type changes first, so part E has types to write agains
 2. ON the clone's Friday, THE pattern SHALL yield an offer: status `eligible` and `mostly`, with the 21-date window, at least 14 covered dates, at least 6 posted takeout orders, and a majority of both count and cents on nights with an accepted, confirmed, opaque, timed meeting at or after 18:00.
 3. THE offer SHALL arrive by the same route as for the Riley_Fixture (the proactive Moment, the card, and the Gate).
 4. THE offer's wording SHALL be an association only and SHALL NOT call the pattern a cause.
-5. THE persona SHALL set a small takeout habit beside very large everything else, so the contrast is the joke (Requirement 24).
+5. THE persona SHALL set a small takeout habit beside very large everything else, so the contrast is the joke (Requirement 25).
 6. EVERY number in the offer SHALL trace to a source row.
 
 ### Requirement 21: "What do you know about me?"
@@ -410,7 +416,7 @@ Part C lands the fixture type changes first, so part E has types to write agains
 #### Acceptance Criteria
 
 1. EVERYTHING in the persona SHALL be invented: merchants, senders, events, addresses, places and Jeffrey himself. NO line SHALL name a real person, company, product, place of business or trademark, or describe a real person's life, family, looks, health or politics.
-2. NO line of the persona SHALL hold a word from the Denied_List.
+2. NO line of the persona SHALL hold a word from the Denied_List. THE Denied_List SHALL be kept broad: large companies and well-known public figures in general, so it reads as a general rule and not as a list about one person.
 3. FRANKI SHALL treat Jeffrey as anyone else: warm, a little amused, never fawning and never mocking.
 4. JEFFREY SHALL be likeable: he calls his mother, tips well, and forgets to cancel subscriptions.
 5. THE joke SHALL be the size of ordinary things: rocket fuel next to a late library fee, a very large deposit next to a $9 sandwich, a launch window that keeps landing on dinner.
@@ -437,107 +443,42 @@ Part C lands the fixture type changes first, so part E has types to write agains
 #### Acceptance Criteria
 
 1. THE Kisses_Fixture SHALL load through the real Seed_Loader with no `SeedLoadError`, and `TAKEOUT_LATE_V1` SHALL yield an offer on the clone's Friday.
-2. THE design SHALL carry these as fast-check properties, red first where possible: Agreement (Requirement 12), No crossing (Requirement 10), Pairing (Requirement 5), No way out (Requirement 14), Trust (Requirement 13) and Taste (Requirement 25).
+2. THE design SHALL carry these as fast-check properties, red first where possible: Agreement (Requirement 12), No crossing (Requirement 10), Pairing (Requirement 5), No way out (Requirement 14), Trust (Requirement 13) and Taste (Requirement 25), and any further property the design needs.
 3. THE Sample_Visit's existing tests SHALL pass unchanged.
 4. A Demo_Visit SHALL be walked on the specimens page or in the Lab, in the browser.
 5. WHEN the lane is done, THE report SHALL be written to `docs/briefs/054-report.md`: what was built, by whom, what was checked and how, contract questions, and what was not tried.
 
-## Open questions
 
-Each question has a recommended answer. None is decided here. The design records the answer under "Contract questions" when it touches `docs/design/`.
+### Requirement 28: Reads over a simulated connector use the visit's world clock
 
-### 1. The switch: name, default, and how the browser learns it
+**User Story:** As a visitor, I want "this month" and "today" to mean the visit's month and day, so that the answers follow the visit bar and the bolts and find the rows Jeffrey's data holds.
 
-The brief says one environment value "turns the demo off", and that the button is hidden and anonymous tokens are refused. It names no variable, says nothing about the default, and does not say how a page that can be built ahead of time learns the value (ISR and `use cache` are banned).
+#### Acceptance Criteria
 
-**Recommended:** a variable named `FRANKI_DEMO` in `apps/web/apphosting.yaml`. The demo is on only when it equals `on`. Absent or any other value is off. This fails closed, so a deployment that forgets the setting never accepts anonymous users. The deployment for Kiroween sets it to `on`. The browser learns the state from one unauthenticated `GET` route that returns `{ enabled }` and nothing else (never added to `/api/health`), and the button renders nothing until it answers.
+1. WHEN the money read measures a period ("this month", "last week" and the rest), THE read SHALL take "now" from the visit's world clock IF the visit reads on the world clock (criterion 3), and from the ops clock otherwise.
+2. WHEN the mail and calendar agents resolve a time phrase ("today", "yesterday", "this week"), THE agents SHALL take "now" from the visit's world clock IF the visit reads on the world clock, and from the ops clock otherwise.
+3. A visit reads on the world clock when its request carries a verified token whose Anonymous_Flag is true. WHERE the request carries no token (the errand run endpoint, background work), a visit reads on the world clock when a connector of the tenant holds a token that, unsealed, is a Simulator_Token. THE system SHALL store no flag for this. A request whose Anonymous_Flag is false SHALL read on the ops clock without opening any connector.
+4. THE freshness line of a money read ("last read 5 minutes ago") and every lease, deadline and expiry SHALL stay on the ops clock, since a pull really happens in real time.
+5. EVERY other visit SHALL read on the ops clock exactly as today (brief 046 ruling 10 and review fix E3 are unchanged for a live connector).
+6. A Demo_Visit's reads SHALL NOT read the wall clock. "Now" arrives as an argument from `ownerClock`.
 
-### 2. How the landing page's press becomes a signed-in lab
+## Resolved questions
 
-The landing page and the lab are separate pages. The brief says "one press opens the lab. No popup, no form". It does not say where the anonymous sign-in runs.
+The first draft of this file ended with sixteen open questions. The owner answered each one. The answers are folded into the requirements above. In the list below, "Q" is the question's number in that draft.
 
-**Recommended:** the landing button is a link to `/lab#demo`. The lab, finding the marker and no user, signs in anonymously and then removes the marker. The landing page then needs no Firebase code, and the hash never reaches the server. A reload of `/lab` after sign-in restores the same user (Requirement 2 criterion 5).
-
-### 3. A signed-in user presses the button
-
-`signInAnonymously` replaces the current Firebase user. A real user who follows `/lab#demo` would lose their session without being asked. The brief is silent.
-
-**Recommended:** if a non-anonymous user is signed in, the marker is ignored and the lab opens as that user. A real session is never replaced. This costs nothing to a visitor.
-
-### 4. An anonymous tenant names the Riley fixture
-
-Ruling 3 says the reset gives an anonymous tenant "the Kisses fixture and nothing else". It does not say whether a request that names another fixture is refused or answered with Kisses. The Pairing property allows "the Kisses fixture or a refusal".
-
-**Recommended:** refuse, with the same `scopeError` as an unknown fixture. A request that names the Riley fixture is a wrong request, and answering with a different fixture hides a bug in the browser. The browser sends the Kisses ID for an anonymous user. The same answer for "wrong fixture for you" and "no such fixture" tells a probe nothing.
-
-### 5. Fixture bank lines do not carry what `read_money` reads
-
-`BankLine` has `category` with four values (`takeout`, `groceries`, `restaurant`, `other`) and no account. `read_money` groups by Plaid's detailed category code (20 groups, plus income and transfers, which are not spending) and a merchant filter, and the Bank sheet shows accounts. "Rocket fuel", large deposits and the persona's accounts cannot be told apart from the four values.
-
-**Recommended:** add two optional fields to `BankLine`: a detailed category code, and an account reference. Ruling 13 allows this. A line that omits the code takes a default from `category` through the existing mapping, so the Riley_Fixture builds the same rows. The Agreement property uses the same `groupOf` as `read_money`. Rocket fuel is read by merchant name, which the question already supports.
-
-### 6. "This month" and "today" use the real-time clock, and the fixture is dated from the clone's Friday
-
-The code reads bank and Google data against the ops clock (brief 046 ruling 10 in `bank/money-read.ts`, and review fix E3 in `errands/google-agents.ts`), "as facts in real time". The clone starts on the latest local Friday at 08:40, and every fixture row is dated from it. So "this month" is the real month, and "today" is the real day, which can be up to six days after the fixture's Friday. On the first days of a month, "this month" can hold few or no rows, and "what's on my calendar today?" can find nothing. The Time_Badge and the visit bar would also disagree with the answer.
-
-**Recommended:** on a Demo_Visit only, the money read and the errand windows use the visit's world clock (`ownerClock` already returns it in fixture mode), so "today" follows the visit bar and the bolts. Every other visit keeps the ops clock, so no existing behavior changes. The flag arrives as an argument (Requirement 4 criterion 7). This also keeps Agreement exact, since the simulator and the seeded rows share one date origin. Place the rocket-fuel rows and today's events accordingly.
-
-### 7. Simulator tokens and Start over
-
-The Simulator_Token carries the visit's world start and zone. A reset changes both (`cloneWorldStart`, the zone sent now). Brief 046 ruling 9 keeps a connected bank across a reset, and the brief does not say the tokens are rewritten.
-
-**Recommended:** the reset reinstalls the three connectors with fresh Simulator_Tokens for the new world start and zone (Requirement 11 criterion 5), in the same step that reseeds. A stale token would date the simulated rows differently from the seeded Evidence and break Agreement.
-
-### 8. Does the demo depend on Plaid and Google settings?
-
-`bankRuntime` and `googleRuntime` read `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`, the Google OAuth settings and the token key, and throw a `ConfigError` if any is missing. `errandAgentsOf` registers the Google agents only when Google is configured. A deployment without live credentials would then refuse the demo, though the simulators need none of them.
-
-**Recommended:** a Demo_Visit needs only `FRANKI_BANK_TOKEN_KEY` (and the model settings every visit needs). The Routing_Port builds the simulator half from the token key alone, and the Google agents register when either Google or the demo is configured. The live half still needs its own settings, so non-demo behavior is unchanged.
-
-### 9. Work without a request, and typed turns
-
-**a. Background work.** Ruling 2 says the flag is read from the verified token on every request, never from a stored flag. Background work (the extraction worker, jobs after `schedule`, the Cloud Function heartbeat) has no token. **Recommended:** nothing that must differ on a demo visit runs without a request. Every demo-dependent point (the Head name line, the first meeting, tool offering, port routing, the guards) is on a request path. Routing needs no flag at all, because it follows the token. The design lists each background path and shows none needs the flag, and where one does, the request that schedules it hands it the flag.
-
-**b. Typed turns.** The typed reply offers its tools under one `allowPhone` flag (phone, money and read-phone together), and offers no errand tool. Two consequences. First, turning the phone off for a Demo_Visit needs the money tool kept, so the flag must be split. Second, the mail and calendar questions in the brief are call-path only, as on every account today. **Recommended:** split the flag so `read_money` stays on typed turns of a Demo_Visit; keep the mail and calendar questions as call-path requirements (Requirement 19 criterion 6), and say so in the report. Adding errands to typed turns is a feature beyond this brief.
-
-### 10. Where the Demo_Button goes on the landing page
-
-The brief names the "landing page" and lists both `Hero.tsx` and `TopBar.tsx` under seams. The top bar already has a "Wake Franki" link to the lab.
-
-**Recommended:** the Demo_Button goes in the hero only. The top bar is read for layout and left as it is, so the page has one primary way in and the top bar's link to the lab keeps meaning "sign in".
-
-### 11. Where the persona's name and "simulated" come from in the browser
-
-The sheets show only what the server answered. The account menu needs the persona's name, and both sheets must say "simulated", but a Firebase anonymous user has no name, and the bank and Google views carry no simulated marker.
-
-**Recommended:** the browser holds the persona's display name as a constant next to the fixture ID, pinned to the fixture by a test (Requirement 3 criterion 3). The bank and Google status views get one new optional closed boolean `simulated`, set by the server from the Anonymous_Flag on those status routes. This is a wire field, not a record kind. The sheets say "simulated" only when the server says so, which keeps "only true things on screen".
-
-### 12. Where the Denied_List lives
-
-The Taste property needs a list of denied words (real names and brands). The brief does not say who writes it or where it is kept.
-
-**Recommended:** part B writes it, as a data file under `packages/server/src/testing/` (read by the Taste property and by the persona-author skill), and the taste steering file refers to it by path. It is data only, so a reviewer can extend it without touching code. A word that is a common English word and a brand stays off the list, and the skill says to avoid the brand sense in the persona by choosing a different word.
-
-### 13. The brief's first-meeting rule against owner ruling M-1
-
-`packages/server/src/meet.ts` records owner ruling M-1 (Nov 18): "A sample visit is asked like any other account." Brief 054 ruling 5 says the first-meeting line is never offered on a Demo_Visit.
-
-**Recommended:** the brief wins for a Demo_Visit only, because the visitor plays Jeffrey. M-1 stays true for the Sample_Visit. The design records this as an exception to M-1 under "Contract questions", and Requirement 7 criterion 3 keeps the Sample_Visit as it is.
-
-### 14. What "mailed" means
-
-The brief says a sender counts as mailed "only if Jeffrey's own sent mail to that address is in the fixture". The code (`senderMailed` in `google/read.ts`) needs three things: Gmail's DMARC verdict passed for the From domain, the owner's sent mail holds that exact address, and the message is not bulk or list mail. The brief's sentence is one of the three.
-
-**Recommended:** keep the code's rule and read the brief's sentence as the fixture's half of it. The simulator supplies the other two from the fixture (the DMARC field, the bulk marker), so the real rule runs unchanged and Requirement 13 stays true to ruling 6 ("everything above the port is the real product").
-
-### 15. Disconnect and the routes that carry no token
-
-Ruling 10 names three refusals: the phone, Plaid Link and Google sign-in. It does not mention the disconnect routes, which a hand-made request could call. A disconnect on a demo connector would reach the simulator and leave the visit with no bank and no way to connect one (the sheets offer neither Connect nor Disconnect). Also, `linkToken`, `exchange` and `exchangeCode` carry no token, so the Routing_Port cannot route them by token.
-
-**Recommended:** the server also refuses `bank/disconnect` and `google/disconnect` on a Demo_Visit, with the same closed answer. The internal disconnects that account delete runs are not routes and are unaffected. The guards for Link and Google sign-in sit at the routes (Requirement 14), not in the port.
-
-### 16. Sign-out when the delete does not finish
-
-Delete my data for a signed-in user does not sign out if the delete fails, so the user can press it again. An anonymous user who signs out cannot sign back in to the same tenant, so a failed delete before sign-out leaves a tenant nobody can reach. The brief adds no cleanup job.
-
-**Recommended:** on a Demo_Visit, sign-out waits for the delete for a bounded time (the same `SIGN_OUT_LIMIT_MS` as a sign-out), and then signs out whether or not it finished. A tenant left behind is the walked-away case the brief already accepts, and a visitor is never stuck in a visit they chose to leave.
+1. **Q1, the switch.** Ruling: `FRANKI_DEMO`, on only when it equals `on`, plus one unauthenticated `GET` route that returns `{ enabled }` and nothing else. In Requirements 1 and 15.
+2. **Q2, the landing press.** Ruling: the landing button links to `/lab#demo`, and the Lab signs in anonymously when it finds the marker. In Requirements 1 and 2.
+3. **Q3, a real user presses the button.** Ruling (changed from the draft): a signed-in, non-anonymous user is never replaced silently. The Lab opens as that user and shows one line with one button, "Sign out and open the demo". Only that press signs them out and starts the demo. In Requirement 2.
+4. **Q4, an anonymous tenant names the Riley fixture.** Ruling: refuse, with the same `scopeError` as an unknown fixture. In Requirement 5.
+5. **Q5, fixture bank lines.** Ruling: two optional fields on `BankLine`, a detailed category code and an account reference, with the default mapping so the first persona builds the same rows. In Requirement 8.
+6. **Q6, "this month" and "today".** Ruling (with one change): reads over a simulated connector use the visit's world clock. The anonymous flag decides where a request token exists. Where none exists (the errand run endpoint, background work), the connector decides: one whose unsealed token is a Simulator_Token reads on the world clock. No stored flag. In Requirement 28.
+7. **Q7, Start over.** Ruling: the reset reinstalls the three connectors with fresh Simulator_Tokens. In Requirement 11.
+8. **Q8, settings.** Ruling: a Demo_Visit needs only the token key and the model settings. In Requirement 10.
+9. **Q9, background work and typed turns.** Ruling, both parts: split the typed-turn flag so `read_money` stays; mail and calendar questions stay call-path only. In Requirements 14 and 19.
+10. **Q10, where the button goes.** Ruling: the hero only, plus the Lab's signed-out panel. In Requirement 1.
+11. **Q11, the persona's name and "simulated" in the browser.** Ruling: a constant pinned to the fixture by a test, and a closed `simulated` boolean on the two status answers. In Requirements 3 and 17.
+12. **Q12, the Denied_List.** Ruling: a data file written by part B, kept broad (large companies and well-known public figures in general). In Requirement 25 and the Glossary.
+13. **Q13, the first meeting against owner ruling M-1.** Ruling: an exception for a Demo_Visit only. In Requirement 7.
+14. **Q14, what "mailed" means.** Ruling: keep the code's rule (DMARC pass, sent mail to the exact address, not bulk), with the simulator supplying the three facts. In Requirement 13.
+15. **Q15, disconnect and token-less routes.** Ruling: refuse the disconnect routes on a Demo_Visit, and guard Link and Google sign-in at the routes. In Requirement 14.
+16. **Q16, sign-out when the delete does not finish.** Ruling: wait a bounded time, then sign out anyway. In Requirement 16.
