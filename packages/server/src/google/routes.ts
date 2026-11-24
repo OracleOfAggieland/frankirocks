@@ -35,7 +35,11 @@ import {
   tsFromMs,
 } from "@franki/core";
 import { ALLOWED_ORIGINS } from "../auth/guard";
-import { ConfigError } from "../config/env";
+import { type Env, ConfigError } from "../config/env";
+import { demoGoogleConfig } from "../demo/config";
+import { refuseDemo } from "../demo/guards";
+import { refusingGoogle, routingGoogle } from "../demo/routing";
+import { demoEnabled } from "../demo/switch";
 import { completeRequest, LEASE_MS, type RequestKey } from "../ledger/request";
 import { cFields } from "../records";
 import { barrierError, dependencyError, inFlightError, originError, parseError, staleError } from "../routes/errors";
@@ -59,9 +63,28 @@ export interface GoogleRuntime {
   config: GoogleConfig;
 }
 
-/** The Google port and settings for one request. A missing or malformed setting is a ConfigError (CONFIG). */
+/**
+ * The Google port and settings for one request. A missing or malformed setting is a ConfigError (CONFIG).
+ *
+ * Brief 054 (R10): the port routes by token, so a demo visit's simulator tokens reach the simulated Google and any
+ * other token reaches Google. A `deps.google` override replaces the whole port, routing included.
+ */
 export function googleRuntime(ctx: RouteContext): GoogleRuntime {
-  return { port: ctx.deps.google ?? liveGoogle, config: googleConfig(ctx.deps.env) };
+  const { config, liveConfigured } = googleConfigFor(ctx);
+  return { port: ctx.deps.google ?? routingGoogle(liveConfigured ? liveGoogle : refusingGoogle), config };
+}
+
+/**
+ * Google's settings, or the demo's when Google has none. As for the bank (`bank/routes.ts`): the demo's only with the
+ * switch on and a request not known to be a real user's, so a verified non-anonymous token answers CONFIG as before.
+ */
+function googleConfigFor(ctx: Pick<RouteContext, "anonymous"> & { deps: { env: Env } }): { config: GoogleConfig; liveConfigured: boolean } {
+  try {
+    return { config: googleConfig(ctx.deps.env), liveConfigured: true };
+  } catch (error) {
+    if (error instanceof ConfigError && demoEnabled(ctx.deps.env) && ctx.anonymous !== false) return { config: demoGoogleConfig(ctx.deps.env), liveConfigured: false };
+    throw error;
+  }
 }
 
 const nowOf = (ctx: RouteContext) => ctx.deps.clock.read().opsClock.now;
@@ -325,7 +348,9 @@ export async function connectGoogle(ctx: RouteContext, req: GoogleConnectRequest
 // GET /api/google/status: Firestore only, never Google, writes nothing.
 
 export async function googleStatus(ctx: RouteContext): Promise<GoogleStatusResponse> {
-  googleConfig(ctx.deps.env);
+  googleConfigFor(ctx);
+  // Brief 054 (R17): a demo visit's sheet says the mail and calendar are simulated, and offers no Connect.
+  if (ctx.anonymous === true) return { google: await viewOf(ctx), simulated: true };
   return { google: await viewOf(ctx) };
 }
 
@@ -439,13 +464,20 @@ export function disconnectGoogle(ctx: RouteContext, req: GoogleDisconnectRequest
 export const googleStartRoute: RouteSpec<Record<string, never>> = {
   name: "googleStart",
   parse: ({ body }) => parseWith(GoogleStartRequest, body) as Record<string, never>,
-  run: (ctx) => googleStart(ctx),
+  // Brief 054 (R14.4): a demo visit never starts a Google sign-in; `exchangeCode` carries no token to route by.
+  run: (ctx) => {
+    refuseDemo(ctx);
+    return googleStart(ctx);
+  },
 };
 
 export const googleConnectRoute: RouteSpec<GoogleConnectRequest> = {
   name: "googleConnect",
   parse: ({ body }) => parseWith(GoogleConnectRequest, body),
-  run: (ctx, req) => connectGoogle(ctx, req),
+  run: (ctx, req) => {
+    refuseDemo(ctx);
+    return connectGoogle(ctx, req);
+  },
 };
 
 export const googleStatusRoute: RouteSpec<null> = {
@@ -460,5 +492,9 @@ export const googleStatusRoute: RouteSpec<null> = {
 export const googleDisconnectRoute: RouteSpec<GoogleDisconnectRequest> = {
   name: "googleDisconnect",
   parse: ({ body }) => parseWith(GoogleDisconnectRequest, body),
-  run: (ctx, req) => disconnectGoogle(ctx, req),
+  // R14.8: account delete calls `disconnectGoogle` itself, unguarded, so a demo visit's delete still revokes.
+  run: (ctx, req) => {
+    refuseDemo(ctx);
+    return disconnectGoogle(ctx, req);
+  },
 };

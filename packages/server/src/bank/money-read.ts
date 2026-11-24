@@ -41,6 +41,7 @@ import {
   type Infer,
 } from "@franki/core";
 import { withDeadline } from "../clock/timers";
+import { isDemoVisit, readNow } from "../demo/visit";
 import { ownerClock, readCoreDocs } from "../core-docs";
 import { forgetRowsFor } from "../forget/snapshot-rows";
 import { foregroundEC, storeReader } from "../head-build";
@@ -189,7 +190,11 @@ export async function readMoney(ctx: RouteContext, x: MoneyReadInput): Promise<M
   const core = await readCoreDocs(reader, uid);
   const pair = ownerClock(core.state.data, deps.clock);
   // Ruling 10: the bank's rows are facts in real time, so "this month" is the ops clock's month in the owner's zone.
-  const now = pair.opsClock.now;
+  // Brief 054 (R28, contract question 96): a demo visit's simulated rows are dated from the visit's world start, so
+  // its periods are measured on the world clock. Freshness and the notes' expiry stay on the ops clock (R28.4).
+  const demo = await isDemoVisit({ uid, anonymous: ctx.anonymous, env: deps.env, hasher: deps.hasher }, reader);
+  const now = readNow(pair, demo);
+  const ops = pair.opsClock.now;
   const zone = core.state.data.currentZone;
 
   const scanned = await scanBankEvidence(reader, uid, banks);
@@ -246,9 +251,9 @@ export async function readMoney(ctx: RouteContext, x: MoneyReadInput): Promise<M
   // How fresh: the oldest last read among the banks answered from; a bank still importing says so.
   const lasts = connectors.map((c) => (c.lastSuccessAt === null ? null : msFromTs(c.lastSuccessAt)));
   const oldest = lasts.some((l) => l === null) ? null : Math.min(...(lasts as number[]));
-  const extra = [freshnessLine(oldest, now)];
+  const extra = [freshnessLine(oldest, ops)];
   if (connectors.some((c: Connector) => !c.bank!.historicalComplete)) extra.push("The bank is still importing older purchases, so some may be missing.");
-  const expiresAt = tsFromMs(now + NOTE_TTL_MS);
+  const expiresAt = tsFromMs(ops + NOTE_TTL_MS);
   const notes: W[] = facts.parts.map((p, i) => ({
     noteId: x.noteId(i),
     rev: 1,

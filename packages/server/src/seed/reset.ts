@@ -18,11 +18,14 @@
  * clear leaves nothing of an earlier visit in the same tenant.
  */
 import { type CoreDocs, type ID, type Infer, type ResetRequest, type SeedResetResponse, type Session, msFromTs, tsFromMs } from "@franki/core";
+import { BANK_ENV_VARS } from "../bank/config";
 import { resetBankCursors } from "../bank/connector";
+import { buildDemoConnectors, writeDemoConnectors } from "../demo/install";
 import { readCoreDocs } from "../core-docs";
 import { type RequestKey, completeRequest } from "../ledger/request";
-import { barrierError, configError, dependencyError, scopeError, staleError } from "../routes/errors";
+import { barrierError, configError, dependencyError, staleError } from "../routes/errors";
 import type { RouteContext } from "../routes/runtime";
+import { sealKeysFrom } from "../sealed";
 import { LIVE_STATUSES, beginCloseInTx } from "../sessions";
 import { paths } from "../store/paths";
 import type { StoredDoc } from "../store/port";
@@ -32,7 +35,7 @@ import { CLEAR_PAGE, clearTenant } from "./clear";
 import { cloneWorldStart } from "./clock";
 import { isRealAccount, liveAccountError, readLiveData } from "./live";
 import { loadSeed, seedCoreDocs } from "./load";
-import { FIXTURES } from "./persona";
+import { pairedFixture } from "./pairing";
 
 export type ResetReq = Infer<typeof ResetRequest>;
 export type ResetRes = Infer<typeof SeedResetResponse>;
@@ -118,8 +121,10 @@ async function closeCalls(ctx: RouteContext): Promise<void> {
 
 export async function resetVisit(ctx: RouteContext, req: ResetReq, key: RequestKey): Promise<ResetRes> {
   const { uid, deps } = ctx;
-  const fixture = FIXTURES.get(req.fixtureId);
-  if (fixture === undefined) throw scopeError();
+  // Brief 054 ruling 3: a demo fixture only for an anonymous tenant, and only a demo fixture for one (R5).
+  const fixture = pairedFixture(ctx.anonymous, req.fixtureId);
+  // A demo visit's connectors are sealed under the bank's key; a missing key answers CONFIG before anything is fenced.
+  const demoKeys = fixture.demo === undefined ? null : sealKeysFrom(deps.env, BANK_ENV_VARS.tokenKey);
   const namespace = namespaceFor(ctx, req);
   const opId = opIdFor(ctx, namespace);
 
@@ -145,6 +150,12 @@ export async function resetVisit(ctx: RouteContext, req: ResetReq, key: RequestK
     throw error;
   }
 
+  // Brief 054 R11: a demo visit's bank, Gmail and Calendar, connected, with tokens for this visit's world and zone.
+  const demoDocs =
+    demoKeys === null
+      ? null
+      : buildDemoConnectors({ uid, hasher: deps.hasher, fixture, keys: demoKeys, worldStart, zone, opsNow: deps.clock.read().opsClock.now, core: { epoch: prior.epoch.data.epoch, policyRev: prior.epoch.data.policyRev } });
+
   const res: ResetRes = { fixtureNamespace: namespace, worldClock: tsFromMs(worldStart), sessionId: null };
   await deps.store.transaction(uid, async (tx) => {
     const core = await readCoreDocs(tx, uid);
@@ -159,8 +170,10 @@ export async function resetVisit(ctx: RouteContext, req: ResetReq, key: RequestK
       prior: { epoch: core.epoch.data, state: core.state.data, counters: core.counters.data, rules: core.rules.data, bundle: core.bundle.data },
     });
     for (const id of ["epoch", "state", "counters", "rules", "bundle"] as const) tx.update(paths.core(uid, id), { ...docs[id], updatedAt: tsFromMs(deps.clock.read().opsClock.now) });
-    // Brief 046 ruling 9: a connected bank stays; its rows were cleared, so the next pull imports again.
-    await resetBankCursors(tx, uid, deps.clock.read().opsClock.now);
+    // Brief 046 ruling 9: a connected bank stays; its rows were cleared, so the next pull imports again. A demo visit's
+    // three connectors are written again instead (contract question 102), in this same transaction (R11.8).
+    if (demoDocs === null) await resetBankCursors(tx, uid, deps.clock.read().opsClock.now);
+    else await writeDemoConnectors(tx, uid, demoDocs);
     await completeRequest(tx, key, res, deps.clock.read().opsClock.now);
   });
   deps.log("seed.reset", { rows: rows.groups.reduce((n, g) => n + g.writes.length, 0) });

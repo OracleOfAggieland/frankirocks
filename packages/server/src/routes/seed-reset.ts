@@ -6,6 +6,7 @@
 import { ResetRequest } from "@franki/core";
 import { ensureCoreDocs, readCoreDocs } from "../core-docs";
 import { type CallStatus, twilioCallStatus } from "../phone/carrier-read";
+import { pairedFixture } from "../seed/pairing";
 import { phoneCallOut, phoneOutError } from "../seed/phone-out";
 import { type ResetReq, type ResetRes, resetVisit } from "../seed/reset";
 import { readSnapshot } from "../store/port";
@@ -13,6 +14,8 @@ import { mutation } from "./mutation";
 import { type RouteContext, type RouteSpec, parseWith } from "./runtime";
 
 export async function seedReset(ctx: RouteContext, req: ResetReq, callStatus: CallStatus = twilioCallStatus): Promise<ResetRes> {
+  // Brief 054 ruling 3 (R5.4): the pairing is checked first, so a refused fixture writes nothing and raises no barrier.
+  pairedFixture(ctx.anonymous, req.fixtureId);
   // Brief 038 finding 3: a visitor's first reset comes before any open, so its own zone creates the core documents.
   await ensureCoreDocs(ctx.uid, ctx.deps, req.clientZone);
   // Brief 038 finding 10: not while a phone call of this user is still out. Refused before the request entry, so a
