@@ -14,38 +14,67 @@ concurrency:
 permissions:
   contents: read
 
+# Four kinds of check, run side by side: lint and typecheck, the unit and property tests split into shards, the build,
+# and the Firestore rules tests on the emulator. A run passes only when every job passes. The history scan is its own
+# workflow, secret-scan.yml.
 jobs:
-  verify:
-    name: Lint, typecheck, test, build
+  checks:
+    name: Lint and typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
 
-      # The Firestore emulator needs Java.
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "21"
-
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
+
+  test:
+    name: Test (shard ${{ matrix.shard }} of 4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # Every shard runs to the end, so one failing shard doesn't hide another's results.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Vitest gives each shard a fixed quarter of the test files, so the four shards together run the whole of
+      # `npm test`, each file once.
+      - run: npm test -- --shard=${{ matrix.shard }}/4
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Includes the web app's postbuild checks (specimens-absent, three-chunk-check).
       - run: npm run build
 
-      - name: Firestore rules tests (emulator)
-        run: npm run test:emulator
-
       # Fails closed: a missing or empty output folder, or a grep that could not read one (exit 2), fails the step.
-      # The history scan is its own workflow, secret-scan.yml.
       - name: No API keys in build output
         run: |
           for dir in apps/web/.next/static functions/dist; do
@@ -64,3 +93,24 @@ jobs:
             echo "::error::grep could not read the build output (exit $status), so it could not be checked for keys."
             exit 1
           fi
+
+  emulator:
+    name: Firestore rules tests (emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # The Firestore emulator needs Java.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - run: npm ci
+      - run: npm run test:emulator
