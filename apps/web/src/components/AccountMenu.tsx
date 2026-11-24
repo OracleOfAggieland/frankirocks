@@ -3,6 +3,7 @@
 // small menu with "Sign out" and "Delete my data". Delete opens a modal confirmation (a native <dialog>, so focus is
 // held inside and Escape cancels) that says what goes and that it can't be undone; nothing is deleted until its
 // own "Delete everything" is pressed. While the delete runs, neither button can be pressed again.
+// Brief 054: on a demo visit the trigger shows the persona's name (passed as `email`) and a small "Demo" mark.
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { COPY } from "../ui/copy";
 import { FOCUS, QUIET_BUTTON, TARGET } from "./surfaces/classes";
@@ -11,8 +12,14 @@ const TRIGGER = `${TARGET} ${FOCUS} inline-flex min-w-0 items-center gap-2 round
 const ITEM = `${TARGET} ${FOCUS} flex w-full items-center rounded-control px-3 text-left text-sm transition-colors duration-(--dur-quick) hover:bg-night-2 focus-visible:bg-night-2`;
 const DANGER = `${TARGET} ${FOCUS} inline-flex items-center justify-center rounded-control bg-ember px-5 text-base font-medium text-night-0 transition-[transform,filter] duration-(--dur-quick) hover:brightness-110 active:translate-y-0.5 disabled:opacity-50 disabled:hover:brightness-100`;
 
+/** The small mark beside the persona's name on a demo visit: brass linework, nothing filled. */
+const DEMO_MARK = "shrink-0 rounded-chip border border-brass/70 px-2 font-mono text-xs leading-5 text-brass";
+
 export interface AccountMenuProps {
+  /** The signed-in email, or on a demo visit the persona's name. */
   email: string;
+  /** Brief 054: a demo visit, marked as one beside the name. Absent for a signed-in owner, whose menu is unchanged. */
+  demo?: boolean;
   onSignOut: () => void;
   /** Resolves true once everything is deleted (the screen then signs out), false if it didn't finish. */
   onDeleteAccount: () => Promise<boolean>;
@@ -28,7 +35,7 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-export function AccountMenu({ email, onSignOut, onDeleteAccount }: AccountMenuProps) {
+export function AccountMenu({ email, demo = false, onSignOut, onDeleteAccount }: AccountMenuProps) {
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const root = useRef<HTMLDivElement>(null);
@@ -104,13 +111,18 @@ export function AccountMenu({ email, onSignOut, onDeleteAccount }: AccountMenuPr
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={`${COPY.account.menu}: ${email}`}
+        aria-label={demo ? `${COPY.account.menu}: ${email}, ${COPY.demo.mark}` : `${COPY.account.menu}: ${email}`}
         onClick={() => setOpen((o) => !o)}
         className={TRIGGER}
       >
         <span data-testid="signed-in-email" className="truncate font-mono text-xs text-ink-dim">
           {email}
         </span>
+        {demo ? (
+          <span data-demo-mark="" aria-hidden="true" className={DEMO_MARK}>
+            {COPY.demo.mark}
+          </span>
+        ) : null}
         <Chevron open={open} />
       </button>
       {open ? (

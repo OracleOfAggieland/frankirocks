@@ -47,6 +47,8 @@ export const LANDING = {
     lede: "Franki joins your health, finances, and productivity with one powerful memory system. It understands the complex relationships between them and helps you win at life.",
     wake: "Wake Franki",
     tour: "Watch a win come alive",
+    /** Brief 054: the Kiroween Demo, a plain link into the Lab. The event's name keeps its capitals. */
+    demo: "Kiroween Demo",
     alive: "It's alive!",
     scroll: "Scroll to start the tour",
   },

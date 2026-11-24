@@ -6,6 +6,7 @@ import { createContext, useEffect, useMemo, useRef, useState, useSyncExternalSto
 import { createApiClient, deleteAccount as deleteAccountCall } from "../client/api";
 import { type AuthClient, type AuthState, createAuthClient } from "../client/auth";
 import { type BrowserClock, createBrowserClock } from "../client/clock";
+import { DEMO_HASH, DEMO_NAME, KISSES_FIXTURE_ID, fetchDemoEnabled, hasDemoMarker } from "../client/demo";
 import { DEBUG_POLL_MS, type DebugPanelModel } from "../client/debug-panel";
 import { publicEnv, readFirebaseConfig } from "../client/firebase-config";
 import type { LiveTest } from "../client/live-test";
@@ -24,8 +25,10 @@ import { ABSENT_PHONE, type PhoneView } from "../ui/phone/phone-call";
 import { ScreenController, type ScreenSnapshot } from "../ui/hooks/screen-controller";
 import { createLevelMeter } from "../ui/levels/level-meter";
 import { createSoundEngine } from "../ui/sound/engine";
+import { type MarkerAuth, markerAction } from "../ui/demo/marker";
 import { EMPTY_COPIES, type SignedInControllers, createSignedInControllers, onForgetComplete } from "./app-controllers";
 import { AuthPanel } from "./AuthPanel";
+import { DemoSwitchLine } from "./DemoSwitchLine";
 import { Avatar } from "./avatar/Avatar";
 import { AvatarAudioContext } from "./avatar/avatar-audio";
 import { Stage } from "./avatar/Stage";
@@ -120,6 +123,22 @@ function browserStorage(): Storage | null {
   }
 }
 
+/** Brief 054: who is here, as the demo marker needs it. */
+function markerAuth(state: AuthState): MarkerAuth {
+  if (state.kind === "loading") return "loading";
+  if (state.kind === "signedOut") return "signedOut";
+  return state.anonymous === true ? "signedInDemo" : "signedInReal";
+}
+
+/** Brief 054 (R2.6): takes `#demo` off the address, so a reload does not repeat the press. Keeps path and query. */
+function clearDemoMarker(): void {
+  try {
+    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+  } catch {
+    // The address can't be changed here: the press still happened once, and the ref below keeps it once.
+  }
+}
+
 /** The output audio element: muted until a verified Permit unmutes it (KV02). */
 function outputAudio(): AudioLike {
   const el = new Audio();
@@ -159,8 +178,15 @@ export function App() {
   const authRef = useRef<AuthClient | null>(null);
   const [state, setState] = useState<AuthState>({ kind: "loading" });
   /** The signed-in user's ID token source, set with the auth state; null while signed out. */
-  const [tokens, setTokens] = useState<{ idToken: () => Promise<string>; uid: string } | null>(null);
+  // Brief 054: `anonymous` is a demo visit, read from Firebase for what the screen offers only (R2.9).
+  const [tokens, setTokens] = useState<{ idToken: () => Promise<string>; uid: string; anonymous: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  // Brief 054: the demo switch's answer, null until GET /api/demo has answered (R1.3).
+  const [demoEnabled, setDemoEnabled] = useState<boolean | null>(null);
+  // Brief 054: the address carries the demo marker. Read on the client only; the server render has no address.
+  const marked = useSyncExternalStore(noSubscribe, () => hasDemoMarker(window.location.hash), () => false);
+  // Brief 054 (R2.6): the marker is acted on once per page load.
+  const markerDone = useRef(false);
   // R21: read once on the client; the server snapshot is false, so the panel never renders on the server.
   const debugOn = useSyncExternalStore(noSubscribe, () => debugVisible(process.env.NODE_ENV, window.location.search), () => false);
   const [meter] = useState(() => createLevelMeter(() => sharedAudio()?.getContext() ?? null));
@@ -188,10 +214,28 @@ export function App() {
     const client = createAuthClient(config.config);
     authRef.current = client;
     return client.subscribe((user) => {
-      setState(user === null ? { kind: "signedOut", error: null } : { kind: "signedIn", email: user.email ?? "(no email)", uid: user.uid });
-      setTokens(user === null ? null : { idToken: () => user.getIdToken(), uid: user.uid });
+      // Brief 054 (R3.2): an anonymous user is the demo persona, shown by name and never as "(no email)".
+      setState(
+        user === null
+          ? { kind: "signedOut", error: null }
+          : user.isAnonymous
+            ? { kind: "signedIn", email: DEMO_NAME, uid: user.uid, anonymous: true }
+            : { kind: "signedIn", email: user.email ?? "(no email)", uid: user.uid },
+      );
+      setTokens(user === null ? null : { idToken: () => user.getIdToken(), uid: user.uid, anonymous: user.isAnonymous });
     });
   }, [config]);
+
+  // Brief 054: the switch is read once. Until it answers, no demo button shows and the marker waits.
+  useEffect(() => {
+    let live = true;
+    void fetchDemoEnabled((input, init) => fetch(input, init)).then((on) => {
+      if (live) setDemoEnabled(on);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   useEffect(() => {
     sharedAudio(); // listens for the Visit's first gesture (R11.7, R19.2)
@@ -219,6 +263,8 @@ export function App() {
       inputLevel: () => meter.rawInput(),
       uid: tokens.uid,
       storage: browserStorage(),
+      // Brief 054: a demo visit resets to the demo persona; a signed-in visit to the first, as before.
+      ...(tokens.anonymous ? { fixtureId: KISSES_FIXTURE_ID, demo: true } : {}),
     });
   }, [tokens, debugOn, meter, clock]);
 
@@ -357,8 +403,52 @@ export function App() {
       const limit = new Promise<void>((resolve) => setTimeout(resolve, SIGN_OUT_LIMIT_MS));
       await Promise.race([Promise.all([signedIn.voice?.signOut(), signedIn.typed.closeSession(SIGN_OUT_LIMIT_MS)]), limit]);
     }
+    // Brief 054 (R16.1, R16.5): leaving a demo visit deletes its tenant and its anonymous user first, as Delete my
+    // data does, but waits at most the same limit: a visitor who chose to leave is never stuck.
+    if (state.kind === "signedIn" && state.anonymous === true && signedIn !== null) {
+      const limit = new Promise<void>((resolve) => setTimeout(resolve, SIGN_OUT_LIMIT_MS));
+      await Promise.race([deleteAccountCall(signedIn.api).catch(() => false), limit]);
+    }
     await auth.signOut();
   };
+
+  // Brief 054 (R2.1, R2.4): the Kiroween Demo press, or the marker on a signed-out Lab. No popup and no form; a
+  // failure stays signed out and says so in plain words.
+  const startDemo = async () => {
+    const auth = authRef.current;
+    if (auth === null || busy) return;
+    setBusy(true);
+    const failure = await auth.signInAnonymously();
+    setBusy(false);
+    if (failure !== null) setState({ kind: "signedOut", error: failure });
+  };
+
+  // Brief 054 (R2.7): only this press signs a real user out, as a sign-out does, and then starts the demo.
+  const switchToDemo = async () => {
+    if (busy) return;
+    setBusy(true);
+    await signOut();
+    setBusy(false);
+    // The marker goes with the press, and the offer with it.
+    clearDemoMarker();
+    await startDemo();
+  };
+
+  // Brief 054 (R2.6 to R2.8): what the Lab does at /lab#demo, decided once the auth state and the switch are known.
+  useEffect(() => {
+    if (markerDone.current) return;
+    const action = markerAction({ hash: window.location.hash, auth: markerAuth(state), enabled: demoEnabled });
+    if (action === "none") return;
+    markerDone.current = true;
+    if (action === "clear") return clearDemoMarker();
+    // A real user keeps their session: the offer is drawn from the marker below, and only its press acts. Marking
+    // this done means a later sign-out from the menu does not start the demo on its own.
+    if (action === "offerSwitch") return;
+    clearDemoMarker();
+    void startDemo();
+    // startDemo reads the auth client from a ref; the decision needs only the auth state and the switch's answer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, demoEnabled]);
 
   // Delete my data: hang up and close the Session first, as a sign-out does, so nothing writes while the tenant is
   // deleted. Only after the server answers that everything is gone does the screen sign out.
@@ -373,15 +463,26 @@ export function App() {
   };
 
   const auth = (
-    <AuthPanel state={state} busy={busy} configMissing={config.ok ? null : config.missing} onSignIn={() => void signIn()} onSignOut={() => void signOut()} onDeleteAccount={deleteAccount} />
+    <AuthPanel
+      state={state}
+      busy={busy}
+      configMissing={config.ok ? null : config.missing}
+      onSignIn={() => void signIn()}
+      onSignOut={() => void signOut()}
+      onDeleteAccount={deleteAccount}
+      demoEnabled={demoEnabled}
+      onDemo={() => void startDemo()}
+    />
   );
+  // Brief 054 (R2.7): the one line and one button, only while the real user who arrived at the marker is here.
+  const demoNotice = marked && markerAction({ hash: DEMO_HASH, auth: markerAuth(state), enabled: demoEnabled }) === "offerSwitch" ? <DemoSwitchLine busy={busy} onSwitch={() => void switchToDemo()} /> : null;
 
   return (
     <MotionConfig reducedMotion={snap.input.reducedMotion ? "always" : "never"}>
       <ForgetCompleteContext.Provider value={forget}>
         {/* The three.js ghost reads Franki's voice and the mic through the Level_Meter's second analysers (brief 013, D-1). */}
         <AvatarAudioContext.Provider value={meter.audio}>
-          <Screen snap={snap} auth={auth} controllers={signedIn} clock={clock} radio={radio} xray={xray} liveTest={liveTest} />
+          <Screen snap={snap} auth={auth} notice={demoNotice} controllers={signedIn} clock={clock} radio={radio} xray={xray} liveTest={liveTest} />
         </AvatarAudioContext.Provider>
       </ForgetCompleteContext.Provider>
     </MotionConfig>
@@ -421,6 +522,7 @@ function StageFor({ snap, phone, radio, onRadio, xray, onXray, errandText }: { s
 function Screen({
   snap,
   auth,
+  notice,
   controllers,
   clock,
   radio,
@@ -429,6 +531,8 @@ function Screen({
 }: {
   snap: ScreenSnapshot;
   auth: React.ReactNode;
+  /** Brief 054: the demo's switch line for a signed-in user who arrived at /lab#demo; null otherwise. */
+  notice: React.ReactNode;
   controllers: SignedInControllers | null;
   clock: BrowserClock;
   radio: RadioWatch | null;
@@ -692,6 +796,7 @@ function Screen({
       lab={<Lab counters={mem.surfaces.lab?.counters ?? []} limits={mem.surfaces.lab?.limits ?? []} receipt={receipt} />}
       visit={
         <div className="flex flex-col items-center gap-2">
+          {notice}
           {visitBar}
           {sheetNote === null ? null : (
             <p role="status" data-sheet-note="" className="text-xs text-ink-dim">

@@ -40,6 +40,13 @@ export interface ControllerDeps {
   /** Brief 027: the signed-in user, whose visit is kept in `storage` across reloads. */
   uid?: string;
   storage?: StorageLike | null;
+  /** Brief 054: the fixture this user's visit resets to. Absent: the first persona's (a signed-in sample visit). */
+  fixtureId?: string;
+  /**
+   * Brief 054: a demo visit (an anonymous user), for what the screen offers only; the server decides from the token.
+   * Wave 2 (part D2) passes it to the Voice_Client as `phoneOff`, so the call offers no phone tool.
+   */
+  demo?: boolean;
 }
 
 export interface SignedInControllers {
@@ -169,6 +176,7 @@ export function createSignedInControllers(deps: ControllerDeps): SignedInControl
     api,
     uid: deps.uid ?? "",
     storage: deps.storage ?? null,
+    ...(deps.fixtureId === undefined ? {} : { fixtureId: deps.fixtureId }),
     newId: () => randomId(),
     call: voice === null ? null : { inCall: () => voice.getSnapshot().phase !== "CLOSED", hangUp: () => voice.hangUp(), subscribe: voice.subscribe },
     zone: () => clock.read().worldClock.zone,

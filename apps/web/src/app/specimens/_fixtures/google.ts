@@ -10,6 +10,8 @@ export const GOOGLE_OFF: GoogleView = { email: null, mail: "off", calendar: "off
 export const GOOGLE_CONNECTED: GoogleView = { email: "dana.whitlock@example.com", mail: "connected", calendar: "connected", needsReconnect: false, connectedAt: "2026-11-13T20:05:00.000Z" };
 export const GOOGLE_MAIL_ONLY: GoogleView = { ...GOOGLE_CONNECTED, calendar: "off" };
 export const GOOGLE_EXPIRED: GoogleView = { ...GOOGLE_CONNECTED, mail: "expired", calendar: "expired", needsReconnect: true };
+/** Brief 054: a demo visit's mail and calendar, as the simulated Google answers them. A made-up address. */
+export const GOOGLE_SIMULATED: GoogleView = { ...GOOGLE_CONNECTED, email: "jeffrey@kisses.example" };
 
 /** The machine's state after `events`, from `from`. */
 export function googleAfter(events: GoogleEvent[], from: GoogleState = INITIAL_GOOGLE): GoogleState {
@@ -25,6 +27,14 @@ export function googleShowing(google: GoogleView): GoogleState {
   return googleAfter([
     { kind: "opened", at },
     { kind: "statusAnswered", seq: 1, answer: { ok: true, google }, at },
+  ]);
+}
+
+/** Brief 054: opened on a demo visit: the server answered a simulated connection. */
+export function googleSimulated(): GoogleState {
+  return googleAfter([
+    { kind: "opened", at },
+    { kind: "statusAnswered", seq: 1, answer: { ok: true, google: GOOGLE_SIMULATED, simulated: true }, at },
   ]);
 }
 
@@ -49,5 +59,6 @@ export function googleSpecimens(): { id: string; label: string; state: GoogleSta
     { id: "confirming", label: "Disconnect asked", state: googleAfter([{ kind: "disconnectPressed", at }], connected) },
     { id: "disconnecting", label: "Disconnecting", state: googleAfter([{ kind: "disconnectPressed", at }, { kind: "disconnectYes", requestId: "req-1", at }], connected) },
     { id: "disconnected", label: "Disconnected", state: googleAfter([{ kind: "disconnectPressed", at }, { kind: "disconnectYes", requestId: "req-1", at }, { kind: "disconnectAnswered", seq: 2, answer: { ok: true, google: GOOGLE_OFF }, at }], connected) },
+    { id: "simulated", label: "Simulated (demo visit)", state: googleSimulated() },
   ];
 }

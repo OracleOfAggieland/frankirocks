@@ -7,6 +7,7 @@
 import type { CSSProperties } from "react";
 import { LANDING } from "../../ui/copy-landing";
 import { FOCUS, TARGET } from "../surfaces/classes";
+import { DemoLink } from "./DemoLink";
 import { BoltGlyph } from "./TopBar";
 
 type WordStyle = CSSProperties & { "--i": number };
@@ -71,6 +72,8 @@ export function Hero({ className = "" }: { className?: string }) {
           <BoltGlyph className="size-4" />
           {hero.wake}
         </a>
+        {/* Brief 054: shows only once the demo switch has answered on. */}
+        <DemoLink />
         <a
           href="#loop"
           className={`${TARGET} ${FOCUS} group inline-flex items-center gap-2 rounded-control px-2 text-base text-ink-dim transition-colors duration-(--dur-quick) hover:text-ink`}

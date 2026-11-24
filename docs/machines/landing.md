@@ -2,6 +2,8 @@
 
 The front door at `/` (brief 015). Everything here runs on sample data and the page's own frame clock; nothing reaches a route. Nothing reachable from the lab imports these files (`scripts/ui-boundaries.mjs`).
 
+One exception reaches a route (brief 054): the hero's Kiroween Demo link, `DemoLink` in `apps/web/src/components/landing/DemoLink.tsx`, reads `GET /api/demo` once through `fetchDemoEnabled` in `apps/web/src/client/demo.ts` and draws nothing until that answer is exactly `{ enabled: true }`. It is a plain link to `/lab#demo` with no state of its own beyond that one answer, so it is not a machine; it starts no sign-in and holds no Firebase code. The Lab's own button is `DemoButton` in `apps/web/src/components/DemoButton.tsx`, so the Lab still imports nothing from here.
+
 ### `landing.stepClock`
 
 | Field | Value |
