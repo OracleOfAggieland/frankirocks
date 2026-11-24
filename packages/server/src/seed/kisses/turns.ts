@@ -47,7 +47,7 @@ export const TURNS: TurnLine[] = [
         kind: "fact",
         predicate: "employment.role",
         subject: "self",
-        value: { kind: "text", text: "runs a small rocket company" },
+        value: { kind: "text", text: "the founder of a small rocket company" },
         args: { employerRef: "klw", managerRef: null },
         mentions: [mention("klw", "organization", "Kisses Launch Works")],
         spans: [q("I run Kisses Launch Works, a small rocket company")],

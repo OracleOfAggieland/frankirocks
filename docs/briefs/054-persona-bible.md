@@ -296,7 +296,7 @@ The items, turn by turn:
 
 - `turn-intro`
   - His name: `{ act: "statement", kind: "fact", predicate: "identity.name", subject: "self", value: { kind: "text", text: "Jeffrey Kisses" }, args: {}, spans: [q("I'm Jeffrey Kisses")] }`.
-  - His work: `{ act: "statement", kind: "fact", predicate: "employment.role", subject: "self", value: { kind: "text", text: "runs a small rocket company" }, args: { employerRef: "klw", managerRef: null }, mentions: [mention("klw", "organization", "Kisses Launch Works")], spans: [q("I run Kisses Launch Works, a small rocket company")] }`.
+  - His work: `{ act: "statement", kind: "fact", predicate: "employment.role", subject: "self", value: { kind: "text", text: "the founder of a small rocket company" }, args: { employerRef: "klw", managerRef: null }, mentions: [mention("klw", "organization", "Kisses Launch Works")], spans: [q("I run Kisses Launch Works, a small rocket company")] }`.
 - `turn-allergy`: the one allergy, in his own words, as a fact (the seed cannot write a hard rule): `fact("food", "allergic to peanuts", [q("I'm allergic to peanuts")], "allergy", "S1")`. This is the only item in the persona with label `allergy`, and no other line of any limb mentions peanuts or any allergy.
 - `turn-mornings`: `{ act: "soft_pref", kind: "preference", predicate: "preference.style", subject: "self", value: { kind: "enum", code: "concise" }, args: { context: "morning", dimension: "detail" }, spans: [q("Mornings, keep it short")] }`.
 - `turn-tobias`

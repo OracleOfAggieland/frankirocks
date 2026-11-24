@@ -64,6 +64,18 @@ export function parseStoredVisit(raw: string | null): StoredVisit | null {
   return { visitId: o.visitId, fixtureNamespace: ns, worldClockMs: world };
 }
 
+/**
+ * Brief 054: a demo visit's user is deleted when the visit ends, so the visit kept for that user goes with it.
+ * Without this every demo visit left one entry behind, under a user that no longer exists.
+ */
+export function dropStoredVisit(storage: Pick<Storage, "removeItem"> | null, uid: string): void {
+  try {
+    storage?.removeItem(`${VISIT_STORAGE_PREFIX}${uid}`);
+  } catch {
+    // A storage that refuses keeps the entry: a visit ID under a user that is gone.
+  }
+}
+
 export class VisitModel {
   private state: VisitState = INITIAL_VISIT;
   private listeners = new Set<() => void>();

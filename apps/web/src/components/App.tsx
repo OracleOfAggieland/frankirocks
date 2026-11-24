@@ -11,6 +11,7 @@ import { DEBUG_POLL_MS, type DebugPanelModel } from "../client/debug-panel";
 import { publicEnv, readFirebaseConfig } from "../client/firebase-config";
 import type { LiveTest } from "../client/live-test";
 import type { TypedState, TypedTurns } from "../client/typed-turns";
+import { dropStoredVisit } from "../client/visit-model";
 import { type AudioLike, type PeerLike, SIGN_OUT_LIMIT_MS } from "../client/voice-client";
 import { TRANSCRIBE_VAR, transcribeModel } from "../client/voice-config";
 import type { MemoryState } from "../client/memory-model";
@@ -405,11 +406,14 @@ export function App() {
     }
     // Brief 054 (R16.1, R16.5): leaving a demo visit deletes its tenant and its anonymous user first, as Delete my
     // data does, but waits at most the same limit: a visitor who chose to leave is never stuck.
-    if (state.kind === "signedIn" && state.anonymous === true && signedIn !== null) {
+    const demoUid = state.kind === "signedIn" && state.anonymous === true ? state.uid : null;
+    if (demoUid !== null && signedIn !== null) {
       const limit = new Promise<void>((resolve) => setTimeout(resolve, SIGN_OUT_LIMIT_MS));
       await Promise.race([deleteAccountCall(signedIn.api).catch(() => false), limit]);
     }
     await auth.signOut();
+    // The visit kept in this browser for that user goes too: the user is gone, and the next press makes a new one.
+    if (demoUid !== null) dropStoredVisit(browserStorage(), demoUid);
   };
 
   // Brief 054 (R2.1, R2.4): the Kiroween Demo press, or the marker on a signed-out Lab. No popup and no form; a
@@ -459,6 +463,7 @@ export function App() {
     await Promise.race([Promise.all([signedIn.voice?.signOut(), signedIn.typed.closeSession(SIGN_OUT_LIMIT_MS)]), limit]);
     if (!(await deleteAccountCall(signedIn.api))) return false;
     await auth.signOut();
+    if (state.kind === "signedIn" && state.anonymous === true) dropStoredVisit(browserStorage(), state.uid);
     return true;
   };
 

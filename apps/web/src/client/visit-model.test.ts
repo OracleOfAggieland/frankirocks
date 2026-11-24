@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ADVANCE_ANSWER, CLONE_WORLD, PROACTIVE_ANSWER, RESET_ANSWER, THURSDAY_WORLD, vid } from "../app/specimens/_fixtures/visit";
 import { type FetchLike, createApiClient } from "./api";
 import { ADVANCE_PATH, PERSONA_FIXTURE_ID, RESET_PATH, VISIT_STORAGE_PREFIX } from "./seed-guesses";
-import { CALL_END_LIMIT_MS, type CallLike, VisitModel, parseStoredVisit } from "./visit-model";
+import { CALL_END_LIMIT_MS, type CallLike, VisitModel, dropStoredVisit, parseStoredVisit } from "./visit-model";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -151,6 +151,18 @@ describe("VisitModel", () => {
     expect(parseStoredVisit("{not json")).toBeNull();
     expect(parseStoredVisit(JSON.stringify({ visitId: "" }))).toBeNull();
     expect(parseStoredVisit(JSON.stringify({ visitId: "v", fixtureNamespace: 3, worldClockMs: "x" }))).toEqual({ visitId: "v", fixtureNamespace: null, worldClockMs: null });
+  });
+
+  it("drops one user's stored visit and leaves the others (brief 054)", () => {
+    const kept = new Map([
+      [`${VISIT_STORAGE_PREFIX}gone`, "a"],
+      [`${VISIT_STORAGE_PREFIX}stays`, "b"],
+    ]);
+    dropStoredVisit({ removeItem: (k) => void kept.delete(k) }, "gone");
+    expect([...kept.keys()]).toEqual([`${VISIT_STORAGE_PREFIX}stays`]);
+    // No storage, or one that refuses, is not an error.
+    dropStoredVisit(null, "gone");
+    dropStoredVisit({ removeItem: () => { throw new Error("refused"); } }, "gone");
   });
 
   it("a LIVE answer is stored, and a reload of a real account is live with no reset (brief 038 finding 1)", async () => {
