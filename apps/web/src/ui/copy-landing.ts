@@ -75,7 +75,7 @@ export const LANDING = {
     },
     rules: {
       eyebrow: "House rules",
-      title: "Six rules, wired in.",
+      title: "Five rules, wired in.",
       body: "A friendly monster keeps its word. These hold in every part of the lab.",
     },
     build: {
@@ -172,11 +172,6 @@ export const LANDING = {
       id: "email",
       title: "Email can inform. It can't give orders.",
       body: "Nothing in your inbox can change what Franki believes about you, or what it's allowed to do.",
-    },
-    {
-      id: "yes",
-      title: "Your yes, on the record.",
-      body: "Every action needs your OK first and leaves an audit entry after.",
     },
   ],
   build: {

@@ -1,5 +1,5 @@
 "use client";
-// House rules: six riveted glass plaques, one per rule, three across from 1024 px, two from 640 px, one
+// House rules: five riveted glass plaques, one per rule, three across from 1024 px, two from 640 px, one
 // below. Each has a brass number plate, a blueprint line glyph of its rule, the title and the body. They
 // materialize once, on STAGGER, as each enters view; one already in view when the page loads stays as it
 // is. On hover a plaque lifts 2 px and its glyph turns from stitch to brass-hi (lower.css).
@@ -72,15 +72,6 @@ export const GLYPHS: Record<RuleId, ReactNode> = {
       <circle cx={38} cy={35} r={6.5} />
       <circle cx={38} cy={31.9} r={0.9} {...DOT} />
       <path d="M38 34.6v4" />
-    </>
-  ),
-  // A clipboard with a tick and two written lines: the yes, and the record of it.
-  yes: (
-    <>
-      <path d="M18 9h-5.5a2.5 2.5 0 0 0-2.5 2.5v28a2.5 2.5 0 0 0 2.5 2.5h23a2.5 2.5 0 0 0 2.5-2.5v-28a2.5 2.5 0 0 0-2.5-2.5H30" />
-      <rect x={18} y={6} width={12} height={6} rx={1.5} />
-      <path d="M15.5 22.5l4 4 7.5-8.5" />
-      <path d="M15.5 32h17M15.5 37h11" />
     </>
   ),
 };

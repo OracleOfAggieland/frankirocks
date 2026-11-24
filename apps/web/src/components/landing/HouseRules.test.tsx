@@ -19,12 +19,12 @@ describe("HouseRules", () => {
     expect(out).not.toContain("<h1");
   });
 
-  it("shows the six rules in order, each numbered on a brass plate", () => {
+  it("shows the five rules in order, each numbered on a brass plate", () => {
     const out = html();
     const ids = [...out.matchAll(/data-rule="([a-z]+)"/g)].map((m) => m[1]);
     expect(ids).toEqual(LANDING.rules.map((r) => r.id));
     const plates = [...out.matchAll(/data-plate="brass"[^>]*>([^<]*)</g)].map((m) => m[1]);
-    expect(plates).toEqual(["01", "02", "03", "04", "05", "06"]);
+    expect(plates).toEqual(["01", "02", "03", "04", "05"]);
     for (const r of LANDING.rules) {
       expect(out).toContain(`<h3 class="text-lg text-ink">${esc(r.title)}</h3>`);
       expect(out).toContain(esc(r.body));
@@ -38,7 +38,7 @@ describe("HouseRules", () => {
   it("makes each plaque glass with four rivets and a decorative glyph of its own", () => {
     const out = html();
     const plaques = out.split('data-plaque=""').slice(1);
-    expect(plaques).toHaveLength(6);
+    expect(plaques).toHaveLength(5);
     for (const p of plaques) {
       const body = p.split("</li>")[0];
       expect(body.match(/data-rivet=""/g)).toHaveLength(4);
