@@ -177,6 +177,18 @@ Also found, and left alone: from an origin the guard does not list (a dev server
 an anonymous user and then every write is refused, so the Lab never loads and the user stays in Firebase with no
 data. The three listed origins are not affected.
 
+## Switched on (Nov 24)
+
+`FRANKI_DEMO` was then set to `on` and the build deployed (`e7a1761`). One visit was walked on
+`https://frankirocks.com`, again with no model and no call:
+
+- The landing shows the button, and `GET /api/demo` answers `{"enabled":true}` with `no-store`.
+- One press opened the Lab as Jeffrey Kisses, first time. The reset took 3.9 s on the server.
+- "Today, 6 PM" moved the clock on the first press. The advance took 0.7 s.
+- The Bank sheet read as it did locally: simulated, Brassmoor Savings and Trust, three accounts.
+- Sign out answered 200 in 1.0 s, and the Firebase user and the tenant's core documents were gone afterwards. No
+  entry was left in the browser's storage.
+
 ## Shipping order
 
 Deploy this build before the Anonymous provider is enabled in Firebase Authentication, never after. A build from
@@ -191,8 +203,9 @@ off, and pairs one with the demo persona, with those three refused, while it is 
   mail from mission control, the calendar, the hero offer, "What do you know about me?", a stranger's mail) were not
   made: each is a paid model call, and mail and calendar also need a call with a microphone.
 - **A live call on a demo visit,** and the phone refusal as the model would meet it.
+- **The Gmail and Calendar sheet, What I know and Start over on the deployed site.** They were seen on the dev server
+  only.
 - **Arriving at `/lab#demo` signed in with Google** in a real browser. Its one line and one button were seen on the
   specimens page only.
-- **A demo visit on the deployed site.** The switch is still off there.
 - **The whole suite and the build after the four fixes above.** The demo, seed, client and App tests, the web
   typecheck and lint were run.
