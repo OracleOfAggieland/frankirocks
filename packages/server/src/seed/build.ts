@@ -11,6 +11,12 @@
  * IDs follow from the Evidence IDs as live ones do, and entity IDs come from `resolveMention`, unsalted.
  */
 import {
+  BANK_ACCOUNTS_MAX,
+  BANK_CATEGORY_CODE,
+  BANK_CENTS_MAX,
+  bankCategoryOf,
+  promotableName,
+  safeName,
   type ClaimsOutput as ClaimsOutputT,
   ClaimsOutput,
   type Evidence,
@@ -53,7 +59,7 @@ import { paths } from "../store/paths";
 import { extractJobId } from "../worker/extract-jobs";
 import { workJob } from "../worker/jobs";
 import { addDays, localDate, relInstant } from "./clock";
-import type { AuthoredClaims, AuthoredItem, AuthoredSignal, AuthoredSpan, BankLine, CalendarLine, MailLine, RelTime, SeedFixture, SeedLine, TurnLine } from "./fixture";
+import { type AuthoredClaims, type AuthoredItem, type AuthoredSignal, type AuthoredSpan, type BankLine, type CalendarLine, type MailLine, type RelTime, type SeedFixture, type SeedLine, type TurnLine, senderAuthOfLine } from "./fixture";
 
 /** Every seeded Evidence carries this parser version: its packet was written by hand, not by a model. */
 export const SEED_PARSER_VERSION = "seed-authored-v1";
@@ -585,7 +591,7 @@ function buildMail(line: MailLine, input: SeedInput, ids: ReturnType<typeof seed
         senderAddressKey: ids.key("address", addressOf(line.from.address)),
         recipientAddressKeys: line.to.map((a) => ids.key("address", addressOf(a))),
         bulk: line.bulk === true,
-        senderAuth: "aligned",
+        senderAuth: senderAuthOfLine(line),
       },
       hasher,
     ),
@@ -737,7 +743,8 @@ function buildBank(line: BankLine, input: SeedInput, ids: ReturnType<typeof seed
     category: line.category,
     purchaseAt: { instant: purchase, civilDate: localDate(atMs, input.zone), zone: input.zone, basis: "providerAuthorized" as const, precision: "instant" as const },
     postedAt: posted,
-    accountKey: ids.key("account", "checking"),
+    // Brief 054: a demo line names its account; every other line (and every Riley line) is the one "checking" key.
+    accountKey: ids.key("account", line.account ?? "checking"),
   };
   const evidence = evidenceBase(input, ids, line.id, 1, {
     kind: "transaction",
@@ -758,12 +765,84 @@ function buildBank(line: BankLine, input: SeedInput, ids: ReturnType<typeof seed
 }
 
 // ---------------------------------------------------------------------------------------------
+// Brief 054: the fixture checks a demo fixture needs before the simulator may serve it. Each fails the load as
+// `packetInvalid`. They read the fixture only and write no row, so a fixture that passes builds exactly what it
+// built before (the sample persona sets none of the new fields).
+
+/**
+ * The shape of an address the Google read compares and puts in a Gmail query. A copy of `ADDRESS` in
+ * `google/read.ts`, which is module-private: a persona's address must be one the real read accepts.
+ */
+export const FIXTURE_ADDRESS = /^[a-z0-9][a-z0-9._%+'-]{0,63}@[a-z0-9](?:[a-z0-9-]{0,62}\.)+[a-z]{2,24}$/;
+
+/**
+ * The event ID the simulated Google answers for a calendar line, as `simEventId` in `demo/sim-google.ts`: every
+ * character outside Google's event-ID alphabet becomes `_`. Repeated here so check 5 needs nothing from `demo/`.
+ */
+const simEventIdOf = (lineId: string): string => lineId.replace(/[^A-Za-z0-9_-]/g, "_");
+
+/** The simulator's message IDs are `m` plus four base-36 digits, so a demo fixture holds at most this many mail lines. */
+const SIM_MAIL_MAX = 36 ** 4;
+
+const within = (s: string, min: number, max: number) => s.length >= min && s.length <= max;
+
+function checkDemoProfile(fixture: SeedFixture): void {
+  const demo = fixture.demo;
+  if (demo === undefined) return;
+  const id = fixture.id;
+  if (!promotableName(demo.displayName)) fail("packetInvalid", id, "demo displayName is not a promotable name");
+  const bank = demo.bank;
+  if (!within(bank.itemId, 1, 128)) fail("packetInvalid", id, "demo bank itemId length");
+  if (!within(bank.institutionId, 0, 64)) fail("packetInvalid", id, "demo bank institutionId length");
+  if (!within(bank.institutionName, 0, 128) || safeName(bank.institutionName) !== bank.institutionName) fail("packetInvalid", id, "demo bank institutionName is not a safe name");
+  if (bank.accounts.length < 1 || bank.accounts.length > BANK_ACCOUNTS_MAX) fail("packetInvalid", id, `demo bank holds ${bank.accounts.length} accounts`);
+  const accountIds = new Set<string>();
+  for (const a of bank.accounts) {
+    if (!within(a.accountId, 1, 128)) fail("packetInvalid", id, "demo account accountId length");
+    if (accountIds.has(a.accountId)) fail("packetInvalid", id, "two demo accounts share an accountId");
+    accountIds.add(a.accountId);
+    if (!within(a.name, 0, 128) || (a.mask !== null && !within(a.mask, 0, 8)) || !within(a.type, 0, 32) || (a.subtype !== null && !within(a.subtype, 0, 64))) {
+      fail("packetInvalid", id, "demo account field length");
+    }
+  }
+  if (!FIXTURE_ADDRESS.test(demo.google.email)) fail("packetInvalid", id, "demo google email is not a plain address");
+}
+
+/** Checks 1 to 3 (bank lines) and the own-mail half of check 4, line by line; check 5 over the whole fixture. */
+function checkLines(fixture: SeedFixture): void {
+  const demo = fixture.demo;
+  const eventIds = new Map<string, string>();
+  let mail = 0;
+  for (const line of fixture.lines) {
+    if (line.kind === "bank") {
+      // Check 1, every fixture: the simulator answers `cents / 100`, which reads back exactly only for whole cents.
+      if (!Number.isInteger(line.amountCents) || Math.abs(line.amountCents) > BANK_CENTS_MAX) fail("packetInvalid", line.id, "amountCents is not whole cents within BANK_CENTS_MAX");
+      // Check 2: a code must be one the money read groups, and must group the line where its category says.
+      if (line.code !== undefined && (!BANK_CATEGORY_CODE.test(line.code) || bankCategoryOf(line.code) !== line.category)) fail("packetInvalid", line.id, "code does not match its category");
+      // Check 3: an account must be one of the profile's.
+      if (line.account !== undefined && (demo === undefined || !demo.bank.accounts.some((a) => a.accountId === line.account))) fail("packetInvalid", line.id, "account is not in the demo profile");
+    } else if (line.kind === "mail" && demo !== undefined) {
+      mail++;
+      // Check 4: own mail is from the persona's own address, so the trust check finds it.
+      if (line.fromSelf && addressOf(line.from.address) !== demo.google.email) fail("packetInvalid", line.id, "own mail is not from the demo address");
+    } else if (line.kind === "calendar" && demo !== undefined) {
+      // Check 5: two lines never answer one Google event ID.
+      const eventId = simEventIdOf(line.id);
+      const other = eventIds.get(eventId);
+      if (other !== undefined) fail("packetInvalid", line.id, `simulated event ID is also ${other}'s`);
+      eventIds.set(eventId, line.id);
+    }
+  }
+  if (mail > SIM_MAIL_MAX) fail("packetInvalid", fixture.id, "too many mail lines for the simulator's message IDs");
+}
 
 /** Builds every row of a seed, or throws `SeedLoadError`. Deterministic in its inputs. */
 export async function buildSeed(fixture: SeedFixture, input: SeedInput): Promise<SeedRows> {
   // Every row is stamped SEED_PARSER_VERSION, which says "written by hand". Model-made packets need a parser version
   // of their own first (a ruling), so the load fails closed on them.
   if (fixture.origin !== "authored") fail("packetInvalid", fixture.id, `origin ${fixture.origin} has no parser version`);
+  checkDemoProfile(fixture);
+  checkLines(fixture);
   const ids = seedIds(input.namespace, input.hasher);
   const friday = localDate(input.worldStart, input.zone);
   const seen = new Set<string>();

@@ -69,6 +69,12 @@ export interface RouteContext {
   startedOpsAt?: number;
   /** Brief 049 (lane google): the request's `Origin`, set only on a non-GET request the Route_Guard has passed. */
   origin?: string | null;
+  /**
+   * Brief 054: true when the verified ID token came from Firebase anonymous sign-in, so this is a demo visit. Set by
+   * `runRoute` from the Route_Guard only, never from a body or a stored field. Contexts built elsewhere (the errand
+   * run endpoint, webhooks, tests) leave it absent, and absent reads as not anonymous.
+   */
+  anonymous?: boolean;
 }
 
 export interface HttpInput {

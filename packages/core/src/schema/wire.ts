@@ -613,7 +613,14 @@ export const BankConnectRequest = obj({
 export type BankConnectRequest = Infer<typeof BankConnectRequest>;
 export const BankConnectResponse = obj({ bank: BankView, existing: bool });
 export type BankConnectResponse = Infer<typeof BankConnectResponse>;
-export const BankStatusResponse = obj({ banks: arr(BankView, 64), canConnect: bool });
+/**
+ * Brief 054: a demo visit's answer carries `simulated: true`. The field is present only when true, so the old shape is
+ * the second arm and every earlier answer still validates.
+ */
+export const BankStatusResponse = union(
+  obj({ banks: arr(BankView, 64), canConnect: bool, simulated: literal(true) }),
+  obj({ banks: arr(BankView, 64), canConnect: bool }),
+);
 export type BankStatusResponse = Infer<typeof BankStatusResponse>;
 export const BankSyncRequest = obj({ connectorId: ID });
 export type BankSyncRequest = Infer<typeof BankSyncRequest>;
@@ -651,7 +658,8 @@ export type GoogleConnectRequest = Infer<typeof GoogleConnectRequest>;
 export const GOOGLE_CONNECT_OUTCOMES = ["connected", "nothingGranted"] as const;
 export const GoogleConnectResponse = obj({ google: GoogleView, outcome: oneOf(GOOGLE_CONNECT_OUTCOMES) });
 export type GoogleConnectResponse = Infer<typeof GoogleConnectResponse>;
-export const GoogleStatusResponse = obj({ google: GoogleView });
+/** Brief 054: as `BankStatusResponse`, with `simulated` present only when true, on a demo visit. */
+export const GoogleStatusResponse = union(obj({ google: GoogleView, simulated: literal(true) }), obj({ google: GoogleView }));
 export type GoogleStatusResponse = Infer<typeof GoogleStatusResponse>;
 export const GoogleDisconnectRequest = obj({ requestId: ID });
 export type GoogleDisconnectRequest = Infer<typeof GoogleDisconnectRequest>;

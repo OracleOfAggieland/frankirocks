@@ -36,6 +36,10 @@ export * from "./forget/resolve-port";
 export { seedResetRoute } from "./routes/seed-reset";
 export { PERSONA_FIXTURE_ID } from "./seed/persona";
 
+// Brief 054: the Kiroween Demo. The switch, for `GET /api/demo`, and the demo persona's fixture ID.
+export { demoEnabled, demoStatus } from "./demo/switch";
+export { KISSES_FIXTURE_ID } from "./seed/kisses";
+
 // Brief 024: the Gate's ledger writers, for the turn and receipt routes.
 export { gateRowId, readWhySaid, writeGateDecision, writeSaid } from "./ledger/said";
 

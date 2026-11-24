@@ -2,6 +2,7 @@
  * The one seeded persona (brief 019 task 2): Riley, as spec §15's demo needs it. Every packet is authored by hand.
  */
 import type { SeedFixture } from "../fixture";
+import { KISSES } from "../kisses";
 import { BANK } from "./bank";
 import { BULK } from "./bulk";
 import { CALENDAR } from "./calendar";
@@ -18,5 +19,11 @@ export const PERSONA: SeedFixture = {
   lines: [...TURNS, ...MAIL, ...BULK, ...CALENDAR, ...BANK],
 };
 
-/** Fixtures by ID; the reset route refuses any other ID. */
-export const FIXTURES: ReadonlyMap<string, SeedFixture> = new Map([[PERSONA.id, PERSONA]]);
+/**
+ * Fixtures by ID; the reset route refuses any other ID. Brief 054 adds the demo persona, which the reset is to pair
+ * with anonymous tenants only (`seed/pairing.ts`).
+ */
+export const FIXTURES: ReadonlyMap<string, SeedFixture> = new Map([
+  [PERSONA.id, PERSONA],
+  [KISSES.id, KISSES],
+]);
