@@ -9,7 +9,7 @@
  * A span is authored as its quote (and which occurrence, when the quote repeats). The build turns it into offsets
  * against the line's text; the load then checks every span exactly, so a quote that is not in the line fails it.
  */
-import type { CLAIM_TYPES, LOGISTICS_TYPES, Topic } from "@franki/core";
+import type { BankCategory, CLAIM_TYPES, LOGISTICS_TYPES, Topic } from "@franki/core";
 
 export interface RelTime {
   day: number;
@@ -116,6 +116,10 @@ export interface MailLine {
   claims?: AuthoredClaims;
   /** The PrivateReadInboundV1 packet's topic signals, when this line has one. */
   inbound?: AuthoredSignal[];
+  /** Brief 054: Gmail's DMARC verdict for the From domain. Omitted reads as "pass", as every seeded message does today. */
+  dmarc?: "pass" | "fail" | "none";
+  /** Brief 054, inbound mail only: carries Gmail's UNREAD label in the simulator. Omitted: read. */
+  unread?: boolean;
 }
 
 export interface CalendarRevision {
@@ -146,11 +150,52 @@ export interface BankLine {
   at: RelTime;
   merchant: string;
   amountCents: number;
-  category: "takeout" | "groceries" | "restaurant" | "other";
+  category: BankCategory;
   pending?: boolean;
+  /**
+   * Brief 054: Plaid's detailed category code, which `read_money`'s groups read when the simulator serves the line.
+   * Omitted: `bankCodeOf` takes the category's default. When present it must map back to `category`.
+   */
+  code?: string;
+  /** Brief 054: an `accountId` of the fixture's `demo.bank.accounts`. Omitted: the first account. */
+  account?: string;
 }
 
 export type SeedLine = TurnLine | MailLine | CalendarLine | BankLine;
+
+/** Brief 054: one simulated bank account of a demo fixture, as the simulator answers it. */
+export interface DemoAccount {
+  /** The provider-style account ID the simulator answers. 1 to 128 characters, unique in the profile. */
+  accountId: string;
+  /** At most 128 characters. */
+  name: string;
+  /** At most 8 characters. */
+  mask: string | null;
+  /** At most 32 characters, for example "depository". */
+  type: string;
+  /** At most 64 characters. */
+  subtype: string | null;
+}
+
+/** Brief 054: what marks a fixture as a demo fixture: the persona the visitor plays, and the simulated accounts behind it. */
+export interface DemoProfile {
+  /** The name the account menu shows. Pinned to the browser's `DEMO_NAME` by `scripts/kisses-fixture-id.test.ts`. */
+  displayName: string;
+  bank: {
+    /** 1 to 128 characters, stored as `BankConnection.itemId`. */
+    itemId: string;
+    /** At most 64 characters. */
+    institutionId: string;
+    /** At most 128 characters, and unchanged by `safeName`. */
+    institutionName: string;
+    /** 1 to `BANK_ACCOUNTS_MAX` (32). */
+    accounts: DemoAccount[];
+  };
+  google: {
+    /** The persona's invented address: the connector's `email`, and the From of his own sent mail. */
+    email: string;
+  };
+}
 
 export interface SeedFixture {
   /** The route's fixtureId: a 43-character ID shape. */
@@ -160,4 +205,20 @@ export interface SeedFixture {
   /** The hero window: this many local dates, ending the day before the clone's Friday. */
   windowDays: number;
   lines: SeedLine[];
+  /** Brief 054: present only on a demo fixture. Its presence is what pairs the fixture with an anonymous tenant (R5). */
+  demo?: DemoProfile;
 }
+
+/** Brief 054: the default detailed code of a category, as the simulator answers it; "other" has none. */
+export const DEFAULT_BANK_CODE: Readonly<Record<BankCategory, string | null>> = {
+  takeout: "FOOD_AND_DRINK_FAST_FOOD",
+  groceries: "FOOD_AND_DRINK_GROCERIES",
+  restaurant: "FOOD_AND_DRINK_RESTAURANT",
+  other: null,
+};
+
+/** The detailed code the simulator answers for a bank line: its own, else its category's default. */
+export const bankCodeOf = (l: BankLine): string | null => l.code ?? DEFAULT_BANK_CODE[l.category];
+
+/** The stored `senderAuth` of a mail line, from its `dmarc`: pass (or omitted) is "aligned", fail is "failed", none is "unknown". */
+export const senderAuthOfLine = (l: MailLine): "aligned" | "failed" | "unknown" => (l.dmarc === "fail" ? "failed" : l.dmarc === "none" ? "unknown" : "aligned");
