@@ -55,12 +55,6 @@ As of Nov 24, 2026:
 | Tests passing | **6,106** |
 | State machines mapped | **20 pages** in [`docs/machines/`](docs/machines/) |
 
-### Who built what
-
-Kiro wrote the first three specs and built most of their tasks: Franki's foundation, the first spoken call, the lab UI foundation, the judge spike, and the judge in the call. Kiro also made this repo public. For the Kiroween Demo, Kiro wrote the fourth spec, the `persona-author` skill, the list of real names a persona may not use, and all of the demo persona's lines through the `stitch-persona` workflow. Kiro's commits end `Built-with: Kiro`.
-
-From Nov 10 on, the feature code was built outside Kiro, mostly by Claude Code from the briefs: the 3D avatar, memory writes, forget, the sample month and its takeout pattern, check-ins, the state machine safety net, the UI build-out, the first meeting, phone calls, the radio and its globe, the X-ray machine, the read-only bank and Google connections with their errands, and the Kiroween Demo's code. The demo's workflow, agent and hook files were also written by hand, because Kiro run headless can't write those folders. Those commits carry their own trailer. The split is in the history, commit by commit.
-
 ## Still on the slab
 
 The parts not yet stitched on, said plainly:
