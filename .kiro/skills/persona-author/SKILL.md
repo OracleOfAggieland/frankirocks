@@ -23,7 +23,7 @@ Pull in the taste rules first: `#kisses-taste` (`.kiro/steering/kisses-taste.md`
 node .kiro/skills/persona-author/scripts/check.mjs [dir]
 ```
 
-Default `dir` is `packages/server/src/seed/kisses`. It (a) scans every `.ts` file in the folder for words of the Denied_List (`packages/server/src/testing/denied-words.ts`: real companies, brands and well-known public figures), on word boundaries after NFKC and case folding, printing `file:line` for each hit; and (b) when the folder holds a `*.test.ts` file, runs `npx vitest run <dir>` and lists the names of failing tests. It prints a summary and exits 1 on any hit or failure, 0 when clean. A folder that does not exist yet is clean.
+Default `dir` is `packages/server/src/seed/kisses`. It (a) scans the contents of the string literals (single-quoted, double-quoted and template literals) in every `.ts` file in the folder, skipping comments and code such as field names, for words of the Denied_List (`packages/server/src/testing/denied-words.ts`: real companies, brands and well-known public figures), on word boundaries after NFKC and case folding, printing `file:line` for each hit; and (b) when the folder holds a `*.test.ts` file, runs `npx vitest run <dir>` and lists the names of failing tests. It prints a summary and exits 1 on any hit or failure, 0 when clean. A folder that does not exist yet is clean.
 
 `--witness` is for hooks and loops: it prints nothing and never fails; it does nothing unless `git status --porcelain <dir>` shows a change, and then appends one line (`<ISO time> PASS|FAIL hits=<n> failing=<n>`) to `.kiro/specs/kiroween-demo/persona-check.log`.
 

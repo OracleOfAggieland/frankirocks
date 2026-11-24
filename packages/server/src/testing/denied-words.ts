@@ -16,7 +16,8 @@
  * brand sense is still denied: the persona-author skill and the kisses-taste steering file say to pick another word.
  * Full names are listed for people whose surname is also a common word (gates, jobs, cook, page, king, ford).
  *
- * Two readers keep to this shape: `packages/server/src/demo/taste-scan.ts` imports `DENIED_WORDS`, and
+ * Two readers keep to this shape: `packages/server/src/demo/taste-scanner.ts` (`foldText`, `deniedWordsIn` and
+ * `holdsDeniedWord`, which take the list as an argument) is applied to this list by the Taste property, and
  * `.kiro/skills/persona-author/scripts/check.mjs` reads the quoted strings between the brackets below without
  * running TypeScript. Keep the array a plain list of double-quoted strings, one or more per line, with `//`
  * comment lines between groups, and keep the array literal as the only code in this file.

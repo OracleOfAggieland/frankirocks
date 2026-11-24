@@ -25,7 +25,7 @@ These do not throw, but a test or a review catches them:
 - **The name never reaches the Head.** Jeffrey's name needs an `identity.name` (or `identity.alias`) item for `self` whose value is a short name: at most 40 characters and four words, letters, apostrophes, hyphens and initials only. Anything else is "a name the owner gave" but not safe for the instruction line.
 - **A packet quotes the wrong turn.** A span that quotes a different line's text fails `spanNotInEvidence`; one that quotes words that do not say the fact passes the load and fails the review. Read each quote as if it were the only evidence.
 - **A mail address is unreadable.** The mail agent compares plain addresses only (`name@host.tld`, lower case, letters, digits and `._%+'-`). An address with a space or an angle bracket in it fails the simulated read, not the load.
-- **A denied word.** The persona check (`scripts/check.mjs`) and the Taste property flag any real name or brand from the Denied_List.
+- **A denied word.** The persona check (`scripts/check.mjs`, which reads string literals only) and the Taste property flag any real name or brand from the Denied_List.
 
 ## The order the build runs
 

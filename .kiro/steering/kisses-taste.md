@@ -8,7 +8,7 @@ Source: `docs/briefs/054-kiroween-demo.md`, "The persona: taste rules" and "Prod
 
 Jeffrey Kisses is funny because of scale and contrast. He is never the butt of a mean joke.
 
-The Denied_List, as data: #[[file:packages/server/src/testing/denied-words.ts]]. No line of the persona may hold a word from it. `node .kiro/skills/persona-author/scripts/check.mjs` scans for it and prints file:line.
+The Denied_List, as data: #[[file:packages/server/src/testing/denied-words.ts]]. No line of the persona may hold a word from it. `node .kiro/skills/persona-author/scripts/check.mjs` scans the persona's string literals for it and prints file:line.
 
 ## The rules, as tests you can apply
 
