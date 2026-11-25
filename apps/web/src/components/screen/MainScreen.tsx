@@ -93,10 +93,13 @@ export const RAIL_SEAM =
  * The corners row: the jar, the ways in (bank, Google) with the visit bar under them, and the Lab. Stacked on
  * phones; a row from 640 px. From 1024 px it is a centred band of three columns whose sides are equal, so the
  * middle sits on the page's centre axis whatever the jar and the Lab measure, and all three are centred
- * vertically. Narrower than that, a 288 px Lab can't mirror around a centred middle, so the row just spreads.
+ * vertically. Each side is at least the Lab's 288 px, so the middle gets what is left and can never run under
+ * the Lab: four time bolts in one row did (566 px in an 896 px band, Nov 24), so the band is 1024 px wide and
+ * the bolts stand two by two there (VisitBar). Narrower than 1024 px, a 288 px Lab can't mirror around a centred
+ * middle, so the row just spreads.
  */
 export const CORNERS =
-  "flex flex-col items-center gap-3 sm:flex-row sm:items-end sm:justify-between lg:mx-auto lg:grid lg:w-full lg:max-w-4xl lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center lg:gap-x-8 [grid-area:corners]";
+  "flex flex-col items-center gap-3 sm:flex-row sm:items-end sm:justify-between lg:mx-auto lg:grid lg:w-full lg:max-w-5xl lg:grid-cols-[minmax(18rem,1fr)_auto_minmax(18rem,1fr)] lg:items-center lg:gap-x-8 [grid-area:corners]";
 
 /** One layout-animated wrapper: glides on spring.settle when the grid gains or loses the dock column. */
 function Glide({ name, reduced, className, children }: { name: "stage" | "controls" | "reply"; reduced: boolean; className: string; children: ReactNode }) {

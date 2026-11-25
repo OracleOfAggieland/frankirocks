@@ -23,7 +23,14 @@ export interface VisitBarProps {
   onCancel: () => void;
 }
 
-const BOLT_BUTTON = `${TARGET} ${FOCUS} mat-glass inline-flex items-center gap-1.5 rounded-chip border border-brass px-3 text-sm text-ink hover:bg-night-2/90 disabled:opacity-40`;
+/** From 1024 px the bolts stand in two equal columns (below), so each one centres its label in its cell. */
+const BOLT_BUTTON = `${TARGET} ${FOCUS} mat-glass inline-flex items-center gap-1.5 rounded-chip border border-brass px-3 text-sm text-ink hover:bg-night-2/90 disabled:opacity-40 lg:justify-center`;
+
+/**
+ * The bolts wrap as they fit below 1024 px. From there the corners band gives the middle what the Lab leaves
+ * (MainScreen, CORNERS), which is less than four bolts in a row, so they stand two by two in equal columns.
+ */
+const BOLT_GROUP = "flex max-w-[343px] flex-wrap justify-center gap-2 sm:max-w-xl lg:grid lg:grid-cols-2";
 
 function Bolt() {
   return (
@@ -68,7 +75,7 @@ export function VisitBar(p: VisitBarProps) {
   const status = boltStatus(p);
   return (
     <div data-visit="ready" className="flex flex-col items-center gap-2">
-      <div role="group" aria-label={COPY.visit.bolt.label} data-bolt={p.bolt} className="flex max-w-[343px] flex-wrap justify-center gap-2 sm:max-w-xl">
+      <div role="group" aria-label={COPY.visit.bolt.label} data-bolt={p.bolt} className={BOLT_GROUP}>
         {p.targets.map((t) => (
           <button key={t.id} type="button" data-bolt-target={t.id} disabled={!p.boltEnabled} className={BOLT_BUTTON} onClick={() => p.onBolt(t.toMs)}>
             <Bolt />
