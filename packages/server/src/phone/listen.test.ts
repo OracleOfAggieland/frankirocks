@@ -301,14 +301,30 @@ describe("the listen route", () => {
 });
 
 describe("the phone-side specialist", () => {
-  it("reports the moment it has the answer, still says it is an AI assistant, and transcribes the recipient", () => {
+  it("reports once the answer is read back, calls itself an assistant, admits being an AI when asked, and transcribes the recipient", () => {
     const assignment = "Call 415 555 0123 and ask when they open.";
     const lines = phoneCallInstructions(assignment, true);
-    expect(lines).toContain("Introduce yourself as an AI assistant");
+    expect(lines).not.toContain("Introduce yourself as an AI assistant");
+    expect(lines).toContain("Call yourself an assistant and don't bring up being an AI.");
+    expect(lines).toContain("Never claim to be a person");
+    expect(lines).toContain("say plainly that you're an AI assistant");
+    expect(lines).toContain("never read it out");
+    expect(lines).toContain("say it back once");
     expect(lines).toContain("call report_call_outcome before you say anything else");
     expect(lines).toContain("Call it once");
+    expect(lines).toContain("calling on someone's behalf");
+    expect(lines).not.toContain("It is now");
     expect(lines.endsWith(JSON.stringify(assignment))).toBe(true);
     expect(phoneCallInstructions(assignment, false)).not.toContain("report_call_outcome");
+    const named = phoneCallInstructions(assignment, true, { name: "Matt", localTime: "Thursday, November 26, 2026 at 3:42 PM (America/Chicago)" });
+    expect(named).toContain("\"Hi, this is Franki, Matt's assistant.\"");
+    expect(named).toContain("who you're calling for, and your question");
+    expect(named).toContain("It is now Thursday, November 26, 2026 at 3:42 PM (America/Chicago) where the user is.");
+    expect(named).not.toContain("calling on someone's behalf");
+    expect(named.endsWith(JSON.stringify(assignment))).toBe(true);
+    const timeOnly = phoneCallInstructions(assignment, true, { name: null, localTime: "Thursday" });
+    expect(timeOnly).toContain("calling on someone's behalf");
+    expect(timeOnly).toContain("It is now Thursday where the user is.");
     expect(phoneCallSession(env).audio).toEqual({ output: { voice: "cedar" }, input: { transcription: { model: "test-transcribe-model" } } });
     const { FRANKI_TRANSCRIBE_MODEL: _unset, ...untranscribed } = env;
     expect(phoneCallSession(untranscribed).audio).toEqual({ output: { voice: "cedar" } });

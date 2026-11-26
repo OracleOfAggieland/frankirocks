@@ -17,7 +17,7 @@ The root [README](../README.md) covers running Franki locally. This page holds t
 
 ## Outbound phone calls
 
-Sign in to Franki and say or type “Call +1 415 555 0123 and ask what time they close.” Give the destination and assignment together. Twilio dials the recipient and bridges the answered call to Franki. Franki introduces itself as an AI assistant and receives only the current request as its assignment. The initial receipt reports whether Twilio accepted the dial request.
+Sign in to Franki and say or type “Call +1 415 555 0123 and ask what time they close.” Give the destination and assignment together. Twilio dials the recipient and bridges the answered call to Franki. Franki introduces itself as your assistant, by your saved name when there is an everyday one, and says it is an AI if the recipient asks. It receives only the current request as its assignment, plus your local date and time. The initial receipt reports whether Twilio accepted the dial request.
 
 Phone calls use the live agent's existing `OPENAI_API_KEY` and voice model. Twilio authenticates dialing with its account SID and auth token. The OpenAI webhook signing secret verifies incoming callbacks.
 

@@ -59,7 +59,8 @@ describe("outbound phone calls", () => {
     await answerPhoneCall(rig.deps, data, sip, lookupUid);
     await answerPhoneCall(rig.deps, data, sip, lookupUid);
     await answerPhoneCall(rig.deps, { ...data, call_id: "rtc_another" }, sip, lookupUid);
-    expect(sip.accept).toHaveBeenCalledExactlyOnceWith(data.call_id, text, { uid: "owner-1", dialId: correlation });
+    // No name saved: the caller carries the owner's local time only.
+    expect(sip.accept).toHaveBeenCalledExactlyOnceWith(data.call_id, text, { uid: "owner-1", dialId: correlation }, { name: null, localTime: expect.stringMatching(/\(UTC\)$/) });
     expect(sip.greet).toHaveBeenCalledExactlyOnceWith(data.call_id);
     expect(sip.listen).toHaveBeenCalledExactlyOnceWith(data.call_id, { uid: "owner-1", dialId: correlation });
     expect(sip.greet.mock.invocationCallOrder[0]).toBeLessThan(sip.listen.mock.invocationCallOrder[0]!);
