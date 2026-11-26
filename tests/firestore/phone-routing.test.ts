@@ -64,7 +64,8 @@ it("routes simultaneous users' typed and spoken call requests to their own conve
   await Promise.all(callbacks.toReversed().map(data => answerPhoneCall(deps, data, sip, lookup)));
   expect(sip.accept).toHaveBeenCalledTimes(2);
   for (const [i, uid] of uids.entries()) {
-    expect(sip.accept).toHaveBeenCalledWith(`rtc_${i}`, texts[i], { uid, dialId: dial.mock.calls[i]![2] });
+    // No name saved: each caller carries only that owner's local time, read from the real store.
+    expect(sip.accept).toHaveBeenCalledWith(`rtc_${i}`, texts[i], { uid, dialId: dial.mock.calls[i]![2] }, { name: null, localTime: expect.any(String) });
   }
   expect(sip.reject).not.toHaveBeenCalled();
   await answerPhoneCall(deps, { call_id: "rtc_unknown", sip_headers: [{ name: "X-Franki-Call", value: testId("unrequested") }] }, sip, lookup);
